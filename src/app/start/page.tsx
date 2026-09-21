@@ -142,10 +142,10 @@ export default async function StartPage() {
                   <div className="text-sm font-medium">{m.info?.title || m.id}{m.info?.version ? <span className="ml-2 text-xs text-muted-foreground">v{m.info.version}</span> : null}</div>
                   {m.info?.description ? <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{m.info.description}</div> : null}
                   <div className="mt-2 flex flex-wrap gap-1">
-                    {fe ? <FeatureBadge label={`FE:${fe}`} /> : null}
-                    {be ? <FeatureBadge label={`BE:${be}`} /> : null}
-                    {api ? <FeatureBadge label={`API:${api}`} /> : null}
-                    {i18n ? <FeatureBadge label={`i18n:${i18n}`} /> : null}
+                    {fe ? <FeatureBadge label={`${t('startPage.badge.frontend', 'FE')}:${fe}`} /> : null}
+                    {be ? <FeatureBadge label={`${t('startPage.badge.backend', 'BE')}:${be}`} /> : null}
+                    {api ? <FeatureBadge label={`${t('startPage.badge.api', 'API')}:${api}`} /> : null}
+                    {i18n ? <FeatureBadge label={`${t('startPage.badge.i18n', 'i18n')}:${i18n}`} /> : null}
                   </div>
                 </div>
               )

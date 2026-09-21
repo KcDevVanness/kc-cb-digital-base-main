@@ -50,9 +50,12 @@
     ".mercato/**/*.ts",
     ".next/dev/types/**/*.ts",
     ".mercato/next/types/**/*.ts",
-    ".mercato/next/dev/types/**/*.ts"
+    ".mercato/next/dev/types/**/*.ts",
+    ".mercato/next/dev/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "src/modules/*/agents/**/scripts/**",
+    "src/modules/*/agents/**/tools/**"
   ]
 }

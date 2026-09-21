@@ -1,6 +1,7 @@
 import type { AppContainer } from '@open-mercato/shared/lib/di/container'
 import { bootstrap } from '@open-mercato/core/bootstrap'
 import { applicationLifecycleEvents } from '@open-mercato/shared/lib/runtime/events'
+import { registerServedLocalesResolver } from '@/lib/i18n/served-locales'
 
 const APP_BOOTSTRAP_STARTED_EMITTED_KEY = '__openMercatoApplicationBootstrapStartedEventEmitted__'
 const APP_BOOTSTRAP_COMPLETED_EMITTED_KEY = '__openMercatoApplicationBootstrapCompletedEventEmitted__'
@@ -40,6 +41,11 @@ async function emitApplicationLifecycleEvent(
 // App-level DI overrides/registrations.
 // This runs after core defaults and module DI registrars.
 export async function register(container: AppContainer) {
+  // Same hook ordering that makes this the app's DI override point: a module
+  // claims the single locale-resolver slot at import time, so an app that wants
+  // to own it has to re-register from here. See `@/lib/i18n/served-locales`.
+  registerServedLocalesResolver()
+
   const basePayload = {
     source: 'apps/mercato',
     emittedAt: new Date().toISOString(),

@@ -4,8 +4,9 @@ import '@/lib/i18n/register-dictionary-loader'
 import { AppProviders } from '@/components/AppProviders'
 
 import { THEME_INIT_SCRIPT } from '@open-mercato/ui/theme/theme-init-script'
-import { detectLocale, loadDictionary, resolveSupportedLocalesForRequest } from '@open-mercato/shared/lib/i18n/server'
+import { detectLocale, loadDictionary } from '@open-mercato/shared/lib/i18n/server'
 import { resolveForcedLocale } from '@open-mercato/shared/lib/i18n/locale'
+import { resolveServedLocales } from '@/lib/i18n/served-locales'
 import { resolveDevRuntimeLayoutConfig } from '@open-mercato/shared/lib/dev-runtime/layout'
 import { DevRuntimeDiagnosticsBanner } from '@open-mercato/ui/backend/dev/DevRuntimeDiagnosticsBanner'
 import { DevRuntimeReporter } from '@open-mercato/ui/backend/dev/DevRuntimeReporter'
@@ -23,9 +24,10 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Resolved server-side (the tenant's Settings selection needs a container and
-  // the app registry) and handed to the client provider, which can read neither.
-  const supportedLocales = await resolveSupportedLocalesForRequest()
+  // Resolved server-side and handed to the client provider, which cannot read
+  // the app registry. What is served is narrowed to the app's own languages by
+  // `resolveServedLocales`.
+  const supportedLocales = await resolveServedLocales()
   const locale = await detectLocale({ supportedLocales })
   const dict = await loadDictionary(locale)
   const localeLocked = resolveForcedLocale(process.env) !== null

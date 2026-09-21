@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 0 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 2 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -25,3 +25,6 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - Run `node scripts/check-lessons.mjs` before committing.
 
 ## Catalog
+
+- [Removing a platform locale needs three seams narrowed, not one](lessons/locale-served-set-seams.md) — area:architecture,framework-context; module:platform; topic:i18n,locale-registry,served-locales,dictionary-loader,generate
+- [Keep file-agent sandbox sources out of the app's typed build](lessons/agent-sandbox-sources-tsconfig.md) — area:ai-workflow,architecture; module:agent_examples; topic:tsconfig,typecheck,build-gate,sandbox,file-agents

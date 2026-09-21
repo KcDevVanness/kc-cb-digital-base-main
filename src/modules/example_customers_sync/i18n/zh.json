@@ -1,0 +1,11 @@
+{
+  "exampleCustomersSync.errors.invalidCursor": "游标无效。",
+  "exampleCustomersSync.errors.invalidJson": "JSON 请求体无效。",
+  "exampleCustomersSync.errors.mappingsLoadFailed": "加载示例客户同步映射失败。",
+  "exampleCustomersSync.errors.organizationContextRequired": "需要组织上下文。",
+  "exampleCustomersSync.errors.organizationScopeMismatch": "组织范围不匹配。",
+  "exampleCustomersSync.errors.reconcileEnqueueFailed": "示例客户同步对账任务入队失败。",
+  "exampleCustomersSync.errors.tenantScopeMismatch": "租户范围不匹配。",
+  "exampleCustomersSync.errors.unauthorized": "未授权",
+  "exampleCustomersSync.errors.validationFailed": "校验失败"
+}

@@ -3,8 +3,9 @@ import { backendRouteMetadata } from '@/.mercato/generated/backend-route-metadat
 import { findRouteManifestMatch } from '@open-mercato/shared/modules/registry'
 import { getAuthFromCookies } from '@open-mercato/shared/lib/auth/server'
 import { AppShell } from '@open-mercato/ui/backend/AppShell'
-import { resolveSupportedLocalesForRequest, resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
+import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
 import { resolveForcedLocale } from '@open-mercato/shared/lib/i18n/locale'
+import { resolveServedLocales } from '@/lib/i18n/served-locales'
 import { I18nProvider } from '@open-mercato/shared/lib/i18n/context'
 import { authorizeFeatures } from '@open-mercato/shared/security/featurePolicy'
 import { profilePathPrefixes } from '@open-mercato/core/modules/auth/lib/profile-sections'
@@ -54,10 +55,10 @@ export default async function BackendLayout({
     path = '/backend' + (Array.isArray(slug) && slug.length > 0 ? `/${slug.join('/')}` : '')
   }
 
-  // This layout mounts its own `I18nProvider` inside the root layout's, so it has
-  // to resolve the served set itself: detecting against the process-wide set would
-  // let the admin subtree render a locale the root layout already rejected.
-  const supportedLocales = await resolveSupportedLocalesForRequest()
+  // The backend shell mounts its own provider: it must resolve the same served
+  // set the root layout used, or it would detect against the process-wide set
+  // and could render a locale the root layout already rejected.
+  const supportedLocales = await resolveServedLocales()
   const { translate, locale, dict } = await resolveTranslations({ supportedLocales })
   const embeddingConfigured = Boolean(
     process.env.OPENAI_API_KEY ||
