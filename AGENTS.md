@@ -127,6 +127,16 @@ Enabled module facts: `api_docs`,`attachments`,`audit_logs`,`auth`,`configs`,`da
 Load `.ai/guides/modules/<id>/index.md` only for a targeted installed module/host; never preload all module facts.
 <!-- om:module-guides:end -->
 
+## Documentation
+
+`docs/` is the human documentation home — Markdown, one folder per type: `dev/` setup and
+architecture, `deploy/` build and ops, `prd/` requirements, `plans/` phased plans,
+`pitfalls/` post-mortems. Each folder's `README.md` is its contract; `docs/README.md` indexes
+them and states the `.ai/` vs `docs/` split — a pitfall belongs in exactly one of them.
+
+A change that alters behavior, setup, a contract, or an operational step MUST update the
+matching document in the same change.
+
 ## Working Sequence
 
 1. Route, then implement the smallest complete slice through real call sites.
