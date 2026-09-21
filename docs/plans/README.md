@@ -39,8 +39,7 @@
 
 ## 索引
 
-暂无。新增后在这里加一行：
-
 | 文档 | 状态 |
 |---|---|
-| — | — |
+| [lookup-field-dropdown.md](./lookup-field-dropdown.md) | 阶段一进行中（补丁已交付，待上游接受） |
+| [cross-border-erp.md](./cross-border-erp.md) | 阶段一/二完成并验证；阶段三待业务确认开放问题后开工 |

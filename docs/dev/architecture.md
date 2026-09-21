@@ -25,11 +25,23 @@
 
 ## 启用中的模块
 
-`src/modules.ts` 当前启用 12 个：
+`src/modules.ts` 当前启用 26 个，分三类：
 
-- `@open-mercato/core`：`auth`、`directory`、`configs`、`entities`、`query_index`、
-  `api_docs`、`audit_logs`、`notifications`、`dashboards`、`attachments`
-- 独立包：`events`（`@open-mercato/events`）、`search`（`@open-mercato/search`）
+- **平台基础（12）**：`auth`、`directory`、`configs`、`entities`、`query_index`、
+  `api_docs`、`audit_logs`、`notifications`、`dashboards`、`attachments`（`@open-mercato/core`）、
+  `events`（`@open-mercato/events`）、`search`（`@open-mercato/search`）
+- **ERP 业务（7，`@open-mercato/core`）**：`catalog`、`customers`、`sales`、`wms`、
+  `currencies`、`dictionaries`、`feature_toggles`——见
+  [`.ai/specs/2026-09-21-erp-core-module-activation.md`](../../.ai/specs/2026-09-21-erp-core-module-activation.md)
+- **app 自有（5）**：`currency_policy`、`scope_guards`、`purchasing`（供应商/采购单/阶段付款）、
+  `cross_border`（发运/在途/出口单证）、`platform_ops`（平台渠道/订单镜像/结算/对账）——见
+  [`business-architecture.md`](./business-architecture.md)；每个模块的实现契约、验证命令与回滚方式
+  写在 `src/modules/<id>/README.md`
+- **集成底座（2，`@open-mercato/core`）**：`integrations`（外部 id 映射与 provider 注册）、
+  `data_sync`（流式导入导出运行、游标、进度）——Phase 4 传输层的接入点
+
+注意：`src/modules/catalog|customers|sales|wms|currencies|dictionaries|feature_toggles/`
+这些目录本身只放该模块的 `zh` 语言覆盖文件，模块代码仍在框架包里。
 
 条件启用（默认关闭，靠 `.env` 打开）：`record_locks`、`system_status_overlays`、`sso`、
 `security`、`agent_orchestrator`、`agent_examples`——都由

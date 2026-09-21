@@ -29,8 +29,7 @@
 
 ## 索引
 
-暂无。按上面的骨架新增后在这里加一行：
-
 | 文档 | 状态 |
 |---|---|
-| — | — |
+| [lookup-field-dropdown.md](./lookup-field-dropdown.md) | 待上游发版（补丁已产出并自验） |
+| [cross-border-erp.md](./cross-border-erp.md) | Phase 1/2 已实现；Phase 3/4 待业务确认开放问题后开工 |
