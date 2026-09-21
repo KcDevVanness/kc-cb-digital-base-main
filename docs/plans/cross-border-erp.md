@@ -2,6 +2,7 @@
 
 > 落地 [`../prd/cross-border-erp.md`](../prd/cross-border-erp.md)：把"国内采购 → 跨境发运 → 海外仓 → 平台履约 → 结算"在系统内闭环。
 > 模块归属地图见 [`../dev/business-architecture.md`](../dev/business-architecture.md)。
+> 实施 PR：[#1](https://github.com/KcDevVanness/kc-cb-digital-base-main/pull/1)（分支 `feat/cross-border-erp`）。
 > **丢失上下文时**：先读"目标"，再读"进度"与文末"交接须知"，然后按"阶段划分"继续。
 
 ## 目标
