@@ -1,8 +1,10 @@
+import { resolveTenantSupportedLocales } from '@open-mercato/core/modules/translations/lib/supported-locales'
 import type { Locale } from '@open-mercato/shared/lib/i18n/config'
 import {
   registerSupportedLocalesResolver,
   resolveSupportedLocalesForRequest,
 } from '@open-mercato/shared/lib/i18n/locale-registry'
+import { enabledModules } from '@/modules'
 import { appLocales, toAppLocale } from './app-locales'
 
 /**
@@ -15,6 +17,10 @@ import { appLocales, toAppLocale } from './app-locales'
  * German. Filtering here rejects both — `detectLocale` only matches a cookie or
  * header entry that is inside the set it is given — and the switcher then lists
  * exactly `appLocales`.
+ *
+ * A filter rather than a replacement for `resolveSupportedLocalesForRequest` on
+ * purpose: it holds even on a process where the resolver below has not been
+ * registered yet, which is the one thing the root layout cannot wait for.
  */
 export async function resolveServedLocales(): Promise<readonly Locale[]> {
   const supported = await resolveSupportedLocalesForRequest()
@@ -25,21 +31,44 @@ export async function resolveServedLocales(): Promise<readonly Locale[]> {
 const REGISTERED_KEY = '__kcDigitalBaseMinServedLocalesResolverRegistered__'
 
 /**
- * Narrows the process-wide per-request set too, so callers that resolve it
- * without an explicit set agree with what the layouts render. The platform's
- * `translations` module owns that slot and would narrow it to the tenant's
- * Settings → Translations selection — this app does not enable that module, so
- * without a registration the slot stays empty and every route handler (e.g.
- * `POST /api/auth/locale`, which validates the code it writes into the `locale`
- * cookie against this set) would keep accepting the platform baseline.
+ * Owns the framework's single supported-locales resolver slot.
+ *
+ * The slot answers "which locales has this tenant opted into", and the platform's
+ * `translations` module fills it with that lookup. This deployment serves English
+ * and Chinese to every tenant and never the rest of the shipped baseline, which
+ * no tenant selection can express — a tenant that has never saved a selection
+ * gets the full baseline back, because `resolveSupportedLocalesForRequest` reads
+ * an absent one as "no opinion". So the app takes the slot and answers with the
+ * app's own set, narrowed by the tenant's selection when this deployment enables
+ * that module: replacing the slot is what drops the lookup, so whoever takes it
+ * has to keep answering the question.
  *
  * Called from the app DI registrar, the one hook that runs after every module DI
- * registrar.
+ * registrar: the `translations` module fills this single slot at import time, so
+ * registering any earlier would be overwritten by it. Route handlers that resolve
+ * the set without a layout's narrowed input (`POST /api/auth/locale` validates
+ * the code it writes into the `locale` cookie against it) reach this through
+ * `bootstrap()` at their module scope, which runs the registrar before they do.
+ *
+ * Reads `src/modules.ts` rather than the runtime module registry so the answer
+ * cannot depend on how far bootstrapping has progressed.
  */
 export function registerServedLocalesResolver(): void {
   const scope = globalThis as Record<string, unknown>
   if (scope[REGISTERED_KEY] === true) return
   scope[REGISTERED_KEY] = true
 
-  registerSupportedLocalesResolver(async () => [...appLocales])
+  registerSupportedLocalesResolver(async () => {
+    if (!enabledModules.some((entry) => entry.id === 'translations')) return [...appLocales]
+
+    const selected = await resolveTenantSupportedLocales()
+    if (!selected) return [...appLocales]
+
+    const served = selected.map((code) => toAppLocale(code)).filter((locale) => locale !== null)
+    // An empty result means the tenant's selection is entirely outside what this
+    // deployment ships. Serving the app's set is the honest answer — handing back
+    // an empty array would be read upstream as "no opinion" and would serve the
+    // whole platform baseline instead.
+    return served.length > 0 ? served : [...appLocales]
+  })
 }
