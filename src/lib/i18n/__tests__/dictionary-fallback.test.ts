@@ -43,9 +43,18 @@ describe('dictionary for an unserved locale', () => {
   })
 
   it('keeps the English base layer under a served non-baseline locale', async () => {
-    // Not translated in any zh dictionary — must degrade to English, not to a key.
+    // The key is chosen at runtime instead of pinned: the served dictionary always carries the
+    // English base layer, so "untranslated" means "the value still equals the English one" — a
+    // hard-coded key stops exercising the fallback the moment somebody translates it (which is
+    // what happened to `catalog.audit.categories.create` once the ERP overlays landed).
+    const english = await loadDictionary('en')
     const dict = await loadDictionary('zh')
-    expect(dict['catalog.audit.categories.create']).toBe('Create category')
-    expect(dict['catalog.audit.categories.create']).not.toBe('catalog.audit.categories.create')
+    const fallingBack = Object.keys(english).find(
+      (key) => english[key].trim().length > 0 && dict[key] === english[key],
+    )
+
+    expect(fallingBack).toBeDefined()
+    // The base layer answers with English text, never with the raw key.
+    expect(dict[fallingBack as string]).not.toBe(fallingBack)
   })
 })
