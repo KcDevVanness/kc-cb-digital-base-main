@@ -1,0 +1,5 @@
+{
+  "scope_guards.errors.userDestinationOutsideScope": "不能把用户创建到你组织范围之外的目标组织。",
+  "scope_guards.errors.aclTargetOutsideScope": "目标权限记录的组织范围超出你可管理的范围，无法修改。",
+  "scope_guards.errors.scopeResolutionFailed": "无法确认你的组织范围，操作已被拒绝。"
+}
