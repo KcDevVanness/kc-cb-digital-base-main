@@ -18,16 +18,24 @@ const CJK = /[\u4e00-\u9fff]/
  * process-wide registry — which still holds the platform baseline. So `de`,
  * `pl`, `es` and `ko` stay reachable even though no layout would ever render
  * them, and the answer they get has to be a whole language, not a partial one.
+ *
+ * Keys are read from the loaded English dictionary at runtime instead of being
+ * pinned: which keys exist depends on the module set in `src/modules.ts`, so a
+ * pinned key stops resolving the moment that set changes — and then the test
+ * fails for a reason that has nothing to do with the fallback it guards.
  */
 describe('dictionary for an unserved locale', () => {
   it('answers with English module strings rather than raw keys', async () => {
+    const english = await loadDictionary('en')
     const dict = await loadDictionary('de')
+    const keys = Object.keys(english)
 
-    // Translated in src/modules/catalog/i18n/zh.json, present in the packaged
-    // English dictionary, absent from every German dictionary this app ships.
-    expect(dict['catalog.bulkDelete.error']).toBe('Failed to delete products.')
-    expect(dict['catalog.bulkDelete.confirm']).toBe('Delete')
-    expect(dict['catalog.bulkDelete.error']).not.toBe('catalog.bulkDelete.error')
+    expect(keys.length).toBeGreaterThan(0)
+    for (const key of keys) {
+      // A whole language, not a partial one: every English string is answered.
+      expect(dict[key]).toBe(english[key])
+      expect(dict[key]).not.toBe(key)
+    }
   })
 
   it('answers with English app-dictionary strings too', async () => {
@@ -37,16 +45,15 @@ describe('dictionary for an unserved locale', () => {
   })
 
   it('serves the translation where a served locale has one', async () => {
+    const english = await loadDictionary('en')
     const dict = await loadDictionary('zh')
-    expect(dict['catalog.bulkDelete.confirm']).toBe('删除')
-    expect(dict['catalog.bulkDelete.error']).toMatch(CJK)
+    const translated = Object.keys(dict).filter((key) => dict[key] !== english[key])
+
+    expect(translated.length).toBeGreaterThan(0)
+    expect(translated.some((key) => CJK.test(dict[key]))).toBe(true)
   })
 
   it('keeps the English base layer under a served non-baseline locale', async () => {
-    // The key is chosen at runtime instead of pinned: the served dictionary always carries the
-    // English base layer, so "untranslated" means "the value still equals the English one" — a
-    // hard-coded key stops exercising the fallback the moment somebody translates it (which is
-    // what happened to `catalog.audit.categories.create` once the ERP overlays landed).
     const english = await loadDictionary('en')
     const dict = await loadDictionary('zh')
     const fallingBack = Object.keys(english).find(
