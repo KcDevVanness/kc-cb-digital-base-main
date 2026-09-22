@@ -87,11 +87,13 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 1. 一个工作单元一个 PR，**ready（非 draft）**打开；标题 `feat(<area>): …` / `fix(<area>): …`。
 2. 合并前：rebase 到最新 `main`，门禁全绿（`.ai/agentic.config.json` 的 `validation.commands`）。
 3. **squash 合并**，保持 `main` 线性；合并后删远端分支。
-4. 目前**没有 CI**：门禁只在本地由 agent 跑，PR 页面看不到结论。多路并行时建议加
-   `.github/workflows` 把同一组命令跑在 PR 上，并让分支保护要求它通过。
-5. 目前**没有启用标签**（`.ai/agentic.config.json` 里 `labels.enabled=false`，仓库也还没有
-   `review`/`qa`/`merge-queue`/`priority-*`/`risk-*` 这些标签）。并行时建议启用，否则看不出
-   N 个 PR 各自卡在哪个环节。
+4. **CI**：`.github/workflows/validate.yml` 在 PR（→ `main`）与 `main` 上按顺序跑同一组门禁命令
+   （`generate` / `typecheck` / `lint` / `ds:check` / `test` / `build`），检查名 **`validate`**；
+   `main` 的分支保护要求它通过。本地要复现同一结论，就按顺序跑这 6 条命令。
+5. **标签**：`.ai/agentic.config.json` 里 `labels.enabled=true`，仓库已按
+   `.ai/trackers/github.md` 的 `ensure-label-taxonomy` 建好 `review`/`changes-requested`/`qa`/
+   `qa-failed`/`merge-queue`/`blocked`/`do-not-merge`/`needs-qa`/`skip-qa`/`in-progress`/
+   `priority-*`/`risk-*` 等标签；流水线技能按状态自动打标，N 个 PR 卡在哪一步可以直接筛出来。
 
 ## 何时不要并行
 
@@ -111,5 +113,5 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 git worktree list                  # 每个工作单元一棵树
 git -C ../<worktree> branch --show-current
 gh pr list --state open            # 每个工作单元一个 PR
-gh pr checks <n>                   # 有 CI 后：门禁结论
+gh pr checks <n>                   # validate 检查的门禁结论
 ```
