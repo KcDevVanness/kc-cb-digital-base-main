@@ -94,6 +94,9 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
    `.ai/trackers/github.md` 的 `ensure-label-taxonomy` 建好 `review`/`changes-requested`/`qa`/
    `qa-failed`/`merge-queue`/`blocked`/`do-not-merge`/`needs-qa`/`skip-qa`/`in-progress`/
    `priority-*`/`risk-*` 等标签；流水线技能按状态自动打标，N 个 PR 卡在哪一步可以直接筛出来。
+6. **分支保护现状**：`main` 要求走 PR、要求 `validate` 通过、要求线性历史，禁止 force push 与
+   删除分支；必需评审数 0（单人仓不会把自己锁死），`enforce_admins=false`（管理员可应急绕过）。
+   仓库只允许 **squash** 合并，合并后自动删远端分支。
 
 ## 何时不要并行
 
