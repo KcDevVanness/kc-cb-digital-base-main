@@ -1,0 +1,54 @@
+name: validate
+
+# The same gate every agent runs locally (.ai/agentic.config.json → validation.commands),
+# executed on every PR and on main so a green check means "the gate passed", not "someone said so".
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          yarn install --immutable
+
+      # The app reads its configuration from .env; CI only needs syntactically valid
+      # placeholders — no service (Postgres/Redis/Meilisearch) is contacted by the gate.
+      - name: Prepare environment
+        run: cp .env.example .env
+
+      - name: generate
+        run: yarn generate
+
+      - name: typecheck
+        run: yarn typecheck
+
+      - name: lint
+        run: yarn lint
+
+      - name: ds:check
+        run: yarn ds:check
+
+      - name: test
+        run: yarn test
+
+      - name: build
+        run: yarn build
