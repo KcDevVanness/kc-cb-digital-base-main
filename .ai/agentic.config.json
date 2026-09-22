@@ -13,7 +13,7 @@
     ]
   },
   "labels": {
-    "enabled": false,
+    "enabled": true,
     "pipeline": [
       "review",
       "changes-requested",
