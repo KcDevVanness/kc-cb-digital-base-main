@@ -12,8 +12,10 @@
 ## 时间线
 
 1. 2026-09-21：为 `LookupSelect` 产出上游补丁（下拉面板，改用 `Popover` 承载结果列表），在
-   本仓 jest（`testEnvironment: 'jsdom'`）里跑补丁自带用例：26 条中 9 条失败，全部是「需要选项
-   渲染出来」的用例。
+   jsdom 环境里跑补丁自带用例（补丁的验证器
+   [`.ai/analysis/lookup-select-dropdown/verify/jest.config.cjs`](../../.ai/analysis/lookup-select-dropdown/verify/jest.config.cjs)
+   显式用 `jsdom`；**本仓自己的 `jest.config.cjs` 是 `testEnvironment: 'node'`**，只有这种浮层用例才需要 jsdom）：
+   26 条中 9 条失败，全部是「需要选项渲染出来」的用例。
 2. 加日志定位：`setItems(result)` 已调用、`.then` 未被取消，但 React 之后再无渲染 —— 说明
    更新没被 flush。
 3. 用最小探针隔离（不涉及被改组件）：**只要 Radix Popover 同时挂了 anchor 与 content，jsdom
@@ -73,7 +75,8 @@ describe('...', () => {
 
 ## 如何避免
 
-1. 本仓 jest 环境下，**凡是会挂载框架浮层（Popover / Select / CommandMenu）的用例，默认用假定时器**。
+1. **在 jsdom 环境**下，凡是会挂载框架浮层（Popover / Select / CommandMenu）的用例，默认用假定时器；
+   本仓默认的 node 环境套件不受影响（要跑浮层用例就先给该套件配 jsdom）。
 2. 写 UI 用例前先看同类组件的既有测试怎么处理时间（`node_modules/@open-mercato/ui/src/backend/inputs/__tests__/ComboboxInput.test.tsx`）。
 3. 出现「用例很慢但不错、或 findBy 永远超时」时，先量 CPU：`/usr/bin/time -p node node_modules/jest/bin/jest.js ...`，
    `user` 时间 ≈ `real` 时间即为本坑。

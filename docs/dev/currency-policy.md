@@ -13,7 +13,7 @@
 
 | 存储 | 表 | 谁读它 | 谁写它 |
 |---|---|---|---|
-| 币种字典 | `dictionaries`（`key = 'currency'`）+ `dictionary_entries` | **客户商机表单、销售单据表单的币种下拉**（`useCurrencyDictionary()` → `GET /api/customers/dictionaries/currency`），以及 `AnnualRevenueField` | `customers` 模块的 `seedDefaults`（`seedCurrencyDictionary`，把 `Intl.supportedValuesOf('currency')` 的**全部** ISO 代码写进去） |
+| 币种字典 | `dictionaries`（`key = 'currency'`）+ `dictionary_entries` | **本仓自建表单的币种下拉（6 处）读的是 `currency_policy` 托管的路由 `GET /api/currency_policy/currencies`**（各模块的 `CURRENCY_DICTIONARY_URL` 常量，门禁 `currencies.view`）；官方 `customers`/`sales` 表单仍走 `useCurrencyDictionary()` → `GET /api/customers/dictionaries/currency`（含 `AnnualRevenueField`） | `customers` 模块的 `seedDefaults`（`seedCurrencyDictionary`，把 `Intl.supportedValuesOf('currency')` 的**全部** ISO 代码写进去） |
 | 汇率主数据 | `currencies` | 汇率换算、本位币报表、`/api/currencies/currencies/options`（如 staff 模块） | `currencies` 模块的 `seedDefaults`（USD/EUR/JPY/GBP/CHF/CAD/AUD/CNY/CNH/PLN，USD 为本位币） |
 
 两者都只在 `mercato init` / `mercato seed:defaults` 时播种，**建租户/组织时不会自动播种**。
@@ -63,9 +63,11 @@ seed），所以库里一开始两份都是空的 —— 这就是商机表单�
 | 修某个/全部组织 | `yarn mercato currency_policy apply [--tenant <id>] [--org <id>]` |
 
 **顺序很关键**：`seed:defaults` 按 `src/modules.ts` 的 `enabledModules` 顺序跑（不是按
-`requires`），所以 `currency_policy` 必须列在最后 —— `customers` 会写全量 ISO 币种，本模块
-随后收敛。若将来顺序被改坏，症状是币种下拉里又出现全量 ISO 代码，重跑
-`yarn mercato currency_policy apply` 即可恢复。
+`requires`），所以 `currency_policy` 必须排在 **`customers`/`currencies`/`dictionaries` 之后**
+（`customers` 会写全量 ISO 币种，本模块随后收敛）。2026-09-21 时它在数组末尾，是字面意义上的
+"列在最后"；后来 app 模块一行行 `enabledModules.push(...)` 追加，它已不再位于末尾，但仍在
+`customers` 之后——真正要保的是**相对顺序**，不是"最后一行"。若将来顺序被改坏，症状是币种下拉里
+又出现全量 ISO 代码，重跑 `yarn mercato currency_policy apply` 即可恢复。
 
 ## 常用操作
 

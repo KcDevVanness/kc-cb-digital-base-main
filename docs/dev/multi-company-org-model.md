@@ -40,20 +40,23 @@ tenant: 广州凯翠国际贸易有限公司        ← 隔离边界，全集团
 ## 角色矩阵（照此配置）
 
 勾选位置：`/backend/roles/{id}/edit` → ACL 面板先勾功能位、再设 Organizations scope。角色名在租户内唯一，分公司角色加前缀。
+功能位 id 的权威清单是各模块的 `src/modules/<id>/acl.ts`（`yarn generate` 后进 ACL 面板），下表只列每个角色**至少**要有的组；
+业务面已由自建模块接管（`products`/`purchasing`/`sourcing`/`trade_docs`/`cross_border`/`export_finance`/`parties`/`platform_ops`/`internal_sales`），
+官方 `catalog`/`sales`/`wms` 的功能位只在对应官方页面/引擎仍被使用时才需要。
 
 | 角色 | 组织范围 | 功能位 | 备注 |
 |---|---|---|---|
-| `group-admin` 集团管理层 | 留空（全部组织） | `auth.users.list/create/edit/delete`、`auth.roles.list/manage`、`auth.acl.manage`、`directory.organizations.view/manage`、`directory.tenants.view` + 业务模块所需 view/manage | 总部；**唯一**可持有 `directory.organizations.manage` 的角色（见"注意"第 1 条） |
-| `hq-sales` 总部外贸 | `kaicui` | `catalog.products.view/manage`、`catalog.pricing.manage`、`customers.companies.*`、`customers.people.*`、`customers.deals.*`、`sales.quotes.view/manage`、`sales.orders.view/manage`、`sales.invoices.manage`、`sales.shipments.manage`、`sales.channels.view/manage`、`wms.view` | 卖货给分公司也走这里 |
-| `hq-finance` 总部财务/汇总 | 留空（默认即全集团） | 各模块 `*.view` + `sales.payments.manage`、`sales.settings.view`、`wms.view` + 仪表盘 | 只读汇总 + 收付款 |
+| `group-admin` 集团管理层 | 留空（全部组织） | `auth.users.*`、`auth.roles.*`、`auth.acl.manage`、`directory.organizations.view/manage`、`directory.tenants.view` + 各业务模块所需 view/manage | 总部；**唯一**可持有 `directory.organizations.manage` 的角色（见"注意"第 1 条） |
+| `hq-sales` 总部外贸/采购 | `kaicui` | `products.items.view/manage`、`products.categories.manage`、`products.prices.manage`、`parties.view/manage`、`purchasing.suppliers.view/manage`、`purchasing.orders.view/manage`、`sourcing.quotes.view/manage`、`sourcing.import.run`、`sourcing.promote.run`、`trade_docs.contracts.view/manage`、`trade_docs.invoices.view/manage`、`cross_border.shipments.view/manage`、`sales.quotes.view/manage`、`sales.orders.view/manage` | 建供应商/采购单/报价、购销合同与发票、发运单；对分公司的内部销售也走这里 |
+| `hq-finance` 总部财务/汇总 | 留空（默认即全集团） | `export_finance.orders.view`、`export_finance.cabinets.view`、`export_finance.manage`、`purchasing.payments.manage`、`purchasing.orders.view`、`trade_docs.*.view`、`platform_ops.settlements.view`、`platform_ops.reconciliation.view`、`sales.payments.manage`、`wms.view` + 仪表盘 | 只读汇总 + 收付款/收汇退税登记 |
 | `<分公司>-admin` | 本公司组织 | `auth.users.list/create/edit/delete`、`auth.roles.list/manage`、`auth.acl.manage`、`directory.organizations.view` | **不给** `directory.organizations.manage` |
-| `<分公司>-operator` | 本公司组织 | `catalog.products.view`、`customers.companies.view/manage`、`customers.people.view/manage`、`sales.orders.view/manage`、`sales.quotes.view/manage`、`sales.shipments.manage`、`sales.channels.view/manage`、`wms.view` | 日常运营 |
-| `<分公司>-warehouse` | 本公司组织 | `wms.view`、`wms.receive_inventory`、`wms.manage_inventory`、`wms.adjust_inventory`、`wms.cycle_count`、`wms.manage_reservations`、`wms.manage_locations` | 收货入库、盘点 |
+| `<分公司>-operator` | 本公司组织 | `sales.orders.view/manage`、`sales.quotes.view/manage`、`sales.shipments.manage`、`sales.channels.view/manage`、`products.items.view`、`parties.view`、`catalog.products.view`、`wms.view` | 日常运营（跨境电商） |
+| `<分公司>-warehouse` | 本公司组织 | `wms.view`、`wms.receive_inventory`、`wms.manage_inventory`、`wms.adjust_inventory`、`wms.cycle_count`、`wms.manage_reservations`、`wms.manage_locations`、`catalog.products.view` | 收货入库、盘点；收货按变体入账，需能读目录商品 |
 
 ## 配置步骤
 
 1. **组织**：`/backend/directory/organizations` → 新分公司以**总部**为父组织（不要挂到别的分公司下）；核对已有组织的父子关系。
-2. **角色**：`/backend/roles/create` 建角色 → `/backend/roles/{id}/edit` → ACL 面板勾功能位（依赖项如 `catalog.products.view` → `currencies.view`/`dictionaries.view` 会提示，按提示一并勾）→ 设 Organizations scope → 保存。
+2. **角色**：`/backend/roles/create` 建角色 → `/backend/roles/{id}/edit` → ACL 面板勾功能位（依赖项如 `products.items.manage` → `products.items.view`、`purchasing.orders.manage` → `purchasing.orders.view` 会提示，按提示一并勾；币种下拉还要 `currencies.view`，那是自建路由 `GET /api/currency_policy/currencies` 的门禁）→ 设 Organizations scope → 保存。
 3. **账号**：`/backend/users/create` → 选目标组织（分公司账号选分公司组织）+ 分配角色。
 4. **总部汇总**：总部角色留空组织范围即可；如需一次看全部组织，用顶栏切换器选"全部组织"。
 
@@ -61,7 +64,7 @@ tenant: 广州凯翠国际贸易有限公司        ← 隔离边界，全集团
 
 配置完成后按三条自查（等价于自动化验证场景）：
 
-1. 分公司业务员账号登录 → 产品/订单列表**只出现本公司数据**；组织切换器里总部为**灰色不可选**，其他分公司**不出现**。
+1. 分公司业务员账号登录 → 自建商品/订单列表（`/backend/products/items`、`/backend/sales/orders`）**只出现本公司数据**；组织切换器里总部为**灰色不可选**，其他分公司**不出现**。
 2. 分公司管理员账号 → 试图把某角色的 Organizations scope 设为"全部组织" → 应报 403（`Cannot grant unrestricted organization access`）。
 3. 集团账号登录 → 默认视图含总部 + 全部下级；组织切换器可选"全部组织"。
 
@@ -69,7 +72,7 @@ tenant: 广州凯翠国际贸易有限公司        ← 隔离边界，全集团
 
 ## 注意
 
-1. **`directory.organizations.manage` 不下放给分公司管理员**：组织写操作目前只校验租户、不校验操作者组织范围，而组织树的父子关系直接决定可见范围（把自己的组织设为他人父组织 = 获得对方数据可见性）。该缺口单独立 spec 处理，落地前只给总部。
-2. **业务数据按组织私有**：产品、客户、订单、仓库都是组织级；总部"一份产品卖给所有分公司"需要在各目标组织各自建（或后续做分发）。字典、自定义字段定义等主数据是租户级共享（设计如此）。
+1. **`directory.organizations.manage` 不下放给分公司管理员**：组织写操作目前只校验租户、不校验操作者组织范围，而组织树的父子关系直接决定可见范围（把自己的组织设为他人父组织 = 获得对方数据可见性）。认证域的三条写路径（建用户的目标组织、角色/用户 ACL 归属）已由 `scope_guards` 封堵（[`.ai/specs/2026-09-21-auth-scope-guard-hardening.md`](../../.ai/specs/2026-09-21-auth-scope-guard-hardening.md)，同一 spec 明确把本缺口列为**不在范围内**），**组织树写操作这条缺口仍未修、也还没有 spec**，落地前只给总部。
+2. **业务数据按组织私有**：产品、客户、订单、仓库都是组织级；总部"一份产品卖给所有分公司"需要在各目标组织各自建（或后续做分发）。**字典也是组织级 + 父组织继承**：`dictionaries.organization_id` 决定归属，子组织能读上级组织的词表（页面上标「继承」），但写只落在当前选中组织；因此同一 key 在每个组织各有一份（`currency`、`supplier_product_unit`…），`/backend/config/dictionaries` 会按组织分组显示归属、只放开当前组织的写（见 [`src/modules/dictionaries/README.md`](../../src/modules/dictionaries/README.md)）。顶栏选「所有组织」时该页整页只读：该状态下 API 会把写落到账号归属组织，不要依赖这一点。自定义字段定义等其余主数据是租户级共享（设计如此）。
 3. **功能开关是租户级**，不是组织级（`feature_toggle_overrides` 只按租户）；需要按组织区分的行为走 `configs:module_config`（支持 tenant + organization）。
 4. **组织切换靠 cookie**：浏览器端正常；脚本/机器人调 API 需自行带 `om_selected_org`，否则落在账号 home org。

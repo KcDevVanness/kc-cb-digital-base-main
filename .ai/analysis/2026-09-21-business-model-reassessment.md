@@ -4,6 +4,17 @@
 **Trigger**: 业主确认业务实质：不是询盘获客型外贸，而是 **国内供应商进货 → 卖给国外分公司**（关联交易），国外分公司做 **跨境电商运营**；核心诉求是 ERP 业务流程 + 仓库商品流转。
 **Effect**: 之前"自建一套产品目录 + 自建销售流程"的假设需要修正 —— 大部分主干平台已有，真正缺的是采购、跨境发运/在途、平台结算。
 
+> **⚠ 部分结论已在 2026-09-22 被推翻（2026-09-23 加注）**：本文 §4 "修正后的方案" 与 §6 的结论主张
+> **"不建产品目录、复用官方 `catalog`"**、并只列三个缺口模块。业主随后改了口径：**商品主数据自建进
+> `products`**（官方 `catalog` 退为可选的平台级注册表，经 `products_products.catalog_product_id` 桥接），
+> 见 [`.ai/specs/2026-09-22-products-and-trade-docs.md`](../specs/2026-09-22-products-and-trade-docs.md) 与
+> [`docs/dev/business-architecture.md`](../../docs/dev/business-architecture.md) 已定决策与依据；此后又新增
+> `parties`/`sourcing`/`trade_docs`/`internal_sales`/`export_finance`，自建模块共 11 个（不再是 3 个）。
+> 仍然成立并仍被引用的部分：业务链路图、平台能力清单与"缺口在哪"的判断、`Q-009…Q-012` 的提问方式、
+> 以及"先启用官方模块试跑、不行再关是安全策略"（收缩演练）。
+> **eject 仍然不做** —— 本文"不 eject"的结论与 [`2026-09-21-catalog-eject-spike.md`](./2026-09-21-catalog-eject-spike.md)
+> 的实测都不受影响。
+
 ## 1. 业务链路（候选 Q-001 答案，待业主逐条确认）
 
 四条链 + 一条结算线：

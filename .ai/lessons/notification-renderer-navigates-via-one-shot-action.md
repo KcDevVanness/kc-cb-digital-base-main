@@ -28,7 +28,9 @@ notification data:
 
 So the button is a live, always-drawn control whose only exit is a request the server answers once.
 The obvious workaround — "rely on the stored row" — does not help: `link_href` + `action_data` are
-frozen at creation, the row keeps them, and the host deliberately will not re-run the action.
+frozen at creation, the row keeps them, and the host deliberately will not re-run the action. (The
+route side of that frozen href — why a stored notification 404s if its page is dropped from the
+manifest — is owned by `.ai/lessons/module-override-page-hide-needs-routes-domain.md`.)
 
 **Rule**: when an installed renderer's affordance is *navigation* (its action has no `commandId`),
 pin the click to the row's `linkHref` instead of the action response, from a **renderer wrapper**

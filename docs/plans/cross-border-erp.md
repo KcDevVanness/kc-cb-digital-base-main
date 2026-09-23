@@ -14,13 +14,13 @@
 - [x] **阶段一 purchasing：供应商主数据** —— 验收：组织内编码唯一（含已删）、默认币种来自币种字典、列表/新建/编辑页可用、未授权 403。
 - [x] **阶段二 purchasing：采购单 + 明细 + 阶段付款** —— 验收：单号 `PO-<年>-<4位>`、含税/不含税金额推导正确、非法流转 422、定金/尾款可部分支付、付款状态由付款行推导。
 - [x] **阶段三 cross_border：发运 / 在途 / 出口单证** —— 验收：多采购单合并到一张发运单（拼柜）分摊累计不超采购量；收货落 `wms.inventory.receive` 并回写采购单行 `received_quantity`；里程碑单调不回退。**已实现并验证**（见"进度"）。
-- [ ] **阶段四 platform_ops：平台连接器与结算对账** —— 验收：同一批数据重复拉取不产生重复记录；差异进对账而非覆盖账面。
+- [x] **阶段四 platform_ops：平台连接器与结算对账** —— 验收：同一批数据重复拉取不产生重复记录；差异进对账而非覆盖账面。**核心已实现并验证**；传输层（连接器/文件/第三方）待 Q4 定（见"进度"）。
 - [ ] **阶段五 收尾** —— 付款附件、提醒规则（PRD Q6）、分公司仪表盘、`yarn test:integration:ephemeral` 全量集成套件、审计/撤销链补验。
 - [x] **阶段六 products + trade_docs：产品主数据与购销合同/发票（双口径金额）** —— 验收：三档价格（采购/内部结算/对外销售）可取；类别树 `tree_path` 正确且环被拒 422；采购/销售合同两方向可流转（单号 `PC/SC-<年>-<4位>`）、非法流转 422；行绑定**已确认**发票后财务金额取发票值、发票作废回退；合同金额 = 数量×单价 2 位四舍五入；发票附件可归档下载；合同 Excel 最后补（栏位以 `lib/contractTemplate.ts` 常量为准）。spec：[`.ai/specs/2026-09-22-products-and-trade-docs.md`](../../.ai/specs/2026-09-22-products-and-trade-docs.md)
 
 - [x] **阶段七 sourcing：供应商报价单 + Excel 报价导入** —— 验收：`.xls`/`.xlsx` 都能解析（PetKit 报价单 69 行 + 6 个分类横幅；形式发票 78 行且页脚/银行账号被剔除）；列映射带置信度并可存为模板复用；复核台可勾选/改 SKU；确认得 `SQ-<年>-<4位>`；提升按 SKU 建/改商品并合并 `purchase` 档价格（不动 internal/export），重复提升幂等；标准模板下载后免映射；AI 映射未配置时置灰。spec：[`.ai/specs/2026-09-22-supplier-quotation-import.md`](../../.ai/specs/2026-09-22-supplier-quotation-import.md)
 
-### 阶段三任务拆解（下一步，先写 spec）
+### 阶段三任务拆解（**已完成**，保留备查：实际落地与验收见"进度"表阶段三）
 
 1. 实体：`cross_border_shipments`（编号、承运人/货代、出口口岸、状态、当前里程碑、预计/实际到港）、`cross_border_shipment_allocations`（发运单 ↔ 采购单行 + 分摊数量）、`cross_border_export_documents`（按 PRD Q1 决定是否结构化）。
 2. 命令：create/update、`allocate`（累计不得超采购量）、`depart`（进入在途）、`milestone`（推进，单调）、`receive`（`wms.inventory.receive` + 回写已收数量）、`cancel`。
@@ -29,17 +29,20 @@
 5. ACL：`cross_border.shipments.view|manage`、`cross_border.documents.manage`。
 6. 测试：超发被拒、部分收货、里程碑回退被拒、跨组织隔离、附件上传下载。
 
-### 阶段四任务拆解
+> 后续增补（2026-09-22）：柜型/箱号/封条/订舱号四个字段 + `so`/`telex_release`/`domestic_freight_receipt`/`booking_charges_receipt` 四类单证；分摊前校验采购单行有官方目录链接（否则 422，见 [`.ai/lessons/stock-receipt-needs-variant-resolution.md`](../../.ai/lessons/stock-receipt-needs-variant-resolution.md)）。
 
-先启用 `integrations`、`data_sync`（纯注册表变更，不动数据）；按 `sync_akeneo` 形状建连接器（凭证加密、外部 id 映射、游标、幂等 upsert），落地订单/库存镜像/结算三类数据，再做对账条目与差异页面、分公司只读视图。
+### 阶段四任务拆解（**模块与核心流程已完成**，只剩传输层）
+
+已落地：`integrations`、`data_sync` 已启用并建表；按 `sync_akeneo` 形状的落地先做了**数据面**——渠道、订单镜像（幂等 ingest）、结算单与明细（幂等 import）、对账条目与差异页面、分公司只读视图（见"进度"阶段四）。
+仍未做：真正的**传输层**连接器（凭证加密、外部 id 映射、游标、重跑）与平台导出文件的入口，取决于 PRD Q4。
 
 ## 依赖与风险
 
 | 项 | 说明 |
 |---|---|
-| 依赖模块 | 已启用 `catalog`/`customers`/`sales`/`wms`/`currencies`/`dictionaries`/`feature_toggles`/`attachments`/`notifications`；阶段四需启用 `integrations`、`data_sync` |
-| 数据库 | 本地开发库已应用 purchasing 两个迁移；新迁移一律 `yarn db:generate` → 审阅（确认无 drop）→ **批准后** `yarn db:migrate` |
-| 业务输入 | 阶段三需 PRD Q1（单证范围）/Q2（拼柜单证粒度）/Q3（货代是否有实时轨迹）；阶段四需 Q4（平台对接形态） |
+| 依赖模块 | 已启用 `catalog`/`customers`/`sales`/`wms`/`currencies`/`dictionaries`/`feature_toggles`/`attachments`/`notifications`；`integrations`、`data_sync` 已随阶段四启用并建表（传输层待 Q4） |
+| 数据库 | 本地开发库已应用各 app 模块迁移（purchasing 6 个、products 2、trade_docs 2、cross_border 2、sourcing 2、export_finance 1、parties 1、platform_ops 1）；新迁移一律 `yarn db:generate` → 审阅（确认无 drop）→ **批准后** `yarn db:migrate` |
+| 业务输入 | PRD Q1/Q2/Q3 已用**可逆默认**落地（见 cross-border spec 的 "Resolved assumptions"），业务若要改口径只改这三处；Q4（平台对接形态）仍未定，决定阶段四传输层；Q5（跨组织主数据分发）、Q6（提醒规则）仍开放 |
 | 新增第三方依赖 | 阶段七引入 SheetJS `xlsx`（官方 CDN tarball）作为唯一的表格读取器；仓库此前无任何解析库，`.xls`(BIFF8) 只能靠它 |
 | 风险：拼柜分摊算错 | 按行数量分摊 + 累计不超采购量的硬校验 + 专项测试 |
 | 风险：外部数据不完整 | 账面为准 + 对账条目，绝不静默覆盖 |
@@ -65,7 +68,7 @@
 
 **门禁现状**（2026-09-23 09:30 推送前全量重跑，含 `internal_sales`/`trade_docs`/`export_finance`/`parties`）：`yarn generate` ✓ ｜ `yarn typecheck` ✓ ｜ `yarn lint` 0 error（8 warning 均为既有）｜ `yarn ds:check` ✓ 597 files ｜ `yarn test` ✓ 177 passed ｜ `yarn build` ✓（Compiled successfully，`.mercato/next/BUILD_ID` 与路由表均生成）。
 
-**规格与证据文件**：总纲 `.ai/specs/2026-09-21-app-owned-business-module.md`；采购 `.ai/specs/2026-09-21-purchasing-module.md`；报价导入 `.ai/specs/2026-09-22-supplier-quotation-import.md`；业务再评估与两次实测 `.ai/analysis/2026-09-21-business-model-reassessment.md`、`…-catalog-eject-spike.md`、`…-disable-official-chain-drill.md`。
+**规格与证据文件**：总纲 [`.ai/specs/2026-09-21-app-owned-business-module.md`](../../.ai/specs/2026-09-21-app-owned-business-module.md)；模块启用 [`.ai/specs/2026-09-21-erp-core-module-activation.md`](../../.ai/specs/2026-09-21-erp-core-module-activation.md)；采购 [`.ai/specs/2026-09-21-purchasing-module.md`](../../.ai/specs/2026-09-21-purchasing-module.md)；发运 [`.ai/specs/2026-09-21-cross-border-shipments.md`](../../.ai/specs/2026-09-21-cross-border-shipments.md)；平台 [`.ai/specs/2026-09-21-platform-ops.md`](../../.ai/specs/2026-09-21-platform-ops.md)；权限加固 [`.ai/specs/2026-09-21-auth-scope-guard-hardening.md`](../../.ai/specs/2026-09-21-auth-scope-guard-hardening.md)；产品/合同/内部销售 [`.ai/specs/2026-09-22-products-and-trade-docs.md`](../../.ai/specs/2026-09-22-products-and-trade-docs.md) + 变体 [`.ai/specs/2026-09-22-product-variants.md`](../../.ai/specs/2026-09-22-product-variants.md)；报价导入 [`.ai/specs/2026-09-22-supplier-quotation-import.md`](../../.ai/specs/2026-09-22-supplier-quotation-import.md) + 产品库 [`.ai/specs/2026-09-22-supplier-product-library.md`](../../.ai/specs/2026-09-22-supplier-product-library.md)；对手方 [`.ai/specs/2026-09-22-app-owned-party-master.md`](../../.ai/specs/2026-09-22-app-owned-party-master.md)；订单档案/收汇退税 [`.ai/specs/2026-09-22-order-file-and-export-finance.md`](../../.ai/specs/2026-09-22-order-file-and-export-finance.md)；业务再评估与两次实测 `.ai/analysis/2026-09-21-business-model-reassessment.md`、`…-catalog-eject-spike.md`、`…-disable-official-chain-drill.md`。
 
 ## 交接须知（新接手者先读这一段）
 
@@ -73,7 +76,7 @@
 
 | 事项 | 结论 |
 |---|---|
-| 本仓 dev server | supervisor `om-dev` 跑在 **http://localhost:3001**（3000 属于另一个 checkout `kc-cb-digital-base`） |
+| 本仓 dev server | supervisor `om-dev` 的对外基址取 `.env` 的 `APP_URL`（本机端口块 = **http://localhost:3100**，splash 4100）；以启动日志 `Local:` 行与 `.mercato/dev-runtime-status.json` 为准（见 [`../dev/setup.md`](../dev/setup.md)）。`APP_URL` 与实际访问地址不一致时同源检查会拒绝请求 |
 | 开发账号 | `superadmin@acme.com` / `admin@acme.com` / `employee@acme.com`；密码用 `yarn mercato auth set-password --email … --password …` 重设（策略：长度 + 数字 + 大写 + 特殊字符） |
 | 登录 API | `POST /api/auth/login` 只吃 **form-urlencoded**（`email`/`password`/可选 `tenantId`），不是 JSON |
 | 组织上下文 | API 调用带 `om_selected_org=<organizationId>` cookie，否则 400 `organization_scope_required` |
@@ -89,7 +92,7 @@
 | 原始 SQL | 用 `em.getKysely()`；`connection.execute` 不接受 `?` 或 `$n` 占位符 |
 | 后台路由路径 | `backend/**` 去模块名（`backend/purchasing/orders/page.tsx` → `/backend/purchasing/orders`）；API 保留模块名 |
 | 页面授权 | 每个 `page.tsx` 必须配 `page.meta.ts`（`requireAuth` + `requireFeatures`），否则页面没有授权门禁 |
-| 币种 | 选项来自**币种字典** `/api/customers/dictionaries/currency`，不是汇率主表 |
+| 币种 | 下拉来自**币种字典**，本仓自建路由 `GET /api/currency_policy/currencies`（不是汇率主表；官方表单仍用 `/api/customers/dictionaries/currency`） |
 | 跨模块 | 不 import 别模块实体、不建跨模块 ORM 关联；用 id + 快照、事件、extension、可选 DI |
 | 迁移 | 已发布迁移不可改；新增走 `yarn db:generate` 并审阅 SQL |
 | UI | 走 `CrudForm`/`DataTable`/`Page`/`PageBody` + 共享 CRUD helper；对话框支持 `Cmd/Ctrl+Enter` 与 `Esc`；文案进 `i18n/{zh,en}.json` |

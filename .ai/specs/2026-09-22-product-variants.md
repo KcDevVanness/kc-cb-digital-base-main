@@ -3,6 +3,14 @@
 **Date**: 2026-09-22
 **Status**: Implemented — Phases 1–2 shipped and verified 2026-09-22; Phase 3 (wms cutover) stays deferred to the wms round
 
+> **As-shipped deltas (2026-09-23).** Two contract claims in the body are wrong:
+> 1. `GET /api/products/items` (list) does **not** return `variants[]` — its `listFields` projection carries no
+>    variants. Variants are returned by the aggregate read `GET /api/products/items/[id]`
+>    (`{ item: { …, variants: [] } }`).
+> 2. The `search.ts` deliverable does not exist; the product indexer is the default CRUD indexer.
+> The Final Compliance Report's `Ready for implementation` verdict and the unchecked acceptance boxes predate
+> delivery; the shipped evidence is the Changelog row.
+
 > Owner decisions this spec implements: `docs/dev/business-architecture.md` (已定决策与依据 →
 > SKU/变体归属 = 自建进 `products`, 2026-09-22).
 > Gate answers applied: Q-V-000 split confirmed · Q-V-001 **minimal SKU first**, extra fields to be
@@ -49,7 +57,7 @@ measured evidence are recorded below so that round starts from facts instead of 
    engine (`wms/commands/inventory-actions.ts:429` queries `E.catalog.catalog_product_variant`) and
    requires a `wms_product_inventory_profiles` row per variant, which today is created by the wms
    interceptor bound to `POST/PUT /api/catalog/variants`
-   (`.ai/specs/2026-09-21-catalog-customization-and-eject-decision.md`, preserved-contract table).
+   (`.ai/specs/2026-09-21-catalog-customization-and-eject-decision.md`, superseded decision record → preserved-contract register).
 
 ## Overview and Success Measures
 
@@ -410,7 +418,7 @@ questions are recorded, not answered.
 | Q-V-004 | Legacy rows: leave historical `catalog_product_id` / `catalog_variant_id` values alone, or backfill a variant map? | wms balances aggregate on `(warehouse, location, catalog_variant_id, lot, serial)`; a backfill changes what "the same SKU" means for existing balances. |
 | Q-V-005 | Purchase and shipment granularity: keep product-level purchase-order lines with the variant decided at shipment allocation (today), or move lines to variant level? | `purchasing_purchase_order_lines.product_id` is product-level; `cross_border` resolves the variant at receive time (`resolveDefaultVariantId`). |
 | Q-V-007 | Does a new SKU get its wms inventory profile at creation time (so the first receipt cannot 422), and who creates it — `products` dispatching a wms command, or an app-side subscriber? | The profile is what `loadProfileForVariant` looks up; without it the receipt path cannot book stock. |
-| Q-V-008 | After the cutover, does `catalog` still need a variant per SKU for installed `sales` document lines (which store catalog variant ids + snapshots)? | `.ai/specs/2026-09-21-catalog-customization-and-eject-decision.md` preserved-contract table: `sales` lines store `product_variant_id` + `catalog_snapshot`; `wms` binds enrichers/interceptors to catalog products and variants. |
+| Q-V-008 | After the cutover, does `catalog` still need a variant per SKU for installed `sales` document lines (which store catalog variant ids + snapshots)? | `.ai/specs/2026-09-21-catalog-customization-and-eject-decision.md` (superseded decision record: preserved-contract register): `sales` lines store `product_variant_id` + `catalog_snapshot`; `wms` binds enrichers/interceptors to catalog products and variants. |
 
 ## Open Questions
 
@@ -427,3 +435,4 @@ questions are recorded, not answered.
 | 2026-09-22 | Initial skeleton: measured `wms`/`catalog`/`cross_border` evidence, outline, decision table, Open Questions gate |
 | 2026-09-22 | Gate answered and spec completed for Phases 1–2: minimal SKU with an `attributes` seam (Q-V-001), product-level prices kept (Q-V-002), `catalog` registration unchanged (Q-V-006); the wms cutover questions (Q-V-003/004/005/007) are parked in *Deferred — the wms round* with their measured evidence, and Phase 3 is excluded from ready scope |
 | 2026-09-22 | Phases 1–2 **implemented and verified**. Shipped: `products_variants` (migration `Migration20260922092240_products.ts`, applied — scope/unique/partial-unique-default indexes, cascade FK), `productVariantSchema` + `variants[]` on the product create/update schemas, persistence inside the existing `products.items.create|update` commands with replace semantics (soft delete for removed ids, unknown id 400, duplicate code in payload 400, second default 400, organization-wide code check incl. soft-deleted rows → 409), `lib/variantFields.ts` as the field-whitelist seam, `GET /api/products/items/[id]` (aggregate read for the edit form), `GET /api/products/variants/options`, the appended step 4 `变体/SKU` in the product form with `components/VariantsEditor.tsx`, and 18 `products.variants.*` keys in both locales. Evidence: `yarn generate` registers `/api/products/items/[id]` + `/api/products/variants/options` and the four-step form; `yarn typecheck`, `npx eslint src/modules/products`, `yarn test` (17 suites/167 tests) and `yarn ds:check` clean; **browser**: the edit form loads with four steps, the variants step renders its empty state, adding a SKU (code/name/barcode + default) and saving persisted a `products_variants` row — read back through `GET /api/products/items/[id]` (`{code: 'KEEPER-F3YP-BLK', isDefault: true}`) and offered by the option source as `Good line · KEEPER-F3YP-BLK — Good line 黑色`. Not verified in this round: the wms receipt path (Phase 3, deferred) |
+| 2026-09-23 | Two contract claims corrected: the items **list** projection carries no `variants[]` (only the aggregate read does) and the `search.ts` deliverable does not exist; the pre-delivery compliance verdict marked as history. |

@@ -72,7 +72,7 @@ OM_PASSWORD_MIN_LENGTH=6 OM_PASSWORD_REQUIRE_DIGIT=false OM_PASSWORD_REQUIRE_UPP
 JSON 体会被解析成空表单并返回 400：
 
 ```bash
-curl -s -X POST http://localhost:3000/api/auth/login \
+curl -s -X POST http://localhost:3100/api/auth/login \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode 'email=superadmin@acme.com' --data-urlencode 'password=secret'   # → {"ok":true,…}
 ```
@@ -85,9 +85,13 @@ yarn generate     # 改了 src/modules.ts / 路由 / 页面 / 事件 / 组件 / 
 yarn db:generate  # 改了实体后生成迁移，先 review SQL 再 apply
 ```
 
-`yarn dev` 的端口行为：supervisor 默认要 `3000`；该端口被占用时（例如隔壁项目
-`kc-cb-digital-base` 正在跑）它会把自己的 Next dev 落到 `3001`，并在启动日志里提示
-"Another next dev server is already running"。以日志里打印的实际端口为准。
+`yarn dev` 的端口：Next dev 的对外基址由 `.env` 的 `APP_URL` 决定（本机端口分配块里是
+`http://localhost:3100`），启动日志打印的 `Local:` 行与 `.mercato/dev-runtime-status.json`
+的 `upstream.publicUrl` 是权威值；配置的端口被占用时运行时会落到一个空闲端口并把实际端口打进日志，
+**以日志为准，不要照抄旧文档里的端口**。生产/其他环境同理：`APP_URL` 必须与实际访问地址一致，
+否则同源检查（`shared:origin-check`）会拒绝浏览器请求——本机实测过 `APP_URL=3100` 但访问 `3000`
+时 `POST /api/auth/session/refresh` 被拒（日志 WARN，`allowedOrigins=["http://localhost:3100"]`）。
+端口块见 [`.env.example`](../../.env.example) 顶部注释与 [`parallel-development.md`](./parallel-development.md)。
 
 ## 验证命令
 
@@ -106,7 +110,7 @@ yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test && ya
 
 ```bash
 yarn dev                                     # 应打印实际监听端口且无 ⨯ 前缀的编译错误
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3001/api/healthz
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3100/api/healthz   # 端口用日志 Local: 行的
 ```
 
 ## 相关

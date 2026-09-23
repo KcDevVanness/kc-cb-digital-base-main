@@ -1,7 +1,15 @@
 # Platform Ops — 平台订单镜像 / 平台结算 / 对账
 
 **Date**: 2026-09-21
-**Status**: Ready for implementation (assumptions recorded below)
+**Status**: Implemented (Phases A + B) — Phase C (transport seam) is not started and waits on PRD Q4
+
+> **As-shipped deltas (2026-09-23).** Phases A and B shipped on 2026-09-21 (`platform_ops` registered, one
+> migration for 5 tables, channels/orders/settlements/reconciliation routes + pages, commands incl. idempotent
+> `orders.ingest` and `settlements.import`); the Status line still said `Ready for implementation`.
+> Phase C has **no** `di.ts`, adapter or file-drop endpoint — the module's API/import paths are the only entry
+> points today. **Test evidence:** no automated tests exist under `src/modules/platform_ops/**`; the acceptance
+> evidence is the manual smoke in [`docs/plans/cross-border-erp.md`](../../docs/plans/cross-border-erp.md)
+> (阶段四) — the TEST-PO-* rows below are intended oracles, not committed artifacts.
 
 > Phase 4 of [`docs/plans/cross-border-erp.md`](../../docs/plans/cross-border-erp.md); requirements C-1…C-3 and D-1…D-4 of [`docs/prd/cross-border-erp.md`](../../docs/prd/cross-border-erp.md).
 > PRD question Q4 (platform connectivity: API / files / third-party) is unresolved; per the spec-writing autonomous defaults the landing point is built first and the transport is left as a seam (⚠ owner override welcome).
@@ -308,7 +316,7 @@ Errors: 400 validation/scope, 403 feature denied, 404 out of scope, 409 conflict
 | Platform-native reuse before custom code | pass | Reuse and Ownership Map (`integrations`, `data_sync` left as the transport seam) |
 | Business questions answered by the owner | **blocked** | Q4 defaulted (⚠ in *Resolved assumptions*); Q5/Q6 out of scope |
 
-Verdict: `Ready for implementation` under recorded assumptions.
+Verdict: `Implemented (Phases A + B); Phase C open on PRD Q4`.
 
 ## Changelog
 
@@ -316,3 +324,4 @@ Verdict: `Ready for implementation` under recorded assumptions.
 |---|---|
 | 2026-09-21 | Initial spec; PRD Q4 resolved with the reversible "landing point first" default (⚠ owner override welcome) |
 | 2026-09-21 | Phases A+B implemented and verified: 5 tables + migration applied; `integrations` + `data_sync` enabled and migrated; channels/orders/settlements/lines/reconciliation routes; commands (channel CRUD, idempotent `orders.ingest`, `settlements.import` with the comparison pass, `reconciliation.resolve|ignore`); UI (channels list/create/edit, orders mirror list, settlements list/detail + import dialog, reconciliation queue with note dialogs). Smoke: ingest `created:2` → replay `unchanged:2`; import `lines:3, raised:2, linked:1` → replay `raised:0`; resolve+ignore → replay still `raised:0` (no resurrection). Gates green; platform_ops contributes 0 lint warnings. Phase C (transport) waits on Q4. |
+| 2026-09-23 | Status → `Implemented (Phases A + B)`; Phase C restated as not started (no `di.ts`, no adapter, no file-drop endpoint) and the acceptance evidence recorded as manual smoke. |

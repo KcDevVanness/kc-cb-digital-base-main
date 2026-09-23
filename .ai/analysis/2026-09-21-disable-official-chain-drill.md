@@ -74,7 +74,7 @@ The platform-only surface still boots the app; the app-owned modules (`currency_
 
 ## Documentation correction
 
-`.ai/specs/2026-09-21-erp-core-module-activation.md` (REQ-001 / "Proposed Solution") states that `sales`/`wms` `requires` edges are "enforced by the generator, not by convention" and that the CLI "exits non-zero listing any missing module". Scenario C contradicts that on the installed toolchain (`@open-mercato/cli` as shipped with `@open-mercato/core@0.8.0`): the check does not fire for a module-to-module edge on the `generate` path. The spec should be amended before it is relied on again.
+**[applied 2026-09-23]** `.ai/specs/2026-09-21-erp-core-module-activation.md` (REQ-001 / "Proposed Solution") stated that `sales`/`wms` `requires` edges are "enforced by the generator, not by convention" and that the CLI "exits non-zero listing any missing module". Scenario C contradicts that on the installed toolchain (`@open-mercato/cli` as shipped with `@open-mercato/core@0.8.0`): the check does not fire for a module-to-module edge on the `generate` path. The spec's claim is now amended in place and points back at this drill; no other file repeats it.
 
 ## Not covered
 

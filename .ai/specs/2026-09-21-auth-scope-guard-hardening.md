@@ -1,7 +1,17 @@
 # Auth Scope Guard Hardening — 跨组织越权写入封堵
 
 **Date**: 2026-09-21
-**Status**: Ready for implementation
+**Status**: Implemented 2026-09-21 — `scope_guards` interceptors + dispatch-layer 403 mapping shipped, with unit and integration tests
+
+> **As-shipped deltas (2026-09-23).** Checklist items 8/9 were ticked in advance; three claims are not backed
+> by the tree:
+> 1. The log token `scope_guards.blocked` does not exist anywhere — the rejection is logged as
+>    `logger.warn('Blocked out-of-scope write', …)` under the `scope_guards` logger.
+> 2. TEST-006 (the interceptor→HTTP mapping test) has no artifact, and TEST-006(b) has no coverage at all.
+> 3. The "pre-existing `yarn test` failure" recorded here was fixed at HEAD
+>    (`src/lib/i18n/__tests__/dictionary-fallback.test.ts` now picks its fallback key at runtime).
+> Out of scope and still open: the organization-tree write gap (Q-002 in the body) — no spec exists for it yet;
+> `directory.organizations.manage` stays HQ-only (see [`docs/dev/multi-company-org-model.md`](../../docs/dev/multi-company-org-model.md) 注意 1).
 
 > Skeleton and Open Questions gate completed 2026-09-21；fresh-context 架构审查完成 2026-09-21（1 Critical / 3 High / 2 Medium / 1 Low，全部已并入本文）；owner 批准并实施完成 2026-09-21（见 Acceptance Criteria 与 Changelog 的验证证据）。
 
@@ -322,9 +332,9 @@
 | UI contracts identify references, canonical components, and theme/state coverage | pass | UI = N/A（无新面）；受影响表单沿用既有 CrudForm 错误面并已列明 |
 | Every phase has dependencies, bounded slices, tests, value, and an observable exit gate | pass | Phase 1/2 均含依赖、切片、测试、价值、退出闸门 |
 | Fresh-context architectural review applied | pass | 审查发现 1 Critical（拒绝传输 500）+ 3 High（收窄回归/夹具不可判定/注入点不可实现）+ 2 Medium（CLI 支路不存在、`targetCommand` 非数组）+ 1 Low（`allowedIds === null` 语义）已全部并入本文；7/7 技术断言核实通过 |
-| Implementation verification | pass | 集成 `scope-guards.spec.ts` 6/6（含 403+code、目标 ACL 未变、收窄仍 200）；单元 `interceptors.test.ts` 5/5（放行/租户缺失/fail-closed/条目契约）；`yarn generate` + `yarn typecheck` + `yarn lint`(0 error) 通过；`yarn test` 的 1 个失败为既有且无关（`catalog` zh overlay 使 `dictionary-fallback` 断言过期） |
+| Implementation verification | pass | 集成 `scope-guards.spec.ts` 6/6（含 403+code、目标 ACL 未变、收窄仍 200）；单元 `interceptors.test.ts` 5/5（放行/租户缺失/fail-closed/条目契约）；`yarn generate` + `yarn typecheck` + `yarn lint`(0 error) 通过。**[2026-09-23 更正]** 原文记录的「`yarn test` 的 1 个失败为既有且无关」已不成立：`dictionary-fallback` 断言已改为运行时挑选回退 key，套件全绿；TEST-006（拦截器→HTTP 映射的集成用例）**没有落成测试文件**。 |
 
-Verdict: `Ready for implementation`（矩阵全通过；按 spec-delivery 门禁 7，`Status` 在 owner 批准后翻转）
+Verdict: `Implemented`（2026-09-21；见 Status 下方的 as-shipped deltas）
 
 ## Open Questions
 
@@ -343,3 +353,4 @@ Verdict: `Ready for implementation`（矩阵全通过；按 spec-delivery 门禁
 | 2026-09-21 | 门禁决议落定（Q-001..Q-003）；补全全部模板章节、阶段计划、溯源与验收矩阵 |
 | 2026-09-21 | fresh-context 审查并并入全部发现：新增 REQ-004（拒绝传输映射）与 AC-006；归属规则收敛到组织轴（保留收窄能力）；TEST-002/003/004/006 夹具与注入点钉死；`targetCommand` 改为两条独立条目；补 `allowedIds === null` 语义与 fail-open 残余风险；技术断言 7/7 核实 |
 | 2026-09-21 | 实施完成（Phase 1+2 一并落地）：`src/modules/scope_guards/**`（3 条拦截器 + helper + i18n + README）、`src/modules.ts` 注册、`src/app/api/[...slug]/route.ts` catch 首部拒绝映射、`jest.config.cjs` 排除 `__integration__`、`docs/dev/multi-company-org-model.md` + `docs/dev/README.md` 索引、模块 `__integration__` 与单元测试。验证：集成 6/6、单元 5/5、`yarn generate`/`yarn typecheck`/`yarn lint` 通过；`yarn test` 仅剩与本改动无关的既有 i18n 断言失败（见 Acceptance Criteria） |
+| 2026-09-23 | Status → `Implemented`. Corrected three unsupported claims (no `scope_guards.blocked` log token, TEST-006 has no artifact, the recorded `yarn test` failure is fixed at HEAD) and restated the organization-tree write gap as still unspecced. |

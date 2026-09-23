@@ -540,8 +540,9 @@ No workers, no scheduled jobs, no notifications in this spec.
 | UI contracts identify references, canonical components, and theme/state coverage | pass | `/backend/purchasing/suppliers` reference, `DataTable`/`CrudForm`, full state list |
 | Every phase has dependencies, bounded slices, tests, value, and an observable exit gate | pass | Phases 1–3; Phase 4 gated on Q-P-004 |
 
-**Verdict:** `Ready for implementation` — pending owner approval (Q-P-004 is deferred by design and
-does not block Phases 1–3).
+**Verdict:** `Implemented` — Phases 1–3 shipped and verified 2026-09-22 (Phase 4 deferred by design on
+Q-P-004). The rows above recording `Ready for implementation` were written before delivery and are kept as
+history; see the Changelog row for the shipped evidence.
 
 ## Open Questions
 
@@ -557,3 +558,4 @@ does not block Phases 1–3).
 | 2026-09-22 | Initial skeleton: problem evidence, outline, decision table, Open Questions gate |
 | 2026-09-22 | Gate answered and spec completed: subsidiaries included (Q-P-001), greenfield with no data migration (Q-P-002), owner field list adopted as the party/bank block (Q-P-003), deferred attributes behind a reserved JSONB column (Q-P-004), currency pickers re-pointed (Q-P-005), `supplier \| customer` retained (Q-P-006), encryption mirroring `customers` (Q-P-007). Phases 1–3 ready; Phase 4 deferred |
 | 2026-09-22 | Phases 1–3 **verified end to end**. Migration `Migration20260922090832_parties.ts` applied to the dev database (3 tables + 5 indexes incl. the partial unique default-bank index + 2 cascade FKs); `yarn mercato entities seed-encryption --tenant <id>` materialized the module's two encryption maps for the pre-existing tenant; `yarn mercato auth sync-role-acls` granted `parties.*` to the existing superadmin/admin roles (the installed grant check refuses a feature the actor does not hold, so a tenant whose roles predate the module cannot bootstrap it otherwise). Evidence: **integration** `src/modules/parties/__integration__/parties.spec.ts` 9/9 passed (aggregate round trip with roles + bank block, duplicate code 409, unknown role 400, two defaults 400, replace semantics, clear-to-null, stale version 409, option source + organization isolation, feature denial, currency option source, soft delete); **browser** (zh, light + dark, 1440px + 430px): list/create/detail/edit round trip incl. the bank block and role chips, the inline server rejection (`Beneficiary bank is required`), the undo flash bar, and the `trade_docs` contract form whose 对方 picker now lists the app-owned party as `客户: <code> — <name>` and whose 币种 select lists the seeded codes (network shows `/api/parties/options` and `/api/currency_policy/currencies`, and **no** `customers/dictionaries/currency` call). Two defects found and fixed during verification: the client components still called the pre-restructure path `parties/parties` (now `/api/parties`), and `trade_docs`' counterparty loader asked suppliers for `pageSize=200`, which the supplier list caps at 100 — the 400 aborted the whole picker before it could offer either kind |
+| 2026-09-23 | Compliance verdict corrected to `Implemented` (Phases 1–3 shipped and verified; Phase 4 deferred on Q-P-004) and drifted deliverable paths replaced by a pointer to `src/modules/parties/README.md`. |

@@ -25,12 +25,19 @@ must run *after* them: `seed:defaults` iterates modules in `enabledModules` orde
 `requires`.
 
 **Rule**: To limit which currencies a deployment offers, own a reconcile module that (1) is
-listed **last** in `src/modules.ts` `enabledModules`, (2) writes both stores for the scope —
-dictionary entries are what the UI shows, master rows carry `is_base`/`is_active` — and (3) is
-re-runnable through its own CLI so an existing scope can be repaired without a full init.
+listed **after** the modules that seed the two stores (`customers` / `currencies` /
+`dictionaries`) in `src/modules.ts` `enabledModules` — it was the last entry when it was added,
+but the later app modules are appended after it, so the ordering that matters is the relative
+one, never "the final line"; (2) writes both stores for the scope — dictionary entries are what
+the UI shows, master rows carry `is_base`/`is_active` — and (3) is re-runnable through its own
+CLI so an existing scope can be repaired without a full init.
 Never delete out-of-policy master rows (exchange rates and documents reference them); set
 `is_active = false` and keep the row. A dictionary label is the whole option text in the sales
 form but is prefixed with `CODE – ` by the CRM form, so store the plain name.
+
+**Note (2026-09-23)**: the app's own pickers no longer read the `customers`-hosted dictionary
+route — they read the reconcile module's `GET /api/currency_policy/currencies`. The rule above
+is unchanged: that route still serves the dictionary the seed writes.
 
 **Applies to**: `src/modules/currency_policy/**`, `src/modules.ts`, `customers` and `currencies`
 `setup.ts` seeds, `dictionaries` currency lookups, `docs/dev/currency-policy.md`.

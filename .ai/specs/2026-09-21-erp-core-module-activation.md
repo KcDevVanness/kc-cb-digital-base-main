@@ -1,7 +1,19 @@
 # ERP Core Module Activation — Catalog, Customers, Sales, WMS, Currencies, Dictionaries, Feature Toggles
 
 **Date**: 2026-09-21
-**Status**: Ready for implementation
+**Status**: Implemented 2026-09-21 (Phases 1–4) — 7 modules registered, zh overlays wired, migrations applied
+
+> **As-shipped deltas (2026-09-23).** Status line was left at `Ready for implementation` while the file's own
+> Changelog recorded "Implemented"; corrected here. Three claims in the body no longer hold:
+> 1. The `requires` closure is **not** enforced by the generator — a violated edge surfaces as a runtime
+>    `MetadataError`, not a generator exit. Measured in
+>    [`../../.ai/analysis/2026-09-21-disable-official-chain-drill.md`](../../.ai/analysis/2026-09-21-disable-official-chain-drill.md)
+>    Scenario C, which asks for this amendment.
+> 2. `integrations` and `data_sync` are **enabled** (2026-09-21, with `platform_ops`), so the "non-goals →
+>    enabling any other module" row is stale.
+> 3. The navigation/UI tables describe the pre-2026-09-22 sidebar: `catalog`, `customers`, `sales`, `wms`,
+>    `currencies`, `dictionaries`, `feature_toggles` pages are now `navHidden` via `src/modules.ts`
+>    `routes.pages` (URLs stay resolvable), and the app ships its own `products` / `internal_sales` surfaces.
 
 > Covers turning on the seven installed `@open-mercato/core` business modules that make this minimal base app a working ERP core, plus the app-side Chinese locale overlays those modules need. Requests to enable the reference modules (`example`, `design_system`) stay in `2026-08-06-reference-module-activation.md`; this file owns the business-module decision.
 
@@ -42,7 +54,7 @@ Two facts make the decision concrete: the modules are already installed as depen
 
 ## Proposed Solution
 
-Registration is the switch: append seven entries to `enabledModules` in `src/modules.ts` with `from: '@open-mercato/core'`, run `yarn generate`, then generate and apply migrations on the development database. Dependencies are enforced by the generator, not by convention: `sales` declares `requires: ['catalog','customers','dictionaries']` and `wms` declares `requires: ['catalog','sales','feature_toggles']`, and the CLI registry generator exits non-zero listing any missing module. The requested closure therefore equals exactly these seven modules — the transitive closure adds nothing.
+Registration is the switch: append seven entries to `enabledModules` in `src/modules.ts` with `from: '@open-mercato/core'`, run `yarn generate`, then generate and apply migrations on the development database. Dependencies are declared (`sales` declares `requires: ['catalog','customers','dictionaries']`, `wms` declares `requires: ['catalog','sales','feature_toggles']`), but **[amended 2026-09-23] they are NOT enforced on the `generate` path**: measured in the disable-chain drill, a violated edge passes `yarn generate` and surfaces only as a runtime `MetadataError` (see [`../analysis/2026-09-21-disable-official-chain-drill.md`](../analysis/2026-09-21-disable-official-chain-drill.md) Scenario C). Treat the closure below as a manual-correctness constraint. The requested closure therefore equals exactly these seven modules — the transitive closure adds nothing.
 
 Chinese coverage is delivered as app-side sparse overlays (`src/modules/<id>/i18n/zh.json`), the convention already used by the ten enabled modules: `yarn generate` merges each file into `.mercato/generated/modules.i18n.zh.generated.ts`, per key, over the module's English locale. Every overlay key must exist in the package's `i18n/en.json`, so an overlay can never invent a key. ACL labels for all seven modules are already translated in `src/modules/auth/i18n/zh.json` (7/7, 21/21, 19/19, 10/10, 6/6, 3/3, 2/2), so this specification adds no permission-name work.
 
@@ -153,7 +165,7 @@ No app-authored page, component, or route is added by this specification: all li
 | `/backend/sales/{quotes,orders,documents,channels}`, `/backend/config/sales` | quote/order document workspace, shipments, returns, invoices, payments | `/api/sales/**` | shipped `sales` pages | package-owned | as above | REQ-001, REQ-004 |
 | `/backend/wms/**` (`inventory`, `warehouses`, `locations`, `lots`, `movements`, `reservations`, `sku/[id]`), `/backend/wms` | stock receive/adjust/move/allocate, cycle count, operational dashboard | `/api/wms/**` | shipped `wms` pages | package-owned | as above | REQ-001, REQ-004 |
 | `/backend/currencies`, `/backend/exchange-rates`, `/backend/config/currency-fetching` | currency and exchange-rate master, rate fetch | `/api/currencies/**` | shipped `currencies` pages | package-owned | as above | REQ-001, REQ-003 |
-| `/backend/config/dictionaries` | shared dictionary and entry maintenance | `/api/dictionaries/**` | shipped `dictionaries` page | package-owned | as above | REQ-001 |
+| `/backend/config/dictionaries` | shared dictionary and entry maintenance, **grouped by owning organization** | `/api/dictionaries/**`, `/api/directory/organization-switcher` | shipped `dictionaries` page | package-owned (amended 2026-09-23: page body is app-owned — `src/modules/dictionaries/backend/config/dictionaries/page.tsx` shadows the packaged page, `page.meta.ts` re-exports the packaged metadata) | as above | REQ-001 |
 | `/backend/feature-toggles/**` | global flags and organization overrides | `/api/feature-toggles/**` | shipped `feature_toggles` pages | package-owned | as above | REQ-001 |
 | `src/modules/{catalog,customers,sales,wms,currencies,dictionaries,feature_toggles}/i18n/zh.json` | app-authored Chinese strings merged over the packaged locale | consumed by `yarn generate` | `src/modules/attachments/i18n/zh.json`, `src/modules/example/i18n/zh.json` | flat key → string JSON | absent file ⇒ English fallback; orphan key ⇒ defect to remove | REQ-003 |
 
@@ -348,7 +360,7 @@ No other runtime or discovery surface is added: no app-owned page, route, entity
 | UI contracts identify references, canonical components, and theme/state coverage | pass | Activated surfaces are package-owned and listed; the mockup section records why no app-authored layout exists |
 | Every phase has dependencies, bounded slices, tests, value, and an observable exit gate | pass | Phases 1–4 above |
 
-Verdict: `Ready for implementation`
+Verdict: `Implemented` (2026-09-21) — see the as-shipped deltas under the Status line.
 
 ## Open Questions
 
@@ -364,3 +376,5 @@ Verdict: `Ready for implementation`
 |---|---|
 | 2026-09-21 | Initial draft and ready-for-implementation after scope decisions (tier A, zh overlays, local-database migrations) |
 | 2026-09-21 | Implemented: registry entries + `yarn generate` (19 modules, 213 API route files, 40 route shards), `yarn db:migrate` on `kc_cb_base_min` (96 migrations, 85 new tables, all platform tables untouched), 7 `zh` overlays (2,700+ keys, 0 orphans), `yarn typecheck` exit 0, browser verification of the activated pages in zh (light + dark + narrow), authenticated API checks (200 with cross-module enrichers), fail-closed denial checks (403/401), and a pre-activation worktree drill proving removal restores the 12-module surface (67 route files). Residual: long config-page help copy and DB-seeded custom-field labels stay English by design. |
+| 2026-09-23 | Status corrected to `Implemented`. Amended the `requires`-enforcement claim (the generator does **not** fail closed — see the disable-chain drill Scenario C), the `integrations`/`data_sync` non-goal row (both enabled), and flagged the navigation/UI tables as pre-2026-09-22 (those pages are `navHidden` now). |
+| 2026-09-23 | `/backend/config/dictionaries` page body became app-owned: the packaged manager listed every organization's identically named dictionaries without naming the organization. `src/modules/dictionaries/backend/config/dictionaries/page.tsx` shadows the packaged page and `page.meta.ts` re-exports the packaged metadata (navigation + `dictionaries.view`/`dictionaries.manage` unchanged); entries editor, API and ACL stay installed. Contract, verification and rollback: `src/modules/dictionaries/README.md`. |

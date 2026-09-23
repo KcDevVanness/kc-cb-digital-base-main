@@ -21,7 +21,8 @@
 | `node_modules/**` | 框架包 | ❌ 只读 |
 
 `.mercato/` 不进 git（被忽略），`yarn generate` 可以重建；`src/official-modules.generated.ts`
-是刻意的例外——它是版本化资产，`yarn clean-generated` 不该清掉它。
+是刻意的例外——它是**版本化**生成物（随仓库提交），来源是 `official-modules.json`
+（+ `official-modules.local.json` 覆盖），不要手工编辑，也不要当成可丢弃的生成物删掉。
 
 ## 启用中的模块
 
@@ -52,7 +53,7 @@
 
 ### 官方 UI 的隐藏策略
 
-app 自建了业务面（`products`/`purchasing`/`trade_docs`/`platform_ops`/`cross_border`/`sourcing`/`export_finance`），
+app 自建了业务面（`products`/`purchasing`/`trade_docs`/`platform_ops`/`cross_border`/`sourcing`/`export_finance`/`internal_sales`/`parties`），
 所以安装的 ERP 业务模块**保持启用**（实体、命令、事件、API、ACL 是数据层，继续被自建模块使用），
 只隐藏它们自带的 admin UI。写法在 `src/modules.ts` 的 `entry.overrides.routes.pages`：
 
@@ -67,17 +68,27 @@ app 自建了业务面（`products`/`purchasing`/`trade_docs`/`platform_ops`/`cr
   所以摘除路由会让**已经存在**的通知点开即 404，改通知类型也救不回来——只能让 URL 继续可解析。
 
 已按此策略隐藏的模块：`catalog`（8 个产品/类目页）、`customers`、`sales`、`wms`、`currencies`、
-`dictionaries`、`feature_toggles`（全部 `navHidden`）。隐藏只作用于导航：模块的 API/命令/实体/ACL
+`feature_toggles`（全部 `navHidden`）。隐藏只作用于导航：模块的 API/命令/实体/ACL
 不受影响，页面自身的 `requireFeatures` 也照旧生效，改回一行即恢复。
+
+**唯一的例外是 `dictionaries`**：字典库的页面体是 app 自建的
+（`src/modules/dictionaries/backend/config/dictionaries/page.tsx` 遮蔽包内同名文件），而 app 的主数据下拉
+（币种、单位、国家/地区、港口、承运人、付款方式、运输方式、平台、报价分类）都读它维护的词表，所以
+`/backend/config/dictionaries` **不隐藏**（`src/modules.ts` 里 `{ id: 'dictionaries', from: '@open-mercato/core' }`，
+落到 Settings 的「Module Configs」分组，门禁仍是包内 `page.meta.ts` 的 `dictionaries.view` + `dictionaries.manage`）。
+页面按组织展示与写入：选中具体组织只能改该组织的字典（上级组织的行标「继承」且只读），「所有组织」下整页只读
+（该状态下 API 会把写落到账号归属组织）。契约、机制与回滚见
+[`src/modules/dictionaries/README.md`](../../src/modules/dictionaries/README.md)。
 
 坑：顶层 `overrides.pages` **不是**合法 domain。dispatcher 只遍历固定的 `DOMAIN_KEYS`
 （`ai`/`routes`/`events`/`workers`/`widgets`/`notifications`/`interceptors`/`commandInterceptors`/
 `enrichers`/`guards`/`cli`/`setup`/`acl`/`di`/`encryption`/`nav`），未知键既不生效也不告警——
 页面路由必须写在 `routes.pages` 下，key 是页面 pathname。
 
-注意：`src/modules/auth|catalog|customers|sales|wms|currencies|dictionaries|feature_toggles|configs|directory|entities|query_index|attachments|dashboards|notifications|audit_logs|search/`
+注意：`src/modules/auth|catalog|customers|sales|wms|currencies|feature_toggles|configs|directory|entities|query_index|attachments|dashboards|notifications|audit_logs|search/`
 这些目录本身只放该模块的 `zh` 语言覆盖文件，模块代码仍在框架包里（`api_docs`、`events`、
-`integrations`、`data_sync` 目前还没有覆盖层）。
+`integrations`、`data_sync` 目前还没有覆盖层）。**`dictionaries` 是唯一例外**：除语言覆盖外还放自建的页面体
+（`backend/config/dictionaries/page.tsx`）与 `page.meta.ts` 转出（见上）。
 
 条件启用（默认关闭，靠 `.env` 打开）：`record_locks`、`system_status_overlays`、`sso`、
 `security`、`agent_orchestrator`、`agent_examples`——都由
@@ -139,7 +150,9 @@ Next 请求
 | `openapi.generated.json` | OpenAPI 文档 |
 
 **哪些改动要重跑 `yarn generate`**：`src/modules.ts`、路由、页面、事件、组件、
-widget、agent、tool、workflow、以及任何 `i18n/<locale>.json` 的新增/删除。
+widget、agent、tool、workflow、以及**模块级**字典 `src/modules/<id>/i18n/<locale>.json` 的新增/删除
+（生成器按磁盘上存在的语言文件切分片）。app 级字典 `src/i18n/<locale>.json` 不经过生成器，改它不用重跑
+（见 [i18n.md](./i18n.md)）。
 
 ## 硬性约束
 

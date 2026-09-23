@@ -1,9 +1,14 @@
 # App-Owned Business Module — Self-Assembled Flow on Platform Primitives
 
 **Date**: 2026-09-21
-**Status**: Draft
+**Status**: Superseded as a build plan (2026-09-21) — its own Q-008 split the work into three child specs, all shipped. Kept as the **shared-decisions index** for those slices. Still open: REQ-011 (platform transport) and REQ-013 (subsidiary dashboard).
 
-> Skeleton under the `om-spec-writing` Open Questions gate. Everything decidable without the business input is complete and grounded: module shape, the platform primitives the app reuses, the invariants every entity/route must carry, the validation gate, and the phase skeleton. Business content that only the product owner can supply is left to the `Q-*` that unblocks it — no invented fields, states, or roles.
+> **How to read this file now.** The build plan below (`Phase 1`, `Phases 2+`) is history: it was delivered by
+> `.ai/specs/2026-09-21-purchasing-module.md`, `…-cross-border-shipments.md` and `…-platform-ops.md`
+> (plus the later 2026-09-22 specs for products/trade-docs/parties/sourcing/export-finance).
+> What is still authoritative here: the platform-reuse map, the per-entity invariants, the validation gate,
+> and the organization-visibility mechanism (Q-009/Q-014). The `Q-*` table at the bottom records where each
+> question ended up.
 
 ## TLDR
 
@@ -55,7 +60,7 @@ Blocking — each answer decides schema, API, or UI content, so implementation c
 
 The business is cross-border trade plus e-commerce: the domestic entity buys from domestic suppliers, sells to its overseas subsidiaries (intercompany), and those subsidiaries sell on marketplaces. The pain is therefore not "the shipped chain is the wrong shape" but "the chain covers the trunk and stops before purchasing, cross-border transit/documentation, and marketplace settlement". The gap analysis with module-level evidence is recorded in `.ai/analysis/2026-09-21-business-model-reassessment.md`; the decision to build instead of extend/eject is the mechanism ladder's outcome, not a preference.
 
-The shipped chain is product-master driven: `sales` requires `catalog`, quotes/orders reference catalog products by id and snapshot (`product_id`, `product_variant_id`, `catalog_snapshot`), and `wms` binds enrichers and API interceptors to catalog products and variants. Customizing the chain beyond additive extensions means either overriding surfaces one by one or ejecting the module and owning its upgrade merges — the trade-offs are recorded in `.ai/specs/2026-09-21-catalog-customization-and-eject-decision.md` and measured in `.ai/analysis/2026-09-21-catalog-eject-spike.md`. Building the app's own modules for the *missing* capabilities avoids both: the app owns code that ships in the app, the framework keeps owning its packages, and reuse keeps the trunk's invariants (库存台账、乐观锁、单据编号) instead of re-deriving them.
+The shipped chain is product-master driven: `sales` requires `catalog`, quotes/orders reference catalog products by id and snapshot (`product_id`, `product_variant_id`, `catalog_snapshot`), and `wms` binds enrichers and API interceptors to catalog products and variants. Customizing the chain beyond additive extensions means either overriding surfaces one by one or ejecting the module and owning its upgrade merges — the trade-offs are recorded in `.ai/specs/2026-09-21-catalog-customization-and-eject-decision.md` (superseded decision record + preserved-contract register) and measured in `.ai/analysis/2026-09-21-catalog-eject-spike.md`. Building the app's own modules for the *missing* capabilities avoids both: the app owns code that ships in the app, the framework keeps owning its packages, and reuse keeps the trunk's invariants (库存台账、乐观锁、单据编号) instead of re-deriving them.
 
 Two facts make this the cheap path rather than a rewrite:
 
@@ -284,19 +289,19 @@ No database object changes before Phase 1's reviewed migration. Rollback per pha
 | UI contracts identify references, canonical components, and theme/state coverage | blocked | pending Q-003/Q-004 |
 | Every phase has dependencies, bounded slices, tests, value, and an observable exit gate | partial | Phase 0/1 complete; 2+ depend on the answers |
 
-Verdict: `Blocked — Q-001 through Q-008 unanswered`.
+Verdict (2026-09-23): `Superseded as a build plan — delivered through the three child specs; REQ-011 (platform transport) and REQ-013 (subsidiary dashboard) remain open`. The `blocked` cells above described the pre-split state and are kept as history.
 
 ## Open Questions
 
 | ID | Question | Owner | Blocking? | Resolution / decision date |
 |---|---|---|---|---|
-| Q-001 | Primary records and the chain between them | product owner | yes | pending |
-| Q-002 | State machines, transitions, numbering | product owner | yes | pending |
-| Q-003 | Mandatory fields and their types | product owner | yes | pending |
-| Q-004 | Roles and per-role capabilities | product owner | yes | pending |
-| Q-005 | Notifications/reminders and background work | product owner | yes | pending |
-| Q-006 | External integrations (files, email, APIs, providers) | product owner | yes | pending |
-| Q-007 | Visibility of installed catalog/sales data from the new module | product owner + architect | yes | pending |
+| Q-001 | Primary records and the chain between them | product owner | yes | **resolved**: chain v2 (采购直发 → 海外仓收货 → 平台履约 → 平台结算), see the "Open Questions" block at the top of this file; built by the three child specs |
+| Q-002 | State machines, transitions, numbering | product owner | yes | **resolved in the child specs**: `.ai/specs/2026-09-21-purchasing-module.md` (`draft→placed→shipped→received→closed`, `PO-`), `.ai/specs/2026-09-21-cross-border-shipments.md` (monotonic milestones, `SHP-`) |
+| Q-003 | Mandatory fields and their types | product owner | yes | **resolved in the child specs'** Data Models sections (shipped schema; as-shipped deltas listed in each spec's Status block) |
+| Q-004 | Roles and per-role capabilities | product owner | yes | **resolved**: six sidebar role groups + ACL features; see [`docs/dev/multi-company-org-model.md`](../../docs/dev/multi-company-org-model.md) 角色矩阵 |
+| Q-005 | Notifications/reminders and background work | product owner | yes | **still open** — tracked as PRD `Q6` (提醒规则) in [`docs/prd/cross-border-erp.md`](../../docs/prd/cross-border-erp.md) |
+| Q-006 | External integrations (files, email, APIs, providers) | product owner | yes | **partly resolved**: file import shipped (`sourcing`), APIs used directly; platform transport still open → `.ai/specs/2026-09-21-platform-ops.md` Phase C |
+| Q-007 | Visibility of installed catalog/sales data from the new module | product owner + architect | yes | **resolved**: app-owned `products` master + official catalog page hides → `.ai/specs/2026-09-22-products-and-trade-docs.md` REQ-016 |
 | Q-008 | One capability or several (split test) | architect | yes | **resolved 2026-09-21**: three independently shippable specs — `purchasing` (no external dependency, first), `cross_border` (shipment/in-transit/export documents), `platform_ops` (marketplace connectors + settlement) |
 | Q-009 | Multi-entity model and master-data sharing across organizations | product owner + architect | yes | **resolved 2026-09-21**: one tenant, HQ root + subsidiary children, descendant-only visibility; mechanism verified in `directory` |
 | Q-010 | Marketplace/logistics connectivity: API, files, or third-party service | product owner | yes | **partly answered**: both sides expose APIs; pull-model mirror confirmed; adapter shape and credential location still open |
@@ -312,3 +317,4 @@ Verdict: `Blocked — Q-001 through Q-008 unanswered`.
 | 2026-09-21 | Initial skeleton: platform reuse map, mandatory invariants, phase skeleton, test matrix; Open Questions gate opened |
 | 2026-09-21 | Re-scoped after the owner confirmed the real business model (domestic purchasing → overseas subsidiaries → marketplace e-commerce): trunk reused, build targets the gaps only; Q-001 retargeted, Q-009…Q-012 added |
 | 2026-09-21 | Owner answers applied: chain v2 (no domestic warehouse), organization/visibility mechanism verified against the installed `directory` + CRUD-factory scope path, platform/3PL treated as sync inputs with the app's `wms` ledger authoritative; REQ-011/REQ-012 added, Q-013/Q-014 opened |
+| 2026-09-23 | Marked **superseded as a build plan** (delivered by the three child specs); Q-001…Q-007 repointed at where they were answered; REQ-011 (platform transport) and REQ-013 (subsidiary dashboard) recorded as the remaining open items. |

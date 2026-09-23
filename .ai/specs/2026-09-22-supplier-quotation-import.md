@@ -1,7 +1,15 @@
 # Supplier Quotation Import → Product Library (app-owned `sourcing` module)
 
 **Date**: 2026-09-22
-**Status**: Ready for implementation
+**Status**: Implemented (Phases 0–6) — verified 2026-09-22 with real supplier workbooks
+
+> **As-shipped deltas (2026-09-23).** Status line was stale (the Changelog already recorded "Implemented and
+> verified"). Two component renames vs the body: `QuoteWizard` → `QuoteImportWizard`, `ManualQuoteForm` →
+> `QuoteCreatePanel`. The quotation console's full surface (pages/api/commands/events) is tabled in
+> `src/modules/sourcing/README.md` (authoritative). Automated tests exist for the parse/mapping/SKU/import
+> libraries under `src/modules/sourcing/lib/__tests__/**` plus an integration suite
+> (`src/modules/purchasing/__integration__/supplier-products.spec.ts` — the library moved to
+> `purchasing` on 2026-09-23; the promotion still feeds it through that module's command).
 
 ## TLDR
 
@@ -539,7 +547,7 @@ Phases are dependency ordered; only the current phase enters implementation.
 - **Price-merge rules pinned by unit tests**: `lib/__tests__/productMapping.test.ts` covers the promotion rules that only a live run could show before — spec-summary folding, "never send an empty value over an existing field", numeric (not textual) comparison of decimal strings, currency/MOQ fallback, the tier-preserving merge (other tiers submitted unchanged, a new MOQ rung appended rather than replacing the old one), the no-change short circuit, and category codes (`FEEDING` → `feeding`, a CJK-only label → null).
 - **Operational note recorded as a lesson**: a new module's features reach existing roles only after `yarn mercato auth sync-role-acls` **and** a process restart — see `.ai/lessons/module-features-need-role-acl-sync.md`.
 
-Verdict: **Ready for implementation**
+Verdict: **Implemented** (2026-09-22; see the as-shipped deltas under the Status line).
 
 ### Extension-surface traceability
 
@@ -581,3 +589,4 @@ Every new runtime/discovery surface, with the reference module file it adapts (`
 | 2026-09-22 | Indexer discharge: `parse` and `remap` rewrite the quotation header through `nativeUpdate`, so they now emit the CRUD side effects (`action: 'updated'` with the quote events + indexer) explicitly — the routes declare `sourcing:sourcing_quote`'s indexer, and the platform warns when a declared indexer is not discharged. |
 | 2026-09-22 | Verification follow-up: (7) a stale row save answers **the platform's** optimistic-lock 409 body (`code: 'optimistic_lock_conflict'` + both timestamps, with the per-row list in `conflicts`), so the review grid renders the shared, translated conflict bar with a refresh action instead of a module-specific message — verified in the browser by moving a row behind an open page and saving it; (8) the wizard is **inline, not a dialog**, so `Esc` steps back one step rather than closing an overlay, and `Cmd`/`Ctrl`+`Enter` triggers the current step's primary action (apply mapping) through `useDialogKeyHandler`. |
 | 2026-09-22 | Implemented and verified. Deviations from the draft, each driven by the real files: (1) blank and merge-continuation rows are **skipped, never** table terminators — the PetKit sheet has two blank spacer rows mid-table and the drafted "stop after two blank rows" rule would have dropped 29 lines; (2) `GET /api/sourcing/quotes/[id]` was added as the draft's API table listed it, and the line-update surface is the batch `PUT` only (the single-row `sourcing.quote-lines.update` command was dropped — a batch of one is the same call and the grid never needs the other); (3) `.xls` rows without an Item No. promote with a name-slug SKU (`sku_from_name`) rather than being blocked on `sku_required`; (4) the create page carries its intent in a URL hash (`#manual` / `#import`) because module pages are not given `searchParams`; (5) the `.xls` `L`/`W`/`H` columns are normalized to centimetres through the same metre heuristic as packed cells (their values are metres); (6) `columnMap` validates as a **partial** record (`z.partialRecord`) so the wizard can send only the fields the operator kept. Dependency added: SheetJS `xlsx` 0.20.3 from the SheetJS CDN tarball. |
+| 2026-09-23 | Status → `Implemented (Phases 0–6)`; component renames recorded (`QuoteImportWizard`, `QuoteCreatePanel`) and the real test artifact locations named (lib `__tests__`, sourcing integration suite). |

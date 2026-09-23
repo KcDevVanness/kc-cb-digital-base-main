@@ -1,9 +1,37 @@
 # Purchasing Module — Supplier Master, Purchase Orders, Stage Payments
 
 **Date**: 2026-09-21
-**Status**: Ready for implementation
+**Status**: Implemented (Phases 1–4) — only the dedicated subsidiary dashboard/section is outstanding (tracked as 阶段五 in [`docs/plans/cross-border-erp.md`](../../docs/plans/cross-border-erp.md))
 
-> First of the three app-owned modules split out of `.ai/specs/2026-09-21-app-owned-business-module.md` (Q-008). Business inputs are owner-confirmed: domestic agents supply the goods, nothing is consolidated domestically, goods ship direct to the overseas warehouse, payment is stage-based (定金/尾款) with no approval or ageing, and the owner confirmed the derived entity/state model on 2026-09-21. Phase 1 (supplier master) is implemented; the remaining phases follow after its exit gate.
+> **As-shipped deltas (2026-09-23).** The Data Models / API / command sections below describe the module as
+> first drafted; the shipped surface is `src/modules/purchasing/README.md` (authoritative):
+> - Lines reference the **app-owned product master** `product_id` (`catalog_product_id` is now an optional
+>   bridge, NOT NULL dropped) or a `supplier_product_id` into this module's **supplier product library**
+>   (`purchasing_supplier_products`; it was `sourcing_supplier_products` until the library moved here on
+>   2026-09-23 — see `.ai/specs/2026-09-22-supplier-product-library.md`, decision D4).
+> - One `purchasing.purchase-orders.transition` command with an `action` enum replaced the per-action commands
+>   (`place`/`cancel`/`mark-shipped`/`mark-received`/`close`); added later: `purchase-orders.apply-receipt`,
+>   `purchase-payments.attach`, `order-documents.{create,update,delete}`.
+> - Routes are flat, not nested: `POST /api/purchasing/purchase-orders/transitions`,
+>   `GET|POST|PUT|DELETE /api/purchasing/purchase-orders/payments`, plus `…/documents`.
+> - Post-draft columns: `tax_total`; order-file fields (`business_number`, `product_category`, `owner_user_id`,
+>   `owner_snapshot`, `customer_id`/`customer_snapshot`) and `purchasing_purchase_order_documents`
+>   (`.ai/specs/2026-09-22-order-file-and-export-finance.md` Phase 1); `attachment_id` on payments.
+> - **Supplier product library (2026-09-23):** the buyer-facing 产品明细表 moved into this module — entity
+>   `PurchasingSupplierProduct` + `PurchasingSupplierProductPrice` (`purchasing_supplier_products`,
+>   `purchasing_supplier_product_prices`), commands `purchasing.supplier-products.*`, routes
+>   `/api/purchasing/supplier-products/*`, pages `/backend/purchasing/supplier-products`, features
+>   `purchasing.supplier-products.{view,manage,promote}`, events `purchasing.supplier_product*`, and the
+>   `supplier_product_unit` dictionary seed in `setup.ts`. `sourcing` feeds it through
+>   `purchasing.supplier-products.import-from-quote`. Its spec is
+>   `.ai/specs/2026-09-22-supplier-product-library.md`; the module README tables the shipped surface.
+- **Test evidence:** the library has an integration suite
+>   (`src/modules/purchasing/__integration__/supplier-products.spec.ts`, 6 tests) plus Jest suites under
+>   `data/__tests__` and `lib/__tests__`; the rest of the module still has no automated tests, and its
+>   acceptance evidence is the manual API + browser smoke recorded in the plan's 进度 table. Treat the
+>   TEST-P-* rows below as intended oracles, not as committed artifacts.
+
+> First of the three app-owned modules split out of `.ai/specs/2026-09-21-app-owned-business-module.md` (Q-008). Business inputs are owner-confirmed: domestic agents supply the goods, nothing is consolidated domestically, goods ship direct to the overseas warehouse, payment is stage-based (定金/尾款) with no approval or ageing, and the owner confirmed the derived entity/state model on 2026-09-21. Phase 1 (supplier master) is implemented; the remaining phases follow after its exit gate. **[2026-09-23] All four phases are shipped — see the as-shipped deltas above.**
 
 ## TLDR
 
@@ -336,7 +364,7 @@ No schema change lands before Phase 1's reviewed migration; migrations are gener
 | Every phase has dependencies, slices, tests, value, exit gate | pass | Phases 1–4 |
 | Owner confirmed the derived entity/state model | pass | Q-P-001…Q-P-005 resolved 2026-09-21 |
 
-Verdict: `Ready for implementation` — Phase 1 (supplier master) is implemented; Phases 2–4 remain.
+Verdict: `Implemented` — Phases 1–4 shipped and smoke-verified (no automated test artifacts); the subsidiary dashboard/section is the only remaining deliverable.
 
 ## Changelog
 
@@ -344,3 +372,4 @@ Verdict: `Ready for implementation` — Phase 1 (supplier master) is implemented
 |---|---|
 | 2026-09-21 | Initial draft derived from the owner-confirmed business inputs; entity/state model proposed for confirmation |
 | 2026-09-21 | Owner confirmed the model (deposit percent-or-amount, split/consolidated shipments, per-line tax with an include-tax toggle, no price list, product-level lines). Status → `Ready for implementation`. Phase 1 (supplier master) implemented: entity, validators, create/update/delete commands with undo, command-backed CRUD route, ACL/setup/events, zh+en locales, migration generated and reviewed (not applied). Business context also deposited in `docs/dev/business-architecture.md`. |
+| 2026-09-23 | Status → `Implemented (Phases 1–4)`; as-shipped deltas added: product-master line references (`product_id` / `supplier_product_id`, nullable `catalog_product_id`), one `purchase-orders.transition` command instead of per-action ids, flat route paths, post-draft columns and order documents, and no automated tests under the module. |

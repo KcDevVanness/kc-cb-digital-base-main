@@ -44,18 +44,21 @@ Import trace:
 
 1. **直接原因**：先改了引用、后建了被引用文件，中间 67 秒的编译窗口必然失败。
    这是编辑顺序问题，不是代码问题。
-2. **面板不回收**：`scripts/dev-runtime-state.mjs` 里 incident 只有两条清理路径——
-   `beginGeneration()`（托管进程重启时 `state.incidents.clear()`）和 `markReady()`
-   （只清 `blocking` 的 incident）。这条不是 blocking，于是 `ready: true / failed: false`
-   却 `health: degraded`，永远留在状态文件里。
+2. **面板不回收**：`scripts/dev-runtime-state.mjs` 里 incident 没有按时间回收的机制，只有三类清理路径——
+   `beginGeneration()`（托管进程重启时 `state.incidents.clear()`）、`markReady()`
+   （只清**当前代次**且 `blocking` 的 incident）、以及 supervisor 的 `clearIncidentsBySource('probe')`
+   （探测恢复时清掉 `probe` 来源的条目）。编译类 incident 既不是 blocking 也不是 probe，于是
+   `ready: true / failed: false` 却 `health: degraded`，永远留在状态文件里。
 
 ## 处置
 
-用面板自己的 restart action（带 token POST 到 `/api/dev-runtime/actions/restart`）：
+用面板自己的 restart action（带 token POST；恢复动作只有 `generate` / `migrate` / `restart` 三个）。
+两条等价入口：应用内的 `/api/dev-runtime/actions/<action>`（会校验 token 与 Origin），或 supervisor 自己的
+`/runtime/actions/<action>`。端口用 dev 日志 `Local:` 行里的实际端口（见 [setup.md](../dev/setup.md)）：
 
 ```bash
 T=$(python3 -c "import json;print(json.load(open('.mercato/dev-runtime-status.json'))['token'])")
-curl -s -X POST http://localhost:3001/api/dev-runtime/actions/restart \
+curl -s -X POST http://localhost:3100/api/dev-runtime/actions/restart \
   -H "x-om-dev-runtime-token: $T" -w '\nHTTP %{http_code}\n'
 ```
 
@@ -70,5 +73,6 @@ curl -s -X POST http://localhost:3001/api/dev-runtime/actions/restart \
 - 看到这个面板先看 `occurrences` 与 `lastSeenAt`：`occurrences: 1` 且 `lastSeenAt`
   是过去某个时刻 = 陈旧事故，不是活错误；对一下文件 mtime 就能确认。
 - 判断「真的还坏着」的可靠办法是直接打接口，不是看面板。
-- 注意区分端口：本项目的 dev app 落在哪个端口要看 supervisor 日志
-  （默认 `3000`，被占用会落到 `3001`）。别把另一个项目的服务当成自己的。
+- 注意区分端口：本项目的 dev app 落在哪个端口以 supervisor 日志的 `Local:` 行为准
+  （对外基址来自 `.env` 的 `APP_URL`，本机端口块是 `3100`；被占用时会落到空闲端口并打印出来，
+  [setup.md](../dev/setup.md)）。别把另一个项目的服务当成自己的。

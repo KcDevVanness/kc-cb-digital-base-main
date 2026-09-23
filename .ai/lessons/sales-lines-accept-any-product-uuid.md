@@ -40,5 +40,6 @@ without variants/UoM still needs a bridge in the logistics half (see
 `stock-receipt-needs-variant-resolution.md`).
 
 **Applies to**: `node_modules/@open-mercato/core/src/modules/sales/{data/validators.ts,commands/documents.ts,components/documents/LineItemDialog.tsx}`,
-`src/modules/trade_docs/**` (the surfaces that currently carry the internal-sales documents), and any
-future decision about `sales` document pages.
+`src/modules/internal_sales/**` (the app-owned surfaces that carry the internal-sales quote/order
+pages, since `feat(internal_sales): own the internal quote and order screens`), and any future
+decision about `sales` document pages.

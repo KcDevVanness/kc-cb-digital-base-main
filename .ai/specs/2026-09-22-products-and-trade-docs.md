@@ -1,7 +1,29 @@
 # Products Master Data + Purchase/Sales Contracts with Dual-Caliber Amounts
 
 **Date**: 2026-09-22
-**Status**: Ready for implementation
+**Status**: Implemented (Phases 0–6) — verified 2026-09-22 and 2026-09-23
+
+> **As-shipped deltas (2026-09-23).** Every phase including the owner-deferred Phase 4 (contract Excel) is in
+> the tree; the Status line was stale. Where the body differs from the shipped code, the code and
+> `src/modules/<id>/README.md` win:
+> - **API prefix is the module directory name:** `/api/trade_docs/...` and `/api/products/...` (snake_case),
+>   not `/api/trade-docs/...`. See [`.ai/lessons/module-api-path-is-directory-name.md`](../lessons/module-api-path-is-directory-name.md)
+>   and `.mercato/generated/api-route-metadata.generated.ts`.
+> - **Commands shipped as families, not per-action ids:** `trade_docs.contracts.{create,update,delete,transition,attach,generate-document}`
+>   and `trade_docs.invoices.{create,update,delete,transition,attach}` — `issue|sign|close|cancel` and
+>   `confirm|void` are `transition` actions.
+> - **Extra surface not in the body:** `POST /api/trade_docs/contracts/attach` + the stamped-scan
+>   `trade_docs_contracts.attachment_id` column (added by
+>   [`.ai/specs/2026-09-22-order-file-and-export-finance.md`](2026-09-22-order-file-and-export-finance.md) Phase 3;
+>   distinct from the generated XLSX pointer).
+> - **Page hiding** uses `routes.pages` + `metadata.navHidden` for the 8 catalog pages (REQ-016), never `null`.
+> - **Brand is no longer defaulted (2026-09-23).** The company also designs and commission-produces
+>   products, so `brand`'s column/validator/form defaults went from `'Petkit'` to empty, the model field
+>   is labelled 型号 rather than 品牌方型号, and the `purchase` price tier's label is 成本价（采购 / 自产）
+>   (the code stays `purchase`; contracts store the code). One catalogue holds purchased and self-made
+>   goods; the shipment/receipt rules below are unchanged — a purchase order plus the catalog link is what
+>   makes a line shippable, self-made or not. See `src/modules/products/README.md` § 货源.
+> - Product variants live in this same round: [`.ai/specs/2026-09-22-product-variants.md`](2026-09-22-product-variants.md).
 
 > Second app-owned business slice after `purchasing`. Owner-confirmed inputs (2026-09-22): the company is a trading principal that **buys from Petkit/agents** and **sells to its Russian subsidiary**, which sells to Russian enterprises — so a purchase contract and a sales contract exist for the same goods, and one product carries **three price tiers**. The installed `catalog` will accumulate customization, so the owner chose to **own product master data** in an app module and reuse only the platform's underlying capabilities (auth, scope, CRUD factory, commands, attachments, currencies, events). Contract Excel generation is explicitly **deferred by the owner** to a later slice; this spec delivers it last, behind an explicit exit gate.
 >
@@ -260,15 +282,38 @@ References are rendered as display values, never raw ids: product lines show the
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### `/backend/products/items/create` — 新建产品 (groups)
+### `/backend/products/items/create` — 新建产品 (steps)
 
 ```text
-基本信息   : SKU* 名称* 英文名 品牌 系列 品牌方型号 类型▾ 类别▾ 规格串 条码 单位 状态
-出口与包装 : HS 编码 CN 编码 原产国 净重 毛重 尺寸(长宽高/单位) 每箱数量 箱规 箱毛重 箱净重
-锂电与认证 : 含锂电池▢ 电池容量(mAh) 电池能量(Wh) 认证(多值) 备注
-三档价格   : [+ 添加价格行]  档位▾ 币种▾ 起订量 单价(6位) 生效起 生效止 启用▢
+① 基本信息  ›  ② 出口/包装/锂电  ›  ③ 三档价格  ›  ④ 变体/SKU     ← 步骤条：编号、可点、出错步标红
+第 1 / 4 步 · 切换步骤不会丢失已填内容；带 * 为必填。
+
+① 基本信息  基本信息 : SKU* 类型▾ │ 名称* │ 英文名 品牌 │ 系列 型号 │ 类别▾ 状态* │ 规格串 │ 条码 单位 │ 备注
+                                                        [上一步] [下一步]
+② 出口/包装/锂电
+出口与包装 : HS 编码 CN 编码 原产国 │ 净重 毛重
+单件尺寸   : 长 宽 高 单位▾
+箱规尺寸   : 长 宽 高 单位▾
+装箱与箱重 : 每箱数量 箱毛重 箱净重
+锂电与认证 : 含锂电池▢ 电池容量(mAh) 电池能量(Wh) 认证(多值)
+官方目录链接（选填） : 搜索官方目录商品…▾
+                                                        [上一步] [下一步]
+③ 三档价格  三档价格 : [+ 添加价格行] 档位▾ 币种▾ 起订量 单价(6位) 生效起 生效止 启用▢
+                                                        [上一步] [下一步]
+④ 变体/SKU  变体 / SKU : [+ 添加 SKU] 编码 名称 条码 状态 默认
+                                                        [上一步]
 ```
 
+- **Steps fill the page width:** `groupsForStep` renders one step at a time, so no group declares
+  `column: 2` any more — a step whose groups were all sidebar groups drew its whole content into the
+  `3fr` rail with the `7fr` column empty beside it.
+- **Step chrome:** the rail is the DS `StepIndicator` (numbered, every step clickable, the step that
+  owns a rejected field drawn as `error`) inside `CrudForm`'s `contentHeader`; 上一步/下一步 is the
+  step's last `bare` group, so a long step never has to be scrolled back to the top to move on.
+- **Required is checked per step:** `scopeRequiredToStep` marks a field `required` only on the step
+  that owns it. A cross-step submit therefore reaches the API, and the 400's `path` makes the form
+  jump to that step with the message attached (`revealInvalidStep`) — the client-side block alone
+  would flash "请修正标红的字段" while the offending field sits unrendered on another step.
 - **Behavior:** the price grid submits the product's whole price set through `PUT /api/products/prices` after the product create/update succeeds; failure of either step surfaces the failing step and keeps entered values; the list refresh is driven by `clientBroadcast` events rather than polling.
 - **Responsive and accessibility:** every field has a label; the price grid is a real table with a caption; error summary announces the first error to screen readers.
 - **Localization:** `products.*` keys in `i18n/{zh,en}.json`; amounts formatted with the shared currency helper; no literal user-facing strings in components.
@@ -328,7 +373,7 @@ All tables carry `tenant_id` + `organization_id` (uuid, required, session-derive
 | `tenant_id`, `organization_id` | uuid, required | scope index | no | trusted context only |
 | `sku` | text, required | unique `(tenant, org, sku)` (includes soft-deleted rows) | no | operator-entered, 1..64, duplicate → 409 |
 | `name`, `name_en` | text required / nullable | index on name | no | editable |
-| `brand` | text, default `'Petkit'` | — | no | editable |
+| `brand` | text, default `''` | — | no | editable; no brand is assumed (a self-made product must not inherit a supplier's brand) |
 | `series`, `manufacturer_model` | text, nullable | — | no | editable |
 | `type_id`, `category_id` | uuid, nullable | index | no | must resolve inside the same org when set |
 | `spec_summary` | text, nullable | — | no | printed on contracts |
@@ -667,7 +712,7 @@ No jobs, queues, or scheduled work are introduced. Attachment access, indexing, 
 | UI contracts identify references, canonical components, theme/state coverage | pass | UI table + mockups + REQ-011 |
 | Every phase has dependencies, slices, tests, value, exit gate | pass | Phases 0–4 |
 
-Verdict: `Ready for implementation`.
+Verdict: `Implemented` (Phases 0–6, verified end to end).
 
 ## Open Questions
 
@@ -688,4 +733,6 @@ Verdict: `Ready for implementation`.
 | 2026-09-22 | Currency-scale fallback surfaced: the contract list publishes `currencyScale` / `currencyScaleFallback` (read from `currencies.decimal_places`) and the detail page shows the hint when the scope has no currency row, so finance can tell a two-decimal fallback from the currency's own definition. |
 | 2026-09-22 | Phase 3/4 surfaces verified: contract list/detail show the two calibers plus the difference, per-line `financeSource`, and CSV export carries `Contract Amount / Finance Amount / Difference`. Follow-up decided during the browser pass: pickers are narrowed with an explicit `organizationId` filter (reads expand to descendants, writes act in the selected organization) — recorded as a lesson. |
 | 2026-09-22 | Q-002 resolved by moving product batch import out of this spec into [`.ai/specs/2026-09-22-supplier-quotation-import.md`](2026-09-22-supplier-quotation-import.md); the non-goal now points there. Owner approved the one new dependency (SheetJS `xlsx`) for that slice; this spec's own `buildXlsx` write path is unchanged |
-| 2026-09-22 | REQ-016 corrected: the page-hide domain is `overrides.routes.pages`. The original top-level `pages` key was read by no applier — the catalog pages stayed routed and in the sidebar while `yarn generate` reported success. Mechanism and diagnosis recorded in `.ai/lessons/module-override-page-hide-needs-routes-domain.md`. The same fix extended the hide to `customers`/`sales`/`wms`/`currencies`/`dictionaries`/`feature_toggles` (list/config pages `navHidden`, create/detail/edit pages `null`); see `docs/dev/business-architecture.md` → 自建模块对官方模块的消费清单 for what those pages' APIs are still used by |
+| 2026-09-22 | REQ-016 corrected: the page-hide domain is `overrides.routes.pages`. The original top-level `pages` key was read by no applier — the catalog pages stayed routed and in the sidebar while `yarn generate` reported success. Mechanism and diagnosis recorded in `.ai/lessons/module-override-page-hide-needs-routes-domain.md`. The same fix extended the hide to `customers`/`sales`/`wms`/`currencies`/`dictionaries`/`feature_toggles` — 65 `navHidden: true` page overrides in total and **no** `null` page drops (the only `null` in `src/modules.ts` is the `catalog.injection.product-seo` widget), because official notifications freeze `linkHref` at emit time; see `docs/dev/business-architecture.md` → 自建模块对官方模块的消费清单 for what those pages' APIs are still used by |
+| 2026-09-23 | Status → `Implemented (Phases 0–6)`. As-shipped deltas added: snake_case `/api/trade_docs/**` + `/api/products/**` paths, `transition`/`attach`/`generate-document` command families, the contract stamped-scan column and `contracts/attach` route, `routes.pages`+`navHidden` page hiding, variants in the same round. |
+| 2026-09-23 | 商品表单步骤层重排（仅 UI，API/命令/实体未动）：步骤条换成 DS `StepIndicator`（编号、逐步可点、出错步标红）并移进 `CrudForm.contentHeader`（原先是一排普通按钮、浮在页面标题之上），每步末尾补「上一步/下一步」；声明类分组不再声明 `column: 2`（整步内容原本被画进 `3fr` 侧栏、左侧 `7fr` 全空），`packagingCarton`+`packagingCartonTail` 合并成有标题的「装箱与箱重」，官方目录链接改用与其它自绘区块一致的卡片；`scopeRequiredToStep` 让必填只在所属步骤生效，跨步提交改由 API 的 400 `path` 跳步并标红（原先客户端必填拦截在看不见的字段上触发，只弹一句「请修正标红的字段」而页面上没有任何标红）。实测：四步逐一截图、上一步/下一步、末步提交缺必填 → 跳到第 1 步并标红、完整记录提交 201 后回列表。 |

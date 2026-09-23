@@ -2,7 +2,7 @@
 title: "Hiding an installed page needs the routes.pages override domain"
 modules: ["platform"]
 areas: ["umes", "framework-context", "architecture"]
-topics: ["module-overrides", "route-overrides", "nav-hidden", "installed-pages", "deep-links", "notifications"]
+topics: ["module-overrides", "route-overrides", "nav-hidden", "notifications", "deep-links", "stale-override-warning"]
 ---
 
 # Hiding an installed page needs the routes.pages override domain
@@ -47,6 +47,24 @@ A stale key is not always silent: keys that normalize fine but match no register
 `Override did not match any registered entry — override skipped` at registration (`warnStaleOverrides`).
 Only a key the dispatcher never reads at all (wrong domain) is silent.
 
+**The warning is not proof the override is a no-op** (2026-09-23, the catalog SEO widget). The app's
+`widgets: { injection: { 'catalog.injection.product-seo': null } }` warned on every CLI boot, yet the
+disable works: applying the composed override map to the generated entry list drops
+`catalog:product-seo:widget`, and the table pass then removes both `crud-form:catalog.product` and the
+`crud-form:catalog.catalog_product` fallback slot. `warnStaleOverrides` runs inside *every*
+`applyInjectionWidgetOverridesToEntries` pass and only knows the list that pass received, so any pass
+whose entry list does not contain the target module reports the override as stale — here the CLI
+bootstrap's pass, while the server and browser passes see catalog and consume the key.
+
+Verify before "fixing" a key (read-only, no dev server needed): import the app's
+`.mercato/generated/app-modules-overrides.compiled.mjs` + `.mercato/generated/injection-widgets.generated.ts`
++ the installed module's `widgets/injection-table.ts`, call
+`applyModuleOverridesFromEnabledModules(enabledModules)`, then `applyInjectionWidgetOverridesToEntries(entries)`
+and `applyInjectionWidgetOverridesToTables(tables, undefined, entries)` — the widget entry and its slots
+must disappear, and no warning is logged on those two calls. Both ids are accepted on purpose
+(`entry.key` e.g. `catalog:product-seo:widget`, alias `entry.widgetId` e.g. `catalog.injection.product-seo`);
+the widget's `metadata.id` is what the table slots reference, so it is the spelling to declare.
+
 **`null` is not the "hidden" mode — pick it only when nothing links to the URL** (2026-09-22, notification
 click-through). `catalog`/`customers`/`sales`/`wms`/`currencies`/`feature_toggles` had every
 create/detail/edit pathname on `null` with the reasoning "those pages never reach a sidebar anyway", so
@@ -76,6 +94,9 @@ only fix that covers stored rows, list rows, search results and future notificat
 
 Corollary: `navHidden` on a `[param]` path changes nothing in the navigation (nav already skips hrefs
 containing `[`), so migrating `null` → `navHidden` is nav-neutral and purely a reachability fix.
+
+Companion rule: `.ai/lessons/notification-renderer-navigates-via-one-shot-action.md` owns the click-side
+half (a renderer that navigates only through the one-shot action response dead-ends on repeat clicks).
 
 **Applies to**: `src/modules.ts` `ModuleEntry.overrides`, `.mercato/generated/app-modules-overrides.compiled.mjs`,
 `.mercato/generated/backend-route-metadata.generated.ts`, and any module whose installed UI is

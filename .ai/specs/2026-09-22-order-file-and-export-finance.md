@@ -1,7 +1,18 @@
 # Order File Fields + Export Finance (`export_finance`)
 
 **Date**: 2026-09-22
-**Status**: Ready for implementation
+**Status**: Implemented (Phases 1–5) — shipped and smoke-verified 2026-09-22
+
+> **As-shipped deltas (2026-09-23).** All five phases are in the tree (purchasing header fields +
+> `purchasing_purchase_order_documents`; cross_border container facts + four document types; the contract
+> stamped-scan column + `trade_docs.contracts.attach`; the whole `export_finance` module — 4 entities, one
+> migration, 6 commands, 6 routes, ACL/setup, 4 pages; the two read-only projections with CSV). The Status
+> line said `Ready for implementation` and the Changelog only carried the draft row; the body was partly
+> edited post-implementation, which is why it looked half-checked.
+> **Test evidence:** only the projection unit test exists
+> (`src/modules/export_finance/lib/__tests__/orderFileProjection.test.ts`). TEST-001…TEST-012/TEST-014 are
+> **not** committed as integration suites — the acceptance evidence is the recorded smoke run, and backfilling
+> the export_finance integration suite is an open follow-up.
 
 > Third app-owned business slice after `purchasing` and `trade_docs`. Owner input: the business keeps a 35-field **订单档案** (purchase → supplier pickup → export customs → overseas subsidiary → collection → export tax refund) in a hand-maintained Excel and needs it in the system with **two outputs** — a business view and a finance view.
 >
@@ -505,7 +516,7 @@ Generation and application stay separate: `yarn db:generate` produces the five m
 | UI contracts identify references, canonical components, and theme/state coverage | pass | UI and Interaction Contracts |
 | Every phase has dependencies, bounded slices, tests, value, and an observable exit gate | pass | Implementation Phases |
 
-Verdict: **Ready for implementation**
+Verdict: **Implemented** (Phases 1–5, 2026-09-22; integration-test backfill outstanding).
 
 ## Resolved assumptions (autonomous defaults)
 
@@ -526,3 +537,4 @@ The owner's plan resolved the open questions before implementation; recorded her
 | Date | Change |
 |---|---|
 | 2026-09-22 | Initial draft from the approved implementation plan (35-field inventory, two finance anchors, allocation rule) |
+| 2026-09-23 | Status → `Implemented (Phases 1–5)`; integration-test backfill recorded as an open follow-up (only the projection unit test exists; TEST-001…TEST-012/TEST-014 are oracles, not artifacts). |
