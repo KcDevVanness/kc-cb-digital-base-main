@@ -143,10 +143,22 @@ export async function runPreflight(
   assertS3Enabled()
   const partition = await loadPartition(deps.em, options.partition)
   const audit = await auditPartition(deps, options.partition)
-  if (audit.blocking > 0) {
+  // `ledger-duplicate` is the one blocking kind this stage owns and repairs (spec D9): the report
+  // keeps flagging it, but a partition must stay migratable when that is the only finding.
+  const repairableKinds = new Set(['ledger-duplicate'])
+  const blocking = audit.violations.filter(
+    (violation) => violation.severity === 'blocking' && !repairableKinds.has(violation.kind),
+  )
+  if (blocking.length > 0) {
     throw new Error(
-      `storage_ops: ${audit.blocking} blocking violation(s) in partition "${options.partition}" — ` +
+      `storage_ops: ${blocking.length} blocking violation(s) in partition "${options.partition}" — ` +
         'run `storage_ops audit` for the itemized report and fix them before migrating',
+    )
+  }
+  if (audit.ledger.duplicateCommittedIds.length > 0) {
+    console.log(
+      `preflight: ${audit.ledger.duplicateCommittedIds.length} duplicate committed quota-ledger row(s) will be removed ` +
+        '(they double-count tenant usage and the installed core never cleans them up)',
     )
   }
   if ((partition.storageDriver ?? 'local') !== 'local') {

@@ -121,7 +121,7 @@ const auditCommand: ModuleCli = {
     if (args.json === true) {
       console.log(JSON.stringify({ audits }, null, 2))
     } else {
-      console.log(renderAudit(audits))
+      console.log(renderAudit(audits, { orphans: args.orphans === true }))
     }
     const exitCode = auditExitCode(audits, strict)
     if (exitCode !== 0) {
@@ -163,6 +163,12 @@ const verifyCommand: ModuleCli = {
     const options = await optionsFrom(args, partition)
     const deps = await buildDeps()
     const partitionRow = await loadPartition(deps.em, partition)
+    if ((partitionRow.storageDriver ?? 'local') !== 's3') {
+      throw new Error(
+        `storage_ops: partition "${partition}" is on driver "${partitionRow.storageDriver ?? 'local'}"; ` +
+          '`verify` checks a partition that already serves from object storage — `migrate` verifies before it flips.',
+      )
+    }
     const summary = await runVerify(
       deps,
       options,

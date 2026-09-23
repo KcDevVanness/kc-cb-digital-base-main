@@ -250,7 +250,7 @@ export function auditExitCode(audits: PartitionAudit[], strict: boolean): number
   return 0
 }
 
-export function renderAudit(audits: PartitionAudit[]): string {
+export function renderAudit(audits: PartitionAudit[], options: { orphans?: boolean } = {}): string {
   const lines: string[] = []
   for (const audit of audits) {
     lines.push(
@@ -263,8 +263,11 @@ export function renderAudit(audits: PartitionAudit[]): string {
       lines.push(`  ${violation.severity === 'blocking' ? '✖' : '·'} ${violation.kind}${id}${where} — ${violation.detail}`)
     }
     if (audit.orphanFiles.length > 0) {
-      for (const orphan of audit.orphanFiles.slice(0, 10)) lines.push(`  · orphan ${orphan}`)
-      if (audit.orphanFiles.length > 10) lines.push(`  · … ${audit.orphanFiles.length - 10} more orphan file(s)`)
+      // `--orphans` lists every path — that is the acknowledgement step C-7 asks for before a window.
+      const shown = options.orphans ? audit.orphanFiles : audit.orphanFiles.slice(0, 10)
+      for (const orphan of shown) lines.push(`  · orphan ${orphan}`)
+      const hidden = audit.orphanFiles.length - shown.length
+      if (hidden > 0) lines.push(`  · … ${hidden} more orphan file(s) — rerun with --orphans to list them all`)
     }
   }
   return lines.join('\n')

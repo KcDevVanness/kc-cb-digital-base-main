@@ -43,6 +43,10 @@ test.beforeEach(async () => {
     await cleanupFixture(client, PARTITION)
     await ensurePartition(client, PARTITION)
   })
+  // Objects are not part of the DB fixture: clear them too, so a test that asserts an empty bucket
+  // cannot inherit the previous test's keys.
+  const existing = await listObjects(`${PARTITION}/`)
+  await deleteObjects(existing.map((entry) => entry.key))
 })
 
 test.afterAll(async () => {
@@ -55,7 +59,7 @@ test.afterAll(async () => {
 
 test('audit itemizes blocking violations and exits non-zero', async () => {
   await withDb(async (client) => {
-    // A row whose file is missing, an absolute path, a legacy driver and an orphan file.
+    // A row whose file is missing, an absolute path, a legacy driver and two orphan files.
     await seedAttachmentRow(client, {
       partitionCode: PARTITION,
       storagePath: canonical('missing.txt'),
@@ -73,6 +77,7 @@ test('audit itemizes blocking violations and exits non-zero', async () => {
       fileSize: 10,
     })
     writePartitionFile(PARTITION, canonical('orphan.txt'), Buffer.from('orphan\n', 'utf8'))
+    writePartitionFile(PARTITION, canonical('orphan-two.txt'), Buffer.from('orphan two\n', 'utf8'))
   })
 
   const result = runStorageOps(['audit', '--partition', PARTITION, '--json'])
@@ -86,6 +91,49 @@ test('audit itemizes blocking violations and exits non-zero', async () => {
   expect(kinds).toContain('unsupported-driver')
   expect(kinds).toContain('orphan-file')
   expect((audit?.blocking ?? 0)).toBeGreaterThan(0)
+
+  // `--orphans` is the acknowledgement step C-7 asks for: every orphan path, not the capped list.
+  const withOrphans = runStorageOps(['audit', '--partition', PARTITION, '--orphans'])
+  expect(withOrphans.status).toBe(1)
+  expect(withOrphans.stdout).toContain(`orphan ${canonical('orphan.txt')}`)
+  expect(withOrphans.stdout).toContain(`orphan ${canonical('orphan-two.txt')}`)
+})
+
+test('preflight repairs duplicate ledger rows instead of refusing the migration', async () => {
+  await withDb(async (client) => {
+    const path = canonical('duplicate-ledger.txt')
+    writePartitionFile(PARTITION, path, Buffer.from('dup\n', 'utf8'))
+    await seedAttachmentRow(client, { partitionCode: PARTITION, storagePath: path, fileSize: 4 })
+    await client.query(
+      `insert into attachment_quota_reservations (id, tenant_id, organization_id, reserved_bytes, actual_bytes, status, source, storage_driver, partition_code, storage_path, lease_token, upload_token_hash, expires_at, created_at, updated_at)
+       values (gen_random_uuid(), $1, $2, 4, 4, 'committed', 'storage_ops_test', 'local', $3, $4, gen_random_uuid(), null, null, now(), now())`,
+      [REHEARSAL_TENANT, REHEARSAL_ORG, PARTITION, path],
+    )
+  })
+
+  const result = runStorageOps(['migrate', '--partition', PARTITION, '--yes', '--s3-config', s3ConfigArgument()])
+  expect(result.status, result.stdout).toBe(0)
+  expect(result.stdout).toMatch(/duplicateLedgerRowsRemoved=1/)
+
+  const ledger = await withDb((client) =>
+    client.query<{ count: string }>(
+      `select count(*)::text as count from attachment_quota_reservations where partition_code = $1 and status = 'committed'`,
+      [PARTITION],
+    ),
+  )
+  expect(ledger.rows[0]?.count).toBe('0')
+})
+
+test('verify refuses while the partition is still on the local driver', async () => {
+  await withDb(async (client) => {
+    const path = canonical('verify-guard.txt')
+    writePartitionFile(PARTITION, path, Buffer.from('guard\n', 'utf8'))
+    await seedAttachmentRow(client, { partitionCode: PARTITION, storagePath: path, fileSize: 6 })
+  })
+
+  const result = runStorageOps(['verify', '--partition', PARTITION])
+  expect(result.status).not.toBe(0)
+  expect(result.stdout).toContain('verify` checks a partition that already serves from object storage')
 })
 
 test('an in-flight quota reservation refuses the migration window', async () => {
