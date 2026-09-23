@@ -12,6 +12,7 @@ import { AuthFooter } from '@open-mercato/ui/frontend/AuthFooter'
 import { ClientBootstrapProvider, resolveClientBootstrapProfile } from '@/components/ClientBootstrap'
 import { GlobalNoticeBars } from '@/components/GlobalNoticeBars'
 import { ComponentOverridesBootstrap } from '@/components/ComponentOverridesBootstrap'
+import { publishPasswordPolicyEnv, type PasswordPolicyEnv } from '@/lib/password-policy-env'
 
 type AppProvidersProps = {
   children: ReactNode
@@ -21,9 +22,13 @@ type AppProvidersProps = {
   supportedLocales: readonly Locale[]
   demoModeEnabled: boolean
   noticeBarsEnabled: boolean
+  passwordPolicyEnv: PasswordPolicyEnv
 }
 
-export function AppProviders({ children, locale, dict, localeLocked, supportedLocales, demoModeEnabled, noticeBarsEnabled }: AppProvidersProps) {
+export function AppProviders({ children, locale, dict, localeLocked, supportedLocales, demoModeEnabled, noticeBarsEnabled, passwordPolicyEnv }: AppProvidersProps) {
+  // Before the route renders: the auth forms resolve the password policy from `process.env` at
+  // render time and Next cannot inline the dynamic lookup they use. Idempotent, browser-only.
+  publishPasswordPolicyEnv(passwordPolicyEnv)
   const profile = resolveClientBootstrapProfile(usePathname())
   return (
     <I18nProvider locale={locale} dict={dict} localeLocked={localeLocked} supportedLocales={supportedLocales}>
