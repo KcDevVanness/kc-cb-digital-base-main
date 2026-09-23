@@ -1,6 +1,19 @@
 import { describe, expect, it } from '@jest/globals'
+import type { TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { amountInChineseWords, amountInEnglishWords, amountInWords } from '../amountInWords'
 import { buildContractSheet, CONTRACT_TEMPLATE_ID } from '../contractTemplate'
+
+/**
+ * Stands in for the platform translator: the dictionary entry when the locale has one, the
+ * component-side English fallback otherwise — the same order the real translator uses.
+ */
+function translatorFor(dictionary: Record<string, string> = {}): TranslateFn {
+  return ((key: string, fallback?: unknown) =>
+    dictionary[key] ?? (typeof fallback === 'string' ? fallback : key)) as TranslateFn
+}
+
+const ENGLISH = translatorFor()
+const CHINESE = translatorFor({ 'trade_docs.contracts.print.purchaseTitle': '采购合同' })
 
 describe('amountInChineseWords', () => {
   it('renders whole yuan with 整', () => {
@@ -111,26 +124,36 @@ describe('buildContractSheet', () => {
   })
 
   it('names the sheet after the contract number and titles the direction', () => {
-    const sheet = buildContractSheet(input)
+    const sheet = buildContractSheet(input, ENGLISH)
     expect(sheet.name).toBe('PC-2026-0001')
-    expect(sheet.rows[0]?.[0]).toContain('PURCHASE CONTRACT')
+    expect(sheet.rows[0]?.[0]).toBe('Purchase contract')
+  })
+
+  it('takes every label from the translator, so the document follows the locale', () => {
+    // A locale whose dictionary only carries the title still renders one language throughout:
+    // no label is a hand-written pair, so nothing renders bilingual.
+    const sheet = buildContractSheet(input, CHINESE)
+    expect(sheet.rows[0]?.[0]).toBe('采购合同')
+    expect(sheet.rows[1]?.[0]).toBe('Contract no.')
+    // The data stays data: a Chinese party name is not translated.
+    expect(sheet.rows[2]?.[1]).toBe('广州总部')
   })
 
   it('writes the header block, then the line grid, then the three totals', () => {
-    const sheet = buildContractSheet(input)
-    const lineHeaderIndex = sheet.rows.findIndex((row) => row[0] === '序号 No.')
+    const sheet = buildContractSheet(input, ENGLISH)
+    const lineHeaderIndex = sheet.rows.findIndex((row) => row[0] === 'No.')
     expect(lineHeaderIndex).toBeGreaterThan(0)
     expect(sheet.rows[lineHeaderIndex + 1]?.[1]).toBe('Petkit 无线饮水机 W5C')
     // Totals follow the single line, and the words rows close the sheet.
-    expect(sheet.rows[lineHeaderIndex + 3]?.[6]).toBe('合同金额 Contract Total')
-    expect(sheet.rows[lineHeaderIndex + 4]?.[6]).toBe('财务金额 Finance Total')
-    expect(sheet.rows[lineHeaderIndex + 5]?.[6]).toBe('差额 Difference')
-    expect(sheet.rows[lineHeaderIndex + 6]?.[0]).toBe('大写金额 In Words')
+    expect(sheet.rows[lineHeaderIndex + 3]?.[6]).toBe('Contract total')
+    expect(sheet.rows[lineHeaderIndex + 4]?.[6]).toBe('Finance total')
+    expect(sheet.rows[lineHeaderIndex + 5]?.[6]).toBe('Difference')
+    expect(sheet.rows[lineHeaderIndex + 6]?.[0]).toBe('Amount in words')
   })
 
   it('writes amounts as numbers so Excel can sum the column', () => {
-    const sheet = buildContractSheet(input)
-    const lineHeaderIndex = sheet.rows.findIndex((row) => row[0] === '序号 No.')
+    const sheet = buildContractSheet(input, ENGLISH)
+    const lineHeaderIndex = sheet.rows.findIndex((row) => row[0] === 'No.')
     const lineRow = sheet.rows[lineHeaderIndex + 1]!
     expect(typeof lineRow[7]).toBe('number')
     expect(lineRow[7]).toBe(3601.2)
@@ -138,9 +161,9 @@ describe('buildContractSheet', () => {
     expect(sheet.rows[lineHeaderIndex + 3]?.[7]).toBe(3601.2)
   })
 
-  it('states the contract total in both languages', () => {
-    const sheet = buildContractSheet(input)
-    const wordsIndex = sheet.rows.findIndex((row) => row[0] === '大写金额 In Words')
+  it('prints both word forms of the amount, as the bank/customs convention requires', () => {
+    const sheet = buildContractSheet(input, ENGLISH)
+    const wordsIndex = sheet.rows.findIndex((row) => row[0] === 'Amount in words')
     expect(sheet.rows[wordsIndex]?.[1]).toBe('人民币叁仟陆佰零壹元贰角整')
     expect(String(sheet.rows[wordsIndex + 1]?.[1])).toContain('SAY YUAN THREE THOUSAND SIX HUNDRED AND ONE')
   })

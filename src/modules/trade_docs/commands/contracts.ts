@@ -643,6 +643,9 @@ const generateContractDocumentCommand: CommandHandler<
       { orderBy: { lineNumber: 'ASC' } },
     )
 
+    // The document's labels follow the generating operator's locale (the file is archived right
+    // after, so the language is frozen with it). See `lib/contractTemplate.ts`.
+    const { t } = await resolveTranslations()
     const sheet = buildContractSheet({
       number: contract.number ?? null,
       direction: contract.direction,
@@ -673,7 +676,7 @@ const generateContractDocumentCommand: CommandHandler<
         contractAmount: line.contractAmount,
         note: line.note ?? null,
       })),
-    })
+    }, t)
 
     const buffer = buildXlsx(sheet)
     const fileName = `${contract.number ?? 'contract'}.xlsx`

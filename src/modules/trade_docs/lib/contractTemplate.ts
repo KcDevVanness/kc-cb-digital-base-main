@@ -1,4 +1,5 @@
 import type { XlsxSheet } from '@open-mercato/core/modules/staff/lib/timesheets-reports/xlsx'
+import type { TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { amountInWords } from './amountInWords'
 
 /**
@@ -10,43 +11,53 @@ import { amountInWords } from './amountInWords'
  * download route stay exactly as they are. `CONTRACT_TEMPLATE_ID` is the contract of that promise:
  * a stored document can name the template revision it was produced with.
  *
- * Everything here is bilingual on purpose. A generated contract is a document, not UI chrome: it
- * is printed, signed and filed, so its labels carry no runtime locale and no translation lookup —
- * a document re-rendered next year must read the same.
+ * **Labels follow the i18n system, not a hand-written bilingual string.** A generated contract is a
+ * document, but it is not a second locale: the operator generates it once, in the language they are
+ * working in, and the file is archived (see `commands/contracts.ts`), so the labels are resolved
+ * with the request's locale at generation time and the stored file keeps them. Writing
+ * 「合同号 Contract No.」 into one cell is the one thing the language rule forbids — a Chinese
+ * operator reads a Chinese contract, an English operator an English one, and a document that needs
+ * a specific wording gets a template revision, not a mixed string.
  */
 
 export const CONTRACT_TEMPLATE_ID = 'default@1'
 
-/** Header labels, in the order the rows are emitted. */
-const LABELS = {
-  purchaseTitle: '采购合同 / PURCHASE CONTRACT',
-  salesTitle: '销售合同 / SALES CONTRACT',
-  contractNumber: '合同号 Contract No.',
-  signedAt: '签订日期 Signed At',
-  partyA: '甲方 Party A',
-  partyB: '乙方 Party B',
-  currency: '币种 Currency',
-  priceTier: '价格档 Price Tier',
-  deliveryDate: '交期 Delivery',
-  paymentTerms: '付款方式 Payment Terms',
-  shippingMethod: '运输方式 Shipping Method',
-  destination: '目的地 Destination',
-  marks: '唛头 Marks',
-  notes: '备注 Notes',
-  lineNumber: '序号 No.',
-  name: '品名 Name',
-  model: '型号 Model',
-  spec: '规格 Spec',
-  unit: '单位 Unit',
-  quantity: '数量 Qty',
-  unitPrice: '单价 Unit Price',
-  amount: '金额 Amount',
-  lineNote: '备注 Note',
-  contractTotal: '合同金额 Contract Total',
-  financeTotal: '财务金额 Finance Total',
-  differenceTotal: '差额 Difference',
-  inWords: '大写金额 In Words',
-} as const
+/**
+ * Header labels, in the order the rows are emitted. Keys live in this module's `i18n/*.json`;
+ * the fallback is the English string, as everywhere else in the app.
+ */
+function contractLabels(t: TranslateFn) {
+  return {
+    purchaseTitle: t('trade_docs.contracts.print.purchaseTitle', 'Purchase contract'),
+    salesTitle: t('trade_docs.contracts.print.salesTitle', 'Sales contract'),
+    contractNumber: t('trade_docs.contracts.print.contractNumber', 'Contract no.'),
+    signedAt: t('trade_docs.contracts.print.signedAt', 'Signed on'),
+    partyA: t('trade_docs.contracts.print.partyA', 'Party A'),
+    partyB: t('trade_docs.contracts.print.partyB', 'Party B'),
+    currency: t('trade_docs.contracts.print.currency', 'Currency'),
+    priceTier: t('trade_docs.contracts.print.priceTier', 'Price tier'),
+    deliveryDate: t('trade_docs.contracts.print.deliveryDate', 'Delivery date'),
+    paymentTerms: t('trade_docs.contracts.print.paymentTerms', 'Payment terms'),
+    shippingMethod: t('trade_docs.contracts.print.shippingMethod', 'Shipping method'),
+    destination: t('trade_docs.contracts.print.destination', 'Destination'),
+    marks: t('trade_docs.contracts.print.marks', 'Marks'),
+    notes: t('trade_docs.contracts.print.notes', 'Notes'),
+    status: t('trade_docs.contracts.print.status', 'Status'),
+    lineNumber: t('trade_docs.contracts.print.lineNumber', 'No.'),
+    name: t('trade_docs.contracts.print.name', 'Name'),
+    model: t('trade_docs.contracts.print.model', 'Model'),
+    spec: t('trade_docs.contracts.print.spec', 'Spec'),
+    unit: t('trade_docs.contracts.print.unit', 'Unit'),
+    quantity: t('trade_docs.contracts.print.quantity', 'Qty'),
+    unitPrice: t('trade_docs.contracts.print.unitPrice', 'Unit price'),
+    amount: t('trade_docs.contracts.print.amount', 'Amount'),
+    lineNote: t('trade_docs.contracts.print.lineNote', 'Note'),
+    contractTotal: t('trade_docs.contracts.print.contractTotal', 'Contract total'),
+    financeTotal: t('trade_docs.contracts.print.financeTotal', 'Finance total'),
+    differenceTotal: t('trade_docs.contracts.print.differenceTotal', 'Difference'),
+    inWords: t('trade_docs.contracts.print.inWords', 'Amount in words'),
+  }
+}
 
 export type ContractSheetLine = {
   lineNumber: number
@@ -112,31 +123,32 @@ function quantityCell(value: string): number | string {
   return Number.isFinite(numeric) ? numeric : value
 }
 
-export function buildContractSheet(input: ContractSheetInput): XlsxSheet {
+export function buildContractSheet(input: ContractSheetInput, t: TranslateFn): XlsxSheet {
   const words = amountInWords(input.contractTotal, input.currencyCode)
+  const labels = contractLabels(t)
   const rows: XlsxSheet['rows'] = []
 
-  rows.push([input.direction === 'sales' ? LABELS.salesTitle : LABELS.purchaseTitle])
-  rows.push([LABELS.contractNumber, input.number ?? '', LABELS.signedAt, input.signedAt ?? '', '状态 Status', input.status])
-  rows.push([LABELS.partyA, partyBlock(input.ourParty)])
-  rows.push([LABELS.partyB, partyBlock(input.counterparty)])
-  rows.push([LABELS.currency, input.currencyCode, LABELS.priceTier, input.priceTier ?? ''])
-  rows.push([LABELS.deliveryDate, input.deliveryDate ?? '', LABELS.paymentTerms, input.paymentTerms ?? ''])
-  rows.push([LABELS.shippingMethod, input.shippingMethod ?? '', LABELS.destination, input.destination ?? ''])
-  rows.push([LABELS.marks, input.marks ?? ''])
-  rows.push([LABELS.notes, input.notes ?? ''])
+  rows.push([input.direction === 'sales' ? labels.salesTitle : labels.purchaseTitle])
+  rows.push([labels.contractNumber, input.number ?? '', labels.signedAt, input.signedAt ?? '', labels.status, input.status])
+  rows.push([labels.partyA, partyBlock(input.ourParty)])
+  rows.push([labels.partyB, partyBlock(input.counterparty)])
+  rows.push([labels.currency, input.currencyCode, labels.priceTier, input.priceTier ?? ''])
+  rows.push([labels.deliveryDate, input.deliveryDate ?? '', labels.paymentTerms, input.paymentTerms ?? ''])
+  rows.push([labels.shippingMethod, input.shippingMethod ?? '', labels.destination, input.destination ?? ''])
+  rows.push([labels.marks, input.marks ?? ''])
+  rows.push([labels.notes, input.notes ?? ''])
   rows.push([])
 
   rows.push([
-    LABELS.lineNumber,
-    LABELS.name,
-    LABELS.model,
-    LABELS.spec,
-    LABELS.unit,
-    LABELS.quantity,
-    LABELS.unitPrice,
-    LABELS.amount,
-    LABELS.lineNote,
+    labels.lineNumber,
+    labels.name,
+    labels.model,
+    labels.spec,
+    labels.unit,
+    labels.quantity,
+    labels.unitPrice,
+    labels.amount,
+    labels.lineNote,
   ])
 
   for (const line of input.lines) {
@@ -154,10 +166,12 @@ export function buildContractSheet(input: ContractSheetInput): XlsxSheet {
   }
 
   rows.push([])
-  rows.push(['', '', '', '', '', '', LABELS.contractTotal, amountCell(input.contractTotal), ''])
-  rows.push(['', '', '', '', '', '', LABELS.financeTotal, amountCell(input.financeTotal), ''])
-  rows.push(['', '', '', '', '', '', LABELS.differenceTotal, amountCell(input.differenceTotal), ''])
-  rows.push([LABELS.inWords, words.chinese])
+  rows.push(['', '', '', '', '', '', labels.contractTotal, amountCell(input.contractTotal), ''])
+  rows.push(['', '', '', '', '', '', labels.financeTotal, amountCell(input.financeTotal), ''])
+  rows.push(['', '', '', '', '', '', labels.differenceTotal, amountCell(input.differenceTotal), ''])
+  // Both word forms are the bank/customs convention for the amount (人民币大写 + SAY …), not a
+  // language pairing: the Chinese line is the amount in words, the second line its FX wording.
+  rows.push([labels.inWords, words.chinese])
   rows.push(['', words.english])
 
   return {

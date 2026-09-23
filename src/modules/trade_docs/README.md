@@ -50,6 +50,7 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 - **发票号不唯一**：外部票号只建索引，不建唯一约束（两家系统可能重号）。
 - **附件先建后绑**：发票先建 → 上传 `/api/attachments` → `attach` 绑 `attachment_id`；上传失败不回滚发票，行内可重试；本期只归档与下载，不解析。合同的双方盖章扫描件同理走 `PUT /api/trade_docs/contracts/attach`（`attachmentId: null` 解绑），它只动 `attachment_id`，生成的 XLSX 存在 `generated_attachment_id`，互不覆盖。
 - **合同 Excel 最后补**：`lib/contractTemplate.ts` 的常量是唯一模板出处，`buildXlsx`（平台零依赖写入器）生成后**归档为附件**（重新生成会换新文件，旧文件保留）；金额写数字便于 Excel 求和；大写金额见 `lib/amountInWords.ts`。
+- **合同表头跟随语言，不是硬编码双语**：模板的每个标题都是一个 `trade_docs.contracts.print.*` key，命令用 `resolveTranslations()` 取**生成者当前语言**的字典，再交给 `buildContractSheet(input, t)`；文件归档时语言就冻结了（重新生成是换新文件，不会改旧的）。中文语系生成的中文合同、英文语系生成的英文合同——不再出现「合同号 Contract No.」这种同一格里两种语言。金额的两个词形（人民币大写 + `SAY …`）保留：那是银行/报关对金额的固定双写，不是语言并列。
 - **读写作用域**：读（列表）展开到下级组织，写（命令）只在当前选定组织生效 —— 下级组织的单据要切换组织后再操作，服务端会明确提示。
 
 ## 验证
