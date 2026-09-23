@@ -6,7 +6,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
-import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { ComboboxInput } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { Input } from '@open-mercato/ui/primitives/input'
@@ -22,6 +21,7 @@ import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { withCurrentCurrency, useCurrencyOptions } from './currencyOptions'
 import { loadQuoteSectionOptions } from './quoteSectionOptions'
 import { QuoteImportWizard } from './QuoteImportWizard'
+import { fetchSupplierRows, SUPPLIER_OPTIONS_QUERY_KEY } from './supplierOptions'
 
 /**
  * The two ways a quotation starts: typed by hand, or imported from a workbook.
@@ -33,8 +33,6 @@ import { QuoteImportWizard } from './QuoteImportWizard'
  */
 
 const MAX_MANUAL_LINES = 50
-
-type SupplierRow = { id: string; name: string }
 
 type ManualLine = {
   key: string
@@ -77,11 +75,11 @@ export function QuoteCreatePanel({ initialMode = 'import' }: { initialMode?: 'ma
   }, [])
 
   const suppliersQuery = useQuery({
-    queryKey: ['sourcing-supplier-options'],
-    queryFn: () => fetchCrudList<SupplierRow>('purchasing/suppliers', { pageSize: 200, isActive: 'true', sortField: 'name', sortDir: 'asc' }),
+    queryKey: SUPPLIER_OPTIONS_QUERY_KEY,
+    queryFn: fetchSupplierRows,
     staleTime: 60_000,
   })
-  const suppliers = suppliersQuery.data?.items ?? []
+  const suppliers = suppliersQuery.data ?? []
 
   // The picker offers what the currency dictionary carries; a code already on the quotation stays
   // selectable so opening the page can never blank it.
@@ -182,6 +180,11 @@ export function QuoteCreatePanel({ initialMode = 'import' }: { initialMode?: 'ma
                   ))}
                 </SelectContent>
               </Select>
+              {suppliersQuery.isError ? (
+                <p className="text-xs text-status-error-text" role="alert">
+                  {t('sourcing.errors.supplierOptionsFailed', 'Could not load the supplier list')}
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="sourcing-quote-date">{t('sourcing.quotes.list.columns.quoteDate', 'Quote date')}</Label>

@@ -24,6 +24,7 @@ import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { withCurrentCurrency, useCurrencyOptions } from './currencyOptions'
 import { QuoteImportWizard } from './QuoteImportWizard'
+import { fetchSupplierRows, SUPPLIER_OPTIONS_QUERY_KEY } from './supplierOptions'
 import type { QuoteDetail, QuoteStatus } from '../types'
 
 /**
@@ -41,8 +42,6 @@ const QUOTE_STATUS_MAP: StatusMap<QuoteStatus> = {
   archived: 'info',
   cancelled: 'warning',
 }
-
-type SupplierRow = { id: string; name: string }
 
 export function QuoteReviewPanel({ quoteId }: { quoteId: string }) {
   const t = useT()
@@ -71,11 +70,11 @@ export function QuoteReviewPanel({ quoteId }: { quoteId: string }) {
   const lineCount = linesQuery.data?.total ?? quote?.lineCount ?? 0
 
   const suppliersQuery = useQuery({
-    queryKey: ['sourcing-supplier-options'],
-    queryFn: () => fetchCrudList<SupplierRow>('purchasing/suppliers', { pageSize: 200, isActive: 'true', sortField: 'name', sortDir: 'asc' }),
+    queryKey: SUPPLIER_OPTIONS_QUERY_KEY,
+    queryFn: fetchSupplierRows,
     staleTime: 60_000,
   })
-  const suppliers = suppliersQuery.data?.items ?? []
+  const suppliers = suppliersQuery.data ?? []
 
   // Same list the create panel offers: the currency dictionary, plus whatever code the quotation
   // already carries so an older record never renders with an empty trigger.
@@ -267,6 +266,11 @@ export function QuoteReviewPanel({ quoteId }: { quoteId: string }) {
               ))}
             </SelectContent>
           </Select>
+          {suppliersQuery.isError ? (
+            <p className="text-xs text-status-error-text" role="alert">
+              {t('sourcing.errors.supplierOptionsFailed', 'Could not load the supplier list')}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="review-date">{t('sourcing.quotes.list.columns.quoteDate', 'Quote date')}</Label>

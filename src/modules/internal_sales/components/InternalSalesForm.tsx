@@ -324,7 +324,9 @@ async function loadCurrencyOptions(errorMessage: string) {
 /** The buyer: an existing customer company (a branch is a company record in this deployment). */
 async function loadCustomerOptions(errorMessage: string, organizationId?: string | null) {
   const payload = await fetchCrudList<Record<string, unknown>>(CUSTOMERS_API_PATH, {
-    pageSize: 200,
+    // `customers/companies` caps `pageSize` at 100; a larger value answers 400 and would leave the
+    // picker empty, so the cap is the page size.
+    pageSize: 100,
     sortField: 'name',
     sortDir: 'asc',
     ...(organizationId ? { organizationId } : {}),
