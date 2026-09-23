@@ -119,7 +119,7 @@ yarn mercato storage_ops prune-local --partition privateAttachments --older-than
 
 **已实测（2026-09-23，MinIO 彩排）**：`migrate` 3 行 / 1.2 MB → `copy: copied=3 skipped=0`、`verify: checked=3 hashed=3 mismatches=0`、`flip: rows=3`；对象字节与本地 sha256 一致；重复 `migrate` 被拒（`already on driver "s3"`）；`prune-local --yes` 删除 3 个本地文件后 `rollback` 从桶里**重新落盘** 3 个文件（sha256 一致）；回滚后再次 `migrate` 走读回校验路径 `copy: copied=0 skipped=3`（不触发对象存储的条件写入冲突）。
 
-> 本节的完整 runbook（快照、SQL 形状、`config_json` 载荷、回滚语义）在规格 § Rollout, Migration, and Rollback；Phase 2 执行后本节会补齐生产实测记录。
+> 本节的完整 runbook（快照、SQL 形状、`config_json` 载荷、回滚语义）在规格 § Rollout, Migration, and Rollback；**逐条命令、预期输出、失败判据与证据记录表见 [`storage-cutover-runbook.md`](./storage-cutover-runbook.md)**。Phase 2 执行后本节会补齐生产实测记录。
 
 ## 7. 复核当前状态（复现命令）
 
