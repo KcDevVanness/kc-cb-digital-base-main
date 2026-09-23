@@ -23,15 +23,26 @@ export const PRODUCT_FORM_STEP_TITLE_KEYS: Record<ProductFormStep, string> = {
   variants: 'products.variants.step',
 }
 
-/** Group ids (`useProductGroups`) rendered on each step, in order. */
+/**
+ * Group ids (`useProductGroups`) rendered on each step, in order.
+ *
+ * A step renders **alone**, so every group it lists must be a full-width (`column: 1`) card:
+ * `CrudForm` renders any `column: 2` group into a right-hand `3fr` sidebar, and a step whose groups
+ * were all sidebar groups would draw its whole content in that narrow rail with the wide column
+ * empty beside it. That is why the declaration step's groups no longer carry the sidebar column they
+ * had when the form was one long two-column page.
+ */
 export const PRODUCT_FORM_STEP_GROUPS: Record<ProductFormStep, readonly string[]> = {
   basics: ['details'],
   declaration: [
     'packaging',
+    // Single-item and carton measurements are their own self-titled cards (a bare group renders its
+    // component without group chrome, so the component draws the card), which is why they are not
+    // fields of `packaging`/`carton`: `CrudForm` renders a group's component *before* its fields, so
+    // an inline measurement editor could not sit between scalar fields inside one card.
     'dimensions',
-    'packagingCarton',
     'cartonDimensions',
-    'packagingCartonTail',
+    'carton',
     'battery',
     // The catalog link lives with the declaration data because its only purpose is the logistics
     // half (variant resolution on receipt), not everyday product maintenance.
@@ -109,6 +120,30 @@ export function resolveStepForField(field: string): ProductFormStep | null {
 export function groupsForStep<T extends { id: string }>(groups: T[], step: ProductFormStep): T[] {
   const allowed = PRODUCT_FORM_STEP_GROUPS[step]
   return groups.filter((group) => allowed.includes(group.id))
+}
+
+/**
+ * Marks a field `required` only on the step that owns it.
+ *
+ * `CrudForm` refuses a submit whose required fields are empty and puts the message on the field —
+ * which is right on the step you are looking at and useless from any other step: the field is not
+ * rendered there, so the operator gets "请修正标红的字段" with nothing highlighted anywhere. A field
+ * owned by another step therefore travels to the API unmarked, the 400 names its path, and the form
+ * jumps to that step with the message attached to the field (`revealInvalidStep`). The required
+ * markers and the instant client-side check stay exactly where they can be seen; the API remains the
+ * authority either way.
+ *
+ * A field with no declared step (an injected custom field, say) keeps whatever it declared.
+ */
+export function scopeRequiredToStep<T extends { id: string; required?: boolean }>(
+  fields: T[],
+  step: ProductFormStep,
+): T[] {
+  return fields.map((field) => {
+    if (!field.required) return field
+    const owner = resolveStepForField(field.id)
+    return owner !== null && owner !== step ? { ...field, required: false } : field
+  })
 }
 
 /** First field id mentioned by a server validation failure, so the form can reveal its step. */

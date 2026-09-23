@@ -2,7 +2,9 @@ import { OptionalProps } from '@mikro-orm/core'
 import { Entity, Index, ManyToOne, PrimaryKey, Property, Unique } from '@mikro-orm/decorators/legacy'
 
 /**
- * Product type — the Petkit family a product belongs to (`fountain`, `feeder`, …).
+ * Product type — the product family a product belongs to (`fountain`, `feeder`, …). The seeded
+ * set is a starting point for every organization, not a supplier's list: a self-made line is
+ * typed here exactly like a purchased one.
  *
  * Scope columns are required (not nullable): a type belongs to exactly one organization, and
  * the visibility rule (HQ sees its descendants, a subsidiary sees itself) is enforced by the
@@ -156,13 +158,21 @@ export class ProductsProduct {
   @Property({ name: 'name_en', type: 'text', nullable: true })
   nameEn?: string | null
 
-  @Property({ type: 'text', default: 'Petkit' })
-  brand: string = 'Petkit'
+  /**
+   * The brand the goods are sold under: the brand owner's for a purchased line, our own for a
+   * self-designed or commission-produced one. Nothing defaults to a brand — an empty string means
+   * "not recorded" — so a self-made product can never be silently stamped with a supplier's brand.
+   */
+  @Property({ type: 'text', default: '' })
+  brand: string = ''
 
   @Property({ type: 'text', nullable: true })
   series?: string | null
 
-  /** The brand owner's own model code (e.g. `W5C`), printed on the contract line. */
+  /**
+   * The model code the goods are known by — the brand owner's for a purchased line, the factory's
+   * or ours for a self-made one (e.g. `W5C`). Printed on the contract line.
+   */
   @Property({ name: 'manufacturer_model', type: 'text', nullable: true })
   manufacturerModel?: string | null
 

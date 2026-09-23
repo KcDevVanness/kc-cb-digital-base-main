@@ -70,7 +70,8 @@ describe('product validation', () => {
 
   it('applies defaults for the optional packaging fields', () => {
     const parsed = productCreateSchema.parse(baseProduct)
-    expect(parsed.brand).toBe('Petkit')
+    // No brand is assumed: a self-made product must not inherit a supplier's brand.
+    expect(parsed.brand).toBe('')
     expect(parsed.unit).toBe('PCS')
     expect(parsed.status).toBe('active')
     expect(parsed.containsLithiumBattery).toBe(false)

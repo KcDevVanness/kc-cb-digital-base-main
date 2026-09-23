@@ -208,7 +208,7 @@ export const productCreateSchema = z.object({
   sku: z.string().trim().regex(SKU_PATTERN, 'sku must be letters, digits, dot, dash, slash or underscore').max(64),
   name: z.string().trim().min(1).max(300),
   nameEn: nullableText(300),
-  brand: z.string().trim().max(120).default('Petkit'),
+  brand: z.string().trim().max(120).default(''),
   series: nullableText(120),
   manufacturerModel: nullableText(120),
   typeId: z.string().uuid().nullable().optional(),

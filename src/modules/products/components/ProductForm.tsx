@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import {
   CrudForm,
   type CrudField,
@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@open-mercato/ui/primitives/select'
+import { StepIndicator, type StepIndicatorStep } from '@open-mercato/ui/primitives/step-indicator'
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import {
   PRODUCT_FORM_STEPS,
@@ -36,10 +37,12 @@ import {
   firstValidationMessage,
   groupsForStep,
   resolveStepForField,
+  scopeRequiredToStep,
   type ProductFormStep,
 } from '../lib/formLayout'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { PRODUCT_PRICE_TIERS, type ProductPriceTier } from '../lib/tiers'
+import { loadUnitOptions } from '../lib/unitOptions'
 import {
   VariantsEditor,
   buildProductVariantsPayload,
@@ -99,6 +102,11 @@ export type ProductDimensions = {
   height: string
   unit: string
 }
+
+/** Length units a dimension block may be measured in (`dimensions.unit`, `cartonDimensions.unit`). */
+const DIMENSION_UNITS = ['cm', 'mm', 'm', 'in', 'ft'] as const
+/** Radix `Select` cannot carry an empty value, so "no unit" travels through a sentinel item. */
+const DIMENSION_UNIT_CLEAR = 'no_unit'
 
 /**
  * One price row in the form. `key` keeps React anchored to a row while rows are added and
@@ -179,7 +187,7 @@ const EMPTY_PRODUCT_VALUES: ProductFormValues = {
   sku: '',
   name: '',
   nameEn: '',
-  brand: 'Petkit',
+  brand: '',
   series: '',
   manufacturerModel: '',
   typeId: '',
@@ -332,7 +340,7 @@ export function toProductFormValues(item: Record<string, unknown>): ProductRecor
     sku: readText(item, 'sku'),
     name: readText(item, 'name'),
     nameEn: readText(item, 'nameEn', 'name_en'),
-    brand: readText(item, 'brand') || 'Petkit',
+    brand: readText(item, 'brand'),
     series: readText(item, 'series'),
     manufacturerModel: readText(item, 'manufacturerModel', 'manufacturer_model'),
     typeId: readText(item, 'typeId', 'type_id'),
@@ -373,7 +381,7 @@ export function buildProductPayload(values: ProductFormValues): Record<string, u
     sku: values.sku.trim(),
     name: values.name.trim(),
     nameEn: toOptionalText(values.nameEn),
-    brand: values.brand.trim() || 'Petkit',
+    brand: values.brand.trim(),
     series: toOptionalText(values.series),
     manufacturerModel: toOptionalText(values.manufacturerModel),
     typeId: toOptionalText(values.typeId),
@@ -571,11 +579,39 @@ async function loadCatalogLinkOptions(errorMessage: string, query?: string): Pro
   })
 }
 
+/**
+ * The card chrome the form's self-rendered sections share.
+ *
+ * Each of them is a `bare` group, so nothing wraps them: without one wrapper the two measurement
+ * editors, the catalog picker and the price grid would each draw their own border, padding and
+ * title style — and they had already drifted apart. It mirrors the chrome `CrudForm` draws around an
+ * ordinary group (`rounded-lg border bg-card` + a `text-sm font-medium` title), so a self-rendered
+ * section reads as the same kind of block as a grouped one.
+ */
+function ProductFormCard({
+  title,
+  action,
+  children,
+}: {
+  title: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
+      <div className="flex items-center justify-between gap-4">
+        <div className="text-sm font-medium">{title}</div>
+        {action}
+      </div>
+      {children}
+    </div>
+  )
+}
+
 /** Searchable picker for the catalog link, with the consequence of leaving it empty spelled out. */
 function CatalogLinkField({ value, onChange, t }: { value: string; onChange: (next: string) => void; t: TranslateFn }) {
   return (
-    <div className="space-y-1.5">
-      <FieldLabel htmlFor="product-catalog-link">{t('products.items.form.field.catalogProductId')}</FieldLabel>
+    <ProductFormCard title={t('products.items.form.field.catalogProductId')}>
       <ComboboxInput
         value={value}
         onChange={onChange}
@@ -588,7 +624,7 @@ function CatalogLinkField({ value, onChange, t }: { value: string; onChange: (ne
         clearLabel={t('products.items.form.field.catalogProductIdClear')}
       />
       <p className="text-xs text-muted-foreground">{t('products.items.form.field.catalogProductIdHelp')}</p>
-    </div>
+    </ProductFormCard>
   )
 }
 
@@ -642,31 +678,54 @@ function ProductDimensionsEditor({
   )
 
   const inputId = (part: string) => `product-${fieldId}-${part}`
-  const fields: Array<{ part: keyof ProductDimensions; label: string; maxLength?: number }> = [
+  const fields: Array<{ part: keyof ProductDimensions; label: string }> = [
     { part: 'length', label: t('products.items.form.field.length') },
     { part: 'width', label: t('products.items.form.field.width') },
     { part: 'height', label: t('products.items.form.field.height') },
-    { part: 'unit', label: t('products.items.form.field.dimensionUnit'), maxLength: 16 },
   ]
+  // A measurement unit is a closed engineering set, not a company vocabulary, so it is a fixed list
+  // rather than a dictionary; a record measured in something else keeps it as its own option.
+  const unitChoices = React.useMemo(() => {
+    const code = current.unit.trim()
+    if (!code || (DIMENSION_UNITS as readonly string[]).includes(code)) return [...DIMENSION_UNITS]
+    return [...DIMENSION_UNITS, code]
+  }, [current.unit])
 
   return (
-    <div className="rounded-lg border bg-card px-4 py-3">
-      <p className="text-sm font-medium">{label}</p>
-      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+    <ProductFormCard title={label}>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {fields.map((field) => (
           <div key={field.part} className="space-y-1.5">
             <FieldLabel htmlFor={inputId(field.part)}>{field.label}</FieldLabel>
             <Input
               id={inputId(field.part)}
               value={current[field.part]}
-              maxLength={field.maxLength}
-              inputMode={field.maxLength ? undefined : 'decimal'}
+              inputMode="decimal"
               onChange={(event) => setValue(fieldId, updatePart(field.part, event.target.value))}
             />
           </div>
         ))}
+        <div className="space-y-1.5">
+          <FieldLabel htmlFor={inputId('unit')}>{t('products.items.form.field.dimensionUnit')}</FieldLabel>
+          <Select
+            value={current.unit}
+            onValueChange={(next) => setValue(fieldId, updatePart('unit', next === DIMENSION_UNIT_CLEAR ? '' : next))}
+          >
+            <SelectTrigger id={inputId('unit')}>
+              <SelectValue placeholder={t('ui.forms.select.emptyOption', '—')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DIMENSION_UNIT_CLEAR}>{t('ui.forms.select.clearOption', '— Clear —')}</SelectItem>
+              {unitChoices.map((unit) => (
+                <SelectItem key={unit} value={unit}>
+                  {unit}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
-    </div>
+    </ProductFormCard>
   )
 }
 
@@ -752,16 +811,18 @@ function ProductPriceRowsEditor({ values, setValue, errors, t }: CrudFormGroupCo
   }, [rows, setValue])
 
   return (
-    <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
-      <div className="flex items-center justify-between gap-4">
-        <h3 className="text-sm font-medium">{t('products.items.form.group.prices')}</h3>
+    <ProductFormCard
+      title={t('products.items.form.group.prices')}
+      action={
         <Button type="button" variant="outline" onClick={addRow}>
           <Plus className="size-4" aria-hidden="true" />
           {t('products.items.form.priceAdd')}
         </Button>
-      </div>
-
+      }
+    >
       {error ? <p className="text-xs text-status-error-text" role="alert">{error}</p> : null}
+
+      <p className="text-xs text-muted-foreground">{t('products.items.form.priceHint')}</p>
 
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('products.items.form.priceEmpty')}</p>
@@ -882,45 +943,48 @@ function ProductPriceRowsEditor({ values, setValue, errors, t }: CrudFormGroupCo
           </div>
         )
       })}
-    </div>
+    </ProductFormCard>
   )
 }
 
 /**
  * Group titles are passed as i18n keys: `CrudForm` renders them through `t(title, title)`, which
  * resolves a key or keeps the literal text.
+ *
+ * No group claims `column: 2`: every render path filters to one step first (`groupsForStep`), and a
+ * step that fills the page has no second column to sit beside — the sidebar column is what drew the
+ * declaration step into the right-hand third of an otherwise empty page. Field order inside a group
+ * is the visible order, so halves are listed in pairs and a pair is never split by a full-width
+ * field.
  */
 function useProductGroups(t: TranslateFn): CrudFormGroup[] {
   return React.useMemo<CrudFormGroup[]>(() => [
     {
       id: 'details',
-      column: 1,
       title: 'products.items.form.group.details',
       fields: [
         'sku',
+        'typeId',
         'name',
         'nameEn',
         'brand',
         'series',
         'manufacturerModel',
-        'typeId',
         'categoryId',
+        'status',
         'specSummary',
         'barcode',
         'unit',
-        'status',
         'notes',
       ],
     },
     {
       id: 'packaging',
-      column: 2,
       title: 'products.items.form.group.packaging',
       fields: ['hsCode', 'cnCode', 'countryOfOriginCode', 'netWeight', 'grossWeight'],
     },
     {
       id: 'dimensions',
-      column: 2,
       bare: true,
       component: (context) => (
         <ProductDimensionsEditor
@@ -932,13 +996,7 @@ function useProductGroups(t: TranslateFn): CrudFormGroup[] {
       ),
     },
     {
-      id: 'packagingCarton',
-      column: 2,
-      fields: ['cartonQuantity'],
-    },
-    {
       id: 'cartonDimensions',
-      column: 2,
       bare: true,
       component: (context) => (
         <ProductDimensionsEditor
@@ -950,13 +1008,17 @@ function useProductGroups(t: TranslateFn): CrudFormGroup[] {
       ),
     },
     {
-      id: 'packagingCartonTail',
-      column: 2,
-      fields: ['cartonGrossWeight', 'cartonNetWeight'],
+      id: 'carton',
+      title: 'products.items.form.group.carton',
+      fields: ['cartonQuantity', 'cartonGrossWeight', 'cartonNetWeight'],
+    },
+    {
+      id: 'battery',
+      title: 'products.items.form.group.battery',
+      fields: ['containsLithiumBattery', 'batteryCapacityMah', 'batteryWh', 'certifications'],
     },
     {
       id: 'catalogLink',
-      column: 2,
       bare: true,
       component: (context) => (
         <CatalogLinkField
@@ -967,33 +1029,73 @@ function useProductGroups(t: TranslateFn): CrudFormGroup[] {
       ),
     },
     {
-      id: 'battery',
-      column: 2,
-      title: 'products.items.form.group.battery',
-      fields: ['containsLithiumBattery', 'batteryCapacityMah', 'batteryWh', 'certifications'],
-    },
-    {
       id: 'prices',
-      column: 1,
       bare: true,
       component: (context) => <ProductPriceRowsEditor {...context} t={t} />,
     },
     {
       id: 'variants',
-      column: 1,
       fields: ['variants'],
     },
   ], [t])
 }
 
 /**
- * Step switcher for the product form.
+ * The step rail: where the operator is, and where a rejected field is waiting.
  *
- * Plain buttons rather than a platform stepper: `CrudForm` owns one submit for the whole record, so
- * the steps only decide which groups are rendered — nothing is saved step by step, and switching
- * back and forth never loses input.
+ * It sits in `CrudForm`'s `contentHeader`, so it renders under the page title and the save actions
+ * rather than floating above the title as a row of buttons. Every step stays clickable, including
+ * the ones not reached yet: the steps only decide which groups are rendered — `CrudForm` owns one
+ * submit for the whole record, nothing is saved step by step, and switching back and forth never
+ * loses input. A step that owns a server-side validation failure is drawn as `error` instead of
+ * `current`/`pending`, so the message in the flash has a visible destination.
  */
-function ProductFormSteps({
+function ProductFormStepRail({
+  step,
+  invalidStep,
+  onStepChange,
+  t,
+}: {
+  step: ProductFormStep
+  invalidStep: ProductFormStep | null
+  onStepChange: (next: ProductFormStep) => void
+  t: TranslateFn
+}) {
+  const steps: StepIndicatorStep[] = PRODUCT_FORM_STEPS.map((candidate) => ({
+    id: candidate,
+    label: t(PRODUCT_FORM_STEP_TITLE_KEYS[candidate]),
+    status: candidate === invalidStep ? 'error' : candidate === step ? 'current' : 'pending',
+  }))
+  return (
+    <div className="space-y-2" role="group" aria-label={t('products.items.form.step.label')}>
+      <StepIndicator
+        steps={steps}
+        showNumbers
+        onStepClick={(id) => onStepChange(id as ProductFormStep)}
+        clickableStatuses={['pending', 'current', 'complete', 'error']}
+      />
+      <p className="text-xs text-muted-foreground">
+        {`${t('products.items.form.step.progress', 'Step {current} / {total}', {
+          current: PRODUCT_FORM_STEPS.indexOf(step) + 1,
+          total: PRODUCT_FORM_STEPS.length,
+        })} · ${t('products.items.form.step.hint')}`}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * The step's own navigation, rendered at the end of the step's content.
+ *
+ * It is the last group of every step (a `bare` group, so it carries no card of its own) because
+ * `CrudForm` gives a host no other slot below the body: on a long step — the declaration step is
+ * six cards — the rail is off-screen by the time the last field is filled, and walking back up to
+ * reach the next step is exactly the friction the steps are supposed to remove.
+ *
+ * The last step has no "next" button: its primary action is the form's own save, which sits directly
+ * below this row in the form footer.
+ */
+function ProductFormStepButtons({
   step,
   onStepChange,
   t,
@@ -1003,22 +1105,22 @@ function ProductFormSteps({
   t: TranslateFn
 }) {
   const index = PRODUCT_FORM_STEPS.indexOf(step)
+  const previous = index > 0 ? PRODUCT_FORM_STEPS[index - 1] : null
+  const next = index < PRODUCT_FORM_STEPS.length - 1 ? PRODUCT_FORM_STEPS[index + 1] : null
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2" role="group" aria-label={t('products.items.form.step.label')}>
-      {PRODUCT_FORM_STEPS.map((candidate, position) => (
-        <Button
-          key={candidate}
-          type="button"
-          variant={candidate === step ? 'default' : 'outline'}
-          aria-current={candidate === step ? 'step' : undefined}
-          onClick={() => onStepChange(candidate)}
-        >
-          {t(PRODUCT_FORM_STEP_TITLE_KEYS[candidate])}
+    <div className="flex items-center justify-end gap-2">
+      {previous ? (
+        <Button type="button" variant="outline" onClick={() => onStepChange(previous)}>
+          <ChevronLeft className="size-4" aria-hidden="true" />
+          {t('products.items.form.step.previous')}
         </Button>
-      ))}
-      <span className="text-xs text-muted-foreground">
-        {`${index + 1}/${PRODUCT_FORM_STEPS.length}`} {t('products.items.form.step.hint')}
-      </span>
+      ) : null}
+      {next ? (
+        <Button type="button" variant="secondary" onClick={() => onStepChange(next)}>
+          {t('products.items.form.step.next')}
+          <ChevronRight className="size-4" aria-hidden="true" />
+        </Button>
+      ) : null}
     </div>
   )
 }
@@ -1032,15 +1134,19 @@ function ProductFormSteps({
 function revealInvalidStep(
   error: unknown,
   setStep: (next: ProductFormStep) => void,
+  setInvalidStep: (next: ProductFormStep | null) => void,
   t: TranslateFn,
 ): string {
   const field = firstInvalidField(error)
   const step = field ? resolveStepForField(field) : null
-  if (step) setStep(step)
+  if (step) {
+    setStep(step)
+    setInvalidStep(step)
+  }
   return firstValidationMessage(error) ?? t('products.items.form.saveFailed')
 }
 
-function useProductsFields(t: TranslateFn): CrudField[] {
+function useProductsFields(t: TranslateFn, currentUnit = ''): CrudField[] {
   // Pickers are narrowed to the organization the operator is working in; the list page keeps the
   // wider (descendant-inclusive) visibility because reading a subsidiary's product is allowed.
   const { organizationId } = useOrganizationScopeDetail()
@@ -1069,6 +1175,7 @@ function useProductsFields(t: TranslateFn): CrudField[] {
       label: t('products.items.form.field.brand'),
       type: 'text',
       layout: 'half',
+      description: t('products.items.form.field.brandHelp'),
     },
     {
       id: 'series',
@@ -1081,11 +1188,13 @@ function useProductsFields(t: TranslateFn): CrudField[] {
       label: t('products.items.form.field.manufacturerModel'),
       type: 'text',
       layout: 'half',
+      description: t('products.items.form.field.manufacturerModelHelp'),
     },
     {
       id: 'typeId',
       label: t('products.items.form.field.type'),
       type: 'select',
+      layout: 'half',
       placeholder: t('products.items.form.selectType'),
       loadOptions: () => loadProductTypeOptions(t('products.items.form.typeLoadFailed'), organizationId),
     },
@@ -1093,6 +1202,7 @@ function useProductsFields(t: TranslateFn): CrudField[] {
       id: 'categoryId',
       label: t('products.items.form.field.category'),
       type: 'select',
+      layout: 'half',
       placeholder: t('products.items.form.selectCategory'),
       loadOptions: () => loadProductCategoryOptions(t('products.items.form.categoryLoadFailed'), organizationId),
     },
@@ -1111,8 +1221,14 @@ function useProductsFields(t: TranslateFn): CrudField[] {
     {
       id: 'unit',
       label: t('products.items.form.field.unit'),
-      type: 'text',
+      // The list is the app's own unit dictionary (`lib/unitOptions.ts`), so the code the master
+      // stores is one the trade documents can print. A unit the dictionary does not carry stays
+      // selectable on the record that already has it (`withCurrentUnit`), so opening a product can
+      // never blank its unit.
+      type: 'select',
       layout: 'half',
+      description: t('products.items.form.field.unitHelp'),
+      loadOptions: () => loadUnitOptions(undefined, currentUnit),
     },
     {
       id: 'status',
@@ -1134,19 +1250,19 @@ function useProductsFields(t: TranslateFn): CrudField[] {
       id: 'hsCode',
       label: t('products.items.form.field.hsCode'),
       type: 'text',
-      layout: 'half',
+      layout: 'third',
     },
     {
       id: 'cnCode',
       label: t('products.items.form.field.cnCode'),
       type: 'text',
-      layout: 'half',
+      layout: 'third',
     },
     {
       id: 'countryOfOriginCode',
       label: t('products.items.form.field.countryOfOriginCode'),
       type: 'text',
-      layout: 'half',
+      layout: 'third',
     },
     {
       id: 'netWeight',
@@ -1164,19 +1280,19 @@ function useProductsFields(t: TranslateFn): CrudField[] {
       id: 'cartonQuantity',
       label: t('products.items.form.field.cartonQuantity'),
       type: 'number',
-      layout: 'half',
+      layout: 'third',
     },
     {
       id: 'cartonGrossWeight',
       label: t('products.items.form.field.cartonGrossWeight'),
       type: 'text',
-      layout: 'half',
+      layout: 'third',
     },
     {
       id: 'cartonNetWeight',
       label: t('products.items.form.field.cartonNetWeight'),
       type: 'text',
-      layout: 'half',
+      layout: 'third',
     },
     {
       id: 'containsLithiumBattery',
@@ -1210,7 +1326,7 @@ function useProductsFields(t: TranslateFn): CrudField[] {
       component: VariantsEditor,
       description: t('products.variants.description'),
     },
-  ], [t, organizationId])
+  ], [currentUnit, organizationId, t])
 }
 
 /**
@@ -1236,13 +1352,43 @@ async function saveProductPrices(
   }
 }
 
+/**
+ * A step's trailing navigation, as the last group of that step.
+ *
+ * `bare` keeps it out of a card of its own — it is a row of buttons, not a section — and being a
+ * group is what puts it *after* the step's content: `CrudForm` renders groups in order and offers a
+ * host no other slot below the form body.
+ */
+function buildStepNavGroup(
+  step: ProductFormStep,
+  onStepChange: (next: ProductFormStep) => void,
+  t: TranslateFn,
+): CrudFormGroup {
+  return {
+    id: 'stepNav',
+    bare: true,
+    component: () => <ProductFormStepButtons step={step} onStepChange={onStepChange} t={t} />,
+  }
+}
+
 function ProductCreateForm() {
   const t = useT()
   const router = useRouter()
   const fields = useProductsFields(t)
   const allGroups = useProductGroups(t)
   const [step, setStep] = React.useState<ProductFormStep>('basics')
-  const groups = React.useMemo(() => groupsForStep(allGroups, step), [allGroups, step])
+  const [invalidStep, setInvalidStep] = React.useState<ProductFormStep | null>(null)
+  // A step is a view, not a validation unit: leaving one is never blocked, and the error mark only
+  // says where the last rejected field was, so it clears as soon as the operator moves on.
+  const handleStepChange = React.useCallback((next: ProductFormStep) => {
+    setStep(next)
+    setInvalidStep(null)
+  }, [])
+  const groups = React.useMemo(
+    () => [...groupsForStep(allGroups, step), buildStepNavGroup(step, handleStepChange, t)],
+    [allGroups, handleStepChange, step, t],
+  )
+  const stepFields = React.useMemo(() => scopeRequiredToStep(fields, step), [fields, step])
 
   const handleSubmit = React.useCallback(async (values: ProductFormValues) => {
     let createdId: string | null = null
@@ -1250,7 +1396,7 @@ function ProductCreateForm() {
       const created = await createCrud<{ id?: string }>(PRODUCTS_API_PATH, buildProductPayload(values))
       createdId = typeof created.result?.id === 'string' ? created.result.id : null
     } catch (saveError) {
-      flash(revealInvalidStep(saveError, setStep, t), 'error')
+      flash(revealInvalidStep(saveError, setStep, setInvalidStep, t), 'error')
       throw saveError
     }
     if (!createdId) {
@@ -1264,34 +1410,52 @@ function ProductCreateForm() {
   }, [router, t])
 
   return (
-    <div>
-      <ProductFormSteps step={step} onStepChange={setStep} t={t} />
-      <CrudForm<ProductFormValues>
+    <CrudForm<ProductFormValues>
       title={t('products.items.form.createTitle')}
       titleHeadingLevel={1}
       backHref={PRODUCTS_LIST_HREF}
-      fields={fields}
+      contentHeader={
+        <ProductFormStepRail
+          step={step}
+          invalidStep={invalidStep}
+          onStepChange={handleStepChange}
+          t={t}
+        />
+      }
+      fields={stepFields}
       groups={groups}
       initialValues={EMPTY_PRODUCT_VALUES}
       submitLabel={t('products.items.form.save')}
       cancelHref={PRODUCTS_LIST_HREF}
       onSubmit={handleSubmit}
-      />
-    </div>
+    />
   )
 }
 
 function ProductEditForm({ productId }: { productId: string }) {
   const t = useT()
   const router = useRouter()
-  const fields = useProductsFields(t)
-  const allGroups = useProductGroups(t)
   const [step, setStep] = React.useState<ProductFormStep>('basics')
-  const groups = React.useMemo(() => groupsForStep(allGroups, step), [allGroups, step])
+  const [invalidStep, setInvalidStep] = React.useState<ProductFormStep | null>(null)
   const [initial, setInitial] = React.useState<ProductRecord | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [isNotFound, setIsNotFound] = React.useState(false)
+  // The loaded record's own unit joins the option list, so a code the dictionary does not carry
+  // still renders as the selected value instead of leaving the trigger blank.
+  const fields = useProductsFields(t, initial?.unit ?? '')
+  const allGroups = useProductGroups(t)
+  // A step is a view, not a validation unit: leaving one is never blocked, and the error mark only
+  // says where the last rejected field was, so it clears as soon as the operator moves on.
+  const handleStepChange = React.useCallback((next: ProductFormStep) => {
+    setStep(next)
+    setInvalidStep(null)
+  }, [])
+  const groups = React.useMemo(
+    () => [...groupsForStep(allGroups, step), buildStepNavGroup(step, handleStepChange, t)],
+    [allGroups, handleStepChange, step, t],
+  )
+  const stepFields = React.useMemo(() => scopeRequiredToStep(fields, step), [fields, step])
 
   React.useEffect(() => {
     let cancelled = false
@@ -1356,7 +1520,7 @@ function ProductEditForm({ productId }: { productId: string }) {
         updatedAt: initial?.updatedAt ?? null,
       })
     } catch (updateError) {
-      flash(revealInvalidStep(updateError, setStep, t), 'error')
+      flash(revealInvalidStep(updateError, setStep, setInvalidStep, t), 'error')
       throw updateError
     }
     try {
@@ -1365,6 +1529,7 @@ function ProductEditForm({ productId }: { productId: string }) {
       // The price grid is the last step; keep the operator there instead of dropping them back on
       // basics after a rejected row.
       setStep('prices')
+      setInvalidStep('prices')
       throw priceError
     }
     pushWithFlash(router, PRODUCTS_LIST_HREF, t('products.items.form.saved'), 'success')
@@ -1382,21 +1547,26 @@ function ProductEditForm({ productId }: { productId: string }) {
   if (error) return <ErrorMessage label={error} />
 
   return (
-    <div>
-      <ProductFormSteps step={step} onStepChange={setStep} t={t} />
-      <CrudForm<ProductFormValues>
+    <CrudForm<ProductFormValues>
       title={t('products.items.form.editTitle')}
       titleHeadingLevel={1}
       backHref={PRODUCTS_LIST_HREF}
-      fields={fields}
+      contentHeader={
+        <ProductFormStepRail
+          step={step}
+          invalidStep={invalidStep}
+          onStepChange={handleStepChange}
+          t={t}
+        />
+      }
+      fields={stepFields}
       groups={groups}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('products.items.form.save')}
       cancelHref={PRODUCTS_LIST_HREF}
       isLoading={loading}
       onSubmit={handleSubmit}
-      />
-    </div>
+    />
   )
 }
 

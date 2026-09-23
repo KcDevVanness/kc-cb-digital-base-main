@@ -163,7 +163,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       sku: String(item.sku ?? ''),
       name: String(item.name ?? ''),
       nameEn: asNullableString(item.name_en),
-      brand: String(item.brand ?? 'Petkit'),
+      brand: String(item.brand ?? ''),
       series: asNullableString(item.series),
       manufacturerModel: asNullableString(item.manufacturer_model),
       typeId: asNullableString(item.type_id),

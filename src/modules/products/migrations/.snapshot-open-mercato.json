@@ -703,7 +703,7 @@
           "length": null,
           "precision": null,
           "scale": null,
-          "default": "'Petkit'",
+          "default": "''",
           "comment": null,
           "collation": null,
           "enumItems": [],
