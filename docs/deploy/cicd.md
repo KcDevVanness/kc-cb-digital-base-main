@@ -22,15 +22,21 @@
 ```
 push production ─┬─ build  ── docker build --target runner ──▶ ghcr.io/kcdevvanness/kc-cb-digital-base-main:<sha>
                  │                                            ghcr.io/kcdevvanness/kc-cb-digital-base-main:production
-                 └─ deploy ── ssh ──▶ 主机 git fetch + checkout <sha>
-                                      docker compose -f docker-compose.deploy.yml pull app
-                                      docker compose -f docker-compose.deploy.yml up -d
-                                      curl 127.0.0.1:$APP_PORT/api/healthz 等到 200
+                 └─ deploy ── ssh ──▶ docker login ghcr.io（GITHUB_TOKEN，走 stdin）
+                                      ssh ──▶ 主机 git fetch + checkout <sha>
+                                              docker compose -f docker-compose.deploy.yml pull app
+                                              docker compose -f docker-compose.deploy.yml up -d
+                                              curl 127.0.0.1:$APP_PORT/api/healthz 等到 200
 ```
 
 **构建为什么在 CI 而不在主机上**：`yarn build` 用 `--max-old-space-size=8192`，
 而部署主机是 2 GB 内存的实例。在主机上构建会 OOM，所以主机只做三件事——
 拉代码、拉镜像、起容器。
+
+**GHCR 鉴权**：GHCR 的 package 默认私有，主机 `pull` 需要凭据。用当次运行自带的
+`GITHUB_TOKEN` 登录，经 `ssh ... --password-stdin` 灌入，不落 argv、不落文件、不进
+主机 shell history。登录失败只记 warning——真正的闸门是随后的 `compose pull`，
+缺凭据会在那里明确报错。
 
 - 镜像标签用 **commit SHA**（不可变），`deploy` 阶段传的就是这个 tag，不是 `latest`
 - `concurrency: deploy-production` 且 `cancel-in-progress: false`：正在跑的部署必须跑完，
@@ -83,8 +89,11 @@ OM_INIT_SUPERADMIN_EMAIL / OM_INIT_SUPERADMIN_PASSWORD
 git push --force origin <good-sha>:production
 ```
 
-流水线会用那个 SHA 重建镜像并部署（缓存命中，通常一两分钟）。**数据库迁移是向前-only 的**，
+流水线会用那个 SHA 重建镜像并部署（构建缓存命中，通常几分钟）。**数据库迁移是向前-only 的**，
 涉及迁移的回滚不能只回退代码。
+
+`production` 分支没有开启保护规则，所以仓库管理员可以直接 force push；`main` 有保护
+（要求 PR + `validate` 通过），提升版本时管理员推送会被 bypass 并在远端留下记录。
 
 ## 已知取舍
 
