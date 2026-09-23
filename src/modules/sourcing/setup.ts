@@ -5,17 +5,18 @@ import { normalizeDictionaryValue } from '@open-mercato/core/modules/dictionarie
 /**
  * Section banners the supplier workbooks group their lines by (分类). `value` is the banner as the
  * workbooks print it — the operator edits a line into this spelling instead of inventing a code —
- * and `label` adds the Chinese gloss for a reader who has not seen the sheet.
+ * and `label` is the Chinese name alone: the picker renders the stored code beside it
+ * (`FEEDING — 喂食`), so the label itself stays one language.
  */
 export const QUOTE_SECTION_DICTIONARY_KEY = 'quote_section'
 
 export const QUOTE_SECTION_SEEDS = [
-  { value: 'FEEDING', label: 'FEEDING 喂食', position: 10 },
-  { value: 'CLEANING', label: 'CLEANING 清洁', position: 20 },
-  { value: 'GROOMING', label: 'GROOMING 美容', position: 30 },
-  { value: 'FUN', label: 'FUN 玩具', position: 40 },
-  { value: 'SPORT', label: 'SPORT 运动', position: 50 },
-  { value: 'ACCESSORY', label: 'ACCESSORY 配件', position: 60 },
+  { value: 'FEEDING', label: '喂食', position: 10 },
+  { value: 'CLEANING', label: '清洁', position: 20 },
+  { value: 'GROOMING', label: '美容', position: 30 },
+  { value: 'FUN', label: '玩具', position: 40 },
+  { value: 'SPORT', label: '运动', position: 50 },
+  { value: 'ACCESSORY', label: '配件', position: 60 },
 ] as const
 
 /**
@@ -35,7 +36,7 @@ async function seedQuoteSections(ctx: InitSetupContext) {
     dictionary = em.create(Dictionary, {
       key: QUOTE_SECTION_DICTIONARY_KEY,
       name: 'Quotation sections',
-      description: 'Section banners offered on quotation lines (分类)',
+      description: 'Section banners offered on quotation lines',
       tenantId: ctx.tenantId,
       organizationId: ctx.organizationId,
       isSystem: true,

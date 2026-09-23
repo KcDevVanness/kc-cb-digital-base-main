@@ -7,14 +7,14 @@ import { normalizeDictionaryValue } from '@open-mercato/core/modules/dictionarie
  * value already used for `amazon` / `ozon` — and `label` is what the operator reads.
  */
 export const CHANNEL_PLATFORM_SEEDS = [
-  { value: 'amazon', label: '亚马逊 Amazon', position: 10 },
+  { value: 'amazon', label: '亚马逊', position: 10 },
   { value: 'ozon', label: 'Ozon', position: 20 },
   { value: 'tiktok_shop', label: 'TikTok Shop', position: 30 },
   { value: 'temu', label: 'Temu', position: 40 },
   { value: 'shein', label: 'SHEIN', position: 50 },
   { value: 'shopify', label: 'Shopify', position: 60 },
   { value: 'ebay', label: 'eBay', position: 70 },
-  { value: 'walmart', label: '沃尔玛 Walmart', position: 80 },
+  { value: 'walmart', label: '沃尔玛', position: 80 },
 ] as const
 
 export const CHANNEL_PLATFORM_DICTIONARY_KEY = 'channel_platform'
@@ -47,7 +47,7 @@ export const setup: ModuleSetupConfig = {
       dictionary = em.create(Dictionary, {
         key: CHANNEL_PLATFORM_DICTIONARY_KEY,
         name: 'Sales platforms',
-        description: 'Marketplaces offered on platform channels (平台)',
+        description: 'Marketplaces offered on platform channels',
         tenantId: ctx.tenantId,
         organizationId: ctx.organizationId,
         isSystem: true,

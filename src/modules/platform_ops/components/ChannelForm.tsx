@@ -30,7 +30,12 @@ const PLATFORM_DICTIONARY_KEY = 'channel_platform'
  */
 async function loadPlatformOptions(): Promise<CrudFieldOption[]> {
   const entries = await loadDictionaryEntriesByKey(PLATFORM_DICTIONARY_KEY)
-  return entries.map((entry) => ({ value: entry.value, label: entry.label }))
+  // `CODE — name`: the dictionary label is the display name alone and the code the channel stores
+  // is shown in front of it, the shape every app picker uses (`docs/dev/i18n.md`).
+  return entries.map((entry) => {
+    const label = entry.label.trim()
+    return { value: entry.value, label: label && label !== entry.value ? `${entry.value} — ${label}` : entry.value }
+  })
 }
 
 export type ChannelFormValues = {

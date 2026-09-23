@@ -24,7 +24,13 @@ export const UNIT_DICTIONARY_KEY = 'supplier_product_unit'
 let cachedOptions: CrudFieldOption[] | null = null
 
 function toOptions(entries: DictionaryEntryOption[]): CrudFieldOption[] {
-  return entries.map((entry) => ({ value: entry.value, label: entry.label }))
+  // `CODE — name`: the dictionary label is the display name alone (one language, no code glued to
+  // it), and the code — the thing the record actually stores and the customs paperwork prints — is
+  // put in front of it by the picker. Same shape as the currency picker.
+  return entries.map((entry) => {
+    const label = entry.label.trim()
+    return { value: entry.value, label: label && label !== entry.value ? `${entry.value} — ${label}` : entry.value }
+  })
 }
 
 /**

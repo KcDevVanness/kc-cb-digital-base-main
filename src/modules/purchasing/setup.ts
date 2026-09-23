@@ -27,21 +27,25 @@ export const PURCHASE_ORDER_PRODUCT_CATEGORY_SEEDS = [
  *
  * The product form and the trade-document lines read the same dictionary through
  * `products/lib/unitOptions.ts`; this module seeds it because it owns the library that needs it.
+ *
+ * `label` is the display name **only** — one language, no code glued to it. The picker shows the
+ * stored code beside it (`PCS — 件`), so an operator still recognizes what lands on the record
+ * without the label carrying two languages (`docs/dev/i18n.md`).
  */
 export const SUPPLIER_PRODUCT_UNIT_DICTIONARY_KEY = 'supplier_product_unit'
 
 export const SUPPLIER_PRODUCT_UNIT_SEEDS = [
-  { value: 'PCS', label: '件 (PCS)', position: 10 },
-  { value: 'SET', label: '套 (SET)', position: 20 },
-  { value: 'PAIR', label: '对 (PAIR)', position: 30 },
-  { value: 'BOX', label: '盒 (BOX)', position: 40 },
-  { value: 'CTN', label: '箱 (CTN)', position: 50 },
-  { value: 'BAG', label: '袋 (BAG)', position: 60 },
-  { value: 'ROLL', label: '卷 (ROLL)', position: 70 },
-  { value: 'KG', label: '千克 (KG)', position: 80 },
-  { value: 'G', label: '克 (G)', position: 90 },
-  { value: 'M', label: '米 (M)', position: 100 },
-  { value: 'L', label: '升 (L)', position: 110 },
+  { value: 'PCS', label: '件', position: 10 },
+  { value: 'SET', label: '套', position: 20 },
+  { value: 'PAIR', label: '对', position: 30 },
+  { value: 'BOX', label: '盒', position: 40 },
+  { value: 'CTN', label: '箱', position: 50 },
+  { value: 'BAG', label: '袋', position: 60 },
+  { value: 'ROLL', label: '卷', position: 70 },
+  { value: 'KG', label: '千克', position: 80 },
+  { value: 'G', label: '克', position: 90 },
+  { value: 'M', label: '米', position: 100 },
+  { value: 'L', label: '升', position: 110 },
 ] as const
 
 /**
@@ -78,7 +82,7 @@ export const setup: ModuleSetupConfig = {
       dictionary = em.create(Dictionary, {
         key: PURCHASE_ORDER_PRODUCT_CATEGORY_DICTIONARY_KEY,
         name: 'Order product categories',
-        description: 'Product categories offered on purchase orders (订单描述)',
+        description: 'Product categories offered on purchase orders',
         tenantId: ctx.tenantId,
         organizationId: ctx.organizationId,
         isSystem: true,
@@ -141,7 +145,7 @@ async function seedUnitDictionary(
     dictionary = em.create(Dictionary, {
       key: SUPPLIER_PRODUCT_UNIT_DICTIONARY_KEY,
       name: 'Supplier product units',
-      description: 'Units of measure offered on supplier product library rows (单位)',
+      description: 'Units of measure offered on supplier product library rows',
       tenantId,
       organizationId,
       isSystem: true,

@@ -9,7 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@open-mercato/ui/primitives/select'
-import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import type { Locale } from '@open-mercato/shared/lib/i18n/config'
 import { SOURCE_FIELDS } from '../lib/fieldAliases'
 import type { MappingColumn, MappingConfidence } from '../types'
 
@@ -59,9 +60,15 @@ function confidenceLabel(t: TranslateFn, confidence: MappingConfidence): string 
   return t(`sourcing.mapping.confidence.${confidence}`, confidence)
 }
 
-function targetFieldLabel(key: string): string {
+/**
+ * The target field's name **in the reader's language**. `fieldAliases` carries a Chinese and an
+ * English label for every field because the workbook may print either, but a reader picks one
+ * language: 「货号 / SKU」 in a select is a second language, not a bilingual feature.
+ */
+function targetFieldLabel(key: string, locale: Locale): string {
   const field = SOURCE_FIELDS.find((entry) => entry.key === key)
-  return field ? `${field.labelZh} / ${field.labelEn}` : key
+  if (!field) return key
+  return locale === 'zh' ? field.labelZh : field.labelEn
 }
 
 export function ColumnMappingTable({
@@ -74,6 +81,7 @@ export function ColumnMappingTable({
   disabled?: boolean
 }) {
   const t = useT()
+  const locale = useLocale()
 
   return (
     <div className="overflow-x-auto rounded-md border border-border">
@@ -116,7 +124,7 @@ export function ColumnMappingTable({
                       <SelectItem value={UNMAPPED_VALUE}>{t('sourcing.wizard.mapping.unmapped', 'Unmapped')}</SelectItem>
                       {SOURCE_FIELDS.map((field) => (
                         <SelectItem key={field.key} value={field.key}>
-                          {field.labelZh} / {field.labelEn}
+                          {targetFieldLabel(field.key, locale)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -130,7 +138,7 @@ export function ColumnMappingTable({
                   {column.reason === 'duplicate_target' && column.duplicateOfField ? (
                     <span className="text-xs text-muted-foreground">
                       {t('sourcing.wizard.mapping.duplicateTarget', 'Duplicate target: {field}', {
-                        field: targetFieldLabel(column.duplicateOfField),
+                        field: targetFieldLabel(column.duplicateOfField, locale),
                       })}
                     </span>
                   ) : null}

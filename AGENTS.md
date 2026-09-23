@@ -23,6 +23,7 @@ Route first; never probe unmatched context.
 - Run `yarn generate` after discovery files/`src/modules.ts`/routes/pages/events/widgets/agents/tools/workflows change.
 - Contract-surface changes (route/schema/ID/export/seam/signature/event payload/CLI) MUST read `.ai/guides/upstream/BACKWARD_COMPATIBILITY.md`; tenant/org scope alone is not a contract.
 - Localize strings; use shared UI/tokens and cover loading/empty/error/conflict/keyboard/a11y.
+- One string, one language: UI text goes through `t()` (English fallback); dictionary/seed labels and seed `name`/`description` carry a single language and the display name only, with a stored code rendered by the picker as `CODE — name`; printed/exported documents resolve their labels through `t()` at generation time. Never write 「供应商货号 Supplier code」-style pairs; `src/lib/i18n/__tests__/language-purity.test.ts` enforces it (rules: `docs/dev/i18n.md`).
 
 ## Ask First
 

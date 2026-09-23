@@ -28,10 +28,10 @@ export type PolicyCurrency = {
 }
 
 export const CURRENCY_REGION_LABELS: Record<CurrencyRegion, string> = {
-  china: '中国地区 Greater China',
-  russia: '俄罗斯地区 Russia',
-  southeast_asia: '东南亚地区 Southeast Asia',
-  united_states: '美国地区 United States',
+  china: '中国地区',
+  russia: '俄罗斯地区',
+  southeast_asia: '东南亚地区',
+  united_states: '美国地区',
 }
 
 /**

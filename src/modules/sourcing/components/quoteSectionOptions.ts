@@ -15,6 +15,11 @@ export async function loadQuoteSectionOptions(query?: string): Promise<CrudField
   const entries = await loadDictionaryEntriesByKey(QUOTE_SECTION_DICTIONARY_KEY)
   const term = query?.trim().toLowerCase() ?? ''
   return entries
-    .map((entry) => ({ value: entry.value, label: entry.label }))
+    // The label is the display name alone; the code the line stores is shown in front of it, the
+    // same `CODE — name` shape every app picker uses.
+    .map((entry) => {
+      const label = entry.label.trim()
+      return { value: entry.value, label: label && label !== entry.value ? `${entry.value} — ${label}` : entry.value }
+    })
     .filter((option) => (term.length ? `${option.value} ${option.label}`.toLowerCase().includes(term) : true))
 }

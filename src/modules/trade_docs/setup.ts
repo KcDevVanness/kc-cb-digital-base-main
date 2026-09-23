@@ -6,22 +6,26 @@ import { normalizeDictionaryValue } from '@open-mercato/core/modules/dictionarie
  * Payment terms a contract can carry (付款方式). `value` is what the contract prints — the picker
  * suggests these, and an operator may still type the wording a specific deal was signed with — so
  * the seeds are the phrasings this business already uses, not codes.
+ *
+ * One language per entry: a dictionary label cannot switch with the reader's locale, so a seed that
+ * needs an English wording for a specific deal is typed on that deal, not carried beside the
+ * Chinese one (see `docs/dev/i18n.md`).
  */
 export const PAYMENT_TERM_SEEDS = [
-  { value: '30% 定金 + 70% 尾款', label: '30% 定金 + 70% 尾款 (30% deposit, 70% balance)', position: 10 },
-  { value: '30% 定金 + 70% 见提单副本付款', label: '30% 定金 + 70% 见提单副本 (70% against B/L copy)', position: 20 },
-  { value: '100% 预付', label: '100% 预付 (100% in advance)', position: 30 },
-  { value: '即期信用证 (L/C at sight)', label: '即期信用证 L/C at sight', position: 40 },
-  { value: '60 天账期', label: '60 天账期 (60 days credit)', position: 50 },
+  { value: '30% 定金 + 70% 尾款', label: '30% 定金 + 70% 尾款', position: 10 },
+  { value: '30% 定金 + 70% 见提单副本付款', label: '30% 定金 + 70% 见提单副本付款', position: 20 },
+  { value: '100% 预付', label: '100% 预付', position: 30 },
+  { value: '即期信用证', label: '即期信用证', position: 40 },
+  { value: '60 天账期', label: '60 天账期', position: 50 },
 ] as const
 
 /** Modes of transport a contract ships by (运输方式). */
 export const SHIPPING_METHOD_SEEDS = [
-  { value: '海运', label: '海运 Ocean', position: 10 },
-  { value: '空运', label: '空运 Air', position: 20 },
-  { value: '铁路', label: '铁路 Rail', position: 30 },
-  { value: '快递', label: '快递 Express', position: 40 },
-  { value: '陆运', label: '陆运 Road', position: 50 },
+  { value: '海运', label: '海运', position: 10 },
+  { value: '空运', label: '空运', position: 20 },
+  { value: '铁路', label: '铁路', position: 30 },
+  { value: '快递', label: '快递', position: 40 },
+  { value: '陆运', label: '陆运', position: 50 },
 ] as const
 
 export const PAYMENT_TERM_DICTIONARY_KEY = 'payment_terms'
@@ -39,13 +43,13 @@ const DICTIONARY_SEEDS: readonly DictionarySeed[] = [
   {
     key: PAYMENT_TERM_DICTIONARY_KEY,
     name: 'Payment terms',
-    description: 'Payment terms offered on purchase and sales contracts (付款方式)',
+    description: 'Payment terms offered on purchase and sales contracts',
     entries: PAYMENT_TERM_SEEDS,
   },
   {
     key: SHIPPING_METHOD_DICTIONARY_KEY,
     name: 'Shipping methods',
-    description: 'Modes of transport offered on contracts (运输方式)',
+    description: 'Modes of transport offered on contracts',
     entries: SHIPPING_METHOD_SEEDS,
   },
 ]
