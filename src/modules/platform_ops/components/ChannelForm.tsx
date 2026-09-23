@@ -18,7 +18,7 @@ import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 export const CHANNELS_API_PATH = 'platform_ops/channels'
 export const CHANNELS_LIST_HREF = '/backend/platform_ops/channels'
 
-const CURRENCY_DICTIONARY_URL = '/api/customers/dictionaries/currency'
+const CURRENCY_DICTIONARY_URL = '/api/currency_policy/currencies'
 
 export type ChannelFormValues = {
   id?: string

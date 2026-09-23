@@ -4,11 +4,10 @@ import { normalizeDictionaryValue } from '@open-mercato/core/modules/dictionarie
 import { badRequest } from '@open-mercato/shared/lib/crud/errors'
 
 /**
- * Currency codes must come from the seeded currency **dictionary** — the same store the
- * currency pickers read (`GET /api/currency_policy/currencies`) — not from the FX
- * master (`currencies` table), which drives exchange rates and reporting instead.
- * Without this check an API caller could store a code the UI picker can never show,
- * producing a supplier whose currency cannot be selected again on edit.
+ * Currency codes on a price row must come from the seeded currency **dictionary** — the same
+ * store the platform's currency pickers read — not from the FX master (`currencies` table),
+ * which drives exchange rates and reporting. Without this check an API caller could store a code
+ * the UI picker can never show, producing a price row that cannot be edited again.
  *
  * Both dictionary keys are accepted because the platform seeds `currency` while the CRM
  * resolves either spelling.

@@ -1,21 +1,20 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
 import { Dictionary, DictionaryEntry } from '@open-mercato/core/modules/dictionaries/data/entities'
 import { normalizeDictionaryValue } from '@open-mercato/core/modules/dictionaries/lib/utils'
-import { badRequest } from '@open-mercato/shared/lib/crud/errors'
+import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 
 /**
- * Currency codes must come from the seeded currency **dictionary** — the same store the
- * currency pickers read (`GET /api/currency_policy/currencies`) — not from the FX
- * master (`currencies` table), which drives exchange rates and reporting instead.
- * Without this check an API caller could store a code the UI picker can never show,
- * producing a supplier whose currency cannot be selected again on edit.
+ * Currency codes on a quotation must exist in the seeded currency **dictionary** — the store the
+ * platform's currency pickers read — not in the FX master, which drives rates and reporting.
+ * Without the check an import could accept a code the UI can never show, and the promoted price
+ * row would then be un-editable.
  *
- * Both dictionary keys are accepted because the platform seeds `currency` while the CRM
- * resolves either spelling.
+ * Mirrors the check the products and purchasing modules run on their own price rows; each app
+ * module owns its copy rather than importing another module's internals.
  */
 const CURRENCY_DICTIONARY_KEYS = ['currency', 'currencies']
 
-export async function assertCurrencyInDictionary(
+export async function assertCurrencyKnown(
   em: EntityManager,
   scope: { tenantId: string; organizationId: string },
   code: string,
@@ -28,9 +27,11 @@ export async function assertCurrencyInDictionary(
     deletedAt: null,
   })
   if (!dictionary) {
-    throw badRequest('Currency dictionary is not configured yet.')
+    throw new CrudHttpError(422, {
+      error: 'Currency dictionary is not configured yet.',
+      code: 'currency_not_in_dictionary',
+    })
   }
-
   const entry = await scopedEm.findOne(DictionaryEntry, {
     dictionary: dictionary.id,
     tenantId: scope.tenantId,
@@ -38,6 +39,9 @@ export async function assertCurrencyInDictionary(
     normalizedValue: normalizeDictionaryValue(code),
   })
   if (!entry) {
-    throw badRequest(`Unknown currency code: ${code}`)
+    throw new CrudHttpError(422, {
+      error: `Unknown currency code: ${code}`,
+      code: 'currency_not_in_dictionary',
+    })
   }
 }
