@@ -8,6 +8,7 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { Button } from '@open-mercato/ui/primitives/button'
+import { ComboboxInput } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { Label } from '@open-mercato/ui/primitives/label'
 import {
@@ -18,6 +19,8 @@ import {
   SelectValue,
 } from '@open-mercato/ui/primitives/select'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
+import { withCurrentCurrency, useCurrencyOptions } from './currencyOptions'
+import { loadQuoteSectionOptions } from './quoteSectionOptions'
 import { QuoteImportWizard } from './QuoteImportWizard'
 
 /**
@@ -79,6 +82,14 @@ export function QuoteCreatePanel({ initialMode = 'import' }: { initialMode?: 'ma
     staleTime: 60_000,
   })
   const suppliers = suppliersQuery.data?.items ?? []
+
+  // The picker offers what the currency dictionary carries; a code already on the quotation stays
+  // selectable so opening the page can never blank it.
+  const dictionaryCurrencies = useCurrencyOptions(t)
+  const currencyOptions = React.useMemo(
+    () => withCurrentCurrency(dictionaryCurrencies, currencyCode),
+    [currencyCode, dictionaryCurrencies],
+  )
 
   const updateLine = React.useCallback((key: string, patch: Partial<ManualLine>) => {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)))
@@ -178,12 +189,18 @@ export function QuoteCreatePanel({ initialMode = 'import' }: { initialMode?: 'ma
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="sourcing-currency">{t('sourcing.quotes.list.columns.currency', 'Currency')}</Label>
-              <Input
-                id="sourcing-currency"
-                value={currencyCode}
-                maxLength={3}
-                onChange={(event) => setCurrencyCode(event.target.value.toUpperCase())}
-              />
+              <Select value={currencyCode} onValueChange={setCurrencyCode}>
+                <SelectTrigger id="sourcing-currency">
+                  <SelectValue placeholder={t('sourcing.lines.noValue', '—')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {currencyOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="sourcing-notes">{t('sourcing.quotes.list.columns.notes', 'Notes')}</Label>
@@ -229,13 +246,15 @@ export function QuoteCreatePanel({ initialMode = 'import' }: { initialMode?: 'ma
                   aria-label={t('sourcing.lines.column.moq', 'MOQ')}
                   onChange={(event) => updateLine(line.key, { moqQuantity: event.target.value })}
                 />
-                <Input
-                  className="md:col-span-1"
-                  value={line.sectionLabel}
-                  placeholder={t('sourcing.lines.column.section', 'Section')}
-                  aria-label={t('sourcing.lines.column.section', 'Section')}
-                  onChange={(event) => updateLine(line.key, { sectionLabel: event.target.value })}
-                />
+                <div className="md:col-span-1">
+                  <ComboboxInput
+                    value={line.sectionLabel}
+                    placeholder={t('sourcing.lines.column.section', 'Section')}
+                    onChange={(next) => updateLine(line.key, { sectionLabel: next })}
+                    loadSuggestions={loadQuoteSectionOptions}
+                    resolveLabel={(value) => value}
+                  />
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"

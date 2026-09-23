@@ -3,7 +3,7 @@ import type { CommandRuntimeContext, CommandBus } from '@open-mercato/shared/lib
 import { badRequest, CrudHttpError, notFound } from '@open-mercato/shared/lib/crud/errors'
 import { ORGANIZATION_SCOPE_REQUIRED_ERROR_CODE } from '@open-mercato/shared/lib/auth/organizationScope'
 import type { CrudEmitContext, CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
-import { SourcingQuote, SourcingQuoteLine, SourcingSupplierProduct } from '../data/entities'
+import { SourcingQuote, SourcingQuoteLine } from '../data/entities'
 import type { BuiltQuoteLine } from '../lib/quoteLines'
 import { QUOTE_ATTACHMENT_ENTITY_ID, loadQuoteForSource } from '../lib/quoteSource'
 
@@ -17,12 +17,10 @@ import { QUOTE_ATTACHMENT_ENTITY_ID, loadQuoteForSource } from '../lib/quoteSour
 export const QUOTE_ENTITY_ID = 'sourcing:sourcing_quote' as const
 export const QUOTE_LINE_ENTITY_ID = 'sourcing:sourcing_quote_line' as const
 export const PROFILE_ENTITY_ID = 'sourcing:sourcing_import_profile' as const
-export const SUPPLIER_PRODUCT_ENTITY_ID = 'sourcing:sourcing_supplier_product' as const
 
 export const QUOTE_RESOURCE_KIND = 'sourcing.quote' as const
 export const QUOTE_LINE_RESOURCE_KIND = 'sourcing.quote_line' as const
 export const PROFILE_RESOURCE_KIND = 'sourcing.import_profile' as const
-export const SUPPLIER_PRODUCT_RESOURCE_KIND = 'sourcing.supplier_product' as const
 
 export type SourcingScope = { tenantId: string; organizationId: string }
 
@@ -145,64 +143,6 @@ export const quoteLineCrudEvents: CrudEventsConfig<SourcingQuoteLine> = {
 
 export const quoteLineCrudIndexer: CrudIndexerConfig<SourcingQuoteLine> = {
   entityType: QUOTE_LINE_ENTITY_ID,
-}
-
-export function supplierProductFilter(
-  scope: SourcingScope,
-  id: string,
-): FilterQuery<SourcingSupplierProduct> {
-  return {
-    id,
-    tenantId: scope.tenantId,
-    organizationId: scope.organizationId,
-    deletedAt: null,
-  } as FilterQuery<SourcingSupplierProduct>
-}
-
-export async function loadSupplierProduct(
-  em: EntityManager,
-  scope: SourcingScope,
-  id: string,
-): Promise<SourcingSupplierProduct> {
-  const row = await em.fork().findOne(SourcingSupplierProduct, supplierProductFilter(scope, id))
-  if (!row) throw notFound('Supplier product not found')
-  return row
-}
-
-/**
- * A supplier code is unique per supplier **including soft-deleted rows**, so every duplicate check
- * has to see them: without this the unique index answers with a 500 instead of a readable 409.
- */
-export async function findSupplierProductBySku(
-  em: EntityManager,
-  scope: SourcingScope,
-  supplierId: string,
-  supplierSku: string,
-): Promise<SourcingSupplierProduct | null> {
-  return em.fork().findOne(SourcingSupplierProduct, {
-    tenantId: scope.tenantId,
-    organizationId: scope.organizationId,
-    supplierId,
-    supplierSku,
-  } as FilterQuery<SourcingSupplierProduct>)
-}
-
-export const supplierProductCrudEvents: CrudEventsConfig<SourcingSupplierProduct> = {
-  module: 'sourcing',
-  entity: 'supplier_product',
-  persistent: true,
-  buildPayload: (ctx: CrudEmitContext<SourcingSupplierProduct>) => ({
-    id: ctx.identifiers.id,
-    tenantId: ctx.identifiers.tenantId,
-    organizationId: ctx.identifiers.organizationId,
-    supplierId: ctx.entity?.supplierId ?? null,
-    supplierSku: ctx.entity?.supplierSku ?? null,
-    status: ctx.entity?.status ?? null,
-  }),
-}
-
-export const supplierProductCrudIndexer: CrudIndexerConfig<SourcingSupplierProduct> = {
-  entityType: SUPPLIER_PRODUCT_ENTITY_ID,
 }
 
 /**

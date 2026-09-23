@@ -14,27 +14,6 @@ const events = [
   { id: 'sourcing.quote.deleted', label: 'Quotation Deleted', entity: 'quote', category: 'crud', clientBroadcast: true },
   { id: 'sourcing.quote.promoted', label: 'Quotation Lines Promoted', entity: 'quote', category: 'crud', clientBroadcast: true },
   { id: 'sourcing.quote_line.updated', label: 'Quotation Line Updated', entity: 'quote_line', category: 'crud', clientBroadcast: true },
-  {
-    id: 'sourcing.supplier_product.created',
-    label: 'Supplier Product Created',
-    entity: 'supplier_product',
-    category: 'crud',
-    clientBroadcast: true,
-  },
-  {
-    id: 'sourcing.supplier_product.updated',
-    label: 'Supplier Product Updated',
-    entity: 'supplier_product',
-    category: 'crud',
-    clientBroadcast: true,
-  },
-  {
-    id: 'sourcing.supplier_product.deleted',
-    label: 'Supplier Product Deleted',
-    entity: 'supplier_product',
-    category: 'crud',
-    clientBroadcast: true,
-  },
 ] as const
 
 export const eventsConfig = createModuleEvents({

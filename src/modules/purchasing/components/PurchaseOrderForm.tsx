@@ -30,6 +30,7 @@ import {
   loadOwnerOptions,
   loadProductCategoryOptions,
   loadSupplierProductOptions,
+  readErrorStatus,
 } from './orderFormOptions'
 
 export const ORDERS_API_PATH = 'purchasing/purchase-orders'
@@ -266,6 +267,7 @@ function optionFromOwnedProduct(item: Record<string, unknown>): CrudFieldOption 
  */
 export async function loadOwnedProductOptions(
   errorMessage: string,
+  forbiddenMessage: string,
   query?: string,
   organizationId?: string | null,
 ): Promise<CrudFieldOption[]> {
@@ -273,14 +275,21 @@ export async function loadOwnedProductOptions(
   if (organizationId) params.set('organizationId', organizationId)
   const term = query?.trim()
   if (term) params.set('search', term)
-  const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
-    `${PRODUCTS_API_PATH}?${params.toString()}`,
-    undefined,
-    { fallback: { items: [] }, errorMessage },
-  )
-  return (payload.items ?? [])
-    .map(optionFromOwnedProduct)
-    .filter((option): option is CrudFieldOption => option !== null)
+  try {
+    const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
+      `${PRODUCTS_API_PATH}?${params.toString()}`,
+      undefined,
+      { fallback: { items: [] }, errorMessage },
+    )
+    return (payload.items ?? [])
+      .map(optionFromOwnedProduct)
+      .filter((option): option is CrudFieldOption => option !== null)
+  } catch (error) {
+    // A refusal is named, not swallowed: an empty master picker otherwise reads as "no products".
+    const status = readErrorStatus(error)
+    flash(status === 401 || status === 403 ? forbiddenMessage : errorMessage, 'error')
+    return []
+  }
 }
 
 /**
@@ -299,7 +308,7 @@ export type PurchaseOrderLineValues = {
   productId: string
   /** Legacy reference kept only so an existing draft that carries one can still be saved. */
   catalogProductId: string
-  /** Reference to a supplier product library row (`sourcing_supplier_products.id`). */
+  /** Reference to a supplier product library row (`purchasing_supplier_products.id`). */
   supplierProductId: string
   /** True while this line is being picked from the supplier library instead of the master. */
   supplierProductMode: boolean
@@ -565,6 +574,7 @@ export function PurchaseOrderLinesEditor({
                     loadSuggestions={(query) =>
                       loadSupplierProductOptions(
                         t('purchasing.orders.form.loadFailed'),
+                        t('purchasing.orders.form.lines.supplierProductForbidden'),
                         supplierId,
                         query,
                         organizationId,
@@ -584,7 +594,12 @@ export function PurchaseOrderLinesEditor({
                         : undefined
                     }
                     loadSuggestions={(query) =>
-                      loadOwnedProductOptions(t('purchasing.orders.form.loadFailed'), query, organizationId)
+                      loadOwnedProductOptions(
+                        t('purchasing.orders.form.loadFailed'),
+                        t('purchasing.orders.form.lines.masterForbidden'),
+                        query,
+                        organizationId,
+                      )
                     }
                     allowCustomValues={false}
                     clearable
@@ -595,6 +610,16 @@ export function PurchaseOrderLinesEditor({
                     {t('purchasing.orders.form.lines.supplierRequired')}
                   </p>
                 ) : null}
+                {/* One line per source: an operator has to know which list they are choosing from and
+                    what each choice costs them downstream (the master picker needs the catalog link to
+                    ship, the library picker needs a sync first). */}
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    supplierMode
+                      ? 'purchasing.orders.form.lines.supplierProductHint'
+                      : 'purchasing.orders.form.lines.masterHint',
+                  )}
+                </p>
                 <Button type="button" variant="link" size="2xs" className="h-auto px-0" onClick={switchPicker}>
                   {t(
                     supplierMode

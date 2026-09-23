@@ -5,7 +5,7 @@ a set of products, whether it arrives as a workbook or is typed by hand. It does
 product master data — promoting a quotation line writes into `products` through that module's
 commands.
 
-Specs: [`.ai/specs/2026-09-22-supplier-quotation-import.md`](../../../.ai/specs/2026-09-22-supplier-quotation-import.md) (quotations and the workbook import), [`.ai/specs/2026-09-22-supplier-product-library.md`](../../../.ai/specs/2026-09-22-supplier-product-library.md) (the supplier product library).
+Specs: [`.ai/specs/2026-09-22-supplier-quotation-import.md`](../../../.ai/specs/2026-09-22-supplier-quotation-import.md) (quotations and the workbook import), [`.ai/specs/2026-09-22-supplier-product-library.md`](../../../.ai/specs/2026-09-22-supplier-product-library.md) (the supplier product library, owned by `purchasing` since 2026-09-23).
 
 ## What lives here
 
@@ -17,58 +17,50 @@ Specs: [`.ai/specs/2026-09-22-supplier-quotation-import.md`](../../../.ai/specs/
 | Value normalization | `lib/valueNormalization.ts` | `/` and friends → null, `10 pallets` → 10 + warning, `0.58*0.395*0.455` → centimetres, name → base + variant tokens. |
 | SKU derivation | `lib/skuDerivation.ts` | Item No. for the first row of a group, `-<variant token>` for the rest (`P4108` / `P4108-UVC`), name slug when there is no Item No. |
 | Line building | `lib/quoteLines.ts` + `lib/quoteAnalysis.ts` | Detection + mapping + normalization → quotation lines, with every source row kept in `raw`. |
-| Promotion | `lib/promotion.ts` + `lib/productMapping.ts` | Selected lines → `products.items.create|update` + `products.prices.replace` + `products.categories.create`. |
+| Promotion | `lib/promotion.ts` + `lib/productMapping.ts` | Selected lines → `products.items.create|update` + `products.prices.replace` + `products.categories.create`, then `purchasing.supplier-products.import-from-quote` for the library. The master-side mapping (non-empty/changed values, the whole price set) is shared from `products/lib/supplierMapping.ts`. |
 | AI mapping (optional) | `lib/aiMapping.ts` | Header row + up to three sample rows → a proposed mapping. Off unless a model provider is configured. |
 
-## Supplier product library
+## The supplier product library lives in `purchasing`
 
-`sourcing_supplier_products` is the **supplier-side goods list**: what each supplier sells us —
-supplier code (`supplier_sku`), original item no., name, spec, unit, HS code, MOQ, carton quantity,
-weights and inner/outer packing. It is the list a buyer orders from, as opposed to
-`products_products` (the internal master that stock, internal sales and contracts need).
+`sourcing_supplier_products` was this module's table until 2026-09-23; the entity, commands, API and
+pages now belong to **`purchasing`** (`purchasing_supplier_products` and
+`purchasing_supplier_product_prices`, pages at `/backend/purchasing/supplier-products`). This module
+still *feeds* it, and that is its only remaining involvement:
 
-- **No prices, by design.** Prices stay on `sourcing_quote_lines` and on purchase order lines
-  (purchasing Q-P-004), so a library row can never go stale about money.
-- **Two ways in, one row.** An operator can type a row, or push quotation lines in through
-  `sourcing.supplier-products.import-from-quote` (`derived_sku ?? item_no` becomes the supplier
-  code). Promoting quotation lines into the product master also upserts the library row and backfills
-  `product_id`, so the two paths converge instead of maintaining two lists.
-- **Sync is explicit.** `sourcing.supplier-products.promote` creates or updates the master product by
-  SKU (`products.items.create|update`), merges the `purchase`-tier price row from the most recent
-  quotation line that quoted the code (whole price set submitted, so `internal`/`export` survive),
-  and backfills `product_id`. It is idempotent — a synced row answers `action: 'skipped'` — and it
-  refuses a SKU owned by a soft-deleted product. A library row can be ordered from before it is
-  synced, but shipment/receipt needs the master link (variant-level stock receipt).
-- **Deletion is soft, the code stays owned.** `supplier_sku` is unique per `(tenant, organization,
-  supplier)` **including soft-deleted rows** (same rule as `products_variants`), so duplicate checks
-  query soft-deleted rows too: a clash is a readable 409, never a unique-index 500. Deleting a row
-  that orders already reference is allowed — those lines froze their own snapshot.
+- **The review console's 「加入产品库」** calls `purchasing.supplier-products.import-from-quote` with the
+  quotation and the selected lines; `purchasing` re-reads those lines through a scoped projection
+  (`purchasing/lib/quoteLineReads.ts` — this module's entities are never imported there).
+- **Promoting lines into the product master** calls the same command for each promoted line, so the
+  library stays a by-product of the workflow the buyer already runs. The command reads the line's
+  `promoted_product_id`, which is why only the line id travels. A library failure never rolls back a
+  product write: the line stays promoted and the reason is reported on its own row.
+- The quote line's old reverse pointer (`sourcing_quote_lines.supplier_product_id`) is gone
+  (`Migration20260923043000_sourcing`): it pointed at a row another module owns, nothing read it, and
+  the library row already records the quotation line it was fed from.
 
-| Piece | Detail |
-|---|---|
-| Table | `sourcing_supplier_products` (`SourcingSupplierProduct`) |
-| API | `GET|POST|PUT|DELETE /api/sourcing/supplier-products`, `POST …/import`, `POST …/promote` |
-| Commands | `sourcing.supplier-products.{create,update,delete,import-from-quote,promote}` |
-| Pages | `/backend/sourcing/supplier-products` (+ `/create`, `/[id]/edit`) — rendered in the **Purchasing** menu group (`pageGroupKey: 'purchasing.nav.group'`) even though the module owns them |
-| Events | `sourcing.supplier_product.{created,updated,deleted}` |
-| Reads from `purchasing` | `loadSupplierName` (`lib/purchasingReads.ts`) and the supplier picker `GET /api/purchasing/suppliers` — scalar id + name snapshot, never an ORM relation |
-| Reads from `products` | `lib/productsReads.ts` (`findProductBySku`, `loadProductPrices`, `loadProductLabels`); every write goes through `products.*` commands |
+See [`purchasing/README.md`](../purchasing/README.md) for the library's own rules, and
+`.ai/specs/2026-09-22-supplier-product-library.md` (D2, superseded) for the handover decision.
 
 ## Rules that are easy to get wrong
 
-- **Money is a decimal string.** `unit_cost`, `suggested_rsp` and every weight/volume column are
-  validated as fixed-scale decimal strings and passed through untouched; nothing here does float
-  arithmetic on a price.
+- **Money is a decimal string.** `unit_cost` and `suggested_rsp` are validated as fixed-scale decimal
+  strings and passed through untouched; nothing here does float arithmetic on a price.
 - **Promotion never blanks a product field.** Only non-empty, changed values reach
   `products.items.update`, and the price write submits the product's whole price set (the
   `products.prices.replace` contract deactivates rows missing from the payload), so `internal`
   and `export` tiers survive an import.
 - **A promoted line is frozen.** Re-parsing or re-mapping a quotation that has promoted lines is
   refused with 409: those lines are the record of what was written to the product master.
-- **A library code is owned forever.** The unique key on `(tenant, organization, supplier,
-  supplier_sku)` has no `deleted_at` predicate, so an import that hits a soft-deleted row fails with
-  a message naming it instead of reusing the code — and the duplicate check must query soft-deleted
-  rows, or the index turns a 409 into a 500.
+- **A quotation's currency is picked.** Both quotation panels (`QuoteCreatePanel`'s manual header and
+  `QuoteReviewPanel`'s header) render 币种 as a dropdown over `/api/currency_policy/currencies`
+  (`components/currencyOptions.ts`) — the same dictionary `quotes.update` asserts membership in, so a
+  hand-typed code can no longer be accepted by the form and rejected on save. A code already stored on
+  the quotation is merged into the list, so an older record never renders with an empty trigger, and
+  the FX master stays out of it: it drives exchange rates, not pickers.
+- **Quotation sections are suggested, not enforced.** The `quote_section` dictionary (`setup.ts`, seeded with the
+  workbook banners FEEDING / CLEANING / GROOMING / FUN / SPORT / ACCESSORY) feeds the section cell in the review grid
+  and the manual line editor. Both stay typable: a supplier workbook brings its own banners, so the dictionary is a
+  shortcut for the sections this business sees most, never a filter on what a parsed quotation may say.
 - **An import never blanks a field.** Only non-empty, changed values are written, so a supplier sheet
   with a half-filled column cannot erase what the buyer typed; re-importing the same lines reports
   `skipped`.
@@ -100,13 +92,22 @@ practice:
 ## ACL
 
 `sourcing.quotes.view`, `sourcing.quotes.manage`, `sourcing.import.run`, and
-`sourcing.promote.run` (which depends on `products.items.manage` + `products.prices.manage`), plus
-the library's own `sourcing.supplier-products.view`, `sourcing.supplier-products.manage`, and
-`sourcing.supplier-products.promote` (also depending on `products.items.manage` +
-`products.prices.manage`, so a sourcing-only role cannot grant itself master-data writes).
+`sourcing.promote.run` (which depends on `products.items.manage` + `products.prices.manage`, and on
+`purchasing.supplier-products.manage` for the library leg — a sourcing-only role cannot grant itself
+master-data writes). The library's own features are declared by `purchasing`.
 
 These are seeded into `superadmin`/`admin` through `setup.ts`'s `defaultRoleFeatures`, which only
 applies **when roles are created**. On a tenant that already exists, run
 `yarn mercato auth sync-role-acls` and restart the app — the granted feature list is resolved per
 process, and a superadmin session bypasses the check entirely, so verify the surface with a normal
 role (see `.ai/lessons/module-features-need-role-acl-sync.md`).
+
+## Seeds and verification
+
+```bash
+yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test src/modules/sourcing
+# the quotation-section dictionary (insert-only, idempotent):
+yarn mercato seed:defaults --module sourcing
+# the library's integration coverage lives in purchasing/__integration__/supplier-products.spec.ts
+yarn test:integration:ephemeral
+```

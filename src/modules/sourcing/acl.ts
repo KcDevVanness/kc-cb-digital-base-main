@@ -23,20 +23,15 @@ export const features = [
     id: 'sourcing.promote.run',
     title: 'Promote quotation lines into the product master',
     module: 'sourcing',
-    dependsOn: ['sourcing.quotes.view', 'products.items.manage', 'products.prices.manage'],
-  },
-  { id: 'sourcing.supplier-products.view', title: 'View supplier products', module: 'sourcing' },
-  {
-    id: 'sourcing.supplier-products.manage',
-    title: 'Manage supplier products',
-    module: 'sourcing',
-    dependsOn: ['sourcing.supplier-products.view'],
-  },
-  {
-    id: 'sourcing.supplier-products.promote',
-    title: 'Sync supplier products into the product master',
-    module: 'sourcing',
-    dependsOn: ['sourcing.supplier-products.view', 'products.items.manage', 'products.prices.manage'],
+    // The promotion writes the product master *and* feeds the supplier product library, which
+    // `purchasing` owns; the grant is explicit so a sourcing-only role cannot acquire either write
+    // by holding this one feature.
+    dependsOn: [
+      'sourcing.quotes.view',
+      'products.items.manage',
+      'products.prices.manage',
+      'purchasing.supplier-products.manage',
+    ],
   },
 ]
 

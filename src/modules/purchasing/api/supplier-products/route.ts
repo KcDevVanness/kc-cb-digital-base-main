@@ -3,16 +3,30 @@ import type { EntityManager } from '@mikro-orm/postgresql'
 import { makeCrudRoute } from '@open-mercato/shared/lib/crud/factory'
 import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern'
 import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
-import { SourcingSupplierProduct } from '../../data/entities'
+import { PurchasingSupplierProduct } from '../../data/entities'
 import {
   supplierProductCreateSchema,
   supplierProductListSchema,
   supplierProductUpdateSchema,
 } from '../../data/validators'
 import { loadProductLabels } from '../../lib/productsReads'
-import { createSourcingCrudOpenApi, sourcingCreatedSchema, sourcingOkSchema } from '../openapi'
+import { loadBasePricesByItem, type SupplierProductPriceCell } from '../../lib/supplierProductPrices'
+import { createPurchasingCrudOpenApi, purchasingCreatedSchema, purchasingOkSchema } from '../openapi'
 
-const ENTITY_ID = 'sourcing:sourcing_supplier_product' as const
+const ENTITY_ID = 'purchasing:purchasing_supplier_product' as const
+
+/**
+ * The base price of one kind, attached to a list row by the `afterList` hook.
+ *
+ * Both prices travel as a cell rather than a formatted string: the amount and the currency are
+ * separate facts, and only the client knows the reader's locale. `minQuantity` rides along so the
+ * column can mark a price that only applies from a carton up.
+ */
+const supplierProductPriceCellSchema = z.object({
+  currencyCode: z.string(),
+  unitPrice: z.string(),
+  minQuantity: z.number(),
+})
 
 const supplierProductListItemSchema = z
   .object({
@@ -22,9 +36,15 @@ const supplierProductListItemSchema = z
     supplierSku: z.string(),
     itemNo: z.string().nullable().optional(),
     name: z.string(),
+    nameZh: z.string().nullable().optional(),
+    nameEn: z.string().nullable().optional(),
     description: z.string().nullable().optional(),
+    declarationElements: z.string().nullable().optional(),
     unit: z.string(),
     hsCode: z.string().nullable().optional(),
+    supplierCostPrice: supplierProductPriceCellSchema.nullable().optional(),
+    companyOfferPrice: supplierProductPriceCellSchema.nullable().optional(),
+    imageAttachmentIds: z.array(z.string()).optional(),
     moqQuantity: z.number().nullable().optional(),
     cartonQuantity: z.number().nullable().optional(),
     unitNetWeight: z.string().nullable().optional(),
@@ -72,6 +92,20 @@ function asNullableRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
 }
 
+/** A jsonb array read defensively: anything that is not a string array reads as "no images". */
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
+}
+
+/** `CNY 12.500000` for the CSV/XLSX export, where a nested object would print as `[object Object]`. */
+function formatPriceCell(cell: unknown): string {
+  if (!cell || typeof cell !== 'object') return ''
+  const { currencyCode, unitPrice, minQuantity } = cell as Partial<SupplierProductPriceCell>
+  if (!currencyCode || unitPrice === undefined) return ''
+  const ladder = minQuantity && minQuantity > 1 ? ` (≥${minQuantity})` : ''
+  return `${currencyCode} ${unitPrice}${ladder}`
+}
+
 // `updated_at` is part of the projection because the optimistic-lock round trip needs it:
 // `CrudForm` derives the expected-version header from `initialValues.updatedAt`.
 const listFields = [
@@ -81,7 +115,10 @@ const listFields = [
   'supplier_sku',
   'item_no',
   'name',
+  'name_zh',
+  'name_en',
   'description',
+  'declaration_elements',
   'unit',
   'hs_code',
   'moq_quantity',
@@ -91,6 +128,7 @@ const listFields = [
   'carton_net_weight',
   'inner_packing',
   'outer_packing',
+  'image_attachment_ids',
   'product_id',
   'status',
   'source',
@@ -105,13 +143,13 @@ const listFields = [
 
 export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
   metadata: {
-    GET: { requireAuth: true, requireFeatures: ['sourcing.supplier-products.view'] },
-    POST: { requireAuth: true, requireFeatures: ['sourcing.supplier-products.manage'] },
-    PUT: { requireAuth: true, requireFeatures: ['sourcing.supplier-products.manage'] },
-    DELETE: { requireAuth: true, requireFeatures: ['sourcing.supplier-products.manage'] },
+    GET: { requireAuth: true, requireFeatures: ['purchasing.supplier-products.view'] },
+    POST: { requireAuth: true, requireFeatures: ['purchasing.supplier-products.manage'] },
+    PUT: { requireAuth: true, requireFeatures: ['purchasing.supplier-products.manage'] },
+    DELETE: { requireAuth: true, requireFeatures: ['purchasing.supplier-products.manage'] },
   },
   orm: {
-    entity: SourcingSupplierProduct,
+    entity: PurchasingSupplierProduct,
     idField: 'id',
     tenantField: 'tenantId',
     orgField: 'organizationId',
@@ -148,9 +186,13 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       if (query.status !== 'all') filters.status = query.status
       if (query.search && query.search.trim().length > 0) {
         const term = `%${escapeLikePattern(query.search.trim())}%`
+        // Our own names are searchable because they are what the list leads with; the supplier's
+        // raw name and the two codes stay searchable so an old spreadsheet column still finds a row.
         filters.$or = [
           { supplier_sku: { $ilike: term } },
           { name: { $ilike: term } },
+          { name_zh: { $ilike: term } },
+          { name_en: { $ilike: term } },
           { item_no: { $ilike: term } },
         ]
       }
@@ -161,11 +203,24 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         { field: 'supplierName', header: 'Supplier' },
         { field: 'supplierSku', header: 'Supplier code' },
         { field: 'itemNo', header: 'Item no.' },
-        { field: 'name', header: 'Name' },
+        { field: 'name', header: 'Name (supplier)' },
+        { field: 'nameZh', header: '中文品名' },
+        { field: 'nameEn', header: '英文品名' },
         { field: 'unit', header: 'Unit' },
         { field: 'moqQuantity', header: 'MOQ' },
-        { field: 'cartonQuantity', header: 'Carton qty' },
+        { field: 'cartonQuantity', header: 'Qty/Box' },
         { field: 'hsCode', header: 'HS code' },
+        { field: 'declarationElements', header: '申报要素' },
+        {
+          field: 'supplierCostPrice',
+          header: '供应商供货价',
+          resolve: (item: Record<string, unknown>) => formatPriceCell(item.supplierCostPrice),
+        },
+        {
+          field: 'companyOfferPrice',
+          header: '本公司报价',
+          resolve: (item: Record<string, unknown>) => formatPriceCell(item.companyOfferPrice),
+        },
         { field: 'status' },
         { field: 'updatedAt', header: 'Updated At' },
       ],
@@ -177,9 +232,13 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       supplierSku: String(item.supplier_sku ?? ''),
       itemNo: asNullableString(item.item_no),
       name: String(item.name ?? ''),
+      nameZh: asNullableString(item.name_zh),
+      nameEn: asNullableString(item.name_en),
       description: asNullableString(item.description),
+      declarationElements: asNullableString(item.declaration_elements),
       unit: String(item.unit ?? 'PCS'),
       hsCode: asNullableString(item.hs_code),
+      imageAttachmentIds: asStringArray(item.image_attachment_ids),
       moqQuantity: asNullableNumber(item.moq_quantity),
       cartonQuantity: asNullableNumber(item.carton_quantity),
       unitNetWeight: asNullableString(item.unit_net_weight),
@@ -209,6 +268,11 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
     afterList: async (res, ctx) => {
       const payload = res as { items?: Array<Record<string, unknown>> } | null
       if (!payload || !Array.isArray(payload.items) || payload.items.length === 0) return
+      const tenantId = ctx.auth?.tenantId ?? null
+      const organizationId = ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null
+      if (!tenantId || !organizationId) return
+      const em = ctx.container.resolve('em') as EntityManager
+
       const productIds = Array.from(
         new Set(
           payload.items
@@ -216,63 +280,70 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
             .filter((id): id is string => id !== null),
         ),
       )
-      if (productIds.length === 0) return
-      const tenantId = ctx.auth?.tenantId ?? null
-      const organizationId = ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null
-      if (!tenantId || !organizationId) return
-      const labels = await loadProductLabels(
-        ctx.container.resolve('em') as EntityManager,
-        { tenantId, organizationId },
-        productIds,
-      )
+      if (productIds.length > 0) {
+        const labels = await loadProductLabels(em, { tenantId, organizationId }, productIds)
+        for (const item of payload.items) {
+          const productId = typeof item.productId === 'string' ? item.productId : null
+          const label = productId ? labels[productId] : undefined
+          item.productSku = label?.sku ?? null
+          item.productName = label?.name ?? null
+        }
+      }
+
+      // Price columns: the page's base prices in one scoped query. The read is deliberately not
+      // cached with the list (`disableListCache`), so a price edited in the form shows up here
+      // immediately instead of after the cache expires.
+      const itemIds = payload.items
+        .map((item) => (typeof item.id === 'string' ? item.id : null))
+        .filter((id): id is string => id !== null)
+      const prices = await loadBasePricesByItem(em, { tenantId, organizationId }, itemIds)
       for (const item of payload.items) {
-        const productId = typeof item.productId === 'string' ? item.productId : null
-        const label = productId ? labels[productId] : undefined
-        item.productSku = label?.sku ?? null
-        item.productName = label?.name ?? null
+        const entry = typeof item.id === 'string' ? prices.get(item.id) : undefined
+        item.supplierCostPrice = entry?.supplierCost ?? null
+        item.companyOfferPrice = entry?.companyOffer ?? null
       }
     },
   },
   actions: {
     create: {
-      commandId: 'sourcing.supplier-products.create',
+      commandId: 'purchasing.supplier-products.create',
       schema: supplierProductCreateSchema,
       mapInput: ({ parsed }) => parsed,
       response: ({ result }) => ({ id: String((result as { id: string }).id) }),
       status: 201,
     },
     update: {
-      commandId: 'sourcing.supplier-products.update',
+      commandId: 'purchasing.supplier-products.update',
       schema: supplierProductUpdateSchema,
       mapInput: ({ parsed }) => parsed,
       response: () => ({ ok: true }),
     },
     delete: {
-      commandId: 'sourcing.supplier-products.delete',
+      commandId: 'purchasing.supplier-products.delete',
       response: () => ({ ok: true }),
     },
   },
 })
 
-export const openApi = createSourcingCrudOpenApi({
+export const openApi = createPurchasingCrudOpenApi({
   resourceName: 'Supplier Product',
   pluralName: 'Supplier Products',
   querySchema: supplierProductListSchema,
   listResponseSchema: createPagedListResponseSchema(supplierProductListItemSchema, { paginationMetaOptional: true }),
   create: {
     schema: supplierProductCreateSchema,
-    responseSchema: sourcingCreatedSchema,
+    responseSchema: purchasingCreatedSchema,
     description:
       'Adds one item to a supplier’s product library in the caller’s organization. The supplier code is unique per supplier including soft-deleted rows, so a duplicate answers 409 `supplier_product_sku_taken`.',
   },
   update: {
     schema: supplierProductUpdateSchema,
-    responseSchema: sourcingOkSchema,
+    responseSchema: purchasingOkSchema,
     description:
       'Updates a library row; requires the expected version for optimistic locking. The supplier cannot be changed — a code is only unique per supplier.',
   },
   del: {
-    responseSchema: sourcingOkSchema,
+    responseSchema: purchasingOkSchema,
     description:
       'Soft-deletes a library row. Purchase order lines that reference it keep their frozen snapshot, and the code stays owned until the row is restored.',
   },

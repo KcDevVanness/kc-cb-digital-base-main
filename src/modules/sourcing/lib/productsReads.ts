@@ -16,6 +16,7 @@ export type ProductRow = {
   id: string
   sku: string
   name: string | null
+  nameEn: string | null
   specSummary: string | null
   hsCode: string | null
   unit: string | null
@@ -61,6 +62,7 @@ export async function findProductBySku(
       'id',
       'sku',
       'name',
+      'name_en',
       'spec_summary',
       'hs_code',
       'unit',
@@ -81,6 +83,7 @@ export async function findProductBySku(
     id: string
     sku: string
     name: string | null
+    name_en: string | null
     spec_summary: string | null
     hs_code: string | null
     unit: string | null
@@ -99,6 +102,7 @@ export async function findProductBySku(
     id: String(row.id),
     sku: String(row.sku),
     name: row.name ?? null,
+    nameEn: row.name_en ?? null,
     specSummary: row.spec_summary ?? null,
     hsCode: row.hs_code ?? null,
     unit: row.unit ?? null,

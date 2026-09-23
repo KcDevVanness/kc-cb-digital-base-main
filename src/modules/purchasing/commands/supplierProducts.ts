@@ -1,11 +1,11 @@
-import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
+import type { EntityManager } from '@mikro-orm/postgresql'
 import type { CommandHandler } from '@open-mercato/shared/lib/commands'
 import { registerCommand } from '@open-mercato/shared/lib/commands'
 import { emitCrudSideEffects, requireId } from '@open-mercato/shared/lib/commands/helpers'
-import { CrudHttpError, badRequest, notFound } from '@open-mercato/shared/lib/crud/errors'
 import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/optimistic-lock-command'
+import { badRequest, CrudHttpError, notFound } from '@open-mercato/shared/lib/crud/errors'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
-import { SourcingQuoteLine, SourcingSupplierProduct } from '../data/entities'
+import { PurchasingSupplierProduct } from '../data/entities'
 import {
   supplierProductCreateSchema,
   supplierProductImportSchema,
@@ -13,17 +13,15 @@ import {
   supplierProductUpdateSchema,
   type SupplierProductImportInput,
 } from '../data/validators'
-import { loadSupplierName } from '../lib/purchasingReads'
-import type { SupplierProductImportResult } from '../lib/supplierProductImport'
-import { importQuoteLinesIntoLibraries } from '../lib/supplierProductImport'
-import { promoteSupplierProduct, type SupplierProductPromotionResult } from '../lib/supplierProductPromotion'
+import { importQuoteLinesIntoLibraries, type SupplierProductImportResult } from '../lib/supplierProductImport'
+import { promoteSupplierProduct, type CommandBusLike, type SupplierProductPromotionResult } from '../lib/supplierProductPromotion'
+import { loadQuote } from '../lib/quoteLineReads'
 import {
   SUPPLIER_PRODUCT_RESOURCE_KIND,
   ensureScope,
   findSupplierProductBySku,
-  loadQuote,
   loadSupplierProduct,
-  resolveCommandBus,
+  loadSupplierName,
   supplierProductCrudEvents,
   supplierProductCrudIndexer,
   supplierProductFilter,
@@ -36,10 +34,14 @@ import {
  * is fixed at creation (a code is only unique *per supplier*, so moving a row would silently
  * collide) and a code is owned forever, including by a soft-deleted row — a duplicate is a
  * readable 409, never a unique-index 500.
+ *
+ * `sourcing` reaches this library only through these commands: the quotation promotion calls
+ * `purchasing.supplier-products.import-from-quote` with the line it just promoted, so the library
+ * stays a by-product of the workflow the buyer already runs.
  */
 
-const createSupplierProductCommand: CommandHandler<Record<string, unknown>, SourcingSupplierProduct> = {
-  id: 'sourcing.supplier-products.create',
+const createSupplierProductCommand: CommandHandler<Record<string, unknown>, PurchasingSupplierProduct> = {
+  id: 'purchasing.supplier-products.create',
   isUndoable: false,
   async execute(rawInput, ctx) {
     const parsed = supplierProductCreateSchema.parse(rawInput)
@@ -59,7 +61,7 @@ const createSupplierProductCommand: CommandHandler<Record<string, unknown>, Sour
     }
 
     const created = await de.createOrmEntity({
-      entity: SourcingSupplierProduct,
+      entity: PurchasingSupplierProduct,
       data: {
         tenantId: scope.tenantId,
         organizationId: scope.organizationId,
@@ -68,7 +70,10 @@ const createSupplierProductCommand: CommandHandler<Record<string, unknown>, Sour
         supplierSku: parsed.supplierSku,
         itemNo: parsed.itemNo ?? null,
         name: parsed.name,
+        nameZh: parsed.nameZh ?? null,
+        nameEn: parsed.nameEn ?? null,
         description: parsed.description ?? null,
+        declarationElements: parsed.declarationElements ?? null,
         unit: parsed.unit,
         hsCode: parsed.hsCode ?? null,
         moqQuantity: parsed.moqQuantity ?? null,
@@ -78,6 +83,7 @@ const createSupplierProductCommand: CommandHandler<Record<string, unknown>, Sour
         cartonNetWeight: parsed.cartonNetWeight ?? null,
         innerPacking: parsed.innerPacking,
         outerPacking: parsed.outerPacking,
+        imageAttachmentIds: parsed.imageAttachmentIds ?? [],
         status: parsed.status,
         source: 'manual',
         notes: parsed.notes ?? null,
@@ -96,8 +102,8 @@ const createSupplierProductCommand: CommandHandler<Record<string, unknown>, Sour
   },
 }
 
-const updateSupplierProductCommand: CommandHandler<Record<string, unknown>, SourcingSupplierProduct> = {
-  id: 'sourcing.supplier-products.update',
+const updateSupplierProductCommand: CommandHandler<Record<string, unknown>, PurchasingSupplierProduct> = {
+  id: 'purchasing.supplier-products.update',
   isUndoable: false,
   async execute(rawInput, ctx) {
     const parsed = supplierProductUpdateSchema.parse(rawInput)
@@ -113,7 +119,7 @@ const updateSupplierProductCommand: CommandHandler<Record<string, unknown>, Sour
     })
 
     const updated = await de.updateOrmEntity({
-      entity: SourcingSupplierProduct,
+      entity: PurchasingSupplierProduct,
       where: supplierProductFilter(scope, parsed.id),
       apply: (entity) => {
         // `supplierId` and `source` are deliberately absent: the first because a code is unique per
@@ -121,7 +127,10 @@ const updateSupplierProductCommand: CommandHandler<Record<string, unknown>, Sour
         entity.supplierSku = parsed.supplierSku
         if (parsed.itemNo !== undefined) entity.itemNo = parsed.itemNo ?? null
         entity.name = parsed.name
+        if (parsed.nameZh !== undefined) entity.nameZh = parsed.nameZh ?? null
+        if (parsed.nameEn !== undefined) entity.nameEn = parsed.nameEn ?? null
         if (parsed.description !== undefined) entity.description = parsed.description ?? null
+        if (parsed.declarationElements !== undefined) entity.declarationElements = parsed.declarationElements ?? null
         entity.unit = parsed.unit
         if (parsed.hsCode !== undefined) entity.hsCode = parsed.hsCode ?? null
         if (parsed.moqQuantity !== undefined) entity.moqQuantity = parsed.moqQuantity ?? null
@@ -131,6 +140,9 @@ const updateSupplierProductCommand: CommandHandler<Record<string, unknown>, Sour
         if (parsed.cartonNetWeight !== undefined) entity.cartonNetWeight = parsed.cartonNetWeight ?? null
         if (parsed.innerPacking !== undefined) entity.innerPacking = parsed.innerPacking
         if (parsed.outerPacking !== undefined) entity.outerPacking = parsed.outerPacking
+        // Replace-set: the submitted list is the new photo list, `[]` clears it, and an omitted key
+        // leaves it alone — binding a photo is a row write, so the list sits behind the same lock.
+        if (parsed.imageAttachmentIds !== undefined) entity.imageAttachmentIds = parsed.imageAttachmentIds
         entity.status = parsed.status
         if (parsed.notes !== undefined) entity.notes = parsed.notes ?? null
       },
@@ -155,7 +167,7 @@ const updateSupplierProductCommand: CommandHandler<Record<string, unknown>, Sour
  * picker.
  */
 const deleteSupplierProductCommand: CommandHandler<Record<string, unknown>, { id: string }> = {
-  id: 'sourcing.supplier-products.delete',
+  id: 'purchasing.supplier-products.delete',
   isUndoable: false,
   async execute(rawInput, ctx) {
     const id = requireId(rawInput, 'Supplier product id required')
@@ -164,7 +176,7 @@ const deleteSupplierProductCommand: CommandHandler<Record<string, unknown>, { id
     const de = ctx.container.resolve('dataEngine') as DataEngine
     const product = await loadSupplierProduct(em, scope, id)
 
-    const removed = await de.deleteOrmEntity({ entity: SourcingSupplierProduct, where: supplierProductFilter(scope, id) })
+    const removed = await de.deleteOrmEntity({ entity: PurchasingSupplierProduct, where: supplierProductFilter(scope, id) })
     if (!removed) throw notFound('Supplier product not found')
     await emitCrudSideEffects({
       dataEngine: de,
@@ -179,19 +191,23 @@ const deleteSupplierProductCommand: CommandHandler<Record<string, unknown>, { id
 }
 
 /**
- * `sourcing.supplier-products.import-from-quote` — feed quotation lines into the supplier's
- * library. The quotation must name a supplier (a library row is keyed by one), and lines are
- * matched to the quotation so a stale console cannot import somebody else's rows.
+ * `purchasing.supplier-products.import-from-quote` — feed quotation lines into the supplier's
+ * library. The quotation is read through a scoped projection (`lib/quoteLineReads.ts`), never
+ * through `sourcing`'s entities; the quotation must name a supplier (a library row is keyed by
+ * one), and lines are matched to the quotation so a stale console cannot import somebody else's
+ * rows.
  */
 const importSupplierProductsCommand: CommandHandler<Record<string, unknown>, SupplierProductImportResult> = {
-  id: 'sourcing.supplier-products.import-from-quote',
+  id: 'purchasing.supplier-products.import-from-quote',
   isUndoable: false,
   async execute(rawInput, ctx) {
     const parsed: SupplierProductImportInput = supplierProductImportSchema.parse(rawInput)
     const scope = ensureScope(ctx)
     const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
+
     const quote = await loadQuote(em, scope, parsed.quoteId)
+    if (!quote) throw notFound('Quotation not found in this organization')
     if (!quote.supplierId) {
       throw new CrudHttpError(422, {
         error: 'Select the supplier on the quotation before adding its lines to the supplier library',
@@ -199,32 +215,22 @@ const importSupplierProductsCommand: CommandHandler<Record<string, unknown>, Sup
       })
     }
 
-    const lines = await em.fork().find(SourcingQuoteLine, {
-      quote: String(quote.id),
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      id: { $in: parsed.lineIds },
-    } as FilterQuery<SourcingQuoteLine>)
-    if (lines.length !== parsed.lineIds.length) {
-      throw badRequest('One or more quotation lines do not belong to this quotation')
-    }
-
     return importQuoteLinesIntoLibraries({
       em,
       de,
       scope,
       quote,
-      lines: lines.sort((left, right) => left.lineNumber - right.lineNumber),
+      requestedLineIds: parsed.lineIds,
     })
   },
 }
 
 /**
- * `sourcing.supplier-products.promote` — the supplier list's only write into the product master.
+ * `purchasing.supplier-products.promote` — the supplier list's only write into the product master.
  * Idempotent: a row that already carries `product_id` reports `skipped` instead of writing again.
  */
 const promoteSupplierProductCommand: CommandHandler<Record<string, unknown>, SupplierProductPromotionResult> = {
-  id: 'sourcing.supplier-products.promote',
+  id: 'purchasing.supplier-products.promote',
   isUndoable: false,
   async execute(rawInput, ctx) {
     const parsed = supplierProductPromoteSchema.parse(rawInput)
@@ -238,7 +244,7 @@ const promoteSupplierProductCommand: CommandHandler<Record<string, unknown>, Sup
       ctx,
       scope,
       de,
-      commandBus: resolveCommandBus(ctx),
+      commandBus: ctx.container.resolve('commandBus') as CommandBusLike,
       product,
     })
   },

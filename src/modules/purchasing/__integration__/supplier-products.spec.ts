@@ -13,7 +13,7 @@ import {
 import { getTokenContext, readJsonSafe } from '@open-mercato/core/helpers/integration/generalFixtures'
 
 /**
- * Supplier product library (`src/modules/sourcing`).
+ * Supplier product library (`src/modules/purchasing`).
  *
  * Covers the contracts that carry business risk: the owning supplier of a code (a duplicate is a
  * readable 409 even when the colliding row is soft-deleted), the quotation → library import and its
@@ -27,7 +27,7 @@ import { getTokenContext, readJsonSafe } from '@open-mercato/core/helpers/integr
  * See `.ai/specs/2026-09-22-supplier-product-library.md` (TEST-SPL-001..TEST-SPL-005).
  */
 
-const LIBRARY_URL = '/api/sourcing/supplier-products'
+const LIBRARY_URL = '/api/purchasing/supplier-products'
 const STAFF_PASSWORD = 'SupplierProducts!2026'
 const VIEWER_PASSWORD = 'SupplierProductsViewer!2026'
 
@@ -35,9 +35,9 @@ const STAFF_FEATURES = [
   'sourcing.quotes.view',
   'sourcing.quotes.manage',
   'sourcing.promote.run',
-  'sourcing.supplier-products.view',
-  'sourcing.supplier-products.manage',
-  'sourcing.supplier-products.promote',
+  'purchasing.supplier-products.view',
+  'purchasing.supplier-products.manage',
+  'purchasing.supplier-products.promote',
   'purchasing.suppliers.view',
   'purchasing.suppliers.manage',
   'purchasing.orders.view',
@@ -45,6 +45,10 @@ const STAFF_FEATURES = [
   'products.items.view',
   'products.items.manage',
   'products.prices.manage',
+  // Product photos go through the installed attachments module, so a buyer who can maintain a
+  // library row also needs its two features.
+  'attachments.view',
+  'attachments.manage',
 ]
 
 type LibraryItem = {
@@ -53,16 +57,38 @@ type LibraryItem = {
   supplierSku: string
   itemNo: string | null
   name: string
+  nameZh: string | null
+  nameEn: string | null
   description: string | null
+  declarationElements: string | null
+  unit: string
+  hsCode: string | null
+  imageAttachmentIds: string[]
   productId: string | null
   productSku: string | null
   source: string
   status: string
 }
 
+type PriceRow = {
+  id: string
+  supplierProductId: string
+  priceKind: string
+  currencyCode: string
+  minQuantity: number
+  unitPrice: string
+  isActive: boolean
+}
+
+/** A 1×1 PNG: the smallest payload the attachments route accepts as an image upload. */
+const PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+  'base64',
+)
+
 type ListResponse<T> = { items?: T[]; total?: number }
 
-test.describe.serial('sourcing — supplier product library', () => {
+test.describe.serial('purchasing — supplier product library', () => {
   let api: APIRequestContext
   let rootToken = ''
   let staffToken = ''
@@ -96,7 +122,7 @@ test.describe.serial('sourcing — supplier product library', () => {
     api = await request.newContext()
     // Fixtures that create roles and grant features need `superadmin`: the installed grant check
     // refuses a feature the actor does not itself hold, so a plain `admin` token cannot bootstrap a
-    // role holding the sourcing/purchasing feature set on a tenant whose admin role predates this
+    // role holding the purchasing feature set on a tenant whose admin role predates this
     // module.
     rootToken = await getAuthToken(api, 'superadmin')
     const scope = getTokenContext(rootToken)
@@ -179,7 +205,7 @@ test.describe.serial('sourcing — supplier product library', () => {
       innerPacking: { length: 21.9, width: 21.9, height: 18.5, unit: 'cm' },
     })
     const createdBody = await readJsonSafe<{ id?: string; error?: string; code?: string }>(created)
-    expect(created.status(), `POST /api/sourcing/supplier-products answered ${JSON.stringify(createdBody)}`).toBe(201)
+    expect(created.status(), `POST /api/purchasing/supplier-products answered ${JSON.stringify(createdBody)}`).toBe(201)
     const createdId = String(createdBody?.id ?? '')
     expect(createdId).toBeTruthy()
     libraryRowId = createdId
@@ -231,7 +257,7 @@ test.describe.serial('sourcing — supplier product library', () => {
     expect(approve.status(), 'the quotation must be approved first').toBe(200)
 
     const first = await staffRequest('POST', `${LIBRARY_URL}/import`, { quoteId, lineIds: [quoteLineId] })
-    expect(first.status(), 'POST /api/sourcing/supplier-products/import should return 200').toBe(200)
+    expect(first.status(), 'POST /api/purchasing/supplier-products/import should return 200').toBe(200)
     const firstResult = await readJsonSafe<{ created: number; updated: number; skipped: number; failed: unknown[] }>(first)
     expect(firstResult?.created).toBe(1)
     expect(firstResult?.skipped).toBe(0)
@@ -257,7 +283,7 @@ test.describe.serial('sourcing — supplier product library', () => {
     expect(libraryItem?.id, 'the imported row is the sync source').toBeTruthy()
 
     const promote = await staffRequest('POST', `${LIBRARY_URL}/promote`, { id: libraryItem?.id })
-    expect(promote.status(), 'POST /api/sourcing/supplier-products/promote should return 200').toBe(200)
+    expect(promote.status(), 'POST /api/purchasing/supplier-products/promote should return 200').toBe(200)
     const promoted = await readJsonSafe<{ productId?: string; action?: string; priceSkipped?: boolean }>(promote)
     expect(promoted?.action).toBe('created')
     productId = promoted?.productId ?? null
@@ -370,6 +396,144 @@ test.describe.serial('sourcing — supplier product library', () => {
     expect(line?.supplierSku).toBe(supplierCode)
   })
 
+  test('stores our own names, declaration elements, a photo and a price list', async () => {
+    const created = await staffRequest('POST', LIBRARY_URL, {
+      supplierId,
+      supplierSku: `${supplierCode}-N`,
+      itemNo: `N-${stamp.toUpperCase()}`,
+      name: 'Eversweet 3 Pro (supplier wording)',
+      nameZh: '智能饮水机 3 代',
+      nameEn: 'Eversweet 3 Pro',
+      declarationElements: '品名:饮水机;品牌:Petkit;型号:W5C;材质:ABS',
+      unit: 'SET',
+      // A hyphenated HS code proves the column is text: a numeric one would drop the groups.
+      hsCode: '8471.30.0000',
+    })
+    expect(created.status(), `POST /api/purchasing/supplier-products answered ${await created.text()}`).toBe(201)
+    const rowId = String((await readJsonSafe<{ id?: string }>(created))?.id ?? '')
+    expect(rowId).toBeTruthy()
+
+    // The photo is uploaded against the saved row and bound by the row update, exactly as the form
+    // does it (create-then-bind).
+    const upload = await api.post('/api/attachments', {
+      headers: {
+        Authorization: `Bearer ${staffToken}`,
+        Cookie: `om_selected_org=${hqOrgId}`,
+      },
+      multipart: {
+        entityId: 'purchasing:purchasing_supplier_product',
+        recordId: rowId,
+        partitionCode: 'privateAttachments',
+        file: { name: 'photo.png', mimeType: 'image/png', buffer: PNG_1X1 },
+      },
+    })
+    expect(upload.status(), `POST /api/attachments answered ${await upload.text()}`).toBe(200)
+    const attachmentId = String((await readJsonSafe<{ item?: { id?: string } }>(upload))?.item?.id ?? '')
+    expect(attachmentId).toBeTruthy()
+
+    const updated = await staffRequest('PUT', LIBRARY_URL, {
+      id: rowId,
+      supplierSku: `${supplierCode}-N`,
+      name: 'Eversweet 3 Pro (supplier wording)',
+      nameZh: '智能饮水机 3 代',
+      nameEn: 'Eversweet 3 Pro',
+      declarationElements: '品名:饮水机;品牌:Petkit;型号:W5C;材质:ABS',
+      unit: 'SET',
+      hsCode: '8471.30.0000',
+      imageAttachmentIds: [attachmentId],
+    })
+    expect(updated.status(), `PUT /api/purchasing/supplier-products answered ${await updated.text()}`).toBe(200)
+
+    const readBack = await staffRequest('GET', `${LIBRARY_URL}?id=${encodeURIComponent(rowId)}`)
+    const row = (await readJsonSafe<ListResponse<LibraryItem>>(readBack))?.items?.[0]
+    expect(row?.name).toBe('Eversweet 3 Pro (supplier wording)')
+    expect(row?.nameZh).toBe('智能饮水机 3 代')
+    expect(row?.nameEn).toBe('Eversweet 3 Pro')
+    expect(row?.declarationElements).toBe('品名:饮水机;品牌:Petkit;型号:W5C;材质:ABS')
+    expect(row?.unit).toBe('SET')
+    expect(row?.hsCode).toBe('8471.30.0000')
+    expect(row?.imageAttachmentIds).toEqual([attachmentId])
+
+    const pricesUrl = `${LIBRARY_URL}/prices`
+    const replaced = await staffRequest('PUT', pricesUrl, {
+      supplierProductId: rowId,
+      rows: [
+        { priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '12.500000' },
+        { priceKind: 'company_offer', currencyCode: 'USD', minQuantity: 1, unitPrice: '3.200000' },
+      ],
+    })
+    expect(replaced.status(), `PUT …/prices answered ${await replaced.text()}`).toBe(200)
+
+    const listed = await staffRequest('GET', `${pricesUrl}?supplierProductId=${encodeURIComponent(rowId)}`)
+    const rows = (await readJsonSafe<ListResponse<PriceRow>>(listed))?.items ?? []
+    expect(rows.length).toBe(2)
+    expect(rows.map((entry) => `${entry.priceKind}/${entry.currencyCode}`).sort()).toEqual([
+      'company_offer/USD',
+      'supplier_cost/CNY',
+    ])
+    expect(rows.every((entry) => entry.isActive)).toBe(true)
+
+    // The list projection carries the base price of each kind, which is what the column renders.
+    const withPrices = await staffRequest('GET', `${LIBRARY_URL}?id=${encodeURIComponent(rowId)}`)
+    const decorated = (await readJsonSafe<ListResponse<LibraryItem & { supplierCostPrice?: { unitPrice: string } }>>(withPrices))
+      ?.items?.[0]
+    expect(Number(decorated?.supplierCostPrice?.unitPrice)).toBe(12.5)
+
+    // A duplicate `(kind, currency, minQuantity)` key is a 400; an unknown currency a 422.
+    const duplicateKey = await staffRequest('PUT', pricesUrl, {
+      supplierProductId: rowId,
+      rows: [
+        { priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '1' },
+        { priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '2' },
+      ],
+    })
+    expect(duplicateKey.status()).toBe(400)
+
+    const unknownCurrency = await staffRequest('PUT', pricesUrl, {
+      supplierProductId: rowId,
+      rows: [{ priceKind: 'supplier_cost', currencyCode: 'ZZZ', minQuantity: 1, unitPrice: '1' }],
+    })
+    // 400, the module's own convention for a currency the dictionary does not carry (the supplier
+    // and order forms answer the same way); the message names the code so the operator can fix it.
+    expect(unknownCurrency.status()).toBe(400)
+    expect(await unknownCurrency.text()).toContain('ZZZ')
+
+    // Submitting a set without the offer deactivates it instead of deleting it.
+    const withoutOffer = await staffRequest('PUT', pricesUrl, {
+      supplierProductId: rowId,
+      rows: [{ priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '12.500000' }],
+    })
+    expect(withoutOffer.status()).toBe(200)
+    const afterRemoval = await staffRequest('GET', `${pricesUrl}?supplierProductId=${encodeURIComponent(rowId)}`)
+    const remaining = (await readJsonSafe<ListResponse<PriceRow>>(afterRemoval))?.items ?? []
+    expect(remaining.length, 'a withdrawn price stays readable').toBe(2)
+    const offer = remaining.find((entry) => entry.priceKind === 'company_offer')
+    expect(offer?.isActive).toBe(false)
+    expect(Number(offer?.unitPrice)).toBe(3.2)
+
+    // Promote: our names and the library's supplier price reach the product master.
+    const promote = await staffRequest('POST', `${LIBRARY_URL}/promote`, { id: rowId })
+    expect(promote.status(), `POST …/promote answered ${await promote.text()}`).toBe(200)
+    const promoted = await readJsonSafe<{ productId?: string; action?: string }>(promote)
+    expect(promoted?.action).toBe('created')
+    const promotedProductId = promoted?.productId ?? ''
+    expect(promotedProductId).toBeTruthy()
+
+    const itemRead = await staffRequest('GET', `/api/products/items?ids=${encodeURIComponent(promotedProductId)}`)
+    const item = (await readJsonSafe<ListResponse<{ id: string; name: string; nameEn: string | null }>>(itemRead))?.items?.[0]
+    expect(item?.name, 'our Chinese name is what the master displays').toBe('智能饮水机 3 代')
+    expect(item?.nameEn).toBe('Eversweet 3 Pro')
+
+    const masterPrices = await staffRequest(
+      'GET',
+      `/api/products/prices?productId=${encodeURIComponent(promotedProductId)}&isActive=true`,
+    )
+    const purchase = ((await readJsonSafe<ListResponse<{ priceTier: string; currencyCode: string; unitPrice: string }>>(masterPrices))
+      ?.items ?? []).find((entry) => entry.priceTier === 'purchase')
+    expect(purchase?.currencyCode, 'the library price wins over the quotation for the purchase tier').toBe('CNY')
+    expect(Number(purchase?.unitPrice)).toBe(12.5)
+  })
+
   test('hides another organization’s library and refuses a role without the feature', async () => {
     // A token acting in the branch organization cannot see the HQ library.
     const branchOrg = branchOrgId
@@ -412,6 +576,6 @@ test.describe.serial('sourcing — supplier product library', () => {
       token: viewerToken,
       selectedOrgId: hqOrgId,
     })
-    expect(viewerDenied.status(), 'a role without sourcing.supplier-products.view is refused').toBe(403)
+    expect(viewerDenied.status(), 'a role without purchasing.supplier-products.view is refused').toBe(403)
   })
 })

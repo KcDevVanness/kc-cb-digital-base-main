@@ -22,6 +22,7 @@ import {
 } from '@open-mercato/ui/primitives/select'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
+import { withCurrentCurrency, useCurrencyOptions } from './currencyOptions'
 import { QuoteImportWizard } from './QuoteImportWizard'
 import type { QuoteDetail, QuoteStatus } from '../types'
 
@@ -75,6 +76,14 @@ export function QuoteReviewPanel({ quoteId }: { quoteId: string }) {
     staleTime: 60_000,
   })
   const suppliers = suppliersQuery.data?.items ?? []
+
+  // Same list the create panel offers: the currency dictionary, plus whatever code the quotation
+  // already carries so an older record never renders with an empty trigger.
+  const dictionaryCurrencies = useCurrencyOptions(t)
+  const currencyOptions = React.useMemo(
+    () => withCurrentCurrency(dictionaryCurrencies, currencyCode),
+    [currencyCode, dictionaryCurrencies],
+  )
 
   React.useEffect(() => {
     if (!quote || headerDirty) return
@@ -274,16 +283,25 @@ export function QuoteReviewPanel({ quoteId }: { quoteId: string }) {
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="review-currency">{t('sourcing.quotes.list.columns.currency', 'Currency')}</Label>
-          <Input
-            id="review-currency"
+          <Select
             value={currencyCode}
-            maxLength={3}
             disabled={!isDraft}
-            onChange={(event) => {
-              setCurrencyCode(event.target.value.toUpperCase())
+            onValueChange={(next) => {
+              setCurrencyCode(next)
               setHeaderDirty(true)
             }}
-          />
+          >
+            <SelectTrigger id="review-currency">
+              <SelectValue placeholder={t('sourcing.lines.noValue', '—')} />
+            </SelectTrigger>
+            <SelectContent>
+              {currencyOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="review-notes">{t('sourcing.quotes.list.columns.notes', 'Notes')}</Label>

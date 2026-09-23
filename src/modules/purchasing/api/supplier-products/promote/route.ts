@@ -1,11 +1,11 @@
 import { z } from 'zod'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { makeCrudRoute } from '@open-mercato/shared/lib/crud/factory'
-import { SourcingSupplierProduct } from '../../../data/entities'
+import { PurchasingSupplierProduct } from '../../../data/entities'
 import { supplierProductPromoteSchema } from '../../../data/validators'
-import { sourcingCommandErrors, sourcingTag } from '../../openapi'
+import { purchasingCommandErrors, purchasingTag } from '../../openapi'
 
-const ENTITY_ID = 'sourcing:sourcing_supplier_product' as const
+const ENTITY_ID = 'purchasing:purchasing_supplier_product' as const
 
 const promoteListSchema = z.object({
   id: z.string().uuid().optional(),
@@ -21,10 +21,10 @@ const promoteResponseSchema = z.object({
 
 export const { metadata, POST } = makeCrudRoute({
   metadata: {
-    POST: { requireAuth: true, requireFeatures: ['sourcing.supplier-products.promote'] },
+    POST: { requireAuth: true, requireFeatures: ['purchasing.supplier-products.promote'] },
   },
   orm: {
-    entity: SourcingSupplierProduct,
+    entity: PurchasingSupplierProduct,
     idField: 'id',
     tenantField: 'tenantId',
     orgField: 'organizationId',
@@ -34,7 +34,7 @@ export const { metadata, POST } = makeCrudRoute({
   list: { schema: promoteListSchema, entityId: ENTITY_ID, fields: ['id', 'supplier_sku'] },
   actions: {
     create: {
-      commandId: 'sourcing.supplier-products.promote',
+      commandId: 'purchasing.supplier-products.promote',
       schema: supplierProductPromoteSchema,
       mapInput: ({ parsed }) => parsed,
       response: ({ result }) => result as Record<string, unknown>,
@@ -44,7 +44,7 @@ export const { metadata, POST } = makeCrudRoute({
 })
 
 export const openApi: OpenApiRouteDoc = {
-  tag: sourcingTag,
+  tag: purchasingTag,
   summary: 'Sync a supplier product into the product master',
   methods: {
     POST: {
@@ -53,7 +53,7 @@ export const openApi: OpenApiRouteDoc = {
         'Creates the product master row for this supplier code, or updates the existing one by SKU, and merges a `purchase`-tier price row from the most recent quotation line that quoted the code (the other price tiers are preserved). Backfills `product_id` on the library row. Idempotent: a row that already carries `product_id` reports `action: "skipped"` and writes nothing.',
       requestBody: { schema: supplierProductPromoteSchema },
       responses: [{ status: 200, description: 'Sync finished', schema: promoteResponseSchema }],
-      errors: [...sourcingCommandErrors],
+      errors: [...purchasingCommandErrors],
     },
   },
 }

@@ -30,3 +30,13 @@ const buildPurchasingCrudOpenApi = createCrudOpenApiFactory({
 export function createPurchasingCrudOpenApi(options: CrudOpenApiOptions): OpenApiRouteDoc {
   return buildPurchasingCrudOpenApi(options)
 }
+
+/** Shared error responses for the command-backed routes (import, promote, replace-prices). */
+export const purchasingCommandErrors = [
+  { status: 400, description: 'Validation failed', schema: purchasingErrorSchema },
+  { status: 401, description: 'Not authenticated', schema: purchasingErrorSchema },
+  { status: 403, description: 'Missing feature', schema: purchasingErrorSchema },
+  { status: 404, description: 'Record not found in this organization', schema: purchasingErrorSchema },
+  { status: 409, description: 'Concurrent change or illegal state', schema: purchasingErrorSchema },
+  { status: 422, description: 'The referenced record or state cannot be used', schema: purchasingErrorSchema },
+] as const

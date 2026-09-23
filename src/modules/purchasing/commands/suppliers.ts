@@ -17,6 +17,7 @@ import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
 import { PurchasingSupplier } from '../data/entities'
 import { assertCurrencyInDictionary } from '../lib/currencyDictionary'
 import { supplierCreateSchema, supplierUpdateSchema } from '../data/validators'
+import { ensureScope } from './shared'
 
 const ENTITY_ID = 'purchasing:purchasing_supplier' as const
 const RESOURCE_KIND = 'purchasing.supplier' as const
@@ -69,26 +70,6 @@ export const supplierCrudIndexer: CrudIndexerConfig<PurchasingSupplier> = {
   entityType: ENTITY_ID,
 }
 
-/**
- * Trusted scope only. A command never reads tenant/organization from its payload —
- * the supplier belongs to the organization the caller is acting in, and a missing
- * scope fails closed instead of defaulting to something wider.
- */
-function ensureScope(ctx: CommandRuntimeContext): { tenantId: string; organizationId: string } {
-  const tenantId = ctx.auth?.tenantId ?? null
-  if (!tenantId) throw badRequest('Tenant context is required')
-  const organizationId = ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null
-  if (!organizationId) {
-    // Same code the platform answers with when an authenticated caller has no resolvable
-    // organization scope, so the UI prompts for an organization instead of showing a
-    // generic failure. 400, never 401: the session is valid.
-    throw new CrudHttpError(400, {
-      error: 'Select an organization to access this resource',
-      code: ORGANIZATION_SCOPE_REQUIRED_ERROR_CODE,
-    })
-  }
-  return { tenantId, organizationId }
-}
 
 function scopeFilter(scope: { tenantId: string; organizationId: string }, id: string): FilterQuery<PurchasingSupplier> {
   return {

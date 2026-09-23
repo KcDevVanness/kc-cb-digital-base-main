@@ -11,11 +11,16 @@ import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { Badge } from '@open-mercato/ui/primitives/badge'
 import { Button } from '@open-mercato/ui/primitives/button'
+import { ComboboxInput } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { loadQuoteSectionOptions } from './quoteSectionOptions'
 import type { PromotionResult, QuoteLineRow, QuoteLineStatus } from '../types'
+// The supplier library moved to `purchasing`, so the action's route and payload shape live there;
+// a type-only import asserts the response without pulling a value across the module boundary.
+import type { SupplierProductImportResult } from '../../purchasing/types'
 
 /**
  * The review grid: the operator's replacement for deleting rows in a spreadsheet.
@@ -98,6 +103,7 @@ export function QuoteLinesGrid({
   const scopeVersion = useOrganizationScopeVersion()
   const [saving, setSaving] = React.useState(false)
   const [promoting, setPromoting] = React.useState(false)
+  const [importing, setImporting] = React.useState(false)
 
   // Current `purchase` prices, indexed by SKU: the products module keys prices by product id, and
   // the grid knows SKUs. The window is one page of prices (200) — the column is a reading aid, and
@@ -259,6 +265,63 @@ export function QuoteLinesGrid({
     }
   }, [onPromoted, onReload, queryClient, quoteId, saveDrafts, status, t])
 
+  /**
+   * Feeds the selected lines into the quotation's supplier library.
+   *
+   * Not gated on `approved`: the library is supplier-side goods data, not the frozen master write
+   * that approval exists to authorize — the only precondition is that the quotation names a
+   * supplier, and the command answers `quote_supplier_required` (422) when it does not. Unsaved grid
+   * edits are written first, because the import reads the stored line values.
+   */
+  const addToLibrarySelection = React.useCallback(async (selectedRows: readonly QuoteLineRow[]) => {
+    if (importing) return
+    const ids = selectedRows.map((line) => line.id)
+    if (ids.length === 0) {
+      flash(t('sourcing.supplierProducts.import.noneSelected', 'Select the lines to add first.'), 'error')
+      return
+    }
+    setImporting(true)
+    try {
+      const saved = await saveDrafts()
+      if (!saved) return
+      const response = await apiCall<SupplierProductImportResult>('/api/purchasing/supplier-products/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quoteId, lineIds: ids }),
+      })
+      if (!response.ok || !response.result) {
+        const message = typeof response.result === 'object' && response.result !== null && 'error' in response.result
+          ? String((response.result as { error?: unknown }).error ?? '')
+          : ''
+        flash(message || t('sourcing.supplierProducts.import.failed', 'Adding to the supplier library failed'), 'error')
+        return
+      }
+      const result = response.result
+      flash(
+        t(
+          'sourcing.supplierProducts.import.result',
+          'Library updated: {created} added, {updated} updated, {skipped} unchanged, {failed} failed',
+          { created: result.created, updated: result.updated, skipped: result.skipped, failed: result.failed.length },
+        ),
+        result.failed.length > 0 ? 'error' : 'success',
+      )
+      // Name the rows that failed so the operator repairs those lines instead of re-running the
+      // import; a run is bounded to 200 lines, and a wall of flashes would be unreadable.
+      for (const failure of result.failed.slice(0, 5)) {
+        flash(
+          t('sourcing.supplierProducts.import.failedLine', 'Line {line}: {message}', {
+            line: failure.lineNumber,
+            message: failure.message,
+          }),
+          'error',
+        )
+      }
+      onReload()
+    } finally {
+      setImporting(false)
+    }
+  }, [importing, onReload, quoteId, saveDrafts, t])
+
   const columns = React.useMemo<ColumnDef<QuoteLineRow>[]>(() => {
     const updateDraft = (id: string, field: EditableField, value: string) => {
       onDraftsChange({ ...drafts, [id]: { ...drafts[id], [field]: value } })
@@ -285,7 +348,17 @@ export function QuoteLinesGrid({
         header: t('sourcing.lines.column.section', 'Section'),
         enableSorting: false,
         meta: { priority: 2 },
-        cell: ({ row }) => editable(row.original, 'sectionLabel'),
+        // Section banners come from the `quote_section` dictionary as suggestions and stay typable:
+        // a workbook brings its own banners, and the operator edits rather than transcribes codes.
+        cell: ({ row }) => (
+          <ComboboxInput
+            value={drafts[row.original.id]?.sectionLabel ?? ''}
+            placeholder={t('sourcing.lines.column.section', 'Section')}
+            onChange={(next) => updateDraft(row.original.id, 'sectionLabel', next)}
+            loadSuggestions={loadQuoteSectionOptions}
+            resolveLabel={(value) => value}
+          />
+        ),
       },
       {
         accessorKey: 'itemNo',
@@ -423,6 +496,18 @@ export function QuoteLinesGrid({
             label: t('sourcing.lines.actions.markReady', 'Restore selection'),
             onExecute: (selectedRows) => {
               void setRowsSelected(selectedRows, true)
+              return true
+            },
+          },
+          {
+            id: 'add-to-library',
+            // The bulk-action contract has no disabled flag, so the running state is carried by the
+            // label; a second click while it runs is ignored by the callback itself.
+            label: importing
+              ? t('sourcing.supplierProducts.import.running', 'Adding to the library…')
+              : t('sourcing.supplierProducts.actions.import', 'Add to supplier library'),
+            onExecute: (selectedRows) => {
+              void addToLibrarySelection(selectedRows)
               return true
             },
           },

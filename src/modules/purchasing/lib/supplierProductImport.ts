@@ -2,16 +2,18 @@ import type { EntityManager } from '@mikro-orm/postgresql'
 import { emitCrudSideEffects } from '@open-mercato/shared/lib/commands/helpers'
 import { CrudHttpError, notFound } from '@open-mercato/shared/lib/crud/errors'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
-import { SourcingQuoteLine, SourcingSupplierProduct, type SourcingQuote } from '../data/entities'
-import { supplierProductCrudEvents, supplierProductCrudIndexer, type SourcingScope } from '../commands/shared'
-import { loadSupplierName } from './purchasingReads'
+import { PurchasingSupplierProduct } from '../data/entities'
+import { supplierProductCrudEvents, supplierProductCrudIndexer, loadSupplierName, type PurchasingScope } from '../commands/shared'
+import { loadQuoteLines, type QuoteLineRef, type QuoteRef } from './quoteLineReads'
 
 /**
  * Feeding quotation lines into the supplier's product library.
  *
- * A quotation is a document, not a transaction: one line whose code is unusable (missing, or
- * already owned by a deleted row) must not stop the other 80 from landing. Every rule below keeps
- * the library's meaning stable across repeated imports:
+ * The quotation is `sourcing`'s document and this module only *reads* it (a scoped projection, see
+ * `quoteLineReads.ts`); every write below lands on the library, which this module owns. A quotation
+ * is a document, not a transaction: one line whose code is unusable (missing, or already owned by a
+ * deleted row) must not stop the other 80 from landing. Every rule below keeps the library's
+ * meaning stable across repeated imports:
  *
  * 1. **Per-line isolation** — a failure is recorded with its line number and the run continues.
  * 2. **Idempotency** — a line whose values are already stored reports `skipped`, so importing the
@@ -67,11 +69,11 @@ function normalizePacking(value: Record<string, unknown> | null | undefined): Re
 }
 
 /** The supplier code a line claims in the library: the derived SKU when it has one, else the item no. */
-export function supplierSkuFromLine(line: SourcingQuoteLine): string {
+export function supplierSkuFromLine(line: QuoteLineRef): string {
   return trimmedOrNull(line.derivedSku) ?? trimmedOrNull(line.itemNo) ?? ''
 }
 
-export function supplierProductValuesFromLine(line: SourcingQuoteLine): LibraryValues {
+export function supplierProductValuesFromLine(line: QuoteLineRef): LibraryValues {
   return {
     itemNo: trimmedOrNull(line.itemNo),
     name: trimmedOrNull(line.productName),
@@ -95,7 +97,7 @@ export function supplierProductValuesFromLine(line: SourcingQuoteLine): LibraryV
  * that a supplier sheet with a half-filled column cannot erase what the buyer typed.
  */
 export function changedLibraryFields(
-  current: SourcingSupplierProduct,
+  current: PurchasingSupplierProduct,
   values: LibraryValues,
 ): Record<string, unknown> {
   const stored = current as unknown as Record<string, unknown>
@@ -126,18 +128,18 @@ export function changedLibraryFields(
 /**
  * Creates or refreshes one library row from one quotation line.
  *
- * Shared by the on-demand import and by `promoteQuoteLines`, so the two entry points cannot
- * diverge: whichever runs first produces the same row and the second one merely reports `skipped`.
- * `productId` is how the promotion path backfills the master link inside the same write.
+ * The single write path for both entry points — the console's on-demand import and the quotation
+ * promotion — so the two cannot diverge: whichever runs first produces the same row and the second
+ * merely reports `skipped`. The master link comes from the line's own `promoted_product_id`, so a
+ * line promoted in the same request backfills `product_id` without the caller passing anything.
  */
 export async function upsertSupplierProductRow(input: {
   em: EntityManager
   de: DataEngine
-  scope: SourcingScope
-  quote: SourcingQuote
-  line: SourcingQuoteLine
+  scope: PurchasingScope
+  quote: QuoteRef
+  line: QuoteLineRef
   supplierNameSnapshot: string | null
-  productId?: string | null
 }): Promise<{ id: string; action: SupplierProductUpsertAction }> {
   const supplierId = input.quote.supplierId
   if (!supplierId) {
@@ -151,7 +153,7 @@ export async function upsertSupplierProductRow(input: {
     throw new CrudHttpError(422, { error: 'Line has no item number', code: 'line_has_no_item_number' })
   }
 
-  const existing = await input.em.fork().findOne(SourcingSupplierProduct, {
+  const existing = await input.em.fork().findOne(PurchasingSupplierProduct, {
     tenantId: input.scope.tenantId,
     organizationId: input.scope.organizationId,
     supplierId,
@@ -168,7 +170,7 @@ export async function upsertSupplierProductRow(input: {
 
   if (!existing) {
     const created = await input.de.createOrmEntity({
-      entity: SourcingSupplierProduct,
+      entity: PurchasingSupplierProduct,
       data: {
         tenantId: input.scope.tenantId,
         organizationId: input.scope.organizationId,
@@ -189,11 +191,11 @@ export async function upsertSupplierProductRow(input: {
         cartonNetWeight: values.cartonNetWeight ?? null,
         innerPacking: values.innerPacking ?? null,
         outerPacking: values.outerPacking ?? null,
-        productId: input.productId ?? null,
+        productId: input.line.promotedProductId ?? null,
         status: 'active',
         source: 'quote',
-        lastQuoteId: String(input.quote.id),
-        lastQuoteLineId: String(input.line.id),
+        lastQuoteId: input.quote.id,
+        lastQuoteLineId: input.line.id,
       },
     })
     await emitCrudSideEffects({
@@ -210,10 +212,12 @@ export async function upsertSupplierProductRow(input: {
   const payload: Record<string, unknown> = {
     ...changedLibraryFields(existing, values),
     source: 'quote',
-    lastQuoteId: String(input.quote.id),
-    lastQuoteLineId: String(input.line.id),
+    lastQuoteId: input.quote.id,
+    lastQuoteLineId: input.line.id,
   }
-  if (input.productId && input.productId !== existing.productId) payload.productId = input.productId
+  if (input.line.promotedProductId && input.line.promotedProductId !== existing.productId) {
+    payload.productId = input.line.promotedProductId
+  }
   if (!existing.supplierNameSnapshot && input.supplierNameSnapshot) {
     payload.supplierNameSnapshot = input.supplierNameSnapshot
   }
@@ -223,7 +227,7 @@ export async function upsertSupplierProductRow(input: {
   if (!dirty) return { id: String(existing.id), action: 'skipped' }
 
   const updated = await input.de.updateOrmEntity({
-    entity: SourcingSupplierProduct,
+    entity: PurchasingSupplierProduct,
     where: {
       id: String(existing.id),
       tenantId: input.scope.tenantId,
@@ -250,14 +254,15 @@ export async function upsertSupplierProductRow(input: {
  * Imports the given quotation lines into their supplier's library, one line at a time.
  *
  * Returns counts instead of throwing, so the console can report "80 added, 3 failed" and the
- * operator fixes three rows instead of re-running the whole import.
+ * operator fixes three rows instead of re-running the whole import. Lines that are not on this
+ * quotation (or not in the caller's scope) are reported as failures, one per requested id.
  */
 export async function importQuoteLinesIntoLibraries(input: {
   em: EntityManager
   de: DataEngine
-  scope: SourcingScope
-  quote: SourcingQuote
-  lines: SourcingQuoteLine[]
+  scope: PurchasingScope
+  quote: QuoteRef
+  requestedLineIds: readonly string[]
 }): Promise<SupplierProductImportResult> {
   const result: SupplierProductImportResult = { created: 0, updated: 0, skipped: 0, failed: [] }
   if (!input.quote.supplierId) {
@@ -266,9 +271,19 @@ export async function importQuoteLinesIntoLibraries(input: {
       code: 'quote_supplier_required',
     })
   }
+
+  const lines = await loadQuoteLines(input.em, input.scope, input.quote.id, input.requestedLineIds)
+  const found = new Set(lines.map((line) => line.id))
+  for (const lineId of input.requestedLineIds) {
+    if (!found.has(lineId)) {
+      result.failed.push({ lineId, lineNumber: 0, message: 'Line is not part of this quotation' })
+    }
+  }
+
+  // The supplier's display name for the row snapshot; a missing supplier simply leaves it null.
   const supplierNameSnapshot = await loadSupplierName(input.em, input.scope, input.quote.supplierId)
 
-  for (const line of input.lines) {
+  for (const line of lines) {
     try {
       const outcome = await upsertSupplierProductRow({
         em: input.em,
@@ -279,12 +294,9 @@ export async function importQuoteLinesIntoLibraries(input: {
         supplierNameSnapshot,
       })
       result[outcome.action] += 1
-      await input.em
-        .fork()
-        .nativeUpdate(SourcingQuoteLine, { id: line.id }, { supplierProductId: outcome.id })
     } catch (error) {
       result.failed.push({
-        lineId: String(line.id),
+        lineId: line.id,
         lineNumber: line.lineNumber,
         message: error instanceof Error ? error.message : 'Import failed',
       })

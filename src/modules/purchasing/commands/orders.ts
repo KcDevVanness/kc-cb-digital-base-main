@@ -20,9 +20,10 @@ import {
   purchaseOrderDocumentCreateSchema,
   purchaseOrderDocumentUpdateSchema,
 } from '../data/validators'
+import { ensureScope } from './shared'
 import { assertCurrencyInDictionary } from '../lib/currencyDictionary'
 import { computeLineTotals, computeOrderTotals, type OrderTotals, type PaymentRow } from '../lib/orderTotals'
-import { loadSupplierProducts } from '../lib/sourcingReads'
+import { loadSupplierProducts } from '../lib/supplierProductReads'
 import { eventsConfig } from '../events'
 
 const ORDER_ENTITY_ID = 'purchasing:purchasing_purchase_order' as const
@@ -165,19 +166,7 @@ export const purchasePaymentCrudIndexer: CrudIndexerConfig<PurchasingPurchasePay
   entityType: PAYMENT_ENTITY_ID,
 }
 
-export function ensureScope(ctx: CommandRuntimeContext): { tenantId: string; organizationId: string } {
-  const tenantId = ctx.auth?.tenantId ?? null
-  if (!tenantId) throw badRequest('Tenant context is required')
-  const organizationId = ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null
-  if (!organizationId) {
-    throw new CrudHttpError(400, {
-      error: 'Select an organization to access this resource',
-      code: ORGANIZATION_SCOPE_REQUIRED_ERROR_CODE,
-    })
-  }
-  return { tenantId, organizationId }
-}
-
+export 
 function orderFilter(scope: { tenantId: string; organizationId: string }, id: string): FilterQuery<PurchasingPurchaseOrder> {
   return { id, tenantId: scope.tenantId, organizationId: scope.organizationId, deletedAt: null } as FilterQuery<PurchasingPurchaseOrder>
 }

@@ -19,14 +19,14 @@ import { Button } from '@open-mercato/ui/primitives/button'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
-import type { SupplierProductListRow, SupplierProductStatus } from '../types'
+import type { SupplierProductListRow, SupplierProductPriceCell, SupplierProductStatus } from '../types'
 
-const API_PATH = 'sourcing/supplier-products'
-const PROMOTE_URL = '/api/sourcing/supplier-products/promote'
-const LIST_HREF = '/backend/sourcing/supplier-products'
+const API_PATH = 'purchasing/supplier-products'
+const PROMOTE_URL = '/api/purchasing/supplier-products/promote'
+const LIST_HREF = '/backend/purchasing/supplier-products'
 const SUPPLIERS_API_PATH = 'purchasing/suppliers'
 const PAGE_SIZE = 50
-const QUERY_KEY_ROOT = 'sourcing-supplier-products'
+const QUERY_KEY_ROOT = 'purchasing-supplier-products'
 const ALL = 'all'
 
 const STATUS_MAP: StatusMap<SupplierProductStatus> = {
@@ -36,11 +36,30 @@ const STATUS_MAP: StatusMap<SupplierProductStatus> = {
 
 type FilterValues = { supplierId?: string; status?: string }
 
+/** `CNY 12.50 (≥10)` — an unknown currency code falls back to `CODE amount` instead of throwing. */
+function formatPriceCell(cell: SupplierProductPriceCell | null): string {
+  if (!cell) return ''
+  const numeric = Number(cell.unitPrice)
+  const code = cell.currencyCode.trim().toUpperCase()
+  const amount = Number.isFinite(numeric)
+    ? (() => {
+        try {
+          return new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(numeric)
+        } catch {
+          return `${code} ${numeric.toFixed(2)}`
+        }
+      })()
+    : cell.unitPrice
+  return cell.minQuantity > 1 ? `${amount} (≥${cell.minQuantity})` : amount
+}
+
+const EMPTY_CELL = <span className="text-xs text-muted-foreground">—</span>
+
 function buildColumns(t: TranslateFn): ColumnDef<SupplierProductListRow>[] {
   return [
     {
       accessorKey: 'supplierName',
-      header: t('sourcing.supplierProducts.list.columns.supplier', 'Supplier'),
+      header: t('purchasing.supplierProducts.list.columns.supplier', 'Supplier'),
       enableSorting: false,
       meta: { priority: 1, truncate: true, maxWidth: 220 },
       cell: ({ row }) =>
@@ -49,7 +68,7 @@ function buildColumns(t: TranslateFn): ColumnDef<SupplierProductListRow>[] {
     {
       id: 'supplier_sku',
       accessorFn: (row) => row.itemNo ?? row.supplierSku,
-      header: t('sourcing.supplierProducts.list.columns.itemNo', 'Item no.'),
+      header: t('purchasing.supplierProducts.list.columns.itemNo', 'Item no.'),
       meta: { priority: 2 },
       cell: ({ row }) => (
         <div className="flex flex-col">
@@ -62,30 +81,68 @@ function buildColumns(t: TranslateFn): ColumnDef<SupplierProductListRow>[] {
     },
     {
       accessorKey: 'name',
-      header: t('sourcing.supplierProducts.list.columns.name', 'Name'),
+      header: t('purchasing.supplierProducts.list.columns.name', 'Name'),
       meta: { priority: 3, truncate: true, maxWidth: 280 },
+      // Our own Chinese name leads (it is the name the business uses); the supplier's original
+      // wording and our English name stay visible underneath instead of being hidden in the form.
+      cell: ({ row }) => {
+        const { name, nameZh, nameEn } = row.original
+        const secondary = [nameZh ? name : null, nameEn].filter((value): value is string => Boolean(value))
+        return (
+          <div className="flex flex-col">
+            <span>{nameZh ?? name}</span>
+            {secondary.map((value) => (
+              <span key={value} className="text-xs text-muted-foreground">
+                {value}
+              </span>
+            ))}
+          </div>
+        )
+      },
     },
     {
       accessorKey: 'unit',
-      header: t('sourcing.supplierProducts.list.columns.unit', 'Unit'),
+      header: t('purchasing.supplierProducts.list.columns.unit', 'Unit'),
       enableSorting: false,
       meta: { priority: 4 },
     },
     {
-      accessorKey: 'moqQuantity',
-      header: t('sourcing.supplierProducts.list.columns.moq', 'MOQ'),
+      id: 'supplierCostPrice',
+      accessorFn: (row) => row.supplierCostPrice?.unitPrice ?? '',
+      header: t('purchasing.supplierProducts.list.columns.supplierCostPrice', '供应商供货价'),
       enableSorting: false,
       meta: { priority: 5, align: 'right' },
+      cell: ({ row }) => {
+        const text = formatPriceCell(row.original.supplierCostPrice)
+        return text ? <span className="tabular-nums">{text}</span> : EMPTY_CELL
+      },
+    },
+    {
+      id: 'companyOfferPrice',
+      accessorFn: (row) => row.companyOfferPrice?.unitPrice ?? '',
+      header: t('purchasing.supplierProducts.list.columns.companyOfferPrice', '本公司报价'),
+      enableSorting: false,
+      meta: { priority: 6, align: 'right' },
+      cell: ({ row }) => {
+        const text = formatPriceCell(row.original.companyOfferPrice)
+        return text ? <span className="tabular-nums">{text}</span> : EMPTY_CELL
+      },
+    },
+    {
+      accessorKey: 'cartonQuantity',
+      header: t('purchasing.supplierProducts.list.columns.cartonQuantity', 'Qty/Box'),
+      enableSorting: false,
+      meta: { priority: 7, align: 'right' },
       cell: ({ getValue }) => {
         const value = getValue()
         return value === null || value === undefined ? <span className="text-xs text-muted-foreground">—</span> : String(value)
       },
     },
     {
-      accessorKey: 'cartonQuantity',
-      header: t('sourcing.supplierProducts.list.columns.cartonQuantity', 'Per carton'),
+      accessorKey: 'moqQuantity',
+      header: t('purchasing.supplierProducts.list.columns.moq', 'MOQ'),
       enableSorting: false,
-      meta: { priority: 6, align: 'right' },
+      meta: { priority: 8, align: 'right' },
       cell: ({ getValue }) => {
         const value = getValue()
         return value === null || value === undefined ? <span className="text-xs text-muted-foreground">—</span> : String(value)
@@ -93,40 +150,40 @@ function buildColumns(t: TranslateFn): ColumnDef<SupplierProductListRow>[] {
     },
     {
       accessorKey: 'productSku',
-      header: t('sourcing.supplierProducts.list.columns.product', 'Product'),
+      header: t('purchasing.supplierProducts.list.columns.product', 'Product'),
       enableSorting: false,
-      meta: { priority: 7, truncate: true, maxWidth: 200 },
+      meta: { priority: 9, truncate: true, maxWidth: 200 },
       cell: ({ row }) =>
         row.original.productSku ? (
           <span>{row.original.productSku}</span>
         ) : (
           <span className="text-xs text-muted-foreground">
-            {t('sourcing.supplierProducts.list.notLinked', 'Not synced')}
+            {t('purchasing.supplierProducts.list.notLinked', 'Not synced')}
           </span>
         ),
     },
     {
       accessorKey: 'status',
-      header: t('sourcing.supplierProducts.list.columns.status', 'Status'),
+      header: t('purchasing.supplierProducts.list.columns.status', 'Status'),
       enableSorting: false,
-      meta: { priority: 8 },
+      meta: { priority: 10 },
       cell: ({ row }) => (
         <StatusBadge variant={STATUS_MAP[row.original.status]} dot>
-          {t(`sourcing.supplierProducts.status.${row.original.status}`, row.original.status)}
+          {t(`purchasing.supplierProducts.status.${row.original.status}`, row.original.status)}
         </StatusBadge>
       ),
     },
     {
       accessorKey: 'source',
-      header: t('sourcing.supplierProducts.list.columns.source', 'Source'),
+      header: t('purchasing.supplierProducts.list.columns.source', 'Source'),
       enableSorting: false,
-      meta: { priority: 9 },
-      cell: ({ row }) => t(`sourcing.supplierProducts.source.${row.original.source}`, row.original.source),
+      meta: { priority: 11 },
+      cell: ({ row }) => t(`purchasing.supplierProducts.source.${row.original.source}`, row.original.source),
     },
     {
       accessorKey: 'updatedAt',
-      header: t('sourcing.supplierProducts.list.columns.updatedAt', 'Updated'),
-      meta: { priority: 10 },
+      header: t('purchasing.supplierProducts.list.columns.updatedAt', 'Updated'),
+      meta: { priority: 12 },
       cell: ({ getValue }) => {
         const value = getValue()
         return typeof value === 'string' && value.length > 0 ? value.slice(0, 19).replace('T', ' ') : '—'
@@ -153,7 +210,7 @@ export default function SupplierProductsTable() {
   const [page, setPage] = React.useState(1)
 
   const supplierOptions = useQuery({
-    queryKey: ['sourcing-supplier-products-suppliers', scopeVersion],
+    queryKey: ['purchasing-supplier-products-suppliers', scopeVersion],
     queryFn: async () => {
       const payload = await fetchCrudList<Record<string, unknown>>(SUPPLIERS_API_PATH, {
         // 100 is the supplier list's `pageSize` cap; a larger value is a 400, not a bigger page.
@@ -196,7 +253,7 @@ export default function SupplierProductsTable() {
 
   const rows = data?.items ?? []
   const listError = error
-    ? (error instanceof Error && error.message ? error.message : t('sourcing.errors.loadFailed', 'Loading failed'))
+    ? (error instanceof Error && error.message ? error.message : t('purchasing.errors.loadFailed', 'Loading failed'))
     : null
 
   const handleSortingChange = React.useCallback((next: SortingState) => {
@@ -211,12 +268,12 @@ export default function SupplierProductsTable() {
 
   const handlePromote = React.useCallback(async (row: SupplierProductListRow) => {
     const confirmed = await confirm({
-      title: t('sourcing.supplierProducts.actions.promoteConfirmTitle', 'Sync to the product master?'),
+      title: t('purchasing.supplierProducts.actions.promoteConfirmTitle', 'Sync to the product master?'),
       description: t(
-        'sourcing.supplierProducts.actions.promoteConfirmBody',
+        'purchasing.supplierProducts.actions.promoteConfirmBody',
         'Creates or updates the product master row for this code and links it back. The supplier library keeps its own record.',
       ),
-      confirmText: t('sourcing.supplierProducts.actions.promote', 'Sync to product'),
+      confirmText: t('purchasing.supplierProducts.actions.promote', 'Sync to product'),
     })
     if (!confirmed) return
     const response = await apiCall<{ action?: string }>(PROMOTE_URL, {
@@ -229,13 +286,13 @@ export default function SupplierProductsTable() {
         typeof response.result === 'object' && response.result !== null && 'error' in response.result
           ? String((response.result as { error?: unknown }).error ?? '')
           : ''
-      flash(message || t('sourcing.supplierProducts.promote.failed', 'Sync failed'), 'error')
+      flash(message || t('purchasing.supplierProducts.promote.failed', 'Sync failed'), 'error')
       return
     }
     flash(
       response.result?.action === 'skipped'
-        ? t('sourcing.supplierProducts.promote.skipped', 'Already synced — nothing to do')
-        : t('sourcing.supplierProducts.promote.result', 'Synced'),
+        ? t('purchasing.supplierProducts.promote.skipped', 'Already synced — nothing to do')
+        : t('purchasing.supplierProducts.promote.result', 'Synced'),
       'success',
     )
     void queryClient.invalidateQueries({ queryKey: [QUERY_KEY_ROOT] })
@@ -243,12 +300,12 @@ export default function SupplierProductsTable() {
 
   const handleDelete = React.useCallback(async (row: SupplierProductListRow) => {
     const confirmed = await confirm({
-      title: t('sourcing.supplierProducts.actions.deleteConfirmTitle', 'Delete this product?'),
+      title: t('purchasing.supplierProducts.actions.deleteConfirmTitle', 'Delete this product?'),
       description: t(
-        'sourcing.supplierProducts.actions.deleteConfirmBody',
+        'purchasing.supplierProducts.actions.deleteConfirmBody',
         'The row is soft-deleted and the code stays reserved until it is restored. Purchase orders that already reference it keep their snapshot.',
       ),
-      confirmText: t('sourcing.supplierProducts.actions.delete', 'Delete'),
+      confirmText: t('purchasing.supplierProducts.actions.delete', 'Delete'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -277,11 +334,11 @@ export default function SupplierProductsTable() {
         title={(
           <div className="flex flex-col gap-1">
             <h1 className="text-base font-semibold leading-tight">
-              {t('sourcing.supplierProducts.page.title', 'Supplier products')}
+              {t('purchasing.supplierProducts.page.title', 'Supplier products')}
             </h1>
             <p className="text-sm font-normal text-muted-foreground">
               {t(
-                'sourcing.supplierProducts.page.description',
+                'purchasing.supplierProducts.page.description',
                 'The goods each supplier offers: code, spec, packing and MOQ. Prices stay on quotations and purchase orders.',
               )}
             </p>
@@ -292,32 +349,32 @@ export default function SupplierProductsTable() {
         actions={(
           <Button asChild>
             <Link href={`${LIST_HREF}/create${supplierId !== ALL ? `?supplierId=${encodeURIComponent(supplierId)}` : ''}`}>
-              {t('sourcing.supplierProducts.actions.create', 'New product')}
+              {t('purchasing.supplierProducts.actions.create', 'New product')}
             </Link>
           </Button>
         )}
         searchValue={search}
         onSearchChange={handleSearchChange}
-        searchPlaceholder={t('sourcing.supplierProducts.list.searchPlaceholder', 'Search code or name')}
+        searchPlaceholder={t('purchasing.supplierProducts.list.searchPlaceholder', 'Search code or name')}
         searchAlign="right"
         filters={[
           {
             id: 'supplierId',
-            label: t('sourcing.supplierProducts.list.filter.supplier', 'Supplier'),
+            label: t('purchasing.supplierProducts.list.filter.supplier', 'Supplier'),
             type: 'select',
             options: [
-              { value: ALL, label: t('sourcing.supplierProducts.list.filter.all', 'All') },
+              { value: ALL, label: t('purchasing.supplierProducts.list.filter.all', 'All') },
               ...(supplierOptions.data ?? []),
             ],
           },
           {
             id: 'status',
-            label: t('sourcing.supplierProducts.list.filter.status', 'Status'),
+            label: t('purchasing.supplierProducts.list.filter.status', 'Status'),
             type: 'select',
             options: [
-              { value: 'active', label: t('sourcing.supplierProducts.status.active', 'Active') },
-              { value: 'inactive', label: t('sourcing.supplierProducts.status.inactive', 'Inactive') },
-              { value: ALL, label: t('sourcing.supplierProducts.list.filter.all', 'All') },
+              { value: 'active', label: t('purchasing.supplierProducts.status.active', 'Active') },
+              { value: 'inactive', label: t('purchasing.supplierProducts.status.inactive', 'Inactive') },
+              { value: ALL, label: t('purchasing.supplierProducts.list.filter.all', 'All') },
             ],
           },
         ]}
@@ -340,21 +397,21 @@ export default function SupplierProductsTable() {
         onSortingChange={handleSortingChange}
         emptyState={(
           <ListEmptyState
-            title={t('sourcing.supplierProducts.list.empty', 'No products in this library yet')}
+            title={t('purchasing.supplierProducts.list.empty', 'No products in this library yet')}
             createHref={`${LIST_HREF}/create`}
-            createLabel={t('sourcing.supplierProducts.actions.create', 'New product')}
+            createLabel={t('purchasing.supplierProducts.actions.create', 'New product')}
           />
         )}
         rowActions={(row) => (
           <RowActions
             items={[
-              { id: 'edit', label: t('sourcing.supplierProducts.actions.edit', 'Edit'), href: `${LIST_HREF}/${row.id}/edit` },
+              { id: 'edit', label: t('purchasing.supplierProducts.actions.edit', 'Edit'), href: `${LIST_HREF}/${row.id}/edit` },
               ...(row.productId
                 ? []
                 : [
                     {
                       id: 'promote',
-                      label: t('sourcing.supplierProducts.actions.promote', 'Sync to product'),
+                      label: t('purchasing.supplierProducts.actions.promote', 'Sync to product'),
                       onSelect: () => {
                         void handlePromote(row)
                       },
@@ -362,7 +419,7 @@ export default function SupplierProductsTable() {
                   ]),
               {
                 id: 'delete',
-                label: t('sourcing.supplierProducts.actions.delete', 'Delete'),
+                label: t('purchasing.supplierProducts.actions.delete', 'Delete'),
                 destructive: true,
                 onSelect: () => {
                   void handleDelete(row)

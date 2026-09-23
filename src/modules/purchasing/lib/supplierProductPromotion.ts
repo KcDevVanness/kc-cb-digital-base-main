@@ -1,22 +1,15 @@
-import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
+import type { EntityManager } from '@mikro-orm/postgresql'
 import type { CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import { emitCrudSideEffects } from '@open-mercato/shared/lib/commands/helpers'
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
-import { SourcingQuote, SourcingQuoteLine, SourcingSupplierProduct } from '../data/entities'
-import {
-  supplierProductCrudEvents,
-  supplierProductCrudIndexer,
-  type SourcingScope,
-} from '../commands/shared'
-import {
-  changedProductFields,
-  desiredPriceRow,
-  mergePriceRows,
-  supplierProductToProductFields,
-} from './productMapping'
+import { MAX_PRICE_ROWS, changedProductFields, mergePriceRows, type DesiredPriceRow } from '../../products/lib/supplierMapping'
+import { PurchasingSupplierProduct } from '../data/entities'
+import { supplierProductCrudEvents, supplierProductCrudIndexer, type PurchasingScope } from '../commands/shared'
+import { supplierProductToProductFields } from './productMapping'
 import { findProductBySku, loadProductPrices } from './productsReads'
-import { MAX_PRICE_ROWS, type CommandBusLike } from './promotion'
+import { findLatestQuotedPrice } from './quoteLineReads'
+import { findBasePriceOfItem } from './supplierProductPrices'
 
 /**
  * Syncing one supplier library row into the product master.
@@ -31,47 +24,33 @@ import { MAX_PRICE_ROWS, type CommandBusLike } from './promotion'
  *    into one product; a SKU owned by a soft-deleted product is refused explicitly.
  * 3. **Non-destructive** — only non-empty, changed values reach `products.items.update`, and the
  *    price write submits the product's whole price set so the `internal`/`export` tiers survive.
+ *
+ * Every write goes through the products module's commands, because that is where the product's
+ * events, query-index entries, audit rows and validation live.
  */
 
 export type SupplierProductPromotionResult = {
   productId: string
   action: 'created' | 'updated' | 'skipped'
-  /** True when no matching quotation line existed, so no `purchase` price row was written. */
+  /** True when the row quotes no price and no quotation ever did, so no `purchase` row was written. */
   priceSkipped: boolean
 }
 
-/**
- * The most recent quotation line that priced this supplier item.
- *
- * The library deliberately holds no price (purchasing Q-P-004): the `purchase` tier is fed from
- * the quotation that quoted the code, and a row synced without any quotation simply gets no price
- * row instead of a made-up one.
- */
-async function findLatestQuotedLine(
-  em: EntityManager,
-  scope: SourcingScope,
-  supplierId: string,
-  supplierSku: string,
-): Promise<SourcingQuoteLine | null> {
-  return em.fork().findOne(
-    SourcingQuoteLine,
-    {
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      quote: { supplierId, deletedAt: null },
-      $or: [{ derivedSku: supplierSku }, { itemNo: supplierSku }],
-    } as FilterQuery<SourcingQuoteLine>,
-    { populate: ['quote'], orderBy: { updatedAt: 'desc' } },
-  )
+/** The command bus this path uses to call the products module's commands. */
+export type CommandBusLike = {
+  execute<TInput = Record<string, unknown>, TResult = unknown>(
+    commandId: string,
+    options: { input: TInput; ctx: CommandRuntimeContext },
+  ): Promise<{ result: TResult }>
 }
 
 export async function promoteSupplierProduct(input: {
   em: EntityManager
   ctx: CommandRuntimeContext
-  scope: SourcingScope
+  scope: PurchasingScope
   de: DataEngine
   commandBus: CommandBusLike
-  product: SourcingSupplierProduct
+  product: PurchasingSupplierProduct
 }): Promise<SupplierProductPromotionResult> {
   const { product, scope } = input
   if (product.productId) {
@@ -83,7 +62,7 @@ export async function promoteSupplierProduct(input: {
   const productContext: CommandRuntimeContext = {
     ...input.ctx,
     request: undefined,
-    syncOrigin: 'sourcing:supplier-product-promote',
+    syncOrigin: 'purchasing:supplier-product-promote',
   }
 
   const fields = supplierProductToProductFields(product)
@@ -103,6 +82,7 @@ export async function promoteSupplierProduct(input: {
       input: {
         sku: product.supplierSku,
         name: fields.name,
+        nameEn: fields.nameEn,
         specSummary: fields.specSummary,
         hsCode: fields.hsCode,
         unit: fields.unit ?? 'PCS',
@@ -133,13 +113,41 @@ export async function promoteSupplierProduct(input: {
   }
 
   let priceSkipped = false
-  const quoted = await findLatestQuotedLine(input.em, scope, product.supplierId, product.supplierSku)
-  if (!quoted) {
+  // The item's own price list wins over the newest quotation line: the buyer maintains it on the
+  // library row, it is the price they last confirmed, and the quotation remains the document that
+  // negotiated it. Falling back to the newest matching line keeps rows that never quoted a price
+  // behaving exactly as before.
+  const libraryPrice = await findBasePriceOfItem(input.em, scope, String(product.id), 'supplier_cost')
+  const quoted = libraryPrice ? null : await findLatestQuotedPrice(input.em, scope, product.supplierId, product.supplierSku)
+
+  let desired: DesiredPriceRow | null = null
+  if (libraryPrice) {
+    desired = {
+      priceTier: 'purchase',
+      currencyCode: libraryPrice.currencyCode,
+      minQuantity: libraryPrice.minQuantity >= 1 ? libraryPrice.minQuantity : 1,
+      unitPrice: libraryPrice.unitPrice,
+      startsAt: null,
+      endsAt: null,
+      isActive: true,
+    }
+  } else if (quoted) {
+    desired = {
+      priceTier: 'purchase',
+      currencyCode: quoted.currencyCode,
+      minQuantity: quoted.minQuantity,
+      unitPrice: quoted.unitPrice,
+      startsAt: null,
+      endsAt: null,
+      isActive: true,
+    }
+    // The library row's own MOQ is the ladder step the buyer works with; it wins over the line's.
+    if (product.moqQuantity && product.moqQuantity >= 1) desired.minQuantity = Math.round(product.moqQuantity)
+  }
+
+  if (!desired) {
     priceSkipped = true
   } else {
-    const quoteCurrency = (quoted.quote as SourcingQuote | undefined)?.currencyCode ?? 'CNY'
-    const desired = desiredPriceRow(quoted, quoteCurrency)
-    if (product.moqQuantity && product.moqQuantity >= 1) desired.minQuantity = Math.round(product.moqQuantity)
     const currentPrices = await loadProductPrices(input.em, scope, productId)
     const merged = mergePriceRows(currentPrices, desired)
     if (merged.rows.length > MAX_PRICE_ROWS) {
@@ -157,7 +165,7 @@ export async function promoteSupplierProduct(input: {
   }
 
   const updated = await input.de.updateOrmEntity({
-    entity: SourcingSupplierProduct,
+    entity: PurchasingSupplierProduct,
     where: { id: String(product.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
     apply: (entity) => {
       entity.productId = productId

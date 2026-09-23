@@ -19,7 +19,7 @@ export const PRODUCT_CATEGORY_DICTIONARY_KEY = 'order_product_category'
 
 const USERS_API_PATH = '/api/auth/users'
 const COMPANIES_API_PATH = 'customers/companies'
-const SUPPLIER_PRODUCTS_API_PATH = '/api/sourcing/supplier-products'
+const SUPPLIER_PRODUCTS_API_PATH = '/api/purchasing/supplier-products'
 const OWNER_OPTION_PAGE_SIZE = 100
 /**
  * `customers/companies` caps `pageSize` at 100 (a larger value is a 400, not a bigger page), so
@@ -38,7 +38,7 @@ function readText(source: Record<string, unknown>, ...keys: string[]): string {
   return ''
 }
 
-function readErrorStatus(error: unknown): number | null {
+export function readErrorStatus(error: unknown): number | null {
   if (!error || typeof error !== 'object') return null
   const status = (error as { status?: unknown }).status
   return typeof status === 'number' ? status : null
@@ -169,6 +169,7 @@ function optionFromSupplierProduct(item: Record<string, unknown>): CrudFieldOpti
  */
 export async function loadSupplierProductOptions(
   errorMessage: string,
+  forbiddenMessage: string,
   supplierId: string | null,
   query?: string,
   organizationId?: string | null,
@@ -193,6 +194,10 @@ export async function loadSupplierProductOptions(
       .map(optionFromSupplierProduct)
       .filter((option): option is CrudFieldOption => option !== null)
   } catch (error) {
-    return reportLoadFailure(errorMessage, readErrorStatus(error))
+    // The two line-product pickers are not optional, so a refusal is named instead of swallowed:
+    // an empty library otherwise reads as "this supplier has no items".
+    const status = readErrorStatus(error)
+    flash(status === 401 || status === 403 ? forbiddenMessage : errorMessage, 'error')
+    return []
   }
 }

@@ -1,12 +1,10 @@
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import type { CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
-import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import { createLogger } from '@open-mercato/shared/lib/logger'
+import { MAX_PRICE_ROWS, changedProductFields, mergePriceRows } from '../../products/lib/supplierMapping'
 import { SourcingQuote, SourcingQuoteLine } from '../data/entities'
-import { categoryCodeFromSection, changedProductFields, desiredPriceRow, mergePriceRows, quoteLineToProductFields } from './productMapping'
+import { categoryCodeFromSection, desiredPriceRow, quoteLineToProductFields } from './productMapping'
 import { findCategoryByCode, findProductBySku, loadProductPrices } from './productsReads'
-import { loadSupplierName } from './purchasingReads'
-import { upsertSupplierProductRow } from './supplierProductImport'
 
 /**
  * Promotes quotation lines into the product master.
@@ -30,9 +28,6 @@ import { upsertSupplierProductRow } from './supplierProductImport'
  */
 
 const logger = createLogger('sourcing').child({ component: 'promotion' })
-
-/** `products.prices.replace` accepts at most 100 rows per product. */
-export const MAX_PRICE_ROWS = 100
 
 export type PromotionLineFailure = { lineId: string; lineNumber: number; message: string }
 
@@ -58,10 +53,8 @@ export async function promoteQuoteLines(input: {
   force?: boolean
 }): Promise<PromotionResult> {
   const em = input.ctx.container.resolve('em') as EntityManager
-  const de = input.ctx.container.resolve('dataEngine') as DataEngine
   const commandBus = input.ctx.container.resolve('commandBus') as unknown as CommandBusLike
   const quoteId = String(input.quote.id)
-  const supplierNameSnapshot = await loadSupplierName(em, input.scope, input.quote.supplierId)
 
   const allLines = await em.fork().find(SourcingQuoteLine, {
     quote: quoteId,
@@ -75,7 +68,11 @@ export async function promoteQuoteLines(input: {
 
   // The products commands read the optimistic-lock version from the request headers; the header on
   // this request belongs to the quotation, so it must not be forwarded to a product write.
+  // The products and purchasing commands read the optimistic-lock version from the request
+  // headers; the header on this request belongs to the promotion itself, so it must not be
+  // forwarded to a write in another module.
   const productContext: CommandRuntimeContext = { ...input.ctx, request: undefined, syncOrigin: 'sourcing:promote' }
+  const libraryContext: CommandRuntimeContext = { ...input.ctx, request: undefined, syncOrigin: 'sourcing:promote-library' }
   const categoryCache = new Map<string, string | null>()
   const result: PromotionResult = { created: 0, updated: 0, skipped: 0, failed: [] }
 
@@ -169,20 +166,18 @@ export async function promoteQuoteLines(input: {
         { rowStatus: 'promoted', promotedProductId: productId, promotedPriceId: priceId, promotedAt: new Date() },
       )
 
-      // The library is fed from the same source as the master, and a failure here must not undo a
-      // product write that already landed: the line stays promoted and the reason is reported on
-      // its own row, so the operator can repair one import instead of re-running the promotion.
-      // A quotation without a supplier simply has no library to feed; that is not a failure.
+      // The library is `purchasing`'s record, so the promotion feeds it through that module's
+      // command (`purchasing.supplier-products.import-from-quote`), which re-reads the line it was
+      // just given and upserts the row — including the master link, which is why nothing but the
+      // line id has to travel. A failure here must not undo a product write that already landed:
+      // the line stays promoted and the reason is reported on its own row, so the operator can
+      // repair one import instead of re-running the promotion. A quotation without a supplier
+      // simply has no library to feed; that is not a failure.
       if (input.quote.supplierId) {
         try {
-          await upsertSupplierProductRow({
-            em,
-            de,
-            scope: input.scope,
-            quote: input.quote,
-            line,
-            supplierNameSnapshot,
-            productId,
+          await commandBus.execute('purchasing.supplier-products.import-from-quote', {
+            input: { quoteId, lineIds: [String(line.id)] },
+            ctx: libraryContext,
           })
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Supplier library update failed'
