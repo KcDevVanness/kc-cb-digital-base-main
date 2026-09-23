@@ -75,8 +75,8 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 
 - 迁移只允许加表 / 加列；**禁止**在别人可能运行期间执行破坏性迁移、`yarn db:greenfield`、`yarn dev:reset`（后者只清 dev 构建缓存，但会打断别人正在跑的 dev）。仓里**没有** `yarn db:reset` 这个脚本。
 - 需要破坏性改动时另起一套栈：`docker-compose.yml` 的基础服务端口已参数化
-  （`POSTGRES_PORT` / `REDIS_PORT` / `MEILISEARCH_PORT` / `LOCALSTACK_PORT` / `MERCATO_STACK`；
-  `docker-compose.fullapp.dev.yml` 只发布了 `LOCALSTACK_PORT`），复制 `.env` 并把端口块换一组即可。
+  （`POSTGRES_PORT` / `REDIS_PORT` / `MEILISEARCH_PORT` / `MINIO_PORT` / `MERCATO_STACK`；
+  `docker-compose.fullapp.dev.yml` 只发布了 `MINIO_PORT`），复制 `.env` 并把端口块换一组即可。
 - **每个工作树一份端口块**：`.env` 顶部的 "PROJECT-LOCAL PORT ALLOCATION" 就是为此设计的
   （app 3100 / splash 4100 / postgres 5532 / redis 6479 / meilisearch 7800）。新开工作树时整块 +1000，
   否则第二个 dev server 起不来、UI 冒烟也无法同时跑。

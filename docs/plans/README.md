@@ -58,6 +58,7 @@
 | [2026-09-22-supplier-quotation-import.md](../../.ai/specs/2026-09-22-supplier-quotation-import.md) | 已实现 | `sourcing` 报价导入 |
 | [2026-09-22-supplier-product-library.md](../../.ai/specs/2026-09-22-supplier-product-library.md) | Phases 1–7 已实现并验证；产品库 2026-09-23 整体移交 `purchasing`（D4，表改名保留数据） | `purchasing` 产品库 |
 | [2026-09-22-order-file-and-export-finance.md](../../.ai/specs/2026-09-22-order-file-and-export-finance.md) | 已实现（仅投影单测，集成测试待补） | `purchasing`/`cross_border`/`trade_docs`/`export_finance` |
+| [2026-09-23-local-to-s3-storage-migration.md](../../.ai/specs/2026-09-23-local-to-s3-storage-migration.md) | **Phase 0 已交付**（provider 已装/已接线/已探针验证，分区仍 local，C-9/C-10 新增）；Phase 1（`storage_ops`）待启动 | `attachments` 本地→S3 迁移前置与一键迁移 |
 | [2026-08-06-reference-module-activation.md](../../.ai/specs/2026-08-06-reference-module-activation.md)、`SPEC-000-template.md`、`README.md` | **harness 托管文件**（`.ai/harness/manifest.json` 标 `userEditable: false`）：勿手改，会随 `yarn mercato agentic:init --update-harness` 重写 | 参考模块启用 / 模板 |
 
 ## 索引

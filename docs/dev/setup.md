@@ -15,7 +15,8 @@
 
 ## 依赖服务
 
-`docker-compose.yml` 定义了 postgres / redis / meilisearch / localstack（后两者按 profile 或按需启动）。
+`docker-compose.yml` 定义了 postgres / redis / meilisearch / minio（后两者按 profile 或按需启动；
+minio 是 S3 兼容的附件彩排端点，见 [`../deploy/storage.md`](../deploy/storage.md)）。
 本机当前只起了前两个，端口取自 `.env`：
 
 | 服务 | 容器名（本机实测） | 端口 |

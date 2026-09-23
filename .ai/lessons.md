@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 23 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 25 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -51,3 +51,5 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [A bare getKysely() types every table away; read your own module's tables through the entity manager](lessons/kysely-bare-handle-types-tables-away.md) — area:module-data,framework-context; module:sourcing; topic:kysely,mikro-orm,entity-manager,typecheck,read-projections,no-any
 - [Next inlines only static process.env reads, so a framework dynamic lookup sees browser defaults](lessons/next-client-env-dynamic-lookup.md) — area:backend-ui,framework-context; module:auth,platform; topic:password-policy,client-env,process-env,next-inlining,auth-forms,ssr-hydration
 - [src/modules.ts is loaded by the CLI: page overrides shadow the package file, never import client code](lessons/modules-ts-must-stay-node-loadable.md) — area:umes,architecture,framework-context; module:platform,dictionaries; topic:module-overrides,route-overrides,page-override,module-registry,cli-bootstrap,client-boundary
+- [yarn mercato module add rewrites src/modules.ts and drops its comments — diff the file before anything else](lessons/module-add-rewrites-modules-ts.md) — area:architecture,framework-context; module:platform; topic:module-registry,cli-side-effects,comments,code-review,generated-files
+- [Enabling the S3 provider is a three-way contract: the flag at build, the flag at runtime, and a scope-carrying driver config](lessons/s3-storage-enablement-traps.md) — area:integration,framework-context; module:attachments,storage_s3; topic:s3,env-parity,driver-resolution,tenant-scope,generated-files,minio
