@@ -63,7 +63,7 @@
 
 | 六·补2 内部销售单据（自建界面） | ✅ 完成并验证 | 新增 app 自有模块 `internal_sales`（报价/订单 各 列表·新建·编辑 6 页面，复用 `sales.*.manage`，无新表/无迁移）；行引用 `products_products` 并自动桥接官方目录默认变体；官方「新建单据」页隐藏、官方列表与 `config/sales` 保留。实测：UI 建报价 2×55.50=111.00、订单 3×44.40=133.20 与 6×63.25=379.50（编辑后），行上 `product_id`+`product_variant_id`(默认变体)+`catalog_snapshot` 全部落库；编辑改数量 → `PUT /api/sales/{quotes,orders}` 200 + `PUT /api/sales/{quote,order}-lines` 200，**行 id 不变**（upsert 不重复）；保存后重读单据（否则第二次保存 409）。过程中修掉一个真实缺陷：异步选品回填用陈旧闭包写回，导致慢查询落地时把刚选的商品清掉（两个表单同修）。发现官方 sales 动态页在本机 dev 404（列表正常、与覆盖无关，已用关覆盖实验证），故跳转指向本模块编辑页 |
 
-**门禁现状**（2026-09-22 17:1x，含 `internal_sales`）：`yarn generate` ✓ ｜ `yarn typecheck` ✓（本模块零错误）｜ `yarn lint` 0 error（8 warning 均为既有）｜ `yarn ds:check` ✓ 572 files ｜ `yarn test` ✓ 167 passed ｜ `yarn build` ✓ exit 0（✓ Compiled successfully）。
+**门禁现状**（2026-09-23 09:30 推送前全量重跑，含 `internal_sales`/`trade_docs`/`export_finance`/`parties`）：`yarn generate` ✓ ｜ `yarn typecheck` ✓ ｜ `yarn lint` 0 error（8 warning 均为既有）｜ `yarn ds:check` ✓ 597 files ｜ `yarn test` ✓ 177 passed ｜ `yarn build` ✓（Compiled successfully，`.mercato/next/BUILD_ID` 与路由表均生成）。
 
 **规格与证据文件**：总纲 `.ai/specs/2026-09-21-app-owned-business-module.md`；采购 `.ai/specs/2026-09-21-purchasing-module.md`；报价导入 `.ai/specs/2026-09-22-supplier-quotation-import.md`；业务再评估与两次实测 `.ai/analysis/2026-09-21-business-model-reassessment.md`、`…-catalog-eject-spike.md`、`…-disable-official-chain-drill.md`。
 
