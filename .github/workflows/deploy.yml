@@ -97,7 +97,21 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           TARGET_SHA: ${{ github.sha }}
           APP_IMAGE: ${{ needs.build.outputs.image }}
+          GHCR_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # GHCR packages default to private, and `deploy.sh` pulls on the host.
+          # GITHUB_TOKEN is scoped to this repository and this run, so the login
+          # is piped straight into `--password-stdin` — it never lands in argv,
+          # a file, or the shell history of the host. A login failure is only a
+          # warning: `compose pull` is the real gate and reports loudly if the
+          # package genuinely needs credentials.
+          printf '%s' "$GHCR_TOKEN" \
+            | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+                "${DEPLOY_USER}@${DEPLOY_HOST}" \
+                "docker login ghcr.io -u '${GHCR_ACTOR}' --password-stdin" \
+            || echo "::warning::ghcr login failed; continuing (package may be public)"
+
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
               "${DEPLOY_USER}@${DEPLOY_HOST}" \
               "TARGET_SHA='${TARGET_SHA}' APP_IMAGE='${APP_IMAGE}' APP_DIR='${APP_DIR}' bash -s" \
