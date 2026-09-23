@@ -121,6 +121,10 @@ skills-lock.json
 # generated them (ports, process tools, shell) — keep them local, never commit
 .ai/scripts/test-env-*
 
+# browser HAR a QA / Computer-Use run dumps where it ran (usually the repo root) —
+# that run's network evidence, never source
+*.har
+
 # per-session validation-gate evidence written by the gate-evidence hook on every
 # Bash call — machine-local observation, never source
 .ai/.gate-state.json
