@@ -22,7 +22,7 @@ The company buys from Petkit/agents and sells to its Russian subsidiary; product
 Two real files prove the pain and the variance:
 
 - `PETKIT Quotation Sheet-2026_NEW.xlsx` — one sheet, 82 rows × 13 columns: letterhead rows 1–3, header row 4, data rows 5–81 (69 data rows + 6 category banner rows `FEEDING`/`CLEANING`/`GROOMING`/`FUN`/`SPORT`/`ACCESSORY`), 78 embedded product images, vertically merged variant rows, `/` placeholders, a `10 pallets` MOQ, and Item No. values that repeat inside the file (`P4108`, `P4116`, `P9906`, `PD10`, `P4113`, `P41161`, `PKCL10`).
-- `订单表-2026 EXW.xls` — a WPS-written BIFF8 proforma invoice: 98 rows, two-row header at rows 9–10, 78 item rows at rows 11–88 with **no Item No. and no HS Code at all** (name + `CNY/PC` + carton `G.W.`/`N.W.`/`L`/`W`/`H`/`qty/box`), followed by `TOTAL`, `Subtotal with 3% MKT FEE`, `Subtotal with 2% Rebate for 2025`, payment terms and the supplier's bank account rows.
+- `订单表-2026 EXW.xls` — a WPS-written BIFF8 proforma invoice: 98 rows, two-row header at rows 9–10, 78 item rows at rows 11–88 with **no Item No. and no HS Code at all** (name + `CNY/PC` + carton `G.W.`/`N.W.`/`L`/`W`/`H`/`qty/box` — since 2026-09-23 only `qty/box` is imported; the carton figures survive in `raw`), followed by `TOTAL`, `Subtotal with 3% MKT FEE`, `Subtotal with 2% Rebate for 2025`, payment terms and the supplier's bank account rows.
 
 Evidence that this is a real gap in the current design, not an oversight to patch later: `.ai/specs/2026-09-22-products-and-trade-docs.md` lists "Product **batch import** (no XLSX *reader* exists in the repo; a CSV path is a separate slice)" as a non-goal and records Q-002 "Product batch import (needs an XLSX reader)" as deferred; `.ai/analysis/2026-09-21-business-model-reassessment.md` names `sync_excel` as the on-demand lever for "供应商价目表/商品批量"; and `.ai/specs/2026-09-21-purchasing-module.md` Q-P-004 resolved "no supplier price list — unit prices are entered per order", so a supplier quotation has nowhere to live today.
 
@@ -30,14 +30,14 @@ Affected users: the owner/procurement operator who builds the product library, a
 
 ## Overview and Success Measures
 
-- **Primary outcome:** one Petkit quotation workbook becomes 5+ promoted products with `purchase`-tier CNY prices, MOQ ladders and carton/HS fields in under 10 minutes of operator time, with zero manual re-typing of prices.
+- **Primary outcome:** one Petkit quotation workbook becomes 5+ promoted products with `purchase`-tier CNY prices, MOQ ladders and the unit/HS fields (unit net weight, unit dimensions, Qty/Box) in under 10 minutes of operator time, with zero manual re-typing of prices. The line's whole-carton columns (carton G.W/N.W, outer size) stay on the quotation line — the master is unit-data only since 2026-09-23.
 - **Leading indicators:** imported line count per file; auto-mapping confidence distribution; lines requiring a manual SKU; promotion `created/updated/skipped/failed` counts; second import of the same layout skipping the mapping step (profile hit).
 - **Baseline:** zero owned product rows; the product library is built by hand-editing spreadsheets; no supplier quotation record exists anywhere.
 - **Market / product reference:** mid-market ERP/PIM import wizards (Odoo "Import" column-mapping dialog, Akeneo import profiles, NetSuite CSV import) — adopted: upload → detected column mapping with per-column confidence → saved mapping presets → row-level validation report → commit; rejected: automatic background folder watching, per-cell LLM extraction of whole sheets, and multi-sheet bulk splitting (none is required by this slice).
 
 ## Goals
 
-- **REQ-001** — A supplier quotation is a first-class record: header (`supplier_id` + name snapshot, date, validity, currency, status `draft|approved|archived|cancelled`, source file/sheet/signature, actual mapping) with lines (item no., name, variant, derived SKU, HS code, description, unit, unit cost, suggested RSP, MOQ raw+quantity, carton quantity/cartons, unit net weight, carton gross/net weight, inner/outer packing, carton volume, raw source row, warnings, row status, selection, promotion result). Organization-private, soft-deleted, optimistic-locked.
+- **REQ-001** — A supplier quotation is a first-class record: header (`supplier_id` + name snapshot, date, validity, currency, status `draft|approved|archived|cancelled`, source file/sheet/signature, actual mapping) with lines (item no., name, variant, derived SKU, HS code, description, unit, unit cost, suggested RSP, MOQ raw+quantity, carton quantity (装箱数 Qty/Box), unit net weight, the item's own size (`inner_packing`, 界面名「产品尺寸」), raw source row, warnings, row status, selection, promotion result). **箱子规格类列已在 2026-09-23 删除**（owner：业务一直不需要箱子规格数据，且这些列没有任何读者）——`cartons`、`carton_gross_weight`、`carton_net_weight`、`outer_packing`、`carton_volume` 从实体、导入映射、标准模板与界面一并去掉；整行原始数据仍在 `raw` 里，值随时可查. Organization-private, soft-deleted, optimistic-locked.
 - **REQ-002** — An operator uploads `.xls`, `.xlsx` or `.csv` through the platform attachment route and the server parses it (SheetJS) into quotation lines; unsupported/encrypted/unreadable workbooks fail with a readable error instead of producing an empty quotation.
 - **REQ-003** — Header row, category banner rows and footer rows are detected automatically, and every source column is mapped to a target field with an explicit confidence (`exact`/`alias`/`fuzzy`/`none`); duplicate target assignments and unmapped columns are surfaced, and the operator can override any mapping.
 - **REQ-004** — A confirmed mapping is saved as a reusable profile keyed by the sheet's layout signature, so the next file with the same layout imports with the mapping step pre-filled (and skipped when fully confident).
@@ -164,7 +164,7 @@ operator (browser)
 
 ### Journey J-003 — Build a product list without a spreadsheet
 
-1. Operator clicks 新建报价单, fills supplier/date/currency, and adds lines by hand (item no., name, price, MOQ, carton data).
+1. Operator clicks 新建报价单, fills supplier/date/currency, and adds lines by hand (item no., name, price, MOQ, Qty/Box).
 2. Lines go through the same review/approve/promote path, so manual entry and import converge on one promotion implementation.
 
 ### Journey J-004 — Standard template round trip
@@ -232,10 +232,11 @@ Cross-record references: the supplier field is a `CrudForm` `select` backed by t
 │ Item No.& Name           → 品名                alias                     │
 │ Picture                  → （忽略）            ignored                   │
 │ … 13 列，2 处重复目标，0 列未映射            [AI 识别] [保存为模板]        │
+│  （示意：箱子规格类列 2026-09-23 起不在目标集合里，含这些列的旧文件会显示为未映射）        │
 ├──────────────────────────────────────────────────────────────────────────┤
-│ ☑ | 行 | 分类 | 货号 | 品名 | SKU(可改) | HS | 箱规 | 单价 | MOQ | 现采购价/差异 | 状态 | 告警│
-│ ☑ | 5  | —   | P4108 | Eversweet 3 Pro | P4108 | 8421… | 46.5*46.5*40 | 230 CNY | 500 | 230（无变化） | 就绪 | —  │
-│ ☑ | 6  | —   | P4108 | Eversweet 3 Pro-UVC | P4108-UVC | … | … | 270 CNY | 500 | 未建档 | 就绪 | —  │
+│ ☑ | 行 | 分类 | 货号 | 品名 | SKU(可改) | HS | 单价 | MOQ | 现采购价/差异 | 状态 | 告警│
+│ ☑ | 5  | —   | P4108 | Eversweet 3 Pro | P4108 | 8421… | 230 CNY | 500 | 230（无变化） | 就绪 | —  │
+│ ☑ | 6  | —   | P4108 | Eversweet 3 Pro-UVC | P4108-UVC | … | 270 CNY | 500 | 未建档 | 就绪 | —  │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ 已选 5 / 69 · [标记跳过] [提升所选为商品]                     [保存修改]    │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -290,10 +291,10 @@ Cross-record references: the supplier field is a `CrudForm` `select` backed by t
 | `currency_code` | text, nullable | — | no | line-level override of the header currency |
 | `suggested_rsp` | numeric(18,6), nullable | — | no | kept on the line; never promoted |
 | `moq_raw`, `moq_quantity` | text / integer, nullable | — | no | raw text preserved; quantity ≥ 1 when present |
-| `carton_quantity`, `cartons` | integer, nullable | — | no | ≥ 0 |
-| `unit_net_weight`, `carton_gross_weight`, `carton_net_weight` | numeric(16,4), nullable | — | no | kg, ≥ 0 |
-| `inner_packing`, `outer_packing` | jsonb, nullable | — | no | `{length,width,height,unit:'cm'}` normalized to cm |
-| `carton_volume` | numeric(16,6), nullable | — | no | m³, ≥ 0 |
+| `carton_quantity` | integer, nullable | — | no | 装箱数 Qty/Box, ≥ 0; the one carton figure the pipeline keeps reading |
+| `unit_net_weight` | numeric(16,4), nullable | — | no | kg, ≥ 0 |
+| `inner_packing` | jsonb, nullable | — | no | `{length,width,height,unit:'cm'}` normalized to cm; the item's own size (界面名「产品尺寸」) |
+| ~~`cartons`, `carton_gross_weight`, `carton_net_weight`, `outer_packing`, `carton_volume`~~ | dropped 2026-09-23 | — | — | no reader existed (write-only); the source values stay in `raw` |
 | `raw` | jsonb, required | — | no | source row keyed by original header; nothing is lost |
 | `warnings` | jsonb, default `'[]'` | — | no | `sku_required`, `sku_from_name`, `duplicate_sku_in_file`, `moq_partial`, `moq_not_numeric`, `section_slug_empty`, `merged_continuation` |
 | `row_status` | text, default `'staged'` | index | no | `staged` \| `ready` \| `invalid` \| `skipped` \| `promoted` |
@@ -585,6 +586,8 @@ Every new runtime/discovery surface, with the reference module file it adapts (`
 
 | Date | Change |
 |---|---|
+| 2026-09-23 | **箱子规格数据从报价层删除**（owner：业务一直不需要箱子规格数据，映射到表里也没人用）。`sourcing_quote_lines` 去掉 `cartons`（箱数）、`carton_gross_weight`/`carton_net_weight`（箱毛重/净重）、`outer_packing`（外箱尺寸）、`carton_volume`（体积）——实体、validator、命令、`/api/sourcing/quote-lines` 的 schema/select/序列化、解析器（含由 `carton_length/width/height` 拼外箱尺寸的辅助函数）、列映射目标与 alias、标准模板 `TEMPLATE_COLUMNS`（下载的模板同步变窄）、报价行网格的「箱规」列与 i18n 一并去掉；保留 `carton_quantity`（装箱数）、`unit_net_weight`（单重）、`inner_packing`（产品尺寸）。整行源数据仍在 `raw` jsonb 里，因此没有信息真正丢失。列由 `Migration20260923075340_sourcing` 删除（已应用到本机 dev 库，`down` 可重建空列）；标准模板随之从 **15 列缩到 12 列**（`SKU / 货号`、`品名`、`分类`、`规格`、`HS编码`、`单位`、`单价`、`币种`、`MOQ`、`装箱数 Qty per Carton`、`单重 Unit N.W.(kg)`、`产品尺寸 Product Size(cm)`，示例行同步减格），模板内的 `inner_packing` 表头也随全 app 命名统一改成「产品尺寸 Product Size(cm)」（alias 里同时保留 `内箱尺寸`/`Inner Box`，供应商自己的老文件照样识别）。实测：`GET /api/sourcing/template` 下载后解析表头为上述 12 列，报价复核页的 69 行老报价单照常渲染，网格只剩 行/分类/货号/品名/SKU/HS/单价/MOQ/现采购价/状态/告警。 |
+| 2026-09-23 | **Wizard labels follow the locale; seed labels single-language.** `ColumnMappingTable` rendered every target field as `${labelZh} / ${labelEn}` (「货号 / SKU」), which is a second language rather than a bilingual feature; it now renders `labelZh` or `labelEn` by `useLocale()`. The alias tables keep both spellings because a supplier workbook may print either — they are match targets, not UI. The `quote_section` seeds became the display name alone (`喂食`), and the picker renders the stored banner in front of it (`FEEDING — 喂食`) — a label carries one language, the code belongs to the picker. Rule and enforcement: `docs/dev/i18n.md`, `src/lib/i18n/__tests__/language-purity.test.ts`. |
 | 2026-09-22 | Initial draft: app-owned `sourcing` module (supplier quotations + mapping profiles + promotion into `products`), SheetJS-based workbook reading, alias/profile/AI mapping, standard template, 6 phases. Decisions locked with the owner: SheetJS parser, built-in but gated AI mapping, Item No. + variant-suffix SKUs, quotation intermediate layer before the product master. Status `Ready for implementation`. |
 | 2026-09-22 | Indexer discharge: `parse` and `remap` rewrite the quotation header through `nativeUpdate`, so they now emit the CRUD side effects (`action: 'updated'` with the quote events + indexer) explicitly — the routes declare `sourcing:sourcing_quote`'s indexer, and the platform warns when a declared indexer is not discharged. |
 | 2026-09-22 | Verification follow-up: (7) a stale row save answers **the platform's** optimistic-lock 409 body (`code: 'optimistic_lock_conflict'` + both timestamps, with the per-row list in `conflicts`), so the review grid renders the shared, translated conflict bar with a refresh action instead of a module-specific message — verified in the browser by moving a row behind an open page and saving it; (8) the wizard is **inline, not a dialog**, so `Esc` steps back one step rather than closing an overlay, and `Cmd`/`Ctrl`+`Enter` triggers the current step's primary action (apply mapping) through `useDialogKeyHandler`. |

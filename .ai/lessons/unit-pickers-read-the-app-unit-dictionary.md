@@ -54,6 +54,11 @@ the control follows what the value *is*:
   `shipping_method`, `platform_ops` → `channel_platform`, `sourcing` → `supplier_product_unit` /
   `quote_section`), and a reader in another module imports the *loader* — never the seed. Currency is the
   one vocabulary with a shared client loader (`currency_policy/lib/clientOptions.ts`, beside the route).
+- **Presentation follows one rule** (`docs/dev/i18n.md`): a dictionary label is the display name in one
+  language (`件`), and a picker that stores a code renders `CODE — 名称` (`PCS — 件`, `USD — 美元`,
+  `FEEDING — 喂食`). The code is never glued into the label — `件 (PCS)` was the older shape and the
+  language-purity test now rejects it. A *symbol* vocabulary (packing `dimensions.unit` →
+  `cm/mm/m/in/ft`) has no second label to show: `cm` reads the same in zh and en, so it stays a symbol.
 - `/backend/config/dictionaries` is the single installed admin page this app leaves in the navigation
   (`src/modules.ts`): no app-owned replacement exists, and every picker above depends on the operators
   being able to maintain those lists.

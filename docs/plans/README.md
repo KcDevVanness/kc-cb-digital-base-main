@@ -56,8 +56,9 @@
 | [2026-09-22-product-variants.md](../../.ai/specs/2026-09-22-product-variants.md) | Phases 1–2 已实现；Phase 3（wms 轮）延后 | `products` 变体 |
 | [2026-09-22-app-owned-party-master.md](../../.ai/specs/2026-09-22-app-owned-party-master.md) | Phases 1–3 已实现；Phase 4 待 Q-P-004 | `parties` |
 | [2026-09-22-supplier-quotation-import.md](../../.ai/specs/2026-09-22-supplier-quotation-import.md) | 已实现 | `sourcing` 报价导入 |
-| [2026-09-22-supplier-product-library.md](../../.ai/specs/2026-09-22-supplier-product-library.md) | Phases 1–7 已实现并验证；产品库 2026-09-23 整体移交 `purchasing`（D4，表改名保留数据） | `purchasing` 产品库 |
+| [2026-09-22-supplier-product-library.md](../../.ai/specs/2026-09-22-supplier-product-library.md) | Phases 1–7 已实现并验证；产品库 2026-09-23 整体移交 `purchasing`（D4，表改名保留数据）。**Phase 8（关联商品：直觉化 + 手动关联）2026-09-23 已实现并验证**（集成 TEST-SPL-009/010/011 全绿 + 浏览器冒烟；无新表无迁移） | `purchasing` 产品库 |
 | [2026-09-22-order-file-and-export-finance.md](../../.ai/specs/2026-09-22-order-file-and-export-finance.md) | 已实现（仅投影单测，集成测试待补） | `purchasing`/`cross_border`/`trade_docs`/`export_finance` |
+| [2026-09-23-product-taxonomy-consolidation.md](../../.ai/specs/2026-09-23-product-taxonomy-consolidation.md) | 已实现（Phase 0–3：术语定名 → 两页合并为 `/backend/products/taxonomy` 两页签、旧 URL 直接渲染并规范化 → 品类真树（默认全开、可折叠、行内新增子类）→ 维护页收窄到所选组织）；spec 机制描述已与实装对齐，实测证据见各 Phase 的 "Shipped — evidence" | `products` 产品线/产品品类页面合并 + 导航修复 + 维护页按组织收窄 |
 | [2026-09-23-local-to-s3-storage-migration.md](../../.ai/specs/2026-09-23-local-to-s3-storage-migration.md) | **Phase 0 + Phase 1 已交付**（provider 已装/已探针；`storage_ops` 五条命令 + 13 单测 + 9 集成用例，MinIO 全流程彩排通过；分区仍 local）；**Phase 2 实作手册已备**（`docs/deploy/storage-cutover-runbook.md`），待对象存储服务开通 | `attachments` 本地→S3 迁移前置与一键迁移 |
 | [2026-08-06-reference-module-activation.md](../../.ai/specs/2026-08-06-reference-module-activation.md)、`SPEC-000-template.md`、`README.md` | **harness 托管文件**（`.ai/harness/manifest.json` 标 `userEditable: false`）：勿手改，会随 `yarn mercato agentic:init --update-harness` 重写 | 参考模块启用 / 模板 |
 

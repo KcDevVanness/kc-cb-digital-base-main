@@ -28,8 +28,16 @@ filesystem. After a registry change, run `yarn generate` and check
 `.mercato/generated/app-modules-overrides.compiled.mjs` — the canonical, normalized shape is what
 the runtime reads; if the key is not there in that shape, it is not doing anything. Hiding a page
 removes the route manifest entry, so the URL 404s too; the module's API, entities and ACL stay
-enabled (`config/catalog` was deliberately left visible because `sales` still depends on catalog
-offers and price kinds).
+enabled (`config/catalog` was deliberately left visible at first, on the grounds that `sales` still
+depends on catalog offers and price kinds; 2026-09-23 it went `navHidden` too — `catalog_price_kinds`
+is empty, no app-owned surface reads it, and the one inbound link is the catalog search presenter's
+`catalog:catalog_price_kind` hit, which `navHidden` keeps working).
+
+**Compiled overrides are rewritten lazily**: `app-modules-overrides.compiled.mjs` is emitted by the
+CLI/worker bootstrap (`loadAppModuleOverrides` in `@open-mercato/shared/lib/bootstrap/dynamicLoader`),
+not by `yarn generate` — right after editing `src/modules.ts` the file still shows the previous
+content and mtime. The Next runtime reads `src/modules.ts` directly, so a running dev server reflects
+the change on the next request; the compiled artifact catches up when a CLI bootstrap next runs.
 
 **Two modes, and they answer different questions** (2026-09-22, extending the hide to
 `customers`/`sales`/`wms`/`currencies`/`dictionaries`/`feature_toggles`):
