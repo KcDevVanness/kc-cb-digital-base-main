@@ -17,9 +17,15 @@ import {
 } from '../../products/lib/supplierMapping'
 import { slugifySku } from './valueNormalization'
 
-/** Non-empty product values a line can contribute; nothing here returns an empty string. */
+/**
+ * Non-empty product values a line can contribute; nothing here returns an empty string.
+ *
+ * Only single-unit data crosses over: the master takes the per-unit weight (`unitNetWeight`), the
+ * unit's own size (`innerPacking`, the item size the supplier quotes) and the Qty/Box, and never a
+ * whole-carton weight or a carton outer size — the quotation line no longer carries those at all
+ * (owner decision 2026-09-23).
+ */
 export function quoteLineToProductFields(line: SourcingQuoteLine): ProductFieldValues {
-  const dimensions = asRecord(line.outerPacking ?? null)
   return {
     name: line.productName && line.productName.trim().length > 0 ? line.productName.trim() : null,
     // A quotation line carries one name only, so it never proposes our English name: clearing it
@@ -31,9 +37,6 @@ export function quoteLineToProductFields(line: SourcingQuoteLine): ProductFieldV
     netWeight: line.unitNetWeight ?? null,
     dimensions: asRecord(line.innerPacking ?? null),
     cartonQuantity: line.cartonQuantity ?? null,
-    cartonDimensions: dimensions,
-    cartonGrossWeight: line.cartonGrossWeight ?? null,
-    cartonNetWeight: line.cartonNetWeight ?? null,
   }
 }
 

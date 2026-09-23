@@ -11,8 +11,8 @@
  *   names the item no. or the product name (that also resolves the invoice-style two-row
  *   header, where the unit row never carries the identity columns).
  * - Unit row: a short, purely textual row directly under the header whose cells fold into
- *   the header labels (`Unit Price` + `CNY/PC`), because the `.xls` invoice only puts
- *   `G.W.`/`N.W.`/`L`/`W`/`H`/`qty/box` on the second line.
+ *   the header labels (`Unit Price` + `CNY/PC`), because the `.xls` invoice splits its
+ *   header over two lines (`Quantity` / `PCS`, `qty/box`).
  * - Banner row: exactly one filled cell, at most 40 characters, followed within three rows
  *   by a data row. It labels the rows beneath it until the next banner.
  * - Blank and merge-continuation rows are skipped but never end the table: the PetKit

@@ -76,9 +76,6 @@ const listFields = [
   'gross_weight',
   'dimensions',
   'carton_quantity',
-  'carton_dimensions',
-  'carton_gross_weight',
-  'carton_net_weight',
   'battery_capacity_mah',
   'battery_wh',
   'contains_lithium_battery',
@@ -178,9 +175,6 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       grossWeight: asNullableString(item.gross_weight),
       dimensions: item.dimensions ?? null,
       cartonQuantity: item.carton_quantity === null || item.carton_quantity === undefined ? null : Number(item.carton_quantity),
-      cartonDimensions: item.carton_dimensions ?? null,
-      cartonGrossWeight: asNullableString(item.carton_gross_weight),
-      cartonNetWeight: asNullableString(item.carton_net_weight),
       batteryCapacityMah:
         item.battery_capacity_mah === null || item.battery_capacity_mah === undefined
           ? null

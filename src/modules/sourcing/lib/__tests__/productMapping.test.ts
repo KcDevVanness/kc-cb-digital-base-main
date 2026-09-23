@@ -17,9 +17,6 @@ describe('sourcing productMapping', () => {
     netWeight: null,
     dimensions: null,
     cartonQuantity: null,
-    cartonDimensions: null,
-    cartonGrossWeight: null,
-    cartonNetWeight: null,
   }
 
   it('collapses a multi-line description into the product spec summary', () => {
@@ -30,22 +27,29 @@ describe('sourcing productMapping', () => {
       unit: 'PCS',
       unitNetWeight: '1.2800',
       innerPacking: { length: 21.9, width: 21.9, height: 18.5, unit: 'cm' },
-      outerPacking: { length: 46.5, width: 46.5, height: 40, unit: 'cm' },
       cartonQuantity: 8,
-      cartonGrossWeight: '15.0000',
-      cartonNetWeight: '14.0000',
     } as never)
     expect(fields.specSummary).toBe('Material: ABS, SUS304 / Capacity: 1.8L / Power: 5V 1A')
     expect(fields.netWeight).toBe('1.2800')
     expect(fields.dimensions).toEqual({ length: 21.9, width: 21.9, height: 18.5, unit: 'cm' })
-    expect(fields.cartonDimensions).toEqual({ length: 46.5, width: 46.5, height: 40, unit: 'cm' })
     expect(fields.cartonQuantity).toBe(8)
+    // the master is single-unit data only: a line carries no carton size and no carton weights at
+    // all, so nothing carton-shaped beyond Qty/Box can reach a product
+    expect(fields).not.toHaveProperty('cartonDimensions')
     // a line never proposes our English name: it does not know one
     expect(fields.nameEn).toBeNull()
   })
 
   it('never sends an empty line value over an existing product field', () => {
-    const values = quoteLineToProductFields({ productName: null, description: null, hsCode: null, unit: '', outerPacking: null } as never)
+    const values = quoteLineToProductFields({
+      productName: null,
+      description: null,
+      hsCode: null,
+      unit: '',
+      unitNetWeight: null,
+      innerPacking: null,
+      cartonQuantity: null,
+    } as never)
     expect(changedProductFields(EMPTY_PRODUCT, values)).toEqual({})
     const partial = quoteLineToProductFields({ productName: 'New name', description: null } as never)
     expect(changedProductFields({ ...EMPTY_PRODUCT, name: 'Old name' }, partial)).toEqual({ name: 'New name' })

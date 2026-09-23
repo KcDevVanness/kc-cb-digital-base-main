@@ -17,9 +17,6 @@ describe('supplierMapping', () => {
     netWeight: null,
     dimensions: null,
     cartonQuantity: null,
-    cartonDimensions: null,
-    cartonGrossWeight: null,
-    cartonNetWeight: null,
   }
 
   const purchaseRow = (overrides: Partial<DesiredPriceRow> = {}): DesiredPriceRow => ({
@@ -36,11 +33,11 @@ describe('supplierMapping', () => {
   it('never sends an empty value over an existing product field', () => {
     expect(changedProductFields(EMPTY_PRODUCT, {
       name: null, nameEn: null, specSummary: null, hsCode: null, unit: null, netWeight: null,
-      dimensions: null, cartonQuantity: null, cartonDimensions: null, cartonGrossWeight: null, cartonNetWeight: null,
+      dimensions: null, cartonQuantity: null,
     })).toEqual({})
     const values = {
       name: 'New name', nameEn: null, specSummary: null, hsCode: null, unit: null, netWeight: null,
-      dimensions: null, cartonQuantity: null, cartonDimensions: null, cartonGrossWeight: null, cartonNetWeight: null,
+      dimensions: null, cartonQuantity: null,
     }
     expect(changedProductFields({ ...EMPTY_PRODUCT, name: 'Old name' }, values)).toEqual({ name: 'New name' })
     expect(changedProductFields({ ...EMPTY_PRODUCT, name: 'New name' }, values)).toEqual({})
@@ -49,10 +46,19 @@ describe('supplierMapping', () => {
   it('compares decimal strings numerically instead of textually', () => {
     const values = {
       name: null, nameEn: null, specSummary: null, hsCode: null, unit: null, netWeight: '1.28',
-      dimensions: null, cartonQuantity: null, cartonDimensions: null, cartonGrossWeight: null, cartonNetWeight: null,
+      dimensions: null, cartonQuantity: null,
     }
     expect(changedProductFields({ ...EMPTY_PRODUCT, netWeight: '1.2800' }, values)).toEqual({})
     expect(changedProductFields({ ...EMPTY_PRODUCT, netWeight: '0.9000' }, values)).toEqual({ netWeight: '1.28' })
+  })
+
+  it('sends a carton quantity only when it differs from the stored one', () => {
+    const values = {
+      name: null, nameEn: null, specSummary: null, hsCode: null, unit: null, netWeight: null,
+      dimensions: null, cartonQuantity: 12,
+    }
+    expect(changedProductFields({ ...EMPTY_PRODUCT, cartonQuantity: 12 }, values)).toEqual({})
+    expect(changedProductFields({ ...EMPTY_PRODUCT, cartonQuantity: 6 }, values)).toEqual({ cartonQuantity: 12 })
   })
 
   it('collapses a multi-line supplier description into the master spec summary', () => {

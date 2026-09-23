@@ -2,9 +2,9 @@
  * The product form's visible shape, as data.
  *
  * The owner's review of the first build was "字段偏多，有些功能点不需要" — but the declaration fields
- * (HS/CN code, origin, weights, carton data, lithium) are exactly what a contract line snapshot and
- * an export declaration read later, so the answer is not to delete them: they move one step away
- * from the everyday fields.
+ * (HS/CN code, origin, per-unit weights, carton quantity, lithium) are exactly what a contract line
+ * snapshot and an export declaration read later, so the answer is not to delete them: they move one
+ * step away from the everyday fields.
  *
  * This file is the **only** place that decides which group appears on which step. A later field
  * whitelist is a one-file edit here (or in `useProductGroups` for removing a field outright), with
@@ -36,12 +36,11 @@ export const PRODUCT_FORM_STEP_GROUPS: Record<ProductFormStep, readonly string[]
   basics: ['details'],
   declaration: [
     'packaging',
-    // Single-item and carton measurements are their own self-titled cards (a bare group renders its
-    // component without group chrome, so the component draws the card), which is why they are not
-    // fields of `packaging`/`carton`: `CrudForm` renders a group's component *before* its fields, so
-    // an inline measurement editor could not sit between scalar fields inside one card.
+    // The single-unit measurement is its own self-titled card (a bare group renders its component
+    // without group chrome, so the component draws the card), which is why it is not a field of
+    // `packaging`: `CrudForm` renders a group's component *before* its fields, so an inline
+    // measurement editor could not sit between scalar fields inside one card.
     'dimensions',
-    'cartonDimensions',
     'carton',
     'battery',
     // The catalog link lives with the declaration data because its only purpose is the logistics
@@ -93,9 +92,6 @@ export const PRODUCT_FORM_FIELD_STEPS: Record<string, ProductFormStep> = {
   grossWeight: 'declaration',
   dimensions: 'declaration',
   cartonQuantity: 'declaration',
-  cartonDimensions: 'declaration',
-  cartonGrossWeight: 'declaration',
-  cartonNetWeight: 'declaration',
   containsLithiumBattery: 'declaration',
   batteryCapacityMah: 'declaration',
   batteryWh: 'declaration',

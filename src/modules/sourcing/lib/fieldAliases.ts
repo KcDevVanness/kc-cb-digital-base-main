@@ -22,16 +22,8 @@ export type SourceFieldKey =
   | 'suggested_rsp'
   | 'moq'
   | 'carton_quantity'
-  | 'cartons'
   | 'unit_net_weight'
-  | 'carton_gross_weight'
-  | 'carton_net_weight'
   | 'inner_packing'
-  | 'outer_packing'
-  | 'carton_length'
-  | 'carton_width'
-  | 'carton_height'
-  | 'carton_volume'
   | 'image'
   | 'quantity'
   | 'amount'
@@ -188,7 +180,6 @@ export const SOURCE_FIELDS: readonly SourceField[] = [
       '装箱量',
     ],
   },
-  { key: 'cartons', labelEn: 'Cartons', labelZh: '箱数', kind: 'integer', aliases: ['cartons', 'ctn', 'ctns', 'carton qty', '箱数', '件数'] },
   {
     key: 'unit_net_weight',
     labelEn: 'Unit net weight (kg)',
@@ -197,49 +188,15 @@ export const SOURCE_FIELDS: readonly SourceField[] = [
     aliases: ['unit n.w.', 'unit nw', 'unit net weight', 'n.w./pc', 'net weight per unit', '单重', '单品净重', '单位净重'],
   },
   {
-    key: 'carton_gross_weight',
-    labelEn: 'Carton gross weight (kg)',
-    labelZh: '箱毛重 (kg)',
-    kind: 'number',
-    aliases: ['packing weight', 'g.w.', 'gw', 'gross weight', 'carton gross weight', '毛重', '箱毛重', '总毛重'],
-  },
-  {
-    key: 'carton_net_weight',
-    labelEn: 'Carton net weight (kg)',
-    labelZh: '箱净重 (kg)',
-    kind: 'number',
-    aliases: ['n.w.', 'nw', 'net weight', 'carton net weight', '净重', '箱净重', '总净重'],
-  },
-  {
+    // The app stores this column as the item's own size (`products.dimensions` on promotion), so the
+    // target is named 产品尺寸 / "Product size" and the template header spells it the same way; the
+    // aliases below keep matching the workbook headers that spell it 内箱尺寸 / Inner Box instead.
     key: 'inner_packing',
-    labelEn: 'Inner packing (cm)',
-    labelZh: '内箱尺寸 (cm)',
+    labelEn: 'Product size (cm)',
+    labelZh: '产品尺寸 (cm)',
     kind: 'dimensions',
-    aliases: ['inner packing', 'inner box', 'inner carton', 'inner size', '内箱', '内包装', '内箱尺寸'],
+    aliases: ['product size', 'inner packing', 'inner box', 'inner carton', 'inner size', '产品尺寸', '内箱', '内包装', '内箱尺寸'],
   },
-  {
-    key: 'outer_packing',
-    labelEn: 'Outer packing (cm)',
-    labelZh: '外箱尺寸 (cm)',
-    kind: 'dimensions',
-    aliases: [
-      'outer packing',
-      'outer box',
-      'outer carton',
-      'carton size',
-      'carton dimensions',
-      'outer size',
-      '外箱',
-      '外包装',
-      '外箱尺寸',
-      '箱规',
-      '外箱规格',
-    ],
-  },
-  { key: 'carton_length', labelEn: 'Carton length', labelZh: '箱长', kind: 'number', aliases: ['l', 'length', '长', '箱长'] },
-  { key: 'carton_width', labelEn: 'Carton width', labelZh: '箱宽', kind: 'number', aliases: ['w', 'width', '宽', '箱宽'] },
-  { key: 'carton_height', labelEn: 'Carton height', labelZh: '箱高', kind: 'number', aliases: ['h', 'height', '高', '箱高'] },
-  { key: 'carton_volume', labelEn: 'Carton volume (m³)', labelZh: '体积 (m³)', kind: 'number', aliases: ['volume', 'cbm', 'carton volume', '体积', '材积'] },
   {
     key: 'image',
     labelEn: 'Picture (ignored)',

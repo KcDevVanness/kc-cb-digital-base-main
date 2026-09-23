@@ -167,13 +167,8 @@ export type QuoteLineColumns = {
   moqRaw: string | null
   moqQuantity: number | null
   cartonQuantity: number | null
-  cartons: number | null
   unitNetWeight: string | null
-  cartonGrossWeight: string | null
-  cartonNetWeight: string | null
   innerPacking: Record<string, unknown> | null
-  outerPacking: Record<string, unknown> | null
-  cartonVolume: string | null
   raw: Record<string, unknown> | null
   warnings: string[]
   rowStatus: string
@@ -199,13 +194,8 @@ export function toLineColumns(line: BuiltQuoteLine): QuoteLineColumns {
     moqRaw: line.moqRaw,
     moqQuantity: line.moqQuantity,
     cartonQuantity: line.cartonQuantity,
-    cartons: line.cartons,
     unitNetWeight: line.unitNetWeight,
-    cartonGrossWeight: line.cartonGrossWeight,
-    cartonNetWeight: line.cartonNetWeight,
     innerPacking: line.innerPacking,
-    outerPacking: line.outerPacking,
-    cartonVolume: line.cartonVolume,
     raw: line.raw,
     warnings: line.warnings,
     rowStatus: line.rowStatus,

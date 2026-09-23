@@ -123,8 +123,8 @@ export function parseIntegerCell(value: unknown): number | null {
 }
 
 /**
- * Builds a centimetre dimension triple from three separate numbers (the `.xls` invoice keeps
- * `L`/`W`/`H` in their own columns). The metre heuristic is shared with `parseDimensionsCell`:
+ * Builds a centimetre dimension triple from three separate numbers — the shape a sheet that spells
+ * a size across its own columns takes. The metre heuristic is shared with `parseDimensionsCell`:
  * a maximum of 3 or less means the supplier wrote metres, so the values scale to centimetres.
  * Returns null unless both length and width are present.
  */

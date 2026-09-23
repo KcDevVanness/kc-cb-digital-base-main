@@ -66,15 +66,6 @@ function draftFromLines(lines: readonly QuoteLineRow[]): LineDraftState {
   return drafts
 }
 
-function formatPacking(line: QuoteLineRow): string {
-  const packing = line.outerPacking ?? line.innerPacking
-  if (!packing) return ''
-  const { length, width, height, unit } = packing as { length?: unknown; width?: unknown; height?: unknown; unit?: unknown }
-  const parts = [length, width, height].filter((value) => value !== undefined && value !== null && value !== '')
-  if (parts.length === 0) return ''
-  return `${parts.join('*')}${unit ? ` ${String(unit)}` : ''}`
-}
-
 function warningLabel(t: TranslateFn, warning: string): string {
   return t(`sourcing.lines.warning.${warning}`, warning)
 }
@@ -394,13 +385,6 @@ export function QuoteLinesGrid({
         header: t('sourcing.lines.column.hsCode', 'HS code'),
         enableSorting: false,
         meta: { priority: 6 },
-      },
-      {
-        id: 'packing',
-        header: t('sourcing.lines.column.packing', 'Carton'),
-        enableSorting: false,
-        meta: { priority: 7 },
-        cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatPacking(row.original)}</span>,
       },
       {
         accessorKey: 'unitCost',

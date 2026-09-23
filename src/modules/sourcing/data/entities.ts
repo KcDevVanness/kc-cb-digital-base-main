@@ -193,27 +193,12 @@ export class SourcingQuoteLine {
   @Property({ name: 'carton_quantity', type: 'integer', nullable: true })
   cartonQuantity?: number | null
 
-  @Property({ type: 'integer', nullable: true })
-  cartons?: number | null
-
   @Property({ name: 'unit_net_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
   unitNetWeight?: string | null
-
-  @Property({ name: 'carton_gross_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
-  cartonGrossWeight?: string | null
-
-  @Property({ name: 'carton_net_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
-  cartonNetWeight?: string | null
 
   /** `{ length, width, height, unit: 'cm' }`. */
   @Property({ name: 'inner_packing', type: 'jsonb', nullable: true })
   innerPacking?: Record<string, unknown> | null
-
-  @Property({ name: 'outer_packing', type: 'jsonb', nullable: true })
-  outerPacking?: Record<string, unknown> | null
-
-  @Property({ name: 'carton_volume', type: 'numeric', precision: 16, scale: 6, nullable: true })
-  cartonVolume?: string | null
 
   /** The source row keyed by its original header text. */
   @Property({ type: 'jsonb', nullable: true })

@@ -24,18 +24,14 @@ describe('supplierProductFormValues', () => {
       moqQuantity: 10,
       cartonQuantity: 8,
       unitNetWeight: 1.28,
-      cartonGrossWeight: '15.5',
-      cartonNetWeight: 14,
     })
     expect(typed.moqQuantity).toBe(10)
     expect(typed.cartonQuantity).toBe(8)
     expect(typed.unitNetWeight).toBe('1.28')
-    expect(typed.cartonGrossWeight).toBe('15.5')
-    expect(typed.cartonNetWeight).toBe('14')
 
     const untouched = buildSupplierProductPayload({ ...EMPTY_VALUES, supplierSku: 'SPL-1', name: 'Eversweet' })
     expect(untouched.moqQuantity).toBeNull()
-    expect(untouched.cartonGrossWeight).toBeNull()
+    expect(untouched.unitNetWeight).toBeNull()
   })
 
   it('clears a cleared field instead of resurrecting the old value', () => {
@@ -46,12 +42,12 @@ describe('supplierProductFormValues', () => {
       nameZh: '  ',
       declarationElements: '',
       imageAttachmentIds: [],
-      outerPacking: { length: '', width: '', height: '' },
+      innerPacking: { length: '', width: '', height: '' },
     })
     expect(cleared.nameZh).toBeNull()
     expect(cleared.declarationElements).toBeNull()
     expect(cleared.imageAttachmentIds).toEqual([])
-    expect(cleared.outerPacking).toBeNull()
+    expect(cleared.innerPacking).toBeNull()
     // The API contract keeps `unit` non-empty, so a blank field falls back to the default code.
     expect(cleared.unit).toBe('PCS')
   })

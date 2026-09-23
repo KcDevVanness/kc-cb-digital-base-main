@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals'
-import { detectColumnMappings } from '../columnMapping'
+import { TEMPLATE_HEADERS, detectColumnMappings, templateColumnMap } from '../columnMapping'
 import { detectStructure } from '../headerDetection'
 import { buildQuoteLines, resolveLineStatus } from '../quoteLines'
 import { expandMerges, type CellValue } from '../workbook'
@@ -27,17 +27,31 @@ function buildInvoiceLines() {
 }
 
 describe('quoteLines', () => {
-  it('normalizes the invoice L/W/H columns from metres to centimetres', () => {
+  it('builds the invoice lines from the surviving columns', () => {
     const { lines } = buildInvoiceLines()
     expect(lines).toHaveLength(2)
     expect(lines[0].productName).toBe('Eversweet 3 Pro')
-    expect(lines[0].outerPacking).toEqual({ length: 46, width: 47, height: 41, unit: 'cm' })
-    expect(lines[1].outerPacking).toEqual({ length: 58, width: 39.5, height: 45.5, unit: 'cm' })
     expect(lines[0].cartonQuantity).toBe(8)
+    expect(lines[0].unitNetWeight).toBe('1.3')
     expect(lines[0].unitCost).toBe('230')
     expect(lines[0].derivedSku).toBe('eversweet-3-pro')
     expect(lines[0].warnings).toContain('sku_from_name')
     expect(lines[0].rowStatus).toBe('ready')
+  })
+
+  it('reads the quoted item size from the template column', () => {
+    const rows: CellValue[][] = [
+      [...TEMPLATE_HEADERS],
+      ['P4108', 'Eversweet 3 Pro', 'DRINKING', 'ABS', '8421219990', 'PCS', 230, 'CNY', 500, 8, 1.28, '21.9*21.9*18.5'],
+    ]
+    const detection = detectStructure({ rows, continuationCells: new Set() })
+    if (!detection.ok) throw new Error(`structure expected, got ${detection.reason}`)
+    const columnMap = templateColumnMap(detection.structure.headerCells)
+    const { lines } = buildQuoteLines({ rows, structure: detection.structure, columnMap })
+    expect(lines).toHaveLength(1)
+    expect(lines[0].innerPacking).toEqual({ length: 21.9, width: 21.9, height: 18.5, unit: 'cm' })
+    expect(lines[0].cartonQuantity).toBe(8)
+    expect(lines[0].unitNetWeight).toBe('1.28')
   })
 
   it('keeps centimetre values unchanged and refuses an incomplete triple', () => {

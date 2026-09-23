@@ -40,10 +40,7 @@ type SourcingReadTables = {
     moq_quantity: number | null
     carton_quantity: number | null
     unit_net_weight: string | null
-    carton_gross_weight: string | null
-    carton_net_weight: string | null
     inner_packing: Record<string, unknown> | null
-    outer_packing: Record<string, unknown> | null
     row_status: string
     promoted_product_id: string | null
     updated_at: Date
@@ -76,10 +73,7 @@ export type QuoteLineRef = {
   moqQuantity: number | null
   cartonQuantity: number | null
   unitNetWeight: string | null
-  cartonGrossWeight: string | null
-  cartonNetWeight: string | null
   innerPacking: Record<string, unknown> | null
-  outerPacking: Record<string, unknown> | null
   /** Set once the line was promoted into the product master; the library row then links to it. */
   promotedProductId: string | null
 }
@@ -134,10 +128,7 @@ export async function loadQuoteLines(
       'moq_quantity',
       'carton_quantity',
       'unit_net_weight',
-      'carton_gross_weight',
-      'carton_net_weight',
       'inner_packing',
-      'outer_packing',
       'row_status',
       'promoted_product_id',
     ])
@@ -163,11 +154,7 @@ export async function loadQuoteLines(
     moqQuantity: row.moq_quantity === null || row.moq_quantity === undefined ? null : Number(row.moq_quantity),
     cartonQuantity: row.carton_quantity === null || row.carton_quantity === undefined ? null : Number(row.carton_quantity),
     unitNetWeight: row.unit_net_weight === null || row.unit_net_weight === undefined ? null : String(row.unit_net_weight),
-    cartonGrossWeight:
-      row.carton_gross_weight === null || row.carton_gross_weight === undefined ? null : String(row.carton_gross_weight),
-    cartonNetWeight: row.carton_net_weight === null || row.carton_net_weight === undefined ? null : String(row.carton_net_weight),
     innerPacking: row.inner_packing ?? null,
-    outerPacking: row.outer_packing ?? null,
     promotedProductId: row.promoted_product_id ? String(row.promoted_product_id) : null,
   }))
 }

@@ -141,13 +141,8 @@ export const quoteLineCreateSchema = z.object({
   moqRaw: nullableText(64),
   moqQuantity: nullableNonNegativeIntegerSchema,
   cartonQuantity: nullableNonNegativeIntegerSchema,
-  cartons: nullableNonNegativeIntegerSchema,
   unitNetWeight: nullableDecimalSchema(4, { min: '0' }),
-  cartonGrossWeight: nullableDecimalSchema(4, { min: '0' }),
-  cartonNetWeight: nullableDecimalSchema(4, { min: '0' }),
   innerPacking: dimensionsSchema,
-  outerPacking: dimensionsSchema,
-  cartonVolume: nullableDecimalSchema(6, { min: '0' }),
   selected: z.boolean().default(true),
 })
 

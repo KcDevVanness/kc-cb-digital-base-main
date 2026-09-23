@@ -39,13 +39,16 @@ export type SupplierProductListRow = {
   moqQuantity: number | null
   cartonQuantity: number | null
   unitNetWeight: string | null
-  cartonGrossWeight: string | null
-  cartonNetWeight: string | null
   innerPacking: Record<string, unknown> | null
-  outerPacking: Record<string, unknown> | null
   productId: string | null
   productSku: string | null
   productName: string | null
+  /**
+   * `productId` is set but no live product resolves for it (deleted since the link, or not readable
+   * in this scope). The list renders 已关联的商品已删除 instead of a name, and the write actions that
+   * would fail (建档 skips it, 同步字段 refuses it) are withdrawn.
+   */
+  productDeleted: boolean
   status: SupplierProductStatus
   source: SupplierProductSource
   lastQuoteId: string | null

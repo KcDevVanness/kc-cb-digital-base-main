@@ -2,9 +2,13 @@ import { OptionalProps } from '@mikro-orm/core'
 import { Entity, Index, ManyToOne, PrimaryKey, Property, Unique } from '@mikro-orm/decorators/legacy'
 
 /**
- * Product type — the product family a product belongs to (`fountain`, `feeder`, …). The seeded
- * set is a starting point for every organization, not a supplier's list: a self-made line is
- * typed here exactly like a purchased one.
+ * Product line (界面名「产品线」) — the flat product family a product belongs to (`fountain`,
+ * `feeder`, …). The seeded set is a starting point for every organization, not a supplier's list: a
+ * self-made line is typed here exactly like a purchased one.
+ *
+ * Deliberately flat: this axis carries no hierarchy and no behaviour — the product hierarchy lives
+ * in `ProductsCategory` (界面名「产品品类」). See
+ * `.ai/specs/2026-09-23-product-taxonomy-consolidation.md` before giving it a tree.
  *
  * Scope columns are required (not nullable): a type belongs to exactly one organization, and
  * the visibility rule (HQ sees its descendants, a subsidiary sees itself) is enforced by the
@@ -54,7 +58,8 @@ export class ProductsType {
 }
 
 /**
- * Product category — a per-organization tree.
+ * Product category (界面名「产品品类」) — a per-organization tree, and the module's only product
+ * hierarchy: the flat `ProductsType` axis (界面名「产品线」) deliberately carries none.
  *
  * The hierarchy columns (`parent_id`, `root_id`, `tree_path`, `depth`, `ancestor_ids`,
  * `child_ids`, `descendant_ids`) are derived: commands call
@@ -212,18 +217,9 @@ export class ProductsProduct {
   @Property({ type: 'jsonb', nullable: true })
   dimensions?: Record<string, unknown> | null
 
+  /** Units per carton, the one carton figure purchasing reads. */
   @Property({ name: 'carton_quantity', type: 'integer', nullable: true })
   cartonQuantity?: number | null
-
-  /** `{ length, width, height, unit }` for one carton. */
-  @Property({ name: 'carton_dimensions', type: 'jsonb', nullable: true })
-  cartonDimensions?: Record<string, unknown> | null
-
-  @Property({ name: 'carton_gross_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
-  cartonGrossWeight?: string | null
-
-  @Property({ name: 'carton_net_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
-  cartonNetWeight?: string | null
 
   @Property({ name: 'battery_capacity_mah', type: 'integer', nullable: true })
   batteryCapacityMah?: number | null

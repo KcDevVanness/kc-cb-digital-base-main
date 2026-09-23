@@ -29,7 +29,6 @@ import {
   SelectValue,
 } from '@open-mercato/ui/primitives/select'
 import { StepIndicator, type StepIndicatorStep } from '@open-mercato/ui/primitives/step-indicator'
-import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import {
   PRODUCT_FORM_STEPS,
   PRODUCT_FORM_STEP_TITLE_KEYS,
@@ -41,6 +40,7 @@ import {
   type ProductFormStep,
 } from '../lib/formLayout'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useSelectedOrganizationId } from './useSelectedOrganizationId'
 import { PRODUCT_PRICE_TIERS, type ProductPriceTier } from '../lib/tiers'
 import { loadUnitOptions } from '../lib/unitOptions'
 import {
@@ -103,7 +103,7 @@ export type ProductDimensions = {
   unit: string
 }
 
-/** Length units a dimension block may be measured in (`dimensions.unit`, `cartonDimensions.unit`). */
+/** Length units a dimension block may be measured in (`dimensions.unit`). */
 const DIMENSION_UNITS = ['cm', 'mm', 'm', 'in', 'ft'] as const
 /** Radix `Select` cannot carry an empty value, so "no unit" travels through a sentinel item. */
 const DIMENSION_UNIT_CLEAR = 'no_unit'
@@ -147,9 +147,6 @@ export type ProductFormValues = {
   dimensions: ProductDimensions | null
   /** CrudForm's number field yields a number once edited, the raw string while untouched. */
   cartonQuantity: number | string
-  cartonDimensions: ProductDimensions | null
-  cartonGrossWeight: string
-  cartonNetWeight: string
   containsLithiumBattery: boolean
   batteryCapacityMah: number | string
   batteryWh: string
@@ -204,9 +201,6 @@ const EMPTY_PRODUCT_VALUES: ProductFormValues = {
   grossWeight: '',
   dimensions: null,
   cartonQuantity: '',
-  cartonDimensions: null,
-  cartonGrossWeight: '',
-  cartonNetWeight: '',
   containsLithiumBattery: false,
   batteryCapacityMah: '',
   batteryWh: '',
@@ -358,9 +352,6 @@ export function toProductFormValues(item: Record<string, unknown>): ProductRecor
     grossWeight: readNumberText(item, 'grossWeight', 'gross_weight'),
     dimensions: readDimensions(item.dimensions),
     cartonQuantity: readNumberText(item, 'cartonQuantity', 'carton_quantity'),
-    cartonDimensions: readDimensions(item.cartonDimensions ?? item.carton_dimensions),
-    cartonGrossWeight: readNumberText(item, 'cartonGrossWeight', 'carton_gross_weight'),
-    cartonNetWeight: readNumberText(item, 'cartonNetWeight', 'carton_net_weight'),
     batteryCapacityMah: readNumberText(item, 'batteryCapacityMah', 'battery_capacity_mah'),
     batteryWh: readNumberText(item, 'batteryWh', 'battery_wh'),
     containsLithiumBattery: item.containsLithiumBattery === true,
@@ -398,9 +389,6 @@ export function buildProductPayload(values: ProductFormValues): Record<string, u
     grossWeight: toOptionalText(values.grossWeight),
     dimensions: buildProductDimensionsPayload(values.dimensions),
     cartonQuantity: toOptionalInteger(values.cartonQuantity),
-    cartonDimensions: buildProductDimensionsPayload(values.cartonDimensions),
-    cartonGrossWeight: toOptionalText(values.cartonGrossWeight),
-    cartonNetWeight: toOptionalText(values.cartonNetWeight),
     batteryCapacityMah: toOptionalInteger(values.batteryCapacityMah),
     batteryWh: toOptionalText(values.batteryWh),
     containsLithiumBattery: values.containsLithiumBattery === true,
@@ -685,6 +673,8 @@ function ProductDimensionsEditor({
   ]
   // A measurement unit is a closed engineering set, not a company vocabulary, so it is a fixed list
   // rather than a dictionary; a record measured in something else keeps it as its own option.
+  // The options are symbols (`cm`), not a code-plus-name pair: a symbol reads the same in zh and en,
+  // so there is no second label to render here (`docs/dev/i18n.md`).
   const unitChoices = React.useMemo(() => {
     const code = current.unit.trim()
     if (!code || (DIMENSION_UNITS as readonly string[]).includes(code)) return [...DIMENSION_UNITS]
@@ -996,21 +986,9 @@ function useProductGroups(t: TranslateFn): CrudFormGroup[] {
       ),
     },
     {
-      id: 'cartonDimensions',
-      bare: true,
-      component: (context) => (
-        <ProductDimensionsEditor
-          {...context}
-          fieldId="cartonDimensions"
-          label={t('products.items.form.field.cartonDimensions')}
-          t={t}
-        />
-      ),
-    },
-    {
       id: 'carton',
       title: 'products.items.form.group.carton',
-      fields: ['cartonQuantity', 'cartonGrossWeight', 'cartonNetWeight'],
+      fields: ['cartonQuantity'],
     },
     {
       id: 'battery',
@@ -1089,7 +1067,7 @@ function ProductFormStepRail({
  *
  * It is the last group of every step (a `bare` group, so it carries no card of its own) because
  * `CrudForm` gives a host no other slot below the body: on a long step — the declaration step is
- * six cards — the rail is off-screen by the time the last field is filled, and walking back up to
+ * five cards — the rail is off-screen by the time the last field is filled, and walking back up to
  * reach the next step is exactly the friction the steps are supposed to remove.
  *
  * The last step has no "next" button: its primary action is the form's own save, which sits directly
@@ -1149,7 +1127,7 @@ function revealInvalidStep(
 function useProductsFields(t: TranslateFn, currentUnit = ''): CrudField[] {
   // Pickers are narrowed to the organization the operator is working in; the list page keeps the
   // wider (descendant-inclusive) visibility because reading a subsidiary's product is allowed.
-  const { organizationId } = useOrganizationScopeDetail()
+  const { organizationId } = useSelectedOrganizationId()
   return React.useMemo<CrudField[]>(() => [
     {
       id: 'sku',
@@ -1280,19 +1258,9 @@ function useProductsFields(t: TranslateFn, currentUnit = ''): CrudField[] {
       id: 'cartonQuantity',
       label: t('products.items.form.field.cartonQuantity'),
       type: 'number',
-      layout: 'third',
-    },
-    {
-      id: 'cartonGrossWeight',
-      label: t('products.items.form.field.cartonGrossWeight'),
-      type: 'text',
-      layout: 'third',
-    },
-    {
-      id: 'cartonNetWeight',
-      label: t('products.items.form.field.cartonNetWeight'),
-      type: 'text',
-      layout: 'third',
+      // It is the card's only field now, so it takes the half-width the neighbouring per-unit
+      // weight pair uses instead of the third it occupied in a three-field row.
+      layout: 'half',
     },
     {
       id: 'containsLithiumBattery',

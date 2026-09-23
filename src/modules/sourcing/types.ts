@@ -55,11 +55,7 @@ export type QuoteLineRow = {
   moqRaw: string | null
   moqQuantity: number | null
   cartonQuantity: number | null
-  cartons: number | null
   unitNetWeight: string | null
-  cartonGrossWeight: string | null
-  cartonNetWeight: string | null
-  outerPacking: Record<string, unknown> | null
   innerPacking: Record<string, unknown> | null
   warnings: string[]
   rowStatus: QuoteLineStatus

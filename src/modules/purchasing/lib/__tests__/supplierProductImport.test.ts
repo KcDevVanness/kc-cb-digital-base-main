@@ -14,10 +14,7 @@ const STORED_ROW = {
   moqQuantity: 10,
   cartonQuantity: 8,
   unitNetWeight: '1.2800',
-  cartonGrossWeight: '15.0000',
-  cartonNetWeight: '14.0000',
   innerPacking: { length: 21.9, unit: 'cm' },
-  outerPacking: null,
 } as never
 
 describe('supplierSkuFromLine', () => {
@@ -35,19 +32,21 @@ describe('supplierSkuFromLine', () => {
 })
 
 describe('supplierProductValuesFromLine', () => {
-  it('maps the wholesale packing cell and drops blank packing parts', () => {
+  it('maps the packing cell and drops blank packing parts', () => {
     const values = supplierProductValuesFromLine({
       itemNo: 'P4108',
       productName: ' Eversweet 3 Pro ',
       description: null,
       unit: 'PCS',
       moqQuantity: null,
+      cartonQuantity: 8,
+      unitNetWeight: '1.28',
       innerPacking: { length: 21.9, width: '', height: null, unit: 'cm' },
-      outerPacking: { length: '', width: '', height: '', unit: '' },
     } as never)
     expect(values.name).toBe('Eversweet 3 Pro')
+    expect(values.cartonQuantity).toBe(8)
+    expect(values.unitNetWeight).toBe('1.28')
     expect(values.innerPacking).toEqual({ length: 21.9, unit: 'cm' })
-    expect(values.outerPacking).toBeNull()
   })
 })
 
@@ -62,10 +61,7 @@ describe('changedLibraryFields', () => {
       moqQuantity: null,
       cartonQuantity: null,
       unitNetWeight: null,
-      cartonGrossWeight: null,
-      cartonNetWeight: null,
       innerPacking: null,
-      outerPacking: null,
     } as never)
     expect(changedLibraryFields(STORED_ROW, blank)).toEqual({})
   })
@@ -78,14 +74,12 @@ describe('changedLibraryFields', () => {
       moqQuantity: 10,
       cartonQuantity: 6,
       unitNetWeight: '1.28',
-      cartonGrossWeight: '15.0000',
-      innerPacking: { length: 21.9, unit: 'cm' },
-      outerPacking: { length: 46.5, unit: 'cm' },
+      innerPacking: { length: 25, unit: 'cm' },
     } as never)
     expect(changedLibraryFields(STORED_ROW, values)).toEqual({
       name: 'Eversweet 3 Pro (2026)',
       cartonQuantity: 6,
-      outerPacking: { length: 46.5, unit: 'cm' },
+      innerPacking: { length: 25, unit: 'cm' },
     })
   })
 })

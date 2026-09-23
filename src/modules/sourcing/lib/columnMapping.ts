@@ -4,8 +4,9 @@
  * Three signals, in order of trust: an exact normalized-alias hit, a containment hit
  * (longest alias wins, so `Unit Price` beats `Unit`), then a Dice-coefficient fuzzy hit.
  * A target field is awarded to exactly one column — the winner is the most confident,
- * then the most filled column (a real file has both `毛重` and `G.W.` for the same field
- * where only one of them carries values) and finally the leftmost.
+ * then the most filled column (a real file repeats a field in two columns, e.g. the same
+ * weight spelled both in words and in an abbreviation, where only one carries values)
+ * and finally the leftmost.
  *
  * The catalog is imported by client components (the mapping table renders every target
  * field), so this module must stay free of Node-only imports.
@@ -55,11 +56,8 @@ export const TEMPLATE_COLUMNS: readonly { key: SourceFieldKey; header: string }[
   { key: 'currency', header: '币种 Currency' },
   { key: 'moq', header: 'MOQ 起订量' },
   { key: 'carton_quantity', header: '装箱数 Qty per Carton' },
-  { key: 'carton_gross_weight', header: '箱毛重 Carton G.W.(kg)' },
-  { key: 'carton_net_weight', header: '箱净重 Carton N.W.(kg)' },
   { key: 'unit_net_weight', header: '单重 Unit N.W.(kg)' },
-  { key: 'outer_packing', header: '外箱尺寸 Carton Size(cm)' },
-  { key: 'inner_packing', header: '内箱尺寸 Inner Box(cm)' },
+  { key: 'inner_packing', header: '产品尺寸 Product Size(cm)' },
 ]
 
 export const TEMPLATE_HEADERS: readonly string[] = TEMPLATE_COLUMNS.map((column) => column.header)
@@ -136,8 +134,8 @@ function isNumericText(value: string): boolean {
 
 /**
  * Share of data rows that carry a real value in a column. A placeholder zero counts as
- * empty here (the `.xls` file fills unused 毛重/净重/体积 columns with `0` while the real
- * figures live in the G.W./N.W./L/W/H columns).
+ * empty here: supplier sheets zero-fill the columns they do not use, so a column of zeros
+ * is a decoy and must lose the tiebreak to the column that actually carries the figures.
  */
 function columnFillRate(dataRows: readonly (readonly unknown[])[], sourceIndex: number): number {
   if (dataRows.length === 0) return 1

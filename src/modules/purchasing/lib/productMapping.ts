@@ -23,8 +23,5 @@ export function supplierProductToProductFields(product: PurchasingSupplierProduc
     netWeight: product.unitNetWeight ?? null,
     dimensions: asRecord(product.innerPacking ?? null),
     cartonQuantity: product.cartonQuantity ?? null,
-    cartonDimensions: asRecord(product.outerPacking ?? null),
-    cartonGrossWeight: product.cartonGrossWeight ?? null,
-    cartonNetWeight: product.cartonNetWeight ?? null,
   }
 }

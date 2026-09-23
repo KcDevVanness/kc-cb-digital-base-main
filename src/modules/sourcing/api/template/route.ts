@@ -18,9 +18,9 @@ export const metadata = {
 }
 
 const EXAMPLE_ROWS: XlsxCell[][] = [
-  ['P4108', 'Eversweet 3 Pro (Wireless Pump)', 'DRINKING', 'Material: ABS, SUS304 stainless steel / Capacity: 1.8L', '8421219990', 'PCS', 230, 'CNY', 500, 8, 15, 1.28, 1.28, '46.5*46.5*40', '21.9*21.9*18.5'],
-  ['P4108-UVC', 'Eversweet 3 Pro- UVC', 'DRINKING', 'With UVC sterilisation module', '8421219990', 'PCS', 270, 'CNY', 500, 8, 15, 1.28, 1.28, '46.5*46.5*40', '21.9*21.9*18.5'],
-  ['PKCL10-4BAGS', 'Urine Monitor Cat Litter 4bags', 'CLEANING', 'Ingredients: Pea Residue, Corn Starch', '1404909090', 'SET', 95, 'CNY', 10, 4, 10.2, 2.4, 2.4, '39.5*14.4*29', '10*6.5*27'],
+  ['P4108', 'Eversweet 3 Pro (Wireless Pump)', 'DRINKING', 'Material: ABS, SUS304 stainless steel / Capacity: 1.8L', '8421219990', 'PCS', 230, 'CNY', 500, 8, 1.28, '21.9*21.9*18.5'],
+  ['P4108-UVC', 'Eversweet 3 Pro- UVC', 'DRINKING', 'With UVC sterilisation module', '8421219990', 'PCS', 270, 'CNY', 500, 8, 1.28, '21.9*21.9*18.5'],
+  ['PKCL10-4BAGS', 'Urine Monitor Cat Litter 4bags', 'CLEANING', 'Ingredients: Pea Residue, Corn Starch', '1404909090', 'SET', 95, 'CNY', 10, 4, 2.4, '10*6.5*27'],
 ]
 
 export async function GET() {

@@ -13,12 +13,27 @@ Specs: [`.ai/specs/2026-09-22-supplier-quotation-import.md`](../../../.ai/specs/
 |---|---|---|
 | Workbook reading | `lib/workbook.ts` | The only place `xlsx` (SheetJS) is imported. Reads `.xls` (BIFF8), `.xlsx` and `.csv` into plain sheets, expands merged ranges, caps sheets/rows/columns, and fingerprints a layout. |
 | Structure detection | `lib/headerDetection.ts` | Finds the header row, an optional unit row, section banners, the data rows and the footer; reports every rejected row with a reason. |
-| Column mapping | `lib/columnMapping.ts` + `lib/fieldAliases.ts` | Alias dictionary (EN + 中文) with `exact`/`alias`/`fuzzy` confidence, one winner per target field, the standard template header set, and a currency hint. |
+| Column mapping | `lib/columnMapping.ts` + `lib/fieldAliases.ts` | Alias dictionary (EN + 中文) with `exact`/`alias`/`fuzzy` confidence, one winner per target field, the standard template header set, and a currency hint. The downloadable template (`api/template/route.ts`) carries exactly the surviving column set — `SKU / 货号`, `品名 Product Name`, `分类 Section`, `规格 Description`, `HS编码 HS Code`, `单位 Unit`, `单价 Unit Cost`, `币种 Currency`, `MOQ 起订量`, `装箱数 Qty per Carton`, `单重 Unit N.W.(kg)`, `产品尺寸 Product Size(cm)` — and the `产品尺寸` header round-trips through the alias dictionary as well as through the exact template lookup. The alias tables carry both languages because a workbook may print either; the wizard renders **one** of them (`labelZh` / `labelEn` by the reader's locale), never `货号 / SKU` side by side. The `quote_section` seeds are display names only — the picker (`components/quoteSectionOptions.ts`) renders the stored banner in front (`FEEDING — 喂食`). |
 | Value normalization | `lib/valueNormalization.ts` | `/` and friends → null, `10 pallets` → 10 + warning, `0.58*0.395*0.455` → centimetres, name → base + variant tokens. |
 | SKU derivation | `lib/skuDerivation.ts` | Item No. for the first row of a group, `-<variant token>` for the rest (`P4108` / `P4108-UVC`), name slug when there is no Item No. |
 | Line building | `lib/quoteLines.ts` + `lib/quoteAnalysis.ts` | Detection + mapping + normalization → quotation lines, with every source row kept in `raw`. |
 | Promotion | `lib/promotion.ts` + `lib/productMapping.ts` | Selected lines → `products.items.create|update` + `products.prices.replace` + `products.categories.create`, then `purchasing.supplier-products.import-from-quote` for the library. The master-side mapping (non-empty/changed values, the whole price set) is shared from `products/lib/supplierMapping.ts`. |
 | AI mapping (optional) | `lib/aiMapping.ts` | Header row + up to three sample rows → a proposed mapping. Off unless a model provider is configured. |
+
+## The import keeps single-unit data only
+
+**The whole-carton columns are gone** (owner decision 2026-09-23: purchasing only ever reads
+per-unit data). 外箱尺寸, 箱毛重, 箱净重, 体积 and 箱数 — plus the per-side 箱长 / 箱宽 / 箱高 aliases
+that only ever assembled the outer size — were deleted from the quotation line end to end: entity,
+validators, create command, API request schema / `select` list / response projection, the review
+grid's column, i18n and the downloadable template. What a line still carries is the Qty/Box
+(`cartonQuantity`, 装箱数), the per-unit weight (`unitNetWeight`, 单重) and the item's own size
+(`innerPacking`, 产品尺寸) — nothing else carton-shaped, and `lib/productMapping.ts` therefore offers
+the product master only those three.
+
+Nothing is lost for re-mapping: every raw cell of a data row is still kept in the line's `raw` under
+its original header text (`lib/quoteLines.ts`), so an unmapped or mis-mapped column can be re-mapped
+from the stored attachment without asking the supplier for the file again.
 
 ## The supplier product library lives in `purchasing`
 

@@ -46,10 +46,7 @@ export type SupplierProductFormValues = {
   moqQuantity: number | string
   cartonQuantity: number | string
   unitNetWeight: number | string
-  cartonGrossWeight: number | string
-  cartonNetWeight: number | string
   innerPacking: PackingValues
-  outerPacking: PackingValues
   /** Ordered attachment ids of the product photos (REQ-SPL-014). */
   imageAttachmentIds: string[]
   /** The item's whole price list, submitted separately after the row itself (REQ-SPL-013). */
@@ -80,10 +77,7 @@ export const EMPTY_VALUES: SupplierProductFormValues = {
   moqQuantity: '',
   cartonQuantity: '',
   unitNetWeight: '',
-  cartonGrossWeight: '',
-  cartonNetWeight: '',
   innerPacking: EMPTY_PACKING,
-  outerPacking: EMPTY_PACKING,
   imageAttachmentIds: [],
   prices: [],
   status: 'active',
@@ -198,10 +192,7 @@ export function toSupplierProductFormValues(item: Record<string, unknown>): Supp
     moqQuantity: readNumberText(item, 'moqQuantity') || readNumberText(item, 'moq_quantity'),
     cartonQuantity: readNumberText(item, 'cartonQuantity') || readNumberText(item, 'carton_quantity'),
     unitNetWeight: readNumberText(item, 'unitNetWeight') || readNumberText(item, 'unit_net_weight'),
-    cartonGrossWeight: readNumberText(item, 'cartonGrossWeight') || readNumberText(item, 'carton_gross_weight'),
-    cartonNetWeight: readNumberText(item, 'cartonNetWeight') || readNumberText(item, 'carton_net_weight'),
     innerPacking: readPacking(item.innerPacking ?? item.inner_packing),
-    outerPacking: readPacking(item.outerPacking ?? item.outer_packing),
     imageAttachmentIds: readImageIds(item.imageAttachmentIds ?? item.image_attachment_ids),
     prices: Array.isArray(item.prices)
       ? item.prices.map((row) => toProductPriceRowValues(row as Record<string, unknown>))
@@ -254,10 +245,7 @@ export function buildSupplierProductPayload(values: SupplierProductFormValues): 
     moqQuantity: nullableNumberText(values.moqQuantity),
     cartonQuantity: nullableNumberText(values.cartonQuantity),
     unitNetWeight: nullableDecimalText(values.unitNetWeight),
-    cartonGrossWeight: nullableDecimalText(values.cartonGrossWeight),
-    cartonNetWeight: nullableDecimalText(values.cartonNetWeight),
     innerPacking: packingPayload(values.innerPacking),
-    outerPacking: packingPayload(values.outerPacking),
     // Replace-set: the submitted list is the new photo list, so removing a thumbnail here removes
     // the binding on save (the uploaded file itself stays in the attachments module).
     imageAttachmentIds: values.imageAttachmentIds,

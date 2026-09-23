@@ -13,7 +13,6 @@ import { deriveLineSkus, type SkuWarning } from './skuDerivation'
 import {
   cellToText,
   isNullToken,
-  normalizeDimensionTriple,
   parseDimensionsCell,
   parseMoqCell,
   parseNumberCell,
@@ -40,13 +39,8 @@ export type BuiltQuoteLine = {
   moqRaw: string | null
   moqQuantity: number | null
   cartonQuantity: number | null
-  cartons: number | null
   unitNetWeight: string | null
-  cartonGrossWeight: string | null
-  cartonNetWeight: string | null
   innerPacking: Dimensions | null
-  outerPacking: Dimensions | null
-  cartonVolume: string | null
   raw: Record<string, unknown>
   warnings: QuoteLineWarning[]
   rowStatus: 'ready' | 'invalid'
@@ -76,21 +70,6 @@ function textCell(rows: readonly (readonly CellValue[])[], rowIndex: number, col
 
 function numberCell(rows: readonly (readonly CellValue[])[], rowIndex: number, columnMap: ColumnMap, field: string): number | null {
   return parseNumberCell(readCell(rows, rowIndex, columnMap, field))
-}
-
-/**
- * Carton dimensions from either a packed `46.5*46.5*40` cell or the separate L/W/H columns.
- * Both paths normalize to centimetres, because the `.xls` invoice writes `L`/`W`/`H` in metres
- * while the quotation sheet writes centimetres in one cell.
- */
-function cartonDimensions(rows: readonly (readonly CellValue[])[], rowIndex: number, columnMap: ColumnMap): Dimensions | null {
-  const fromColumns = normalizeDimensionTriple(
-    numberCell(rows, rowIndex, columnMap, 'carton_length'),
-    numberCell(rows, rowIndex, columnMap, 'carton_width'),
-    numberCell(rows, rowIndex, columnMap, 'carton_height'),
-  )
-  if (fromColumns) return fromColumns
-  return parseDimensionsCell(readCell(rows, rowIndex, columnMap, 'outer_packing'))
 }
 
 /**
@@ -142,7 +121,6 @@ export function buildQuoteLines(input: {
     const productName = candidates[position].productName
     if (!productName && !itemNo) lineWarnings.push('missing_name')
     const cartonQuantityValue = numberCell(rows, rowIndex, columnMap, 'carton_quantity')
-    const cartonsValue = numberCell(rows, rowIndex, columnMap, 'cartons')
     const line: BuiltQuoteLine = {
       lineNumber: position + 1,
       sourceRowNumber: rowIndex,
@@ -160,13 +138,8 @@ export function buildQuoteLines(input: {
       moqRaw: moq.raw,
       moqQuantity: moq.quantity,
       cartonQuantity: cartonQuantityValue === null ? null : Math.round(cartonQuantityValue),
-      cartons: cartonsValue === null ? null : Math.round(cartonsValue),
       unitNetWeight: toDecimalString(numberCell(rows, rowIndex, columnMap, 'unit_net_weight'), 4),
-      cartonGrossWeight: toDecimalString(numberCell(rows, rowIndex, columnMap, 'carton_gross_weight'), 4),
-      cartonNetWeight: toDecimalString(numberCell(rows, rowIndex, columnMap, 'carton_net_weight'), 4),
       innerPacking: parseDimensionsCell(readCell(rows, rowIndex, columnMap, 'inner_packing')),
-      outerPacking: cartonDimensions(rows, rowIndex, columnMap),
-      cartonVolume: toDecimalString(numberCell(rows, rowIndex, columnMap, 'carton_volume'), 6),
       raw: rawHeaders[position],
       warnings: lineWarnings,
       rowStatus: 'invalid',

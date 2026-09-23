@@ -53,9 +53,6 @@ export type SerializedProduct = {
   grossWeight: string | null
   dimensions: Record<string, unknown> | null
   cartonQuantity: number | null
-  cartonDimensions: Record<string, unknown> | null
-  cartonGrossWeight: string | null
-  cartonNetWeight: string | null
   batteryCapacityMah: number | null
   batteryWh: string | null
   containsLithiumBattery: boolean
@@ -89,9 +86,6 @@ export function serializeProduct(entity: ProductsProduct): SerializedProduct {
     grossWeight: entity.grossWeight ?? null,
     dimensions: entity.dimensions ?? null,
     cartonQuantity: entity.cartonQuantity ?? null,
-    cartonDimensions: entity.cartonDimensions ?? null,
-    cartonGrossWeight: entity.cartonGrossWeight ?? null,
-    cartonNetWeight: entity.cartonNetWeight ?? null,
     batteryCapacityMah: entity.batteryCapacityMah ?? null,
     batteryWh: entity.batteryWh ?? null,
     containsLithiumBattery: !!entity.containsLithiumBattery,
@@ -205,9 +199,6 @@ const PRODUCT_COLUMNS = [
   'grossWeight',
   'dimensions',
   'cartonQuantity',
-  'cartonDimensions',
-  'cartonGrossWeight',
-  'cartonNetWeight',
   'batteryCapacityMah',
   'batteryWh',
   'containsLithiumBattery',
@@ -240,9 +231,6 @@ function applyProductInput(entity: ProductsProduct, parsed: Partial<ProductCreat
   if (parsed.grossWeight !== undefined) entity.grossWeight = parsed.grossWeight
   if (parsed.dimensions !== undefined) entity.dimensions = parsed.dimensions
   if (parsed.cartonQuantity !== undefined) entity.cartonQuantity = parsed.cartonQuantity
-  if (parsed.cartonDimensions !== undefined) entity.cartonDimensions = parsed.cartonDimensions
-  if (parsed.cartonGrossWeight !== undefined) entity.cartonGrossWeight = parsed.cartonGrossWeight
-  if (parsed.cartonNetWeight !== undefined) entity.cartonNetWeight = parsed.cartonNetWeight
   if (parsed.batteryCapacityMah !== undefined) entity.batteryCapacityMah = parsed.batteryCapacityMah
   if (parsed.batteryWh !== undefined) entity.batteryWh = parsed.batteryWh
   if (parsed.containsLithiumBattery !== undefined) entity.containsLithiumBattery = parsed.containsLithiumBattery
@@ -560,9 +548,6 @@ const createProductCommand: CommandHandler<Record<string, unknown>, ProductsProd
                 grossWeight: parsed.grossWeight,
                 dimensions: parsed.dimensions ?? null,
                 cartonQuantity: parsed.cartonQuantity,
-                cartonDimensions: parsed.cartonDimensions ?? null,
-                cartonGrossWeight: parsed.cartonGrossWeight,
-                cartonNetWeight: parsed.cartonNetWeight,
                 batteryCapacityMah: parsed.batteryCapacityMah,
                 batteryWh: parsed.batteryWh,
                 containsLithiumBattery: parsed.containsLithiumBattery,
@@ -804,9 +789,6 @@ const updateProductCommand: CommandHandler<Record<string, unknown>, ProductsProd
         entity.grossWeight = before.grossWeight
         entity.dimensions = before.dimensions
         entity.cartonQuantity = before.cartonQuantity
-        entity.cartonDimensions = before.cartonDimensions
-        entity.cartonGrossWeight = before.cartonGrossWeight
-        entity.cartonNetWeight = before.cartonNetWeight
         entity.batteryCapacityMah = before.batteryCapacityMah
         entity.batteryWh = before.batteryWh
         entity.containsLithiumBattery = before.containsLithiumBattery

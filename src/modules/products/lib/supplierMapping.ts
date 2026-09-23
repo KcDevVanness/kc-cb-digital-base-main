@@ -26,9 +26,6 @@ export type ProductFieldValues = {
   netWeight: string | null
   dimensions: Record<string, unknown> | null
   cartonQuantity: number | null
-  cartonDimensions: Record<string, unknown> | null
-  cartonGrossWeight: string | null
-  cartonNetWeight: string | null
 }
 
 export type DesiredPriceRow = {
@@ -79,9 +76,6 @@ export function changedProductFields(
     netWeight: string | null
     dimensions: Record<string, unknown> | null
     cartonQuantity: number | null
-    cartonDimensions: Record<string, unknown> | null
-    cartonGrossWeight: string | null
-    cartonNetWeight: string | null
   },
   values: ProductFieldValues,
 ): Record<string, unknown> {
@@ -96,15 +90,6 @@ export function changedProductFields(
     payload.dimensions = values.dimensions
   }
   if (values.cartonQuantity !== null && values.cartonQuantity !== current.cartonQuantity) payload.cartonQuantity = values.cartonQuantity
-  if (values.cartonDimensions && JSON.stringify(values.cartonDimensions) !== JSON.stringify(current.cartonDimensions ?? null)) {
-    payload.cartonDimensions = values.cartonDimensions
-  }
-  if (values.cartonGrossWeight && Number(values.cartonGrossWeight) !== Number(current.cartonGrossWeight ?? Number.NaN)) {
-    payload.cartonGrossWeight = values.cartonGrossWeight
-  }
-  if (values.cartonNetWeight && Number(values.cartonNetWeight) !== Number(current.cartonNetWeight ?? Number.NaN)) {
-    payload.cartonNetWeight = values.cartonNetWeight
-  }
   return payload
 }
 

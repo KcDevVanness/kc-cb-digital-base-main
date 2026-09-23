@@ -45,16 +45,13 @@ type LibraryValues = {
   moqQuantity: number | null
   cartonQuantity: number | null
   unitNetWeight: string | null
-  cartonGrossWeight: string | null
-  cartonNetWeight: string | null
   innerPacking: Record<string, unknown> | null
-  outerPacking: Record<string, unknown> | null
 }
 
 const TEXT_FIELDS = ['itemNo', 'name', 'description', 'unit', 'hsCode'] as const
 const INTEGER_FIELDS = ['moqQuantity', 'cartonQuantity'] as const
-const DECIMAL_FIELDS = ['unitNetWeight', 'cartonGrossWeight', 'cartonNetWeight'] as const
-const PACKING_FIELDS = ['innerPacking', 'outerPacking'] as const
+const DECIMAL_FIELDS = ['unitNetWeight'] as const
+const PACKING_FIELDS = ['innerPacking'] as const
 
 function trimmedOrNull(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null
@@ -83,10 +80,7 @@ export function supplierProductValuesFromLine(line: QuoteLineRef): LibraryValues
     moqQuantity: line.moqQuantity ?? null,
     cartonQuantity: line.cartonQuantity ?? null,
     unitNetWeight: line.unitNetWeight ?? null,
-    cartonGrossWeight: line.cartonGrossWeight ?? null,
-    cartonNetWeight: line.cartonNetWeight ?? null,
     innerPacking: normalizePacking(line.innerPacking),
-    outerPacking: normalizePacking(line.outerPacking),
   }
 }
 
@@ -187,10 +181,7 @@ export async function upsertSupplierProductRow(input: {
         moqQuantity: values.moqQuantity ?? null,
         cartonQuantity: values.cartonQuantity ?? null,
         unitNetWeight: values.unitNetWeight ?? null,
-        cartonGrossWeight: values.cartonGrossWeight ?? null,
-        cartonNetWeight: values.cartonNetWeight ?? null,
         innerPacking: values.innerPacking ?? null,
-        outerPacking: values.outerPacking ?? null,
         productId: input.line.promotedProductId ?? null,
         status: 'active',
         source: 'quote',

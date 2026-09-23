@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals'
 import {
+  TEMPLATE_COLUMNS,
   TEMPLATE_HEADERS,
   detectColumnMappings,
   inferCurrencyFromHeaders,
@@ -71,7 +72,7 @@ describe('columnMapping', () => {
     expect(normalizeHeaderLabel('Item No.& Name')).toBe('item no name')
   })
 
-  it('maps every column of the PetKit quotation sheet onto a target field', () => {
+  it('maps the surviving columns of the PetKit quotation sheet and leaves the carton-only ones unmapped', () => {
     const { map, duplicates, unmapped } = columnMapSummary(PETKIT_HEADERS)
     expect(map).toEqual({
       image: 0,
@@ -80,38 +81,31 @@ describe('columnMapping', () => {
       hs_code: 3,
       description: 4,
       inner_packing: 5,
-      outer_packing: 6,
       carton_quantity: 7,
       unit_net_weight: 8,
-      carton_gross_weight: 9,
       unit_cost: 10,
       suggested_rsp: 11,
       moq: 12,
     })
     expect(duplicates).toEqual([])
-    expect(unmapped).toEqual([])
+    expect(unmapped).toEqual([6, 9])
   })
 
-  it('maps the folded invoice header, preferring the filled carton columns over the zero placeholders', () => {
-    const { map, duplicates } = columnMapSummary(INVOICE_HEADERS_FOLDED, INVOICE_DATA_ROWS)
+  it('maps the folded invoice header and leaves the carton-only columns unmapped', () => {
+    const { map, duplicates, unmapped } = columnMapSummary(INVOICE_HEADERS_FOLDED, INVOICE_DATA_ROWS)
     expect(map).toEqual({
       marks: 0,
       product_name: 2,
       quantity: 5,
       unit_cost: 6,
       amount: 7,
-      carton_gross_weight: 12,
-      carton_net_weight: 13,
-      carton_length: 14,
-      carton_width: 15,
-      carton_height: 16,
+      // The bare `N.W.` column folds into the surviving per-unit weight field; `G.W.`, `L`/`W`/`H`
+      // and the zero-filled 箱数/毛重/净重/体积 placeholders have no surviving target at all.
+      unit_net_weight: 13,
       carton_quantity: 17,
     })
-    expect(duplicates.sort()).toEqual(['carton_gross_weight', 'carton_net_weight'])
-    const columns = detectColumnMappings({ headers: INVOICE_HEADERS_FOLDED, dataRows: INVOICE_DATA_ROWS }).columns
-    expect(columns[9]).toMatchObject({ targetField: null, reason: 'duplicate_target', duplicateOfField: 'carton_gross_weight' })
-    expect(columns[11]).toMatchObject({ targetField: null, reason: 'all_zero_values' })
-    expect(columns[8]).toMatchObject({ targetField: null, reason: 'all_zero_values' })
+    expect(duplicates).toEqual([])
+    expect(unmapped).toEqual([8, 9, 10, 11, 12, 14, 15, 16])
   })
 
   it('reports the confidence of every assignment', () => {
@@ -130,10 +124,30 @@ describe('columnMapping', () => {
   it('recognizes the standard template header row and its column map', () => {
     expect(isTemplateHeaderRow(TEMPLATE_HEADERS)).toBe(true)
     expect(isTemplateHeaderRow(PETKIT_HEADERS)).toBe(false)
+    // The template is the surviving column set: the whole-carton columns are no longer offered.
+    expect(TEMPLATE_COLUMNS.map((column) => column.key)).toEqual([
+      'item_no',
+      'product_name',
+      'section',
+      'description',
+      'hs_code',
+      'unit',
+      'unit_cost',
+      'currency',
+      'moq',
+      'carton_quantity',
+      'unit_net_weight',
+      'inner_packing',
+    ])
     const columnMap = templateColumnMap(TEMPLATE_HEADERS)
     expect(columnMap.item_no.sourceIndex).toBe(0)
-    expect(columnMap.outer_packing.sourceIndex).toBe(13)
+    expect(columnMap.carton_quantity.sourceIndex).toBe(9)
+    expect(columnMap.unit_net_weight.sourceIndex).toBe(10)
+    expect(columnMap.inner_packing.sourceIndex).toBe(11)
     expect(Object.keys(columnMap)).toHaveLength(TEMPLATE_HEADERS.length)
+    // The renamed size header still round-trips through the alias dictionary, not only through the
+    // exact template lookup, so a supplier who keeps the label imports without a manual mapping.
+    expect(detectColumnMappings({ headers: TEMPLATE_HEADERS }).columnMap.inner_packing.sourceIndex).toBe(11)
   })
 
   it('re-derives the wizard view for a mapping that came from a saved profile', () => {

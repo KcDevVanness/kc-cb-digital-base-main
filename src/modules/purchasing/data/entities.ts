@@ -361,7 +361,7 @@ export class PurchasingPurchaseOrderDocument {
 /**
  * One item a supplier sells — the supplier-side product library.
  *
- * The supplier's own goods list (item no., name, spec, unit, carton data, MOQ, HS code) as
+ * The supplier's own goods list (item no., name, spec, unit, Qty/Box, MOQ, HS code) as
  * opposed to the internal product master: `products_products` is the record stock, internal sales
  * and contracts need, this is the list the buyer orders from. The two are bridged by
  * `product_id`, backfilled by the explicit "sync to product master" action, so a supplier item can
@@ -458,21 +458,20 @@ export class PurchasingSupplierProduct {
   @Property({ name: 'carton_quantity', type: 'integer', nullable: true })
   cartonQuantity?: number | null
 
+  /**
+   * Net weight of one piece, in kg. Per-carton weights are deliberately absent: purchasing reads
+   * single-unit data only, and Qty/Box is the one carton figure this library keeps.
+   */
   @Property({ name: 'unit_net_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
   unitNetWeight?: string | null
 
-  @Property({ name: 'carton_gross_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
-  cartonGrossWeight?: string | null
-
-  @Property({ name: 'carton_net_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
-  cartonNetWeight?: string | null
-
-  /** `{ length, width, height, unit: 'cm' }`. */
+  /**
+   * `{ length, width, height, unit: 'cm' }` of one piece — the item's own size, labelled 产品尺寸 /
+   * "Product size". The column name is inherited from the supplier sheet's 内箱尺寸 column; the field
+   * is not an inner box, which is exactly the reading the old label invited.
+   */
   @Property({ name: 'inner_packing', type: 'jsonb', nullable: true })
   innerPacking?: Record<string, unknown> | null
-
-  @Property({ name: 'outer_packing', type: 'jsonb', nullable: true })
-  outerPacking?: Record<string, unknown> | null
 
   /**
    * `string[]` of `attachments` ids — the product photos, in display order.

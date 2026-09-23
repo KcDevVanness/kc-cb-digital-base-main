@@ -23,9 +23,6 @@ export type ProductRow = {
   netWeight: string | null
   dimensions: Record<string, unknown> | null
   cartonQuantity: number | null
-  cartonDimensions: Record<string, unknown> | null
-  cartonGrossWeight: string | null
-  cartonNetWeight: string | null
   categoryId: string | null
   deletedAt: Date | null
 }
@@ -69,9 +66,6 @@ export async function findProductBySku(
       'net_weight',
       'dimensions',
       'carton_quantity',
-      'carton_dimensions',
-      'carton_gross_weight',
-      'carton_net_weight',
       'category_id',
       'deleted_at',
     ])
@@ -90,9 +84,6 @@ export async function findProductBySku(
     net_weight: string | null
     dimensions: Record<string, unknown> | null
     carton_quantity: number | null
-    carton_dimensions: Record<string, unknown> | null
-    carton_gross_weight: string | null
-    carton_net_weight: string | null
     category_id: string | null
     deleted_at: Date | null
   }>
@@ -109,9 +100,6 @@ export async function findProductBySku(
     netWeight: row.net_weight === null || row.net_weight === undefined ? null : String(row.net_weight),
     dimensions: row.dimensions ?? null,
     cartonQuantity: row.carton_quantity === null || row.carton_quantity === undefined ? null : Number(row.carton_quantity),
-    cartonDimensions: row.carton_dimensions ?? null,
-    cartonGrossWeight: row.carton_gross_weight === null || row.carton_gross_weight === undefined ? null : String(row.carton_gross_weight),
-    cartonNetWeight: row.carton_net_weight === null || row.carton_net_weight === undefined ? null : String(row.carton_net_weight),
     categoryId: row.category_id ?? null,
     deletedAt: row.deleted_at ?? null,
   }
