@@ -126,5 +126,18 @@
   "dictionaries.form.iconSearchEmptyLabel": "没有匹配的图标",
   "dictionaries.form.iconSearchPlaceholder": "搜索图标或表情符号…",
   "dictionaries.form.iconSuggestionsLabel": "建议",
-  "dictionaries.form.previewEmptyLabel": "未选择外观"
+  "dictionaries.form.previewEmptyLabel": "未选择外观",
+  "dictionaries.library.actions.delete": "删除字典",
+  "dictionaries.library.actions.edit": "编辑字典",
+  "dictionaries.library.badge.currentOrganization": "本组织",
+  "dictionaries.library.dialog.organization": "所属组织：{{name}}",
+  "dictionaries.library.group.current": "当前组织",
+  "dictionaries.library.group.parent": "上级组织",
+  "dictionaries.library.list.count": "共 {{count}} 个字典",
+  "dictionaries.library.row.updatedAt": "更新于 {{date}}",
+  "dictionaries.library.scope.allOrganizations": "当前选择「所有组织」，字典按组织只读展示。要新建或修改字典，请先在顶栏选择一个具体组织——一本字典永远只属于一个组织，写入必须落在某个组织上。",
+  "dictionaries.library.scope.currentOrganization": "当前组织：{{name}}。本组织的字典可编辑；来自上级组织的字典在此只读。",
+  "dictionaries.library.scope.noOrganization": "当前没有选中组织，字典为只读。请在顶栏选择一个组织后再新建或修改字典。",
+  "dictionaries.library.scope.selectOrganizationRequired": "请先在顶栏选择一个具体组织——字典永远只属于一个组织。",
+  "dictionaries.library.search.placeholder": "搜索名称、键或组织"
 }

@@ -34,6 +34,12 @@ export const enabledModules: ModuleEntry[] = [
   // marks `description` required. This app does not want SEO helpers, so the widget is
   // disabled here: the registry entry and its `crud-form:catalog.product` table slot are
   // dropped in every bootstrap (server and browser).
+  //
+  // `catalog.injection.product-seo` is the widget's `metadata.id`, which is what the table slots
+  // reference; the entry key is `catalog:product-seo:widget`. The CLI prints
+  // "Override did not match any registered entry" for this key — that is a partial-pass warning,
+  // NOT a no-op: the entry and both form slots are dropped in the server/browser passes. Verified
+  // 2026-09-23, recipe in .ai/lessons/module-override-page-hide-needs-routes-domain.md.
   {
     id: 'catalog',
     from: '@open-mercato/core',
@@ -179,17 +185,19 @@ export const enabledModules: ModuleEntry[] = [
       },
     },
   },
-  {
-    id: 'dictionaries',
-    from: '@open-mercato/core',
-    overrides: {
-      routes: {
-        pages: {
-          '/backend/config/dictionaries': { metadata: { navHidden: true } },
-        },
-      },
-    },
-  },
+  // EXCEPTION to the hide-installed-admin-UI policy: the dictionary library has no app-owned
+  // replacement, and every main-data picker in the app (currency, unit of measure, country, ports,
+  // carriers, payment terms, platforms, quotation sections) reads a dictionary this page maintains.
+  // Left visible on purpose, in the settings sidebar under the installed "Module Configs" group and
+  // gated on its own `dictionaries.view` + `dictionaries.manage` features.
+  //
+  // The page body is the app's own: `src/modules/dictionaries/backend/config/dictionaries/page.tsx`
+  // shadows the installed page file (an app module directory under `src/modules/<id>` wins over the
+  // package for the same logical file path), because the installed manager listed every
+  // organization's dictionaries under identical names without ever naming the organization. Nested
+  // ACL, navigation, API and the entries editor stay installed. See
+  // src/modules/dictionaries/README.md.
+  { id: 'dictionaries', from: '@open-mercato/core' },
   {
     id: 'feature_toggles',
     from: '@open-mercato/core',
@@ -205,8 +213,10 @@ export const enabledModules: ModuleEntry[] = [
       },
     },
   },
-  // App-owned currency policy — last on purpose: its seedDefaults reconciles the FX
-  // master and the currency dictionary after `customers`/`currencies` seed theirs.
+  // App-owned currency policy — ordered after `customers`/`currencies` on purpose: its
+  // seedDefaults reconciles the FX master and the currency dictionary after they seed theirs.
+  // It was the last entry before the later app modules were appended; the ordering that matters
+  // is "after customers/currencies", not "last".
   // See src/modules/currency_policy/lib/policy.ts and docs/dev/currency-policy.md
   { id: 'currency_policy', from: '@app' },
   // App-owned hardening — blocks out-of-scope writes on the installed auth admin commands
@@ -215,8 +225,9 @@ export const enabledModules: ModuleEntry[] = [
   { id: 'scope_guards', from: '@app' },
 ]
 
-// App-owned purchasing module — supplier master first, then purchase orders and stage
-// payments. See .ai/specs/2026-09-21-purchasing-module.md
+// App-owned purchasing module — supplier master, the supplier product library (the
+// buyer-facing 产品明细表 with its price list), purchase orders and stage payments. See
+// .ai/specs/2026-09-21-purchasing-module.md and .ai/specs/2026-09-22-supplier-product-library.md
 enabledModules.push({
   id: 'purchasing',
   from: '@app',
@@ -245,7 +256,8 @@ enabledModules.push({ id: 'products', from: '@app' })
 
 // App-owned sourcing module — supplier quotations (imported from supplier workbooks or typed by
 // hand), reusable column-mapping profiles, and the promotion of selected lines into the product
-// master. See .ai/specs/2026-09-22-supplier-quotation-import.md
+// master; the promotion also feeds the supplier library through `purchasing`'s commands. See
+// .ai/specs/2026-09-22-supplier-quotation-import.md
 enabledModules.push({ id: 'sourcing', from: '@app' })
 
 // App-owned internal-sales surface — its own create/edit pages for quotes and orders, with lines
