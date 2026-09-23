@@ -2,7 +2,7 @@ import type { ModuleSetupConfig } from '@open-mercato/shared/modules/setup'
 import { ProductsType } from './data/entities'
 
 /**
- * Product types every organization starts with (purchased and self-made lines share them). Seed is
+ * Product lines every organization starts with (purchased and self-made goods share them). Seed is
  * insert-only and idempotent:
  * re-running `yarn mercato seed:defaults --module products` never duplicates a row and
  * never rewrites an operator's edits (name, sort order, active flag stay theirs).

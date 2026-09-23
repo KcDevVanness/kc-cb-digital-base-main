@@ -7,9 +7,11 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { readErrorStatus } from '../lib/errorStatus'
 
 const API_PATH = 'products/types'
-const LIST_HREF = '/backend/products/types'
+/** Post-save, back and cancel return to the merged taxonomy page on the product-line tab. */
+const TAXONOMY_HREF = '/backend/products/taxonomy?tab=lines'
 
 export type ProductTypeFormValues = {
   id?: string
@@ -29,8 +31,16 @@ export type ProductTypeFormValues = {
   updatedAt?: string | null
 }
 
-/** Product type as returned by `/api/products/types`; `id` is always present on a persisted row. */
-export type ProductTypeRecord = Omit<ProductTypeFormValues, 'id'> & { id: string }
+/**
+ * Product line as returned by `/api/products/types`; `id` is always present on a persisted row.
+ *
+ * `organizationId` is display-only: the list labels each row with its organization, and the write
+ * path derives the scope from the session, never from this field.
+ */
+export type ProductTypeRecord = Omit<ProductTypeFormValues, 'id'> & {
+  id: string
+  organizationId?: string | null
+}
 
 const EMPTY_PRODUCT_TYPE_VALUES: ProductTypeFormValues = {
   code: '',
@@ -76,11 +86,13 @@ function readInteger(source: Record<string, unknown>, ...keys: string[]): number
 export function toProductTypeFormValues(item: Record<string, unknown>): ProductTypeRecord {
   const isActive = item.isActive ?? item.is_active
   const updatedAt = item.updatedAt ?? item.updated_at
+  const organizationId = readText(item, 'organizationId', 'organization_id')
   return {
     id: readText(item, 'id'),
     code: readText(item, 'code'),
     name: readText(item, 'name'),
     nameEn: readText(item, 'nameEn', 'name_en'),
+    organizationId: organizationId.length > 0 ? organizationId : null,
     sortOrder: readInteger(item, 'sortOrder', 'sort_order'),
     isActive: isActive === undefined ? true : Boolean(isActive),
     updatedAt: typeof updatedAt === 'string' && updatedAt.length > 0 ? updatedAt : null,
@@ -144,7 +156,7 @@ function ProductTypeCreateForm() {
   const t = useT()
   const fields = useProductTypeFields(t)
   const successRedirect = React.useMemo(
-    () => withFlash(LIST_HREF, t('products.types.form.saved'), 'success'),
+    () => withFlash(TAXONOMY_HREF, t('products.types.form.saved'), 'success'),
     [t],
   )
 
@@ -163,12 +175,12 @@ function ProductTypeCreateForm() {
     <CrudForm<ProductTypeFormValues>
       title={t('products.types.form.createTitle')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={TAXONOMY_HREF}
       fields={fields}
       groups={PRODUCT_TYPE_GROUPS}
       initialValues={EMPTY_PRODUCT_TYPE_VALUES}
       submitLabel={t('products.types.form.save')}
-      cancelHref={LIST_HREF}
+      cancelHref={TAXONOMY_HREF}
       successRedirect={successRedirect}
       onSubmit={handleSubmit}
     />
@@ -184,7 +196,7 @@ function ProductTypeEditForm({ typeId }: { typeId: string }) {
   const [isNotFound, setIsNotFound] = React.useState(false)
 
   const successRedirect = React.useMemo(
-    () => withFlash(LIST_HREF, t('products.types.form.saved'), 'success'),
+    () => withFlash(TAXONOMY_HREF, t('products.types.form.saved'), 'success'),
     [t],
   )
 
@@ -234,7 +246,16 @@ function ProductTypeEditForm({ typeId }: { typeId: string }) {
         updatedAt: initial?.updatedAt ?? null,
       })
     } catch (updateError) {
-      flash(t('products.types.form.saveFailed'), 'error')
+      // The page can be opened on a row from another organization (the read that filled this form
+      // expands to descendant organizations, the command does not), and the server answers that with
+      // a bare `404 Product type not found`. Name the cause instead of letting it read as deleted.
+      const status = readErrorStatus(updateError)
+      flash(
+        status === 404
+          ? t('products.types.form.notInOrganization')
+          : t('products.types.form.saveFailed'),
+        'error',
+      )
       throw updateError
     }
   }, [initial, typeId, t])
@@ -243,7 +264,7 @@ function ProductTypeEditForm({ typeId }: { typeId: string }) {
     return (
       <RecordNotFoundState
         label={t('products.types.form.loadFailed')}
-        backHref={LIST_HREF}
+        backHref={TAXONOMY_HREF}
       />
     )
   }
@@ -254,12 +275,12 @@ function ProductTypeEditForm({ typeId }: { typeId: string }) {
     <CrudForm<ProductTypeFormValues>
       title={t('products.types.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={TAXONOMY_HREF}
       fields={fields}
       groups={PRODUCT_TYPE_GROUPS}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('products.types.form.save')}
-      cancelHref={LIST_HREF}
+      cancelHref={TAXONOMY_HREF}
       successRedirect={successRedirect}
       isLoading={loading}
       onSubmit={handleSubmit}

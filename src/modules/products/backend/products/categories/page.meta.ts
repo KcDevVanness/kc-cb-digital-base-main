@@ -1,14 +1,14 @@
 export const metadata = {
   requireAuth: true,
   requireFeatures: ['products.items.view'],
-  pageTitle: 'Product Categories',
-  pageTitleKey: 'products.categories.page.title',
+  pageTitle: 'Product taxonomy',
+  pageTitleKey: 'products.taxonomy.page.title',
   pageGroup: 'Products',
   pageGroupKey: 'products.nav.group',
   pageOrder: 320,
-  icon: 'layers',
+  navHidden: true,
   breadcrumb: [
-    { label: 'Product Categories', labelKey: 'products.categories.page.title' },
+    { label: 'Product taxonomy', labelKey: 'products.taxonomy.page.title' },
   ],
 }
 

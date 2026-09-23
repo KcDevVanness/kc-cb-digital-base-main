@@ -8,7 +8,7 @@ export const features = [
   },
   {
     id: 'products.types.manage',
-    title: 'Manage product types',
+    title: 'Manage product lines',
     module: 'products',
     dependsOn: ['products.items.view'],
   },

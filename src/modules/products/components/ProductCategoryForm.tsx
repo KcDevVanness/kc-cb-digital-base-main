@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   CrudForm,
   type CrudField,
@@ -12,12 +13,14 @@ import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
-import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { readErrorStatus } from '../lib/errorStatus'
+import { useSelectedOrganizationId } from './useSelectedOrganizationId'
 
 const API_PATH = 'products/categories'
 const LIST_URL = '/api/products/categories'
-const LIST_HREF = '/backend/products/categories'
+/** Post-save, back and cancel all return to the merged taxonomy page (the category tab is its default). */
+const TAXONOMY_HREF = '/backend/products/taxonomy'
 /** One page holds the whole tree: both the picker and the list resolve paths from this set. */
 const CATEGORY_PAGE_SIZE = 200
 
@@ -53,8 +56,16 @@ export type ProductCategoryFormValues = {
   updatedAt?: string | null
 }
 
-/** Category as returned by `/api/products/categories`; `id` is always present on a persisted row. */
-export type ProductCategoryRecord = Omit<ProductCategoryFormValues, 'id'> & { id: string }
+/**
+ * Category as returned by `/api/products/categories`; `id` is always present on a persisted row.
+ *
+ * `organizationId` is display-only: the list labels each row with its organization, and the write
+ * path derives the scope from the session, never from this field.
+ */
+export type ProductCategoryRecord = Omit<ProductCategoryFormValues, 'id'> & {
+  id: string
+  organizationId?: string | null
+}
 
 /**
  * A list row: the form-shaped values plus the hierarchy metadata the list renders.
@@ -63,12 +74,10 @@ export type ProductCategoryRecord = Omit<ProductCategoryFormValues, 'id'> & { id
  * label on the wire would repeat every ancestor's name on every row.
  */
 export type ProductCategoryListRow = ProductCategoryRecord & {
-  depth: number
   ancestorIds: string[]
   descendantIds: string[]
   /** Ancestor names joined with ` / `, ending with this category's own name. */
   pathLabel: string
-  parentName: string | null
 }
 
 const EMPTY_PRODUCT_CATEGORY_VALUES: ProductCategoryFormValues = {
@@ -122,11 +131,13 @@ export function toProductCategoryFormValues(item: Record<string, unknown>): Prod
   const isActive = item.isActive ?? item.is_active
   const updatedAt = item.updatedAt ?? item.updated_at
   const parentId = readText(item, 'parentId', 'parent_id')
+  const organizationId = readText(item, 'organizationId', 'organization_id')
   return {
     id: readText(item, 'id'),
     code: readText(item, 'code'),
     name: readText(item, 'name'),
     nameEn: readText(item, 'nameEn', 'name_en'),
+    organizationId: organizationId.length > 0 ? organizationId : null,
     parentId: parentId.length > 0 ? parentId : ROOT_PARENT_VALUE,
     sortOrder: readInteger(item, 'sortOrder', 'sort_order'),
     isActive: isActive === undefined ? true : Boolean(isActive),
@@ -147,7 +158,6 @@ export function buildProductCategoryListRows(
   return items.map((item) => {
     const values = toProductCategoryFormValues(item)
     const ancestorIds = readStringArray(item, 'ancestorIds')
-    const rawParentId = readText(item, 'parentId', 'parent_id')
     const segments = [
       ...ancestorIds
         .map((ancestorId) => nameById.get(ancestorId))
@@ -157,11 +167,9 @@ export function buildProductCategoryListRows(
 
     return {
       ...values,
-      depth: readInteger(item, 'depth'),
       ancestorIds,
       descendantIds: readStringArray(item, 'descendantIds'),
       pathLabel: segments.length > 0 ? segments.join(' / ') : values.code,
-      parentName: rawParentId ? nameById.get(rawParentId) ?? null : null,
     }
   })
 }
@@ -271,7 +279,18 @@ const NO_EXCLUSIONS: ReadonlySet<string> = new Set<string>()
 
 function ProductCategoryCreateForm() {
   const t = useT()
-  const { organizationId } = useOrganizationScopeDetail()
+  // The parent picker feeds a write, so it uses the selection the first paint already knows instead
+  // of a value that arrives one request later (`.ai/lessons/read-expands-writes-are-selected-org.md`).
+  const { organizationId } = useSelectedOrganizationId()
+  // The category tree's row action links here with `?parentId=`; a bogus or foreign id still fails
+  // in the command (it checks the parent's organization and rejects a cycle), so the query only pre-fills.
+  const parentIdFromQuery = useSearchParams().get('parentId')
+  const initialValues = React.useMemo(
+    () => (parentIdFromQuery
+      ? { ...EMPTY_PRODUCT_CATEGORY_VALUES, parentId: parentIdFromQuery }
+      : EMPTY_PRODUCT_CATEGORY_VALUES),
+    [parentIdFromQuery],
+  )
   const loadOptions = React.useCallback(
     () => loadParentOptions(
       NO_EXCLUSIONS,
@@ -283,7 +302,7 @@ function ProductCategoryCreateForm() {
   )
   const fields = useProductCategoryFields(t, loadOptions)
   const successRedirect = React.useMemo(
-    () => withFlash(LIST_HREF, t('products.categories.form.saved'), 'success'),
+    () => withFlash(TAXONOMY_HREF, t('products.categories.form.saved'), 'success'),
     [t],
   )
 
@@ -302,12 +321,12 @@ function ProductCategoryCreateForm() {
     <CrudForm<ProductCategoryFormValues>
       title={t('products.categories.form.createTitle')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={TAXONOMY_HREF}
       fields={fields}
       groups={PRODUCT_CATEGORY_GROUPS}
-      initialValues={EMPTY_PRODUCT_CATEGORY_VALUES}
+      initialValues={initialValues}
       submitLabel={t('products.categories.form.save')}
-      cancelHref={LIST_HREF}
+      cancelHref={TAXONOMY_HREF}
       successRedirect={successRedirect}
       onSubmit={handleSubmit}
     />
@@ -321,14 +340,14 @@ type LoadedCategory = {
 
 function ProductCategoryEditForm({ categoryId }: { categoryId: string }) {
   const t = useT()
-  const { organizationId } = useOrganizationScopeDetail()
+  const { organizationId } = useSelectedOrganizationId()
   const [loaded, setLoaded] = React.useState<LoadedCategory | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [isNotFound, setIsNotFound] = React.useState(false)
 
   const successRedirect = React.useMemo(
-    () => withFlash(LIST_HREF, t('products.categories.form.saved'), 'success'),
+    () => withFlash(TAXONOMY_HREF, t('products.categories.form.saved'), 'success'),
     [t],
   )
 
@@ -401,7 +420,16 @@ function ProductCategoryEditForm({ categoryId }: { categoryId: string }) {
         updatedAt: loaded?.values.updatedAt ?? null,
       })
     } catch (updateError) {
-      flash(t('products.categories.form.saveFailed'), 'error')
+      // Same cause as the product-line form: a row opened from another organization loads (reads
+      // expand to descendant organizations) but cannot be saved, and the server's `404` alone reads
+      // like the category was deleted.
+      const status = readErrorStatus(updateError)
+      flash(
+        status === 404
+          ? t('products.categories.form.notInOrganization')
+          : t('products.categories.form.saveFailed'),
+        'error',
+      )
       throw updateError
     }
   }, [categoryId, loaded, t])
@@ -410,7 +438,7 @@ function ProductCategoryEditForm({ categoryId }: { categoryId: string }) {
     return (
       <RecordNotFoundState
         label={t('products.categories.form.loadFailed')}
-        backHref={LIST_HREF}
+        backHref={TAXONOMY_HREF}
       />
     )
   }
@@ -425,12 +453,12 @@ function ProductCategoryEditForm({ categoryId }: { categoryId: string }) {
     <CrudForm<ProductCategoryFormValues>
       title={t('products.categories.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={TAXONOMY_HREF}
       fields={fields}
       groups={PRODUCT_CATEGORY_GROUPS}
       initialValues={loaded.values}
       submitLabel={t('products.categories.form.save')}
-      cancelHref={LIST_HREF}
+      cancelHref={TAXONOMY_HREF}
       successRedirect={successRedirect}
       isLoading={loading}
       onSubmit={handleSubmit}

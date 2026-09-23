@@ -6,8 +6,9 @@ export const metadata = {
   pageGroup: 'Products',
   pageGroupKey: 'products.nav.group',
   pageOrder: 322,
+  navHidden: true,
   breadcrumb: [
-    { label: 'Product Categories', labelKey: 'products.categories.page.title', href: '/backend/products/categories' },
+    { label: 'Product taxonomy', labelKey: 'products.taxonomy.page.title', href: '/backend/products/taxonomy' },
     { label: 'Edit', labelKey: 'products.categories.form.editTitle' },
   ],
 }

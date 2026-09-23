@@ -16,6 +16,7 @@ const typeListItemSchema = z
     nameEn: z.string().nullable().optional(),
     sortOrder: z.number(),
     isActive: z.boolean(),
+    organizationId: z.string().uuid().nullable().optional(),
     created_at: z.string().nullable().optional(),
     updated_at: z.string().nullable().optional(),
     updatedAt: z.string().nullable().optional(),
@@ -80,6 +81,9 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       nameEn: (item.name_en ?? null) as string | null,
       sortOrder: Number(item.sort_order ?? 0),
       isActive: item.is_active === true,
+      // Additive field: the taxonomy tables label every row with its organization, which is the only
+      // thing that tells two same-coded rows apart when the caller reads across organizations.
+      organizationId: (item.organization_id ?? null) as string | null,
       created_at: toIsoTimestamp(item.created_at),
       updated_at: toIsoTimestamp(item.updated_at),
       updatedAt: toIsoTimestamp(item.updated_at),

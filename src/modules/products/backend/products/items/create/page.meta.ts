@@ -6,6 +6,7 @@ export const metadata = {
   pageGroup: 'Products',
   pageGroupKey: 'products.nav.group',
   pageOrder: 301,
+  navHidden: true,
   breadcrumb: [
     { label: 'Products', labelKey: 'products.items.page.title', href: '/backend/products/items' },
     { label: 'Create', labelKey: 'products.items.form.createTitle' },

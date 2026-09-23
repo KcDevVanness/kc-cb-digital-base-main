@@ -27,6 +27,7 @@ const categoryListItemSchema = z
     descendantIds: z.array(z.string()),
     sortOrder: z.number(),
     isActive: z.boolean(),
+    organizationId: z.string().uuid().nullable().optional(),
     created_at: z.string().nullable().optional(),
     updated_at: z.string().nullable().optional(),
     updatedAt: z.string().nullable().optional(),
@@ -128,6 +129,9 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         descendantIds: toStringArray(item.descendant_ids),
         sortOrder: Number(item.sort_order ?? 0),
         isActive: item.is_active === true,
+        // Additive field, same reason as the product-line list: the taxonomy tables label each row
+        // with the organization it belongs to, so identical codes from two organizations read apart.
+        organizationId: (item.organization_id ?? null) as string | null,
         created_at: toIsoTimestamp(item.created_at),
         updated_at: toIsoTimestamp(item.updated_at),
         updatedAt: toIsoTimestamp(item.updated_at),

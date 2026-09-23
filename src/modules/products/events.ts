@@ -7,9 +7,9 @@ import { createModuleEvents } from '@open-mercato/shared/modules/events'
  * identifiers and scope only.
  */
 const events = [
-  { id: 'products.type.created', label: 'Product Type Created', entity: 'product_type', category: 'crud', clientBroadcast: true },
-  { id: 'products.type.updated', label: 'Product Type Updated', entity: 'product_type', category: 'crud', clientBroadcast: true },
-  { id: 'products.type.deleted', label: 'Product Type Deleted', entity: 'product_type', category: 'crud', clientBroadcast: true },
+  { id: 'products.type.created', label: 'Product Line Created', entity: 'product_type', category: 'crud', clientBroadcast: true },
+  { id: 'products.type.updated', label: 'Product Line Updated', entity: 'product_type', category: 'crud', clientBroadcast: true },
+  { id: 'products.type.deleted', label: 'Product Line Deleted', entity: 'product_type', category: 'crud', clientBroadcast: true },
   { id: 'products.category.created', label: 'Product Category Created', entity: 'product_category', category: 'crud', clientBroadcast: true },
   { id: 'products.category.updated', label: 'Product Category Updated', entity: 'product_category', category: 'crud', clientBroadcast: true },
   { id: 'products.category.deleted', label: 'Product Category Deleted', entity: 'product_category', category: 'crud', clientBroadcast: true },

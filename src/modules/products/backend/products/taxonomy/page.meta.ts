@@ -5,8 +5,8 @@ export const metadata = {
   pageTitleKey: 'products.taxonomy.page.title',
   pageGroup: 'Products',
   pageGroupKey: 'products.nav.group',
-  pageOrder: 311,
-  navHidden: true,
+  pageOrder: 310,
+  icon: 'layers',
   breadcrumb: [
     { label: 'Product taxonomy', labelKey: 'products.taxonomy.page.title' },
   ],
