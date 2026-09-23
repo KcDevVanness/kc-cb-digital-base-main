@@ -39,6 +39,27 @@ export class CrossBorderShipment {
   @Property({ name: 'departure_port', type: 'text', nullable: true })
   departurePort?: string | null
 
+  /**
+   * Container model (货柜型号), a `container_type` dictionary code — `setup.ts` seeds the values the
+   * logistics team books, so a shipment can only carry a model the picker can show again.
+   */
+  @Property({ name: 'container_type', type: 'text', nullable: true })
+  containerType?: string | null
+
+  /** The box and its seal as printed on the shipping line's paperwork. */
+  @Property({ name: 'container_number', type: 'text', nullable: true })
+  containerNumber?: string | null
+
+  @Property({ name: 'seal_number', type: 'text', nullable: true })
+  sealNumber?: string | null
+
+  /**
+   * Booking/waybill number (订舱号/提单号). It lives on the shipment on purpose: an SO document row
+   * stores only its file, issue date and note, so the number has exactly one home here.
+   */
+  @Property({ name: 'booking_number', type: 'text', nullable: true })
+  bookingNumber?: string | null
+
   /** Destination warehouse/location; required when the shipment is received. */
   @Property({ name: 'destination_warehouse_id', type: 'uuid', nullable: true })
   destinationWarehouseId?: string | null

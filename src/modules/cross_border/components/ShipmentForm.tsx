@@ -25,6 +25,7 @@ import {
   toUtcDateInputValue,
 } from '@open-mercato/ui/primitives/date-format'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { loadContainerTypeOptions } from './shipmentFormOptions'
 
 /**
  * This file owns the shipment contract shared with the list and detail surfaces: the record
@@ -99,12 +100,16 @@ export function shipmentMilestoneLabel(t: TranslateFn, milestone: ShipmentMilest
   return t(SHIPMENT_MILESTONE_LABEL_KEYS[milestone])
 }
 
-/** Export document types the module accepts — the same five the command's enum offers. */
+/** Export document types the module accepts — the same types the command's enum offers. */
 export const SHIPMENT_DOCUMENT_TYPES = [
   'customs_declaration',
   'packing_list',
   'commercial_invoice',
   'bill_of_lading',
+  'so',
+  'telex_release',
+  'domestic_freight_receipt',
+  'booking_charges_receipt',
   'other',
 ] as const
 export type ShipmentDocumentType = (typeof SHIPMENT_DOCUMENT_TYPES)[number]
@@ -114,6 +119,10 @@ const SHIPMENT_DOCUMENT_TYPE_LABEL_KEYS: Record<ShipmentDocumentType, string> = 
   packing_list: 'cross_border.shipments.documents.docType.packing_list',
   commercial_invoice: 'cross_border.shipments.documents.docType.commercial_invoice',
   bill_of_lading: 'cross_border.shipments.documents.docType.bill_of_lading',
+  so: 'cross_border.shipments.documents.docType.so',
+  telex_release: 'cross_border.shipments.documents.docType.telex_release',
+  domestic_freight_receipt: 'cross_border.shipments.documents.docType.domestic_freight_receipt',
+  booking_charges_receipt: 'cross_border.shipments.documents.docType.booking_charges_receipt',
   other: 'cross_border.shipments.documents.docType.other',
 }
 
@@ -134,6 +143,12 @@ export type ShipmentRecord = {
   status: ShipmentStatus
   carrierName: string | null
   departurePort: string | null
+  /** `container_type` dictionary code; the form's picker owns the label. */
+  containerType: string | null
+  containerNumber: string | null
+  sealNumber: string | null
+  /** Booking/waybill number, on the shipment so an SO document row never repeats it. */
+  bookingNumber: string | null
   currentMilestone: ShipmentMilestone | null
   /** Only projected by the detail read; the receive dialog defaults from it when present. */
   destinationWarehouseId: string | null
@@ -201,6 +216,10 @@ export function toShipmentRecord(item: Record<string, unknown>): ShipmentRecord 
     status: SHIPMENT_STATUSES.includes(status as ShipmentStatus) ? (status as ShipmentStatus) : 'draft',
     carrierName: readOptionalText(item, 'carrierName', 'carrier_name'),
     departurePort: readOptionalText(item, 'departurePort', 'departure_port'),
+    containerType: readOptionalText(item, 'containerType', 'container_type'),
+    containerNumber: readOptionalText(item, 'containerNumber', 'container_number'),
+    sealNumber: readOptionalText(item, 'sealNumber', 'seal_number'),
+    bookingNumber: readOptionalText(item, 'bookingNumber', 'booking_number'),
     currentMilestone: SHIPMENT_MILESTONES.includes(milestone as ShipmentMilestone)
       ? (milestone as ShipmentMilestone)
       : null,
@@ -371,6 +390,7 @@ export type PurchaseOrderLineOption = {
   lineNumber: number
   productTitle: string | null
   productSku: string | null
+  supplierSku: string | null
   quantity: string
   receivedQuantity: string
 }
@@ -381,6 +401,7 @@ function toPurchaseOrderLineOption(item: Record<string, unknown>): PurchaseOrder
     lineNumber: Number(item.lineNumber ?? 0),
     productTitle: readOptionalText(item, 'productTitle', 'product_title'),
     productSku: readOptionalText(item, 'productSku', 'product_sku'),
+    supplierSku: readOptionalText(item, 'supplierSku', 'supplier_sku'),
     quantity: readText(item, 'quantity') || '0',
     receivedQuantity: readText(item, 'receivedQuantity', 'received_quantity') || '0',
   }
@@ -418,6 +439,7 @@ export type ShipmentAllocationValues = {
   purchaseOrderLineId: string
   productTitle: string
   productSku: string
+  supplierSku: string
   orderedQuantity: string
   allocatedQuantity: string
 }
@@ -426,6 +448,10 @@ export type ShipmentFormValues = {
   carrierName: string
   forwarderContact: string
   departurePort: string
+  containerType: string
+  containerNumber: string
+  sealNumber: string
+  bookingNumber: string
   etd: string
   eta: string
   notes: string
@@ -439,6 +465,10 @@ const EMPTY_SHIPMENT_VALUES: ShipmentFormValues = {
   carrierName: '',
   forwarderContact: '',
   departurePort: '',
+  containerType: '',
+  containerNumber: '',
+  sealNumber: '',
+  bookingNumber: '',
   etd: '',
   eta: '',
   notes: '',
@@ -464,6 +494,7 @@ export function readAllocations(value: unknown): ShipmentAllocationValues[] {
       purchaseOrderLineId: readText(row, 'purchaseOrderLineId'),
       productTitle: readText(row, 'productTitle'),
       productSku: readText(row, 'productSku'),
+      supplierSku: readText(row, 'supplierSku'),
       orderedQuantity: readText(row, 'orderedQuantity'),
       allocatedQuantity: readText(row, 'allocatedQuantity'),
     }]
@@ -480,6 +511,10 @@ export function buildShipmentPayload(values: ShipmentFormValues): Record<string,
     carrierName: toOptionalText(values.carrierName),
     forwarderContact: toOptionalText(values.forwarderContact),
     departurePort: toOptionalText(values.departurePort),
+    containerType: toOptionalText(values.containerType),
+    containerNumber: toOptionalText(values.containerNumber),
+    sealNumber: toOptionalText(values.sealNumber),
+    bookingNumber: toOptionalText(values.bookingNumber),
     destinationWarehouseId: toOptionalText(values.destinationWarehouseId),
     destinationLocationId: toOptionalText(values.destinationLocationId),
     etd: toOptionalText(values.etd),
@@ -694,6 +729,7 @@ function ShipmentAllocationEditor({
       purchaseOrderLineId: line.id,
       productTitle: line.productTitle ?? '',
       productSku: line.productSku ?? '',
+      supplierSku: line.supplierSku ?? '',
       orderedQuantity: line.quantity,
       allocatedQuantity: draftQuantities[line.id] ?? '',
     } satisfies ShipmentAllocationValues])
@@ -749,6 +785,7 @@ function ShipmentAllocationEditor({
             <p className="truncate text-sm">{line.productTitle ?? line.id}</p>
             <p className="text-xs text-muted-foreground">
               {line.productSku ? `${line.productSku} · ` : ''}
+              {line.supplierSku ? `${t('cross_border.shipments.allocations.supplierSku')}: ${line.supplierSku} · ` : ''}
               {t('cross_border.shipments.allocations.ordered')}: {trimShipmentQuantity(line.quantity)}
             </p>
           </div>
@@ -787,6 +824,11 @@ function ShipmentAllocationEditor({
               </p>
               {row.productSku ? (
                 <p className="text-xs text-muted-foreground">{row.productSku}</p>
+              ) : null}
+              {row.supplierSku ? (
+                <p className="text-xs text-muted-foreground">
+                  {t('cross_border.shipments.allocations.supplierSku')}: {row.supplierSku}
+                </p>
               ) : null}
             </div>
             <div className="md:col-span-1">
@@ -842,6 +884,31 @@ function useShipmentFields(t: TranslateFn): CrudField[] {
       layout: 'half',
     },
     {
+      id: 'containerType',
+      label: t('cross_border.shipments.field.containerType'),
+      type: 'select',
+      layout: 'half',
+      loadOptions: (query) => loadContainerTypeOptions(query),
+    },
+    {
+      id: 'containerNumber',
+      label: t('cross_border.shipments.field.containerNumber'),
+      type: 'text',
+      layout: 'half',
+    },
+    {
+      id: 'sealNumber',
+      label: t('cross_border.shipments.field.sealNumber'),
+      type: 'text',
+      layout: 'half',
+    },
+    {
+      id: 'bookingNumber',
+      label: t('cross_border.shipments.field.bookingNumber'),
+      type: 'text',
+      layout: 'half',
+    },
+    {
       id: 'etd',
       label: t('cross_border.shipments.form.field.etd'),
       type: 'date',
@@ -871,7 +938,18 @@ export default function ShipmentForm() {
     {
       id: 'header',
       column: 1,
-      fields: ['carrierName', 'forwarderContact', 'departurePort', 'etd', 'eta', 'notes'],
+      fields: [
+        'carrierName',
+        'forwarderContact',
+        'departurePort',
+        'containerType',
+        'containerNumber',
+        'sealNumber',
+        'bookingNumber',
+        'etd',
+        'eta',
+        'notes',
+      ],
     },
     {
       id: 'destination',

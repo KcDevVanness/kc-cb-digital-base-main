@@ -73,12 +73,22 @@ async function loadShipment(em: EntityManager, scope: Scope, id: string): Promis
  * not exceed what was ordered. Quantities already *received* are not subtracted again — a
  * received line is fully allocated by definition, and the allocated total already covers it.
  */
+/**
+ * A validated allocation, with the catalog link narrowed to a string: the guard below refuses a
+ * line without one, so every value this function returns can be persisted on the allocation row
+ * (whose `catalog_product_id` stays required — stock is received at variant level).
+ */
+type ResolvedAllocation = {
+  line: PurchaseOrderLineRef & { catalogProductId: string }
+  quantity: string
+}
+
 async function resolveAllocations(
   em: EntityManager,
   scope: Scope,
   allocations: ShipmentCreateInput['allocations'],
   excludeShipmentId?: string | null,
-): Promise<Array<{ line: PurchaseOrderLineRef; quantity: string }>> {
+): Promise<ResolvedAllocation[]> {
   const lineIds = allocations.map((allocation) => allocation.purchaseOrderLineId)
   if (new Set(lineIds).size !== lineIds.length) {
     throw new CrudHttpError(422, { error: 'The same purchase order line is listed twice in this shipment' })
@@ -97,6 +107,15 @@ async function resolveAllocations(
         error: `Purchase order ${line.orderNumber ?? line.orderId} is ${line.orderStatus}; only placed, shipped or received orders can be shipped`,
       })
     }
+    // Stock is booked at *variant* level (`wms.inventory.receive`), and the variant is resolved
+    // through the installed catalog. A line whose product is not linked to a catalog product could
+    // be shipped but never received, so the allocation is refused here — early and with the fix —
+    // instead of failing weeks later at the warehouse.
+    if (!line.catalogProductId) {
+      throw new CrudHttpError(422, {
+        error: `Purchase order line ${allocation.purchaseOrderLineId} has no catalog product link, so the goods cannot be received into stock; sync the supplier product to the product master and link it to a catalog product first`,
+      })
+    }
     const ordered = Number.parseFloat(line.quantity)
     const committed = alreadyAllocated[allocation.purchaseOrderLineId] ?? 0
     const next = committed + Number(allocation.quantity)
@@ -105,7 +124,7 @@ async function resolveAllocations(
         error: `Allocating ${allocation.quantity} exceeds the ordered quantity of ${line.quantity} (already allocated ${committed}) for ${line.orderNumber ?? line.orderId}`,
       })
     }
-    return { line, quantity: Number(allocation.quantity).toFixed(4) }
+    return { line: { ...line, catalogProductId: line.catalogProductId }, quantity: Number(allocation.quantity).toFixed(4) }
   })
 }
 
@@ -113,7 +132,7 @@ async function replaceAllocations(
   em: EntityManager,
   scope: Scope,
   shipment: CrossBorderShipment,
-  resolved: Array<{ line: PurchaseOrderLineRef; quantity: string }>,
+  resolved: ResolvedAllocation[],
 ): Promise<void> {
   await em.nativeDelete(CrossBorderShipmentAllocation, { shipment: shipment.id } as FilterQuery<CrossBorderShipmentAllocation>)
   for (const entry of resolved) {
@@ -199,6 +218,10 @@ const createShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
         carrierName: parsed.carrierName ?? null,
         forwarderContact: parsed.forwarderContact ?? null,
         departurePort: parsed.departurePort ?? null,
+        containerType: parsed.containerType ?? null,
+        containerNumber: parsed.containerNumber ?? null,
+        sealNumber: parsed.sealNumber ?? null,
+        bookingNumber: parsed.bookingNumber ?? null,
         destinationWarehouseId: parsed.destinationWarehouseId ?? null,
         destinationLocationId: parsed.destinationLocationId ?? null,
         etd: parsed.etd ? new Date(parsed.etd) : null,
@@ -281,6 +304,10 @@ const updateShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
         if (parsed.carrierName !== undefined) entity.carrierName = parsed.carrierName
         if (parsed.forwarderContact !== undefined) entity.forwarderContact = parsed.forwarderContact
         if (parsed.departurePort !== undefined) entity.departurePort = parsed.departurePort
+        if (parsed.containerType !== undefined) entity.containerType = parsed.containerType
+        if (parsed.containerNumber !== undefined) entity.containerNumber = parsed.containerNumber
+        if (parsed.sealNumber !== undefined) entity.sealNumber = parsed.sealNumber
+        if (parsed.bookingNumber !== undefined) entity.bookingNumber = parsed.bookingNumber
         if (parsed.destinationWarehouseId !== undefined) entity.destinationWarehouseId = parsed.destinationWarehouseId
         if (parsed.destinationLocationId !== undefined) entity.destinationLocationId = parsed.destinationLocationId
         if (parsed.etd !== undefined) entity.etd = parsed.etd ? new Date(parsed.etd) : null

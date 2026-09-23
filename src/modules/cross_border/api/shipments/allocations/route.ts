@@ -16,6 +16,7 @@ const allocationItemSchema = z
     catalogProductId: z.string().uuid(),
     productTitle: z.string().nullable().optional(),
     productSku: z.string().nullable().optional(),
+    supplierSku: z.string().nullable().optional(),
     quantity: z.string(),
     receivedQuantity: z.string().nullable().optional(),
   })
@@ -81,6 +82,7 @@ export const { metadata, GET } = makeCrudRoute({
       catalogProductId: String(item.catalog_product_id),
       productTitle: snapshotValue(item.product_snapshot, 'title'),
       productSku: snapshotValue(item.product_snapshot, 'sku'),
+      supplierSku: snapshotValue(item.product_snapshot, 'supplierSku'),
       quantity: String(item.quantity ?? '0'),
       receivedQuantity: item.received_quantity === null || item.received_quantity === undefined ? null : String(item.received_quantity),
       shipmentId: relationId(item.shipment_id),

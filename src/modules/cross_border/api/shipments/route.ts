@@ -15,6 +15,10 @@ const shipmentListItemSchema = z
     status: z.enum(SHIPMENT_STATUSES),
     carrierName: z.string().nullable().optional(),
     departurePort: z.string().nullable().optional(),
+    containerType: z.string().nullable().optional(),
+    containerNumber: z.string().nullable().optional(),
+    sealNumber: z.string().nullable().optional(),
+    bookingNumber: z.string().nullable().optional(),
     currentMilestone: z.enum(SHIPMENT_MILESTONES).nullable().optional(),
     etd: z.string().nullable().optional(),
     eta: z.string().nullable().optional(),
@@ -40,6 +44,10 @@ const listFields = [
   'status',
   'carrier_name',
   'departure_port',
+  'container_type',
+  'container_number',
+  'seal_number',
+  'booking_number',
   'destination_warehouse_id',
   'destination_location_id',
   'current_milestone',
@@ -83,10 +91,18 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       const filters: Record<string, unknown> = {}
       if (query.id) filters.id = query.id
       if (query.status) filters.status = query.status
+      if (query.containerNumber && query.containerNumber.trim().length > 0) {
+        filters.container_number = { $ilike: `%${escapeLikePattern(query.containerNumber.trim())}%` }
+      }
       if (query.search && query.search.trim().length > 0) {
-        // `number` and `carrier_name` are plaintext; the escape keeps a typed `%` literal.
+        // `number`, `carrier_name` and `container_number` are plaintext; the escape keeps a typed
+        // `%` literal.
         const term = `%${escapeLikePattern(query.search.trim())}%`
-        filters.$or = [{ number: { $ilike: term } }, { carrier_name: { $ilike: term } }]
+        filters.$or = [
+          { number: { $ilike: term } },
+          { carrier_name: { $ilike: term } },
+          { container_number: { $ilike: term } },
+        ]
       }
       return filters
     },
@@ -96,6 +112,10 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       status: String(item.status ?? 'draft'),
       carrierName: (item.carrier_name ?? null) as string | null,
       departurePort: (item.departure_port ?? null) as string | null,
+      containerType: (item.container_type ?? null) as string | null,
+      containerNumber: (item.container_number ?? null) as string | null,
+      sealNumber: (item.seal_number ?? null) as string | null,
+      bookingNumber: (item.booking_number ?? null) as string | null,
       // Projected so the receive dialog can default the destination the logistics team
       // already chose when the shipment was created.
       destinationWarehouseId: (item.destination_warehouse_id ?? null) as string | null,

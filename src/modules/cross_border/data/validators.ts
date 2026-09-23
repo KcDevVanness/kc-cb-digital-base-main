@@ -7,11 +7,20 @@ export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number]
 export const SHIPMENT_MILESTONES = ['picked_up', 'export_customs', 'in_transit', 'arrived', 'cleared', 'warehoused'] as const
 export type ShipmentMilestone = (typeof SHIPMENT_MILESTONES)[number]
 
+/**
+ * Export paperwork kinds. `so` and `telex_release` are the booking and release documents — their
+ * number lives on the shipment's `booking_number`, never on the row — and the two receipt kinds
+ * are recorded as several rows when one shipment collects more than one file.
+ */
 export const EXPORT_DOC_TYPES = [
   'customs_declaration',
   'packing_list',
   'commercial_invoice',
   'bill_of_lading',
+  'so',
+  'telex_release',
+  'domestic_freight_receipt',
+  'booking_charges_receipt',
   'other',
 ] as const
 export type ExportDocType = (typeof EXPORT_DOC_TYPES)[number]
@@ -29,6 +38,10 @@ export const shipmentCreateSchema = z.object({
   carrierName: optionalText(200),
   forwarderContact: optionalText(200),
   departurePort: optionalText(200),
+  containerType: optionalText(64),
+  containerNumber: optionalText(64),
+  sealNumber: optionalText(64),
+  bookingNumber: optionalText(64),
   destinationWarehouseId: uuid().nullable().optional(),
   destinationLocationId: uuid().nullable().optional(),
   etd: optionalDate(),
@@ -46,6 +59,7 @@ export const shipmentListSchema = z.object({
   id: uuid().optional(),
   ids: z.string().optional(),
   search: z.string().max(200).optional(),
+  containerNumber: z.string().max(64).optional(),
   status: z.enum(SHIPMENT_STATUSES).optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(100).default(50),

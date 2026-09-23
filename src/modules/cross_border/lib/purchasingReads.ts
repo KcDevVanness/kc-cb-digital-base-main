@@ -14,7 +14,10 @@ export type PurchaseOrderLineRef = {
   orderId: string
   orderNumber: string | null
   orderStatus: string
-  catalogProductId: string
+  /** Owned-master reference on newer lines; null on historical ones. */
+  productId: string | null
+  /** Installed-catalog reference: legacy lines carry it directly, newer lines through the product link. */
+  catalogProductId: string | null
   productSnapshot: Record<string, unknown> | null
   quantity: string
   receivedQuantity: string
@@ -25,7 +28,8 @@ type PurchaseOrderLineRow = {
   order_id: string
   order_number: string | null
   order_status: string
-  catalog_product_id: string
+  product_id: string | null
+  catalog_product_id: string | null
   product_snapshot: Record<string, unknown> | null
   quantity: string
   received_quantity: string
@@ -43,6 +47,7 @@ export async function loadPurchaseOrderLines(
     .select([
       'l.id as id',
       'l.order_id as order_id',
+      'l.product_id as product_id',
       'l.catalog_product_id as catalog_product_id',
       'l.product_snapshot as product_snapshot',
       'l.quantity as quantity',
@@ -63,7 +68,8 @@ export async function loadPurchaseOrderLines(
       orderId: String(row.order_id),
       orderNumber: row.order_number ?? null,
       orderStatus: String(row.order_status),
-      catalogProductId: String(row.catalog_product_id),
+      productId: row.product_id ? String(row.product_id) : null,
+      catalogProductId: row.catalog_product_id ? String(row.catalog_product_id) : null,
       productSnapshot: row.product_snapshot ?? null,
       quantity: String(row.quantity ?? '0'),
       receivedQuantity: String(row.received_quantity ?? '0'),
@@ -112,8 +118,9 @@ export async function loadAllocatedQuantities(
 export async function resolveDefaultVariantId(
   em: EntityManager,
   scope: Scope,
-  catalogProductId: string,
+  catalogProductId: string | null,
 ): Promise<string | null> {
+  if (!catalogProductId) return null
   const row = (await (em.fork().getKysely<any>())
     .selectFrom('catalog_product_variants')
     .select(['id'])

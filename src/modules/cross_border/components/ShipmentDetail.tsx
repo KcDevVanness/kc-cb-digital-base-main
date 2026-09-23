@@ -81,6 +81,7 @@ export type ShipmentAllocationRecord = {
   catalogProductId: string | null
   productTitle: string | null
   productSku: string | null
+  supplierSku: string | null
   quantity: string
   receivedQuantity: string | null
 }
@@ -149,6 +150,7 @@ function toShipmentAllocationRecord(item: Record<string, unknown>): ShipmentAllo
     catalogProductId: readRecordOptionalText(item, 'catalogProductId', 'catalog_product_id'),
     productTitle: readRecordOptionalText(item, 'productTitle', 'product_title'),
     productSku: readRecordOptionalText(item, 'productSku', 'product_sku'),
+    supplierSku: readRecordOptionalText(item, 'supplierSku', 'supplier_sku'),
     quantity: readRecordText(item, 'quantity') || '0',
     receivedQuantity: readRecordOptionalText(item, 'receivedQuantity', 'received_quantity'),
   }
@@ -210,6 +212,11 @@ function buildAllocationColumns(t: TranslateFn): ColumnDef<ShipmentAllocationRec
           <span>{row.original.productTitle ?? EMPTY_CELL}</span>
           {row.original.productSku ? (
             <span className="text-xs text-muted-foreground">{row.original.productSku}</span>
+          ) : null}
+          {row.original.supplierSku ? (
+            <span className="text-xs text-muted-foreground">
+              {t('cross_border.shipments.allocations.supplierSku')}: {row.original.supplierSku}
+            </span>
           ) : null}
         </div>
       ),
@@ -962,6 +969,18 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
         </SummaryField>
         <SummaryField label={t('cross_border.shipments.form.field.departurePort')}>
           {shipment.departurePort ?? EMPTY_CELL}
+        </SummaryField>
+        <SummaryField label={t('cross_border.shipments.field.containerType')}>
+          {shipment.containerType ?? EMPTY_CELL}
+        </SummaryField>
+        <SummaryField label={t('cross_border.shipments.field.containerNumber')}>
+          {shipment.containerNumber ?? EMPTY_CELL}
+        </SummaryField>
+        <SummaryField label={t('cross_border.shipments.field.sealNumber')}>
+          {shipment.sealNumber ?? EMPTY_CELL}
+        </SummaryField>
+        <SummaryField label={t('cross_border.shipments.field.bookingNumber')}>
+          {shipment.bookingNumber ?? EMPTY_CELL}
         </SummaryField>
         <SummaryField label={t('cross_border.shipments.list.columns.eta')}>
           {formatShipmentDate(shipment.eta, locale) ?? EMPTY_CELL}

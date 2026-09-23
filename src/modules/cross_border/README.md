@@ -22,6 +22,8 @@ app 自有模块。把多张采购单**拼柜**成一张发运单，跟踪在途
 - **里程碑单调**：`advance-milestone` 只允许前进，回退返回 **422**；历史节点保留可查。
 - **收货幂等**：`receive` 写 `wms` 余额并回写采购单行已收数量，重复收货不重复计数（按采购单行累加）。
 - **单证是弱类型集合**：类型枚举校验，非法类型返回 **400**；单证文件走 `attachments`。
+- **分摊快照带供应商货号**：分摊行引用采购单行并把该行的 `product_snapshot` 原样冻结，快照里的 `supplierSku`（= 供应商产品库的 `item_no ?? supplier_sku`）随 `GET /api/cross_border/shipments/allocations` 的 `supplierSku` 输出，界面在商品名后显示"货号"；历史快照没有该键，读侧按 null。**分摊载荷本身不变**（仍是 `{ purchaseOrderLineId, quantity }`）。
+- **没有目录链接就不能收货**：采购单行没有官方目录链接时拒绝分摊，报错原文说明"先把供应商产品同步成商品并补目录链接"——收货是变体级（`wms.inventory.receive`），而变体只能经官方目录解析。外贸侧**不另建产品清单**，出货依据就是采购单行来源 + 快照。
 - **不跨模块 ORM 关联**：对 `purchasing`、`wms`、`attachments` 只存 ID，靠命令与事件联动。
 
 ## 验证

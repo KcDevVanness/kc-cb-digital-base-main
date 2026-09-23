@@ -5,7 +5,7 @@ export const metadata = {
   pageTitleKey: 'cross_border.shipments.page.title',
   pageGroup: 'Cross-Border',
   pageGroupKey: 'cross_border.nav.group',
-  pageOrder: 220,
+  pageOrder: 340,
   icon: 'truck',
   breadcrumb: [
     { label: 'Shipments', labelKey: 'cross_border.shipments.page.title' },
