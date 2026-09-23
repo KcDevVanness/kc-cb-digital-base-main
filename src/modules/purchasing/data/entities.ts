@@ -1,3 +1,4 @@
+import { OptionalProps } from '@mikro-orm/core'
 import { Entity, ManyToOne, PrimaryKey, Property, Unique } from '@mikro-orm/decorators/legacy'
 
 /**
@@ -91,6 +92,35 @@ export class PurchasingPurchaseOrder {
   @Property({ name: 'supplier_snapshot', type: 'jsonb', nullable: true })
   supplierSnapshot?: Record<string, unknown> | null
 
+  /**
+   * Business order number (年-月-序列), typed by the operator. `number` above is the system number
+   * the platform assigns at `place`; this one is the number the business and the supplier already
+   * use on paper, so the two are deliberately kept apart and neither overwrites the other.
+   */
+  @Property({ name: 'business_number', type: 'text', nullable: true })
+  businessNumber?: string | null
+
+  /** Product category (订单描述) — a single dictionary value from `order_product_category`. */
+  @Property({ name: 'product_category', type: 'text', nullable: true })
+  productCategory?: string | null
+
+  /**
+   * Purchaser and customer are scalar references — the auth user and the CRM company — plus a
+   * display snapshot the client sends with the form; the module keeps no ORM relation across
+   * modules, so renaming or deleting a user/company never rewrites what a placed order printed.
+   */
+  @Property({ name: 'owner_user_id', type: 'uuid', nullable: true })
+  ownerUserId?: string | null
+
+  @Property({ name: 'owner_snapshot', type: 'jsonb', nullable: true })
+  ownerSnapshot?: Record<string, unknown> | null
+
+  @Property({ name: 'customer_id', type: 'uuid', nullable: true })
+  customerId?: string | null
+
+  @Property({ name: 'customer_snapshot', type: 'jsonb', nullable: true })
+  customerSnapshot?: Record<string, unknown> | null
+
   @Property({ type: 'text', default: 'draft' })
   status: string = 'draft'
 
@@ -142,8 +172,14 @@ export class PurchasingPurchaseOrder {
 }
 
 /**
- * One order line. References a catalog product by scalar id plus a display snapshot —
- * the module is product-level today (the catalog supports variants; a variant column can be
+ * One order line. A line references exactly one product by scalar id plus a display snapshot: the
+ * supplier product library row (`sourcing_supplier_products.id` — the supplier-facing item this
+ * line was ordered from), the app-owned product master (`products_products.id`), or — historical
+ * rows only — the installed catalog. The library and the master are two identities of the same
+ * goods, so a line never carries both, and the receipt path resolves the line through the
+ * master: a library row that has not been synced yet can be ordered but not received.
+ *
+ * The module is product-level today (the catalog supports variants; a variant column can be
  * added additively later) and must not import another module's entities.
  *
  * Tax is per line: suppliers quote with or without tax, so `priceIncludesTax` decides how
@@ -167,8 +203,23 @@ export class PurchasingPurchaseOrderLine {
   @Property({ name: 'line_number', type: 'integer' })
   lineNumber!: number
 
-  @Property({ name: 'catalog_product_id', type: 'uuid' })
-  catalogProductId!: string
+  /**
+   * The app-owned product master reference (`products_products`), written by every new order.
+   *
+   * `catalogProductId` below is the historical reference to the installed catalog: it stays
+   * readable (and still selects the line for old orders) but is no longer written. A line carries
+   * exactly one reference — this one, the supplier library row below, or the catalog — and the
+   * command rejects a line with none, and a line that mixes the library row with either of the two.
+   */
+  @Property({ name: 'product_id', type: 'uuid', nullable: true })
+  productId?: string | null
+
+  /** Scalar id into `sourcing_supplier_products` — the supplier-facing item this line was ordered from. */
+  @Property({ name: 'supplier_product_id', type: 'uuid', nullable: true })
+  supplierProductId?: string | null
+
+  @Property({ name: 'catalog_product_id', type: 'uuid', nullable: true })
+  catalogProductId?: string | null
 
   @Property({ name: 'product_snapshot', type: 'jsonb', nullable: true })
   productSnapshot?: Record<string, unknown> | null
@@ -251,4 +302,54 @@ export class PurchasingPurchasePayment {
 
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()
+}
+
+/**
+ * Order paperwork that travels with the purchase order: the supplier's invoice, the packing list,
+ * and the receipts for what was paid against this order. One row is one file — a document type
+ * that arrives as several files (receipts, invoices) is several rows — and the file itself lives
+ * in the installed `attachments` module, so only its id is stored here.
+ *
+ * The document hangs on the order rather than on a shipment because these papers exist before
+ * anything ships; the export set travels with the consignment and is recorded in `cross_border`.
+ */
+@Entity({ tableName: 'purchasing_purchase_order_documents' })
+export class PurchasingPurchaseOrderDocument {
+  [OptionalProps]?: 'createdAt' | 'updatedAt' | 'deletedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @ManyToOne(() => PurchasingPurchaseOrder, { fieldName: 'order_id', deleteRule: 'cascade' })
+  order!: PurchasingPurchaseOrder
+
+  @Property({ name: 'doc_type', type: 'text' })
+  docType!: string
+
+  @Property({ name: 'document_number', type: 'text', nullable: true })
+  documentNumber?: string | null
+
+  @Property({ name: 'issued_at', type: 'date', nullable: true })
+  issuedAt?: Date | null
+
+  @Property({ name: 'attachment_id', type: 'uuid', nullable: true })
+  attachmentId?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  note?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+
+  @Property({ name: 'deleted_at', type: Date, nullable: true })
+  deletedAt?: Date | null
 }

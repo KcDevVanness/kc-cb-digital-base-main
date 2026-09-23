@@ -11,21 +11,45 @@ import type { CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/l
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import {
   PurchasingPurchaseOrder,
+  PurchasingPurchaseOrderDocument,
   PurchasingPurchaseOrderLine,
   PurchasingPurchasePayment,
   PurchasingSupplier,
 } from '../data/entities'
+import {
+  purchaseOrderDocumentCreateSchema,
+  purchaseOrderDocumentUpdateSchema,
+} from '../data/validators'
 import { assertCurrencyInDictionary } from '../lib/currencyDictionary'
 import { computeLineTotals, computeOrderTotals, type OrderTotals, type PaymentRow } from '../lib/orderTotals'
+import { loadSupplierProducts } from '../lib/sourcingReads'
 import { eventsConfig } from '../events'
 
 const ORDER_ENTITY_ID = 'purchasing:purchasing_purchase_order' as const
 const PAYMENT_ENTITY_ID = 'purchasing:purchasing_purchase_payment' as const
+const DOCUMENT_ENTITY_ID = 'purchasing:purchasing_purchase_order_document' as const
 const ORDER_RESOURCE_KIND = 'purchasing.purchase_order' as const
 const PAYMENT_RESOURCE_KIND = 'purchasing.purchase_payment' as const
+const DOCUMENT_RESOURCE_KIND = 'purchasing.purchase_order_document' as const
 
 export const ORDER_STATUSES = ['draft', 'placed', 'shipped', 'received', 'closed', 'cancelled'] as const
 export type OrderStatus = (typeof ORDER_STATUSES)[number]
+
+/**
+ * Header metadata an operator may still correct after the order left `draft`. Everything else —
+ * the supplier, the currency, the deposit terms, and the lines — carries the price the order was
+ * placed at, so a non-draft update touching any of them is rejected instead of silently repriced.
+ */
+const POST_PLACEMENT_UPDATE_FIELDS = [
+  'businessNumber',
+  'productCategory',
+  'ownerUserId',
+  'ownerSnapshot',
+  'customerId',
+  'customerSnapshot',
+  'expectedShipAt',
+  'notes',
+] as const
 
 /** Allowed transitions; everything else is rejected with the state unchanged. */
 const ALLOWED_TRANSITIONS: Record<string, { from: OrderStatus[]; to: OrderStatus }> = {
@@ -36,17 +60,46 @@ const ALLOWED_TRANSITIONS: Record<string, { from: OrderStatus[]; to: OrderStatus
   cancel: { from: ['draft', 'placed'], to: 'cancelled' },
 }
 
-const lineInputSchema = z.object({
-  catalogProductId: z.string().uuid(),
-  quantity: z.coerce.number().positive(),
-  unitPrice: z.coerce.number().min(0),
-  taxRate: z.coerce.number().min(0).max(100).default(0),
-  priceIncludesTax: z.boolean().default(true),
-  note: z.string().max(500).nullable().optional(),
-})
+/**
+ * A line references exactly one product: the app-owned product master (`products_products.id`), a
+ * supplier product library row (`supplierProductId`, which resolves through the master once the row
+ * has been synced), or — historical rows only — the installed catalog (`catalogProductId`).
+ *
+ * This widens the previous contract instead of replacing it: a payload that carried a product
+ * master id alone, or a catalog id alone, parses and resolves exactly as it did before, and the
+ * library reference is a third option next to them. A line that mixes the library reference with
+ * either master reference is rejected here, so a client can never send two contradictory
+ * identities and have the server pick one of them silently. A line with none cannot be priced or
+ * received, hence the "at least one" rule.
+ */
+const lineInputSchema = z
+  .object({
+    productId: z.string().uuid().nullable().optional(),
+    catalogProductId: z.string().uuid().nullable().optional(),
+    supplierProductId: z.string().uuid().nullable().optional(),
+    quantity: z.coerce.number().positive(),
+    unitPrice: z.coerce.number().min(0),
+    taxRate: z.coerce.number().min(0).max(100).default(0),
+    priceIncludesTax: z.boolean().default(true),
+    note: z.string().max(500).nullable().optional(),
+  })
+  .refine((line) => Boolean(line.productId || line.catalogProductId || line.supplierProductId), {
+    message: 'each line needs a product reference (productId, catalogProductId or supplierProductId)',
+    path: ['productId'],
+  })
+  .refine((line) => !(line.supplierProductId && (line.productId || line.catalogProductId)), {
+    message: 'a line cannot combine supplierProductId with productId or catalogProductId',
+    path: ['supplierProductId'],
+  })
 
 export const purchaseOrderCreateSchema = z.object({
   supplierId: z.string().uuid(),
+  businessNumber: z.string().trim().max(64).nullable().optional(),
+  productCategory: z.string().trim().max(64).nullable().optional(),
+  ownerUserId: z.string().uuid().nullable().optional(),
+  ownerSnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
+  customerId: z.string().uuid().nullable().optional(),
+  customerSnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
   currencyCode: z.string().trim().regex(/^[A-Za-z]{3}$/).transform((value) => value.toUpperCase()),
   depositPercent: z.coerce.number().min(0).max(100).nullable().optional(),
   depositAmount: z.coerce.number().min(0).nullable().optional(),
@@ -140,7 +193,10 @@ async function loadOrder(
 }
 
 type ResolvedLine = {
-  catalogProductId: string
+  productId: string | null
+  catalogProductId: string | null
+  /** The library row this line was ordered from; null for a master-only or catalog-only line. */
+  supplierProductId: string | null
   productSnapshot: Record<string, unknown>
   quantity: string
   unitPrice: string
@@ -153,41 +209,171 @@ type ResolvedLine = {
 }
 
 /**
- * Resolves the catalog products referenced by the order lines and computes each line's
- * money fields. Products are read scoped, and a product that is not visible in this
- * organization fails the whole order — silently dropping a line would ship a wrong order.
+ * Resolves the products referenced by the order lines and computes each line's money fields.
+ *
+ * New lines point at the app-owned master (`products_products`, see
+ * .ai/specs/2026-09-22-products-and-trade-docs.md) or at the supplier product library
+ * (`sourcing_supplier_products`); lines written before that slice point at the installed catalog.
+ * All three are read with raw, scoped Kysely queries — this module must not import another
+ * module's entities, and it only needs a handful of display columns for the snapshot.
+ * A product that is not visible in this organization fails the whole order: silently dropping a
+ * line would ship a wrong order.
+ *
+ * Resolution runs again on every save, so a line whose library row has since been synced into the
+ * master picks up `productId` and the catalog bridge the next time the draft is saved. What freezes
+ * is the snapshot written onto the line, not the rule that produced it.
  */
 async function resolveOrderLines(
   em: EntityManager,
   scope: { tenantId: string; organizationId: string },
+  supplierId: string,
   lines: PurchaseOrderCreateInput['lines'],
 ): Promise<{ lines: ResolvedLine[]; totals: OrderTotals }> {
-  const productIds = Array.from(new Set(lines.map((line) => line.catalogProductId)))
-  // Raw table read on purpose: this module must not import another module's entities, and it
-  // only needs three display columns for the snapshot. Kysely (not a hand-built SQL string)
-  // so the scope parameters stay bound instead of concatenated.
-  const products = await (em.fork().getKysely<any>())
-    .selectFrom('catalog_products')
-    .select(['id', 'title', 'sku', 'default_unit'])
-    .where('id', 'in', productIds)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', '=', scope.organizationId)
-    .where('deleted_at', 'is', null)
-    .execute()
-  const byId: Record<string, Record<string, unknown>> = {}
-  for (const row of products as Array<Record<string, unknown>>) byId[String(row.id)] = row
+  const supplierProductIds = Array.from(
+    new Set(
+      lines
+        .map((line) => line.supplierProductId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  )
+  const supplierProducts = await loadSupplierProducts(em, scope, supplierProductIds)
+
+  const ownedProductIds = Array.from(
+    new Set([
+      ...lines
+        .map((line) => line.productId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+      // A library row that has been synced carries the master reference on the row itself, so its
+      // line resolves through the very same read an explicitly picked master product does.
+      ...supplierProductIds
+        .map((id) => supplierProducts[id]?.productId ?? null)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ]),
+  )
+  const legacyProductIds = Array.from(
+    new Set(
+      lines
+        .map((line) => (line.productId ? null : line.catalogProductId))
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  )
+
+  const ownedById: Record<string, Record<string, unknown>> = {}
+  if (ownedProductIds.length > 0) {
+    const rows = (await (em.fork().getKysely<any>())
+      .selectFrom('products_products')
+      .select(['id', 'name', 'sku', 'manufacturer_model', 'spec_summary', 'unit', 'catalog_product_id'])
+      .where('id', 'in', ownedProductIds)
+      .where('tenant_id', '=', scope.tenantId)
+      .where('organization_id', '=', scope.organizationId)
+      .where('deleted_at', 'is', null)
+      .execute()) as Array<Record<string, unknown>>
+    for (const row of rows) ownedById[String(row.id)] = row
+  }
+
+  const legacyById: Record<string, Record<string, unknown>> = {}
+  if (legacyProductIds.length > 0) {
+    const rows = (await (em.fork().getKysely<any>())
+      .selectFrom('catalog_products')
+      .select(['id', 'title', 'sku', 'default_unit'])
+      .where('id', 'in', legacyProductIds)
+      .where('tenant_id', '=', scope.tenantId)
+      .where('organization_id', '=', scope.organizationId)
+      .where('deleted_at', 'is', null)
+      .execute()) as Array<Record<string, unknown>>
+    for (const row of rows) legacyById[String(row.id)] = row
+  }
 
   const resolved = lines.map((line) => {
-    const product = byId[line.catalogProductId]
-    if (!product) throw badRequest(`Catalog product not found in this organization: ${line.catalogProductId}`)
     const totals = computeLineTotals({
       quantity: line.quantity,
       unitPrice: line.unitPrice,
       taxRate: line.taxRate,
       priceIncludesTax: line.priceIncludesTax,
     })
+
+    const supplierProduct = line.supplierProductId ? supplierProducts[line.supplierProductId] : undefined
+    if (line.supplierProductId && !supplierProduct) {
+      throw badRequest(`Supplier product not found in this organization: ${line.supplierProductId}`)
+    }
+    if (supplierProduct && supplierProduct.supplierId !== supplierId) {
+      throw new CrudHttpError(422, {
+        error: `Supplier product ${supplierProduct.supplierSku} belongs to another supplier`,
+        code: 'supplier_product_supplier_mismatch',
+      })
+    }
+    // The supplier's own item number is what the packing list and the shipment allocation print, so
+    // it travels in the snapshot: the goods stay identifiable after the library row is renamed.
+    const supplierSku = supplierProduct ? supplierProduct.itemNo ?? supplierProduct.supplierSku : null
+    // A synced library row is the master record in disguise, so both references resolve here.
+    const productId = line.productId ?? supplierProduct?.productId ?? null
+
+    if (productId) {
+      const product = ownedById[productId]
+      if (!product) throw badRequest(`Product not found in this organization: ${productId}`)
+      // `title` is the key every purchasing surface already renders; `model`/`spec` are additive
+      // so an order line prints the same detail a contract line does.
+      const snapshot: Record<string, unknown> = {
+        title: product.name ?? null,
+        sku: product.sku ?? null,
+        unit: product.unit ?? null,
+        model: product.manufacturer_model ?? null,
+        spec: product.spec_summary ?? null,
+      }
+      // Only a line that came from the library carries the supplier code; an ordinary master line
+      // has no library row and therefore no key — the reader treats a missing key as null.
+      if (supplierSku) snapshot.supplierSku = supplierSku
+      return {
+        productId,
+        // Bridge, not a client input: the shipment receive path books stock at *variant* level and
+        // resolves the variant through the installed catalog, so a line keeps the linked catalog
+        // product when the master record has one. An unlinked product therefore cannot be
+        // received — the receive command says so explicitly instead of writing stock against
+        // nothing.
+        catalogProductId: (product.catalog_product_id as string | null) ?? null,
+        supplierProductId: supplierProduct?.id ?? null,
+        productSnapshot: snapshot,
+        quantity: Number(line.quantity).toFixed(4),
+        unitPrice: Number(line.unitPrice).toFixed(4),
+        taxRate: Number(line.taxRate).toFixed(3),
+        priceIncludesTax: line.priceIncludesTax,
+        note: line.note ?? null,
+        ...totals,
+      }
+    }
+
+    if (supplierProduct) {
+      // Library-only line: no master record yet, so no catalog bridge either. Receipt and shipment
+      // allocation require that link and say so in their own message, which is why an unsynced row
+      // is orderable but not yet receivable.
+      return {
+        productId: null,
+        catalogProductId: null,
+        supplierProductId: supplierProduct.id,
+        productSnapshot: {
+          title: supplierProduct.name,
+          sku: supplierProduct.supplierSku,
+          unit: supplierProduct.unit,
+          model: null,
+          spec: supplierProduct.description,
+          supplierSku: supplierProduct.itemNo ?? supplierProduct.supplierSku,
+        },
+        quantity: Number(line.quantity).toFixed(4),
+        unitPrice: Number(line.unitPrice).toFixed(4),
+        taxRate: Number(line.taxRate).toFixed(3),
+        priceIncludesTax: line.priceIncludesTax,
+        note: line.note ?? null,
+        ...totals,
+      }
+    }
+
+    const catalogProductId = line.catalogProductId ?? ''
+    const product = legacyById[catalogProductId]
+    if (!product) throw badRequest(`Catalog product not found in this organization: ${catalogProductId}`)
     return {
-      catalogProductId: line.catalogProductId,
+      productId: null,
+      catalogProductId,
+      supplierProductId: null,
       productSnapshot: {
         title: product.title ?? null,
         sku: product.sku ?? null,
@@ -220,7 +406,9 @@ async function persistLines(
         organizationId: scope.organizationId,
         order,
         lineNumber: index + 1,
+        productId: line.productId,
         catalogProductId: line.catalogProductId,
+        supplierProductId: line.supplierProductId,
         productSnapshot: line.productSnapshot,
         quantity: line.quantity,
         receivedQuantity: '0.0000',
@@ -296,7 +484,7 @@ const createOrderCommand: CommandHandler<Record<string, unknown>, PurchasingPurc
 
     await assertCurrencyInDictionary(em, scope, parsed.currencyCode)
     const supplierSnapshot = await supplierSnapshotFor(em, scope, parsed.supplierId)
-    const { lines, totals } = await resolveOrderLines(em, scope, parsed.lines)
+    const { lines, totals } = await resolveOrderLines(em, scope, parsed.supplierId, parsed.lines)
 
     const order = await de.createOrmEntity({
       entity: PurchasingPurchaseOrder,
@@ -305,6 +493,12 @@ const createOrderCommand: CommandHandler<Record<string, unknown>, PurchasingPurc
         organizationId: scope.organizationId,
         supplierId: parsed.supplierId,
         supplierSnapshot,
+        businessNumber: parsed.businessNumber ?? null,
+        productCategory: parsed.productCategory ?? null,
+        ownerUserId: parsed.ownerUserId ?? null,
+        ownerSnapshot: parsed.ownerSnapshot ?? null,
+        customerId: parsed.customerId ?? null,
+        customerSnapshot: parsed.customerSnapshot ?? null,
         status: 'draft',
         currencyCode: parsed.currencyCode,
         subtotal: totals.subtotal,
@@ -374,7 +568,6 @@ const updateOrderCommand: CommandHandler<Record<string, unknown>, PurchasingPurc
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
     const order = await loadOrder(em, scope, parsed.id)
-    if (order.status !== 'draft') throw conflict('Only a draft purchase order can be edited')
 
     enforceCommandOptimisticLock({
       resourceKind: ORDER_RESOURCE_KIND,
@@ -383,22 +576,48 @@ const updateOrderCommand: CommandHandler<Record<string, unknown>, PurchasingPurc
       request: ctx.request ?? null,
     })
 
+    // A placed order is a commitment: only header metadata may still be corrected. Only the keys
+    // the caller actually sent are judged — an omitted field is never a change, and an optional key
+    // that arrived as an explicit `undefined` (zod keeps it) is not one either.
+    const headerOnly = order.status !== 'draft'
+    if (headerOnly) {
+      const sentKeys = Object.entries(parsed).filter(([key, value]) => key !== 'id' && value !== undefined)
+      const rejected = sentKeys.filter(
+        ([key]) => !(POST_PLACEMENT_UPDATE_FIELDS as readonly string[]).includes(key),
+      )
+      if (rejected.length > 0) {
+        throw conflict(`Only header metadata can be updated in status ${order.status}`)
+      }
+    }
+
     if (parsed.currencyCode) await assertCurrencyInDictionary(em, scope, parsed.currencyCode)
 
-    const supplierSnapshot = parsed.supplierId ? await supplierSnapshotFor(em, scope, parsed.supplierId) : null
-    const resolved = parsed.lines ? await resolveOrderLines(em, scope, parsed.lines) : null
+    const supplierSnapshot = headerOnly || !parsed.supplierId ? null : await supplierSnapshotFor(em, scope, parsed.supplierId)
+    const resolved = headerOnly || !parsed.lines
+      ? null
+      : await resolveOrderLines(em, scope, parsed.supplierId ?? order.supplierId, parsed.lines)
 
     const updated = await de.updateOrmEntity({
       entity: PurchasingPurchaseOrder,
       where: orderFilter(scope, parsed.id),
       apply: (entity) => {
+        // The allow-listed header metadata, writable in every status.
+        if (parsed.businessNumber !== undefined) entity.businessNumber = parsed.businessNumber
+        if (parsed.productCategory !== undefined) entity.productCategory = parsed.productCategory
+        if (parsed.ownerUserId !== undefined) entity.ownerUserId = parsed.ownerUserId
+        if (parsed.ownerSnapshot !== undefined) entity.ownerSnapshot = parsed.ownerSnapshot
+        if (parsed.customerId !== undefined) entity.customerId = parsed.customerId
+        if (parsed.customerSnapshot !== undefined) entity.customerSnapshot = parsed.customerSnapshot
+        if (parsed.expectedShipAt !== undefined) entity.expectedShipAt = parsed.expectedShipAt ? new Date(parsed.expectedShipAt) : null
+        if (parsed.notes !== undefined) entity.notes = parsed.notes
+        // Commercial terms freeze at `place`; the gate above already rejected them on a non-draft
+        // order, so this branch only ever runs for a draft.
+        if (headerOnly) return
         if (parsed.supplierId) entity.supplierId = parsed.supplierId
         if (supplierSnapshot) entity.supplierSnapshot = supplierSnapshot
         if (parsed.currencyCode) entity.currencyCode = parsed.currencyCode
         if (parsed.depositPercent !== undefined) entity.depositPercent = parsed.depositPercent === null ? null : String(parsed.depositPercent)
         if (parsed.depositAmount !== undefined) entity.depositAmount = parsed.depositAmount === null ? null : Number(parsed.depositAmount).toFixed(4)
-        if (parsed.expectedShipAt !== undefined) entity.expectedShipAt = parsed.expectedShipAt ? new Date(parsed.expectedShipAt) : null
-        if (parsed.notes !== undefined) entity.notes = parsed.notes
         if (resolved) {
           entity.subtotal = resolved.totals.subtotal
           entity.taxTotal = resolved.totals.taxTotal
@@ -807,6 +1026,196 @@ const attachPaymentCommand: CommandHandler<Record<string, unknown>, { id: string
   }),
 }
 
+export const purchaseOrderDocumentCrudEvents: CrudEventsConfig<PurchasingPurchaseOrderDocument> = {
+  module: 'purchasing',
+  entity: 'purchase_order_document',
+  persistent: true,
+  buildPayload: (ctx) => ({
+    id: ctx.identifiers.id,
+    tenantId: ctx.identifiers.tenantId,
+    organizationId: ctx.identifiers.organizationId,
+    docType: ctx.entity?.docType ?? null,
+  }),
+}
+
+export const purchaseOrderDocumentCrudIndexer: CrudIndexerConfig<PurchasingPurchaseOrderDocument> = {
+  entityType: DOCUMENT_ENTITY_ID,
+}
+
+function documentFilter(
+  scope: { tenantId: string; organizationId: string },
+  id: string,
+): FilterQuery<PurchasingPurchaseOrderDocument> {
+  return {
+    id,
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+    deletedAt: null,
+  } as FilterQuery<PurchasingPurchaseOrderDocument>
+}
+
+const createOrderDocumentCommand: CommandHandler<Record<string, unknown>, PurchasingPurchaseOrderDocument> = {
+  id: 'purchasing.order-documents.create',
+  isUndoable: true,
+  async execute(rawInput, ctx) {
+    const parsed = purchaseOrderDocumentCreateSchema.parse(rawInput)
+    const scope = ensureScope(ctx)
+    const em = ctx.container.resolve('em') as EntityManager
+    const de = ctx.container.resolve('dataEngine') as DataEngine
+
+    // The order is loaded scoped first: a document may only hang on an order the caller can
+    // actually see, which keeps a guessed order id from becoming a cross-organization write.
+    const order = await loadOrder(em, scope, parsed.orderId)
+
+    const document = await de.createOrmEntity({
+      entity: PurchasingPurchaseOrderDocument,
+      data: {
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        order,
+        docType: parsed.docType,
+        documentNumber: parsed.documentNumber ?? null,
+        issuedAt: parsed.issuedAt ? new Date(parsed.issuedAt) : null,
+        attachmentId: parsed.attachmentId ?? null,
+        note: parsed.note ?? null,
+      },
+    })
+
+    await emitCrudSideEffects({
+      dataEngine: de,
+      action: 'created',
+      entity: document,
+      identifiers: { id: String(document.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      syncOrigin: ctx.syncOrigin,
+      events: purchaseOrderDocumentCrudEvents,
+      indexer: purchaseOrderDocumentCrudIndexer,
+    })
+
+    return document
+  },
+  captureAfter: (_input, result) => ({ id: String(result.id) }),
+  buildLog: async ({ result }) => ({
+    actionLabel: 'Create purchase order document',
+    resourceKind: DOCUMENT_RESOURCE_KIND,
+    resourceId: String(result.id),
+    tenantId: String(result.tenantId),
+    organizationId: String(result.organizationId),
+    snapshotAfter: { id: String(result.id), docType: result.docType },
+  }),
+  async undo({ logEntry, ctx }) {
+    const payload = extractUndoPayload<{ after?: { id: string } }>(logEntry)
+    const id = payload?.after?.id ?? logEntry?.resourceId
+    if (!id) throw new Error('[internal] Missing purchase order document id for undo')
+    const scope = ensureScope(ctx)
+    const de = ctx.container.resolve('dataEngine') as DataEngine
+    const removed = await de.deleteOrmEntity({
+      entity: PurchasingPurchaseOrderDocument,
+      where: documentFilter(scope, id),
+      soft: true,
+      softDeleteField: 'deletedAt',
+    })
+    await emitCrudUndoSideEffects({
+      dataEngine: de,
+      action: 'deleted',
+      entity: removed,
+      identifiers: { id, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      syncOrigin: ctx.syncOrigin,
+      events: purchaseOrderDocumentCrudEvents,
+      indexer: purchaseOrderDocumentCrudIndexer,
+    })
+  },
+}
+
+const updateOrderDocumentCommand: CommandHandler<Record<string, unknown>, PurchasingPurchaseOrderDocument> = {
+  id: 'purchasing.order-documents.update',
+  isUndoable: false,
+  async execute(rawInput, ctx) {
+    const parsed = purchaseOrderDocumentUpdateSchema.parse(rawInput)
+    const scope = ensureScope(ctx)
+    const em = ctx.container.resolve('em') as EntityManager
+    const de = ctx.container.resolve('dataEngine') as DataEngine
+
+    const existing = await em.fork().findOne(PurchasingPurchaseOrderDocument, documentFilter(scope, parsed.id))
+    if (!existing) throw notFound('Purchase order document not found')
+
+    const updated = await de.updateOrmEntity({
+      entity: PurchasingPurchaseOrderDocument,
+      where: documentFilter(scope, parsed.id),
+      apply: (entity) => {
+        if (parsed.docType !== undefined) entity.docType = parsed.docType
+        if (parsed.documentNumber !== undefined) entity.documentNumber = parsed.documentNumber
+        if (parsed.issuedAt !== undefined) entity.issuedAt = parsed.issuedAt ? new Date(parsed.issuedAt) : null
+        if (parsed.attachmentId !== undefined) entity.attachmentId = parsed.attachmentId
+        if (parsed.note !== undefined) entity.note = parsed.note
+      },
+    })
+    if (!updated) throw notFound('Purchase order document not found')
+
+    await emitCrudSideEffects({
+      dataEngine: de,
+      action: 'updated',
+      entity: updated,
+      identifiers: { id: String(updated.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      syncOrigin: ctx.syncOrigin,
+      events: purchaseOrderDocumentCrudEvents,
+      indexer: purchaseOrderDocumentCrudIndexer,
+    })
+
+    return updated
+  },
+  captureAfter: (_input, result) => ({ id: String(result.id) }),
+  buildLog: async ({ result }) => ({
+    actionLabel: 'Update purchase order document',
+    resourceKind: DOCUMENT_RESOURCE_KIND,
+    resourceId: String(result.id),
+    tenantId: String(result.tenantId),
+    organizationId: String(result.organizationId),
+    snapshotAfter: { id: String(result.id) },
+  }),
+}
+
+const deleteOrderDocumentCommand: CommandHandler<
+  { body?: Record<string, unknown>; query?: Record<string, unknown> },
+  PurchasingPurchaseOrderDocument
+> = {
+  id: 'purchasing.order-documents.delete',
+  isUndoable: false,
+  async execute(input, ctx) {
+    const id = requireId(input, 'Purchase order document id required')
+    const scope = ensureScope(ctx)
+    const de = ctx.container.resolve('dataEngine') as DataEngine
+
+    const removed = await de.deleteOrmEntity({
+      entity: PurchasingPurchaseOrderDocument,
+      where: documentFilter(scope, id),
+      soft: true,
+      softDeleteField: 'deletedAt',
+    })
+    if (!removed) throw notFound('Purchase order document not found')
+
+    await emitCrudSideEffects({
+      dataEngine: de,
+      action: 'deleted',
+      entity: removed,
+      identifiers: { id: String(removed.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      syncOrigin: ctx.syncOrigin,
+      events: purchaseOrderDocumentCrudEvents,
+      indexer: purchaseOrderDocumentCrudIndexer,
+    })
+
+    return removed
+  },
+  captureAfter: (_input, result) => ({ id: String(result.id) }),
+  buildLog: async ({ result }) => ({
+    actionLabel: 'Delete purchase order document',
+    resourceKind: DOCUMENT_RESOURCE_KIND,
+    resourceId: String(result.id),
+    tenantId: String(result.tenantId),
+    organizationId: String(result.organizationId),
+    snapshotAfter: { id: String(result.id) },
+  }),
+}
+
 registerCommand(createOrderCommand)
 registerCommand(updateOrderCommand)
 registerCommand(deleteOrderCommand)
@@ -815,6 +1224,9 @@ registerCommand(recordPaymentCommand)
 registerCommand(deletePaymentCommand)
 registerCommand(applyReceiptCommand)
 registerCommand(attachPaymentCommand)
+registerCommand(createOrderDocumentCommand)
+registerCommand(updateOrderDocumentCommand)
+registerCommand(deleteOrderDocumentCommand)
 
 export {
   createOrderCommand,
@@ -825,6 +1237,9 @@ export {
   deletePaymentCommand,
   applyReceiptCommand,
   attachPaymentCommand,
+  createOrderDocumentCommand,
+  updateOrderDocumentCommand,
+  deleteOrderDocumentCommand,
 }
 
 export type { PaymentRow }

@@ -69,3 +69,47 @@ export const supplierListSchema = z.object({
 export type SupplierCreateInput = z.infer<typeof supplierCreateSchema>
 export type SupplierUpdateInput = z.infer<typeof supplierUpdateSchema>
 export type SupplierListQuery = z.infer<typeof supplierListSchema>
+
+/**
+ * Document types a purchase order can carry. `other` stays last as the catch-all, so the literal
+ * order is also the order a picker shows.
+ */
+export const PURCHASE_ORDER_DOC_TYPES = [
+  'supplier_invoice',
+  'packing_list',
+  'purchase_payment_receipt',
+  'other',
+] as const
+export type PurchaseOrderDocType = (typeof PURCHASE_ORDER_DOC_TYPES)[number]
+
+/**
+ * One row is one file, and the file itself lives in the installed `attachments` module — only its
+ * id is stored here, so a document can be listed, replaced, or removed without touching the file.
+ * `nullable().optional()` keeps the create/update distinction: `undefined` leaves the field alone,
+ * `null` clears it.
+ */
+export const purchaseOrderDocumentCreateSchema = z.object({
+  orderId: z.string().uuid(),
+  docType: z.enum(PURCHASE_ORDER_DOC_TYPES),
+  documentNumber: z.string().trim().max(120).nullable().optional(),
+  issuedAt: z.string().min(1).nullable().optional(),
+  attachmentId: z.string().uuid().nullable().optional(),
+  note: z.string().trim().max(500).nullable().optional(),
+})
+
+/** `orderId` is intentionally not required on update: a document never moves between orders. */
+export const purchaseOrderDocumentUpdateSchema = purchaseOrderDocumentCreateSchema.partial().extend({
+  id: z.string().uuid(),
+})
+
+export const purchaseOrderDocumentListSchema = z.object({
+  id: z.string().uuid().optional(),
+  orderId: z.string().uuid().optional(),
+  docType: z.enum(PURCHASE_ORDER_DOC_TYPES).optional(),
+  page: z.coerce.number().min(1).default(1),
+  pageSize: z.coerce.number().min(1).max(200).default(100),
+})
+
+export type PurchaseOrderDocumentCreateInput = z.infer<typeof purchaseOrderDocumentCreateSchema>
+export type PurchaseOrderDocumentUpdateInput = z.infer<typeof purchaseOrderDocumentUpdateSchema>
+export type PurchaseOrderDocumentListQuery = z.infer<typeof purchaseOrderDocumentListSchema>

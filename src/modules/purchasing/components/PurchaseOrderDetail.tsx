@@ -10,6 +10,7 @@ import {
   CrudForm,
   type CrudCustomFieldRenderProps,
   type CrudField,
+  type CrudFieldOption,
   type CrudFormGroup,
 } from '@open-mercato/ui/backend/CrudForm'
 import { ErrorMessage, LoadingMessage, RecordNotFoundState } from '@open-mercato/ui/backend/detail'
@@ -51,10 +52,15 @@ import {
   type OrderStatus,
   type PurchaseOrderRecord,
 } from './PurchaseOrderForm'
+import { loadProductCategoryOptions } from './orderFormOptions'
 
 const ORDER_LINES_PAGE_SIZE = 200
 const PAYMENT_PAGE_SIZE = 100
+const DOCUMENT_PAGE_SIZE = 100
 const EMPTY_CELL = '—'
+
+/** The order's own document sub-resource, and the page the documents table reads. */
+const ORDER_DOCUMENTS_API_PATH = 'purchasing/purchase-orders/documents'
 
 /**
  * Attachments entity id for a recorded payment: the same `entityId` the upload endpoint
@@ -62,6 +68,24 @@ const EMPTY_CELL = '—'
  * stores. The dialog uploads no bytes with the payment command, only this id.
  */
 const PAYMENT_ATTACHMENT_ENTITY_ID = 'purchasing:purchase_payment'
+
+/**
+ * Attachments entity id for a purchase-order document: the file is filed against the order it
+ * belongs to — the document row does not exist yet when the operator picks the file — and the
+ * document command stores only the returned id.
+ */
+const ORDER_DOCUMENT_ATTACHMENT_ENTITY_ID = 'purchasing:purchase_order'
+
+/** Document types the module accepts — the same literals the command's enum offers. */
+const ORDER_DOCUMENT_TYPES = ['supplier_invoice', 'packing_list', 'purchase_payment_receipt', 'other'] as const
+type OrderDocumentType = (typeof ORDER_DOCUMENT_TYPES)[number]
+
+const ORDER_DOCUMENT_TYPE_LABEL_KEYS: Record<OrderDocumentType, string> = {
+  supplier_invoice: 'purchasing.orders.documents.docType.supplier_invoice',
+  packing_list: 'purchasing.orders.documents.docType.packing_list',
+  purchase_payment_receipt: 'purchasing.orders.documents.docType.purchase_payment_receipt',
+  other: 'purchasing.orders.documents.docType.other',
+}
 
 type OrderTransitionAction = 'place' | 'mark_shipped' | 'mark_received' | 'close' | 'cancel'
 export type PaymentStage = 'deposit' | 'balance' | 'other'
@@ -79,6 +103,8 @@ type OrderLineRecord = {
   lineNumber: number
   productTitle: string | null
   productSku: string | null
+  /** The supplier's own item number, frozen when the line was ordered from the library. */
+  supplierSku: string | null
   productUnit: string | null
   quantity: string
   unitPrice: string
@@ -145,6 +171,7 @@ function toOrderLineRecord(item: Record<string, unknown>): OrderLineRecord {
     lineNumber: Number(item.lineNumber ?? 0),
     productTitle: typeof item.productTitle === 'string' ? item.productTitle : null,
     productSku: typeof item.productSku === 'string' ? item.productSku : null,
+    supplierSku: typeof item.supplierSku === 'string' ? item.supplierSku : null,
     productUnit: typeof item.productUnit === 'string' ? item.productUnit : null,
     quantity: String(item.quantity ?? '0'),
     unitPrice: String(item.unitPrice ?? '0'),
@@ -165,6 +192,32 @@ function toPaymentRecord(item: Record<string, unknown>): PaymentRecord {
     reference: typeof item.reference === 'string' ? item.reference : null,
     methodNote: typeof item.methodNote === 'string' ? item.methodNote : null,
     attachmentId: typeof item.attachmentId === 'string' ? item.attachmentId : null,
+  }
+}
+
+/** A purchase-order document as `/api/purchasing/purchase-orders/documents` projects it. */
+type OrderDocumentRecord = {
+  id: string
+  orderId: string
+  docType: OrderDocumentType
+  documentNumber: string | null
+  issuedAt: string | null
+  attachmentId: string | null
+  note: string | null
+}
+
+function toOrderDocumentRecord(item: Record<string, unknown>): OrderDocumentRecord {
+  const docType = item.docType ?? item.doc_type
+  return {
+    id: String(item.id ?? ''),
+    orderId: String(item.orderId ?? item.order_id ?? ''),
+    docType: ORDER_DOCUMENT_TYPES.includes(docType as OrderDocumentType)
+      ? (docType as OrderDocumentType)
+      : 'other',
+    documentNumber: typeof item.documentNumber === 'string' ? item.documentNumber : null,
+    issuedAt: typeof item.issuedAt === 'string' ? item.issuedAt : null,
+    attachmentId: typeof item.attachmentId === 'string' ? item.attachmentId : null,
+    note: typeof item.note === 'string' ? item.note : null,
   }
 }
 
@@ -215,6 +268,11 @@ function buildLineColumns(t: TranslateFn, locale: string, currencyCode: string):
           <span>{row.original.productTitle ?? EMPTY_CELL}</span>
           {row.original.productSku ? (
             <span className="text-xs text-muted-foreground">{row.original.productSku}</span>
+          ) : null}
+          {row.original.supplierSku ? (
+            <span className="text-xs text-muted-foreground">
+              {`${t('purchasing.orders.detail.supplierCode')}: ${row.original.supplierSku}`}
+            </span>
           ) : null}
         </div>
       ),
@@ -673,6 +731,415 @@ function PurchasePaymentsSection({
   )
 }
 
+/** The editable shape of the 新增/编辑单证 dialog, and the body its command accepts. */
+type OrderDocumentFormValues = {
+  docType: string
+  documentNumber: string
+  issuedAt: string
+  attachmentId: string
+  note: string
+}
+
+const EMPTY_DOCUMENT_VALUES: OrderDocumentFormValues = {
+  docType: '',
+  documentNumber: '',
+  issuedAt: '',
+  attachmentId: '',
+  note: '',
+}
+
+function toOptionalText(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length ? trimmed : null
+}
+
+function buildOrderDocumentPayload(values: OrderDocumentFormValues): Record<string, unknown> {
+  return {
+    docType: ORDER_DOCUMENT_TYPES.includes(values.docType as OrderDocumentType) ? values.docType : 'other',
+    documentNumber: toOptionalText(values.documentNumber),
+    issuedAt: toOptionalText(values.issuedAt),
+    attachmentId: toOptionalText(values.attachmentId),
+    note: toOptionalText(values.note),
+  }
+}
+
+/**
+ * The upload control for a document's file. It talks to the shared attachments endpoint
+ * (`POST /api/attachments`, multipart) exactly as the installed attachment surfaces do, and hands
+ * the returned id back to the form — the document row stores that id, never a byte of file.
+ */
+function PurchaseOrderDocumentAttachmentField({
+  value,
+  setValue,
+  disabled,
+  orderId,
+}: CrudCustomFieldRenderProps & { orderId: string }) {
+  const t = useT()
+  const inputRef = React.useRef<HTMLInputElement | null>(null)
+  const [fileName, setFileName] = React.useState<string | null>(null)
+  const [isUploading, setIsUploading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const attachmentId = typeof value === 'string' ? value : ''
+
+  const acceptFile = React.useCallback(async (files: FileList | null) => {
+    const file = files?.[0]
+    if (!file) return
+    setError(null)
+    setIsUploading(true)
+    try {
+      const body = new FormData()
+      body.set('entityId', ORDER_DOCUMENT_ATTACHMENT_ENTITY_ID)
+      body.set('recordId', orderId)
+      body.set('file', file)
+      const call = await apiCall<{ item?: { id?: string }; error?: string }>(
+        '/api/attachments',
+        { method: 'POST', body },
+        { fallback: null },
+      )
+      const uploadedId = call.ok && typeof call.result?.item?.id === 'string' ? call.result.item.id : ''
+      if (!uploadedId) throw new Error(t('purchasing.orders.documents.uploadFailed'))
+      setValue(uploadedId)
+      setFileName(file.name)
+    } catch (cause) {
+      setError(mutationErrorMessage(cause, t('purchasing.orders.documents.uploadFailed')))
+    } finally {
+      setIsUploading(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }, [orderId, setValue, t])
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          disabled={disabled || isUploading}
+          onClick={() => inputRef.current?.click()}
+        >
+          {isUploading
+            ? <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            : <Upload className="size-4" aria-hidden="true" />}
+          {t('purchasing.orders.documents.field.attachmentId')}
+        </Button>
+        {attachmentId ? (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={disabled}
+            onClick={() => {
+              setValue('')
+              setFileName(null)
+            }}
+          >
+            {t('purchasing.orders.documents.actions.remove')}
+          </Button>
+        ) : null}
+      </div>
+      {fileName ? <p className="text-xs text-muted-foreground">{fileName}</p> : null}
+      {error ? <p className="text-xs font-medium text-status-error-text" role="alert">{error}</p> : null}
+      <input
+        ref={inputRef}
+        type="file"
+        className="hidden"
+        onChange={(event) => { void acceptFile(event.target.files) }}
+      />
+    </div>
+  )
+}
+
+function PurchaseOrderDocumentsSection({
+  orderId,
+  documents,
+  loadFailed,
+  onChanged,
+}: {
+  orderId: string
+  documents: OrderDocumentRecord[]
+  loadFailed: boolean
+  onChanged: () => Promise<void>
+}) {
+  const t = useT()
+  const locale = useLocale()
+  const { confirm, ConfirmDialogElement } = useConfirmDialog()
+  const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<OrderDocumentRecord | null>(null)
+  // Bumping the key rebuilds the dialog form, so every open starts from the row it is editing
+  // (or from blank) instead of the values the previous open left behind.
+  const [formKey, setFormKey] = React.useState(0)
+  const dialogContentRef = React.useRef<HTMLDivElement | null>(null)
+
+  const mutationContextId = React.useMemo(() => `purchasing.purchase-order-document:${orderId}`, [orderId])
+  const { runMutation, retryLastMutation } = useGuardedMutation<{
+    formId: string
+    resourceKind: string
+    resourceId?: string
+    retryLastMutation: () => Promise<boolean>
+  }>({ contextId: mutationContextId })
+
+  const mutationContext = React.useMemo(() => ({
+    formId: mutationContextId,
+    resourceKind: 'purchasing.purchase_order_document',
+    resourceId: orderId,
+    retryLastMutation,
+  }), [mutationContextId, orderId, retryLastMutation])
+
+  const initialValues = React.useMemo<OrderDocumentFormValues>(() => {
+    if (!editing) return EMPTY_DOCUMENT_VALUES
+    return {
+      docType: editing.docType,
+      documentNumber: editing.documentNumber ?? '',
+      issuedAt: toUtcDateInputValue(editing.issuedAt) ?? '',
+      attachmentId: editing.attachmentId ?? '',
+      note: editing.note ?? '',
+    }
+  }, [editing])
+
+  const fields = React.useMemo<CrudField[]>(() => [
+    {
+      id: 'docType',
+      label: t('purchasing.orders.documents.field.docType'),
+      type: 'select',
+      required: true,
+      options: ORDER_DOCUMENT_TYPES.map((value) => ({
+        value,
+        label: t(ORDER_DOCUMENT_TYPE_LABEL_KEYS[value]),
+      })),
+    },
+    {
+      id: 'documentNumber',
+      label: t('purchasing.orders.documents.field.documentNumber'),
+      type: 'text',
+    },
+    {
+      id: 'issuedAt',
+      label: t('purchasing.orders.documents.field.issuedAt'),
+      type: 'date',
+    },
+    {
+      id: 'attachmentId',
+      label: t('purchasing.orders.documents.field.attachmentId'),
+      type: 'custom',
+      rendersOwnError: true,
+      component: (props) => <PurchaseOrderDocumentAttachmentField {...props} orderId={orderId} />,
+    },
+    {
+      id: 'note',
+      label: t('purchasing.orders.documents.field.note'),
+      type: 'textarea',
+    },
+  ], [orderId, t])
+
+  const groups = React.useMemo<CrudFormGroup[]>(() => [
+    { id: 'documentDetails', column: 1, fields: ['docType', 'documentNumber', 'attachmentId'] },
+    { id: 'documentStamp', column: 2, fields: ['issuedAt', 'note'] },
+  ], [])
+
+  const handleSubmit = React.useCallback(async (values: OrderDocumentFormValues) => {
+    const payload = buildOrderDocumentPayload(values)
+    try {
+      await runMutation({
+        operation: () => editing
+          ? updateCrud(
+            ORDER_DOCUMENTS_API_PATH,
+            { id: editing.id, ...payload },
+            { errorMessage: t('purchasing.orders.documents.saveFailed') },
+          )
+          : createCrud(
+            ORDER_DOCUMENTS_API_PATH,
+            { orderId, ...payload },
+            { errorMessage: t('purchasing.orders.documents.saveFailed') },
+          ),
+        context: mutationContext,
+        mutationPayload: editing ? { id: editing.id, ...payload } : { orderId, ...payload },
+      })
+    } catch (error) {
+      surfaceRecordConflict(error, t, { onRefresh: () => void onChanged() })
+      throw error
+    }
+    setDialogOpen(false)
+    setEditing(null)
+    await onChanged()
+  }, [editing, mutationContext, onChanged, orderId, runMutation, t])
+
+  const handleRemove = React.useCallback(async (document: OrderDocumentRecord) => {
+    const confirmed = await confirm({
+      title: t('purchasing.orders.documents.deleteConfirmTitle'),
+      description: t('purchasing.orders.documents.deleteConfirmBody'),
+      confirmText: t('purchasing.orders.documents.actions.delete'),
+      variant: 'destructive',
+    })
+    if (!confirmed) return
+    try {
+      await runMutation({
+        operation: () => deleteCrud(
+          ORDER_DOCUMENTS_API_PATH,
+          { id: document.id, errorMessage: t('purchasing.orders.documents.deleteFailed') },
+        ),
+        context: mutationContext,
+        mutationPayload: { id: document.id },
+      })
+      await onChanged()
+    } catch (error) {
+      if (surfaceRecordConflict(error, t, { onRefresh: () => void onChanged() })) return
+      flash(mutationErrorMessage(error, t('purchasing.orders.documents.deleteFailed')), 'error')
+    }
+  }, [confirm, mutationContext, onChanged, runMutation, t])
+
+  const columns = React.useMemo<ColumnDef<OrderDocumentRecord>[]>(() => [
+    {
+      accessorKey: 'docType',
+      header: t('purchasing.orders.documents.columns.type'),
+      enableSorting: false,
+      meta: { priority: 1 },
+      cell: ({ row }) => t(ORDER_DOCUMENT_TYPE_LABEL_KEYS[row.original.docType]),
+    },
+    {
+      accessorKey: 'documentNumber',
+      header: t('purchasing.orders.documents.columns.number'),
+      enableSorting: false,
+      meta: { priority: 2, truncate: true, maxWidth: 240 },
+      cell: ({ row }) => row.original.documentNumber
+        ?? <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>,
+    },
+    {
+      accessorKey: 'issuedAt',
+      header: t('purchasing.orders.documents.columns.issuedAt'),
+      enableSorting: false,
+      meta: { priority: 3 },
+      cell: ({ row }) => formatOrderDate(row.original.issuedAt, locale)
+        ?? <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>,
+    },
+    {
+      accessorKey: 'attachmentId',
+      header: t('purchasing.orders.documents.columns.attachment'),
+      enableSorting: false,
+      meta: { priority: 4 },
+      cell: ({ row }) => {
+        const attachmentId = row.original.attachmentId
+        if (!attachmentId) return <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>
+        return (
+          <Link
+            href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
+            className="text-sm text-primary hover:underline"
+          >
+            {t('purchasing.orders.documents.actions.download')}
+          </Link>
+        )
+      },
+    },
+    {
+      accessorKey: 'note',
+      header: t('purchasing.orders.documents.columns.note'),
+      enableSorting: false,
+      meta: { priority: 5, truncate: true, maxWidth: 240 },
+      cell: ({ row }) => row.original.note
+        ?? <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>,
+    },
+  ], [locale, t])
+
+  const handleSubmitForm = React.useCallback(() => {
+    dialogContentRef.current?.querySelector('form')?.requestSubmit()
+  }, [])
+  const handleDialogKeyDown = useDialogKeyHandler({
+    onConfirm: handleSubmitForm,
+    onCancel: () => setDialogOpen(false),
+  })
+
+  return (
+    <>
+      <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
+        <SectionHeader
+          title={t('purchasing.orders.detail.documents')}
+          count={documents.length}
+          action={(
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setEditing(null)
+                setFormKey((previous) => previous + 1)
+                setDialogOpen(true)
+              }}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              {t('purchasing.orders.documents.actions.add')}
+            </Button>
+          )}
+        />
+        {loadFailed ? (
+          <p className="text-sm text-status-error-text" role="alert">
+            {t('purchasing.orders.documents.loadFailed')}
+          </p>
+        ) : (
+          <DataTable<OrderDocumentRecord>
+            embedded
+            columns={columns}
+            data={documents}
+            disableRowClick
+            emptyState={(
+              <EmptyState
+                variant="subtle"
+                size="sm"
+                title={t('purchasing.orders.documents.empty')}
+              />
+            )}
+            rowActions={(row) => (
+              <RowActions
+                items={[
+                  ...(row.attachmentId ? [{
+                    id: 'download',
+                    label: t('purchasing.orders.documents.actions.download'),
+                    href: `/api/attachments/file/${encodeURIComponent(row.attachmentId)}?download=1`,
+                  }] : []),
+                  {
+                    id: 'edit',
+                    label: t('purchasing.orders.documents.actions.edit'),
+                    onSelect: () => {
+                      setEditing(row)
+                      setFormKey((previous) => previous + 1)
+                      setDialogOpen(true)
+                    },
+                  },
+                  {
+                    id: 'delete',
+                    label: t('purchasing.orders.documents.actions.delete'),
+                    destructive: true,
+                    onSelect: () => { void handleRemove(row) },
+                  },
+                ]}
+              />
+            )}
+          />
+        )}
+      </div>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent ref={dialogContentRef} onKeyDown={handleDialogKeyDown}>
+          <DialogHeader>
+            <DialogTitle>
+              {t(editing ? 'purchasing.orders.documents.dialog.editTitle' : 'purchasing.orders.documents.dialog.createTitle')}
+            </DialogTitle>
+            <DialogDescription>{t('purchasing.orders.detail.documents')}</DialogDescription>
+          </DialogHeader>
+          <CrudForm<OrderDocumentFormValues>
+            key={`${editing?.id ?? 'new'}-${formKey}`}
+            embedded
+            fields={fields}
+            groups={groups}
+            initialValues={initialValues}
+            submitLabel={t('purchasing.orders.form.save')}
+            onSubmit={handleSubmit}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {ConfirmDialogElement}
+    </>
+  )
+}
+
 export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
   const t = useT()
   const locale = useLocale()
@@ -680,6 +1147,11 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
   const [order, setOrder] = React.useState<PurchaseOrderRecord | null>(null)
   const [lines, setLines] = React.useState<OrderLineRecord[]>([])
   const [payments, setPayments] = React.useState<PaymentRecord[]>([])
+  const [documents, setDocuments] = React.useState<OrderDocumentRecord[]>([])
+  const [documentsLoadFailed, setDocumentsLoadFailed] = React.useState(false)
+  // The `order_product_category` dictionary, resolved to a label for the summary; an empty list
+  // (a dictionary the operator has not seeded, or a failed load) falls back to the stored code.
+  const [categoryOptions, setCategoryOptions] = React.useState<CrudFieldOption[]>([])
   const [loading, setLoading] = React.useState(true)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [notFound, setNotFound] = React.useState(false)
@@ -707,26 +1179,43 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
     setLoadError(null)
     setNotFound(false)
     try {
-      const [orderPayload, linePayload, paymentPayload] = await Promise.all([
+      const [orderPayload, linePayload, paymentPayload, options] = await Promise.all([
         fetchCrudList<Record<string, unknown>>(ORDERS_API_PATH, { ids: orderId, pageSize: 1 }),
         fetchCrudList<Record<string, unknown>>(ORDERS_LINES_API_PATH, { orderId, pageSize: ORDER_LINES_PAGE_SIZE }),
         fetchCrudList<Record<string, unknown>>(ORDERS_PAYMENTS_API_PATH, { orderId, pageSize: PAYMENT_PAGE_SIZE }),
+        loadProductCategoryOptions(t('purchasing.orders.form.optionsLoadFailed')),
       ])
       const item = orderPayload.items?.[0]
       if (!item) {
         setOrder(null)
         setLines([])
         setPayments([])
+        setDocuments([])
         setNotFound(true)
         return
       }
       setOrder(toPurchaseOrderRecord(item))
       setLines((linePayload.items ?? []).map(toOrderLineRecord))
       setPayments((paymentPayload.items ?? []).map(toPaymentRecord))
+      setCategoryOptions(options)
     } catch {
       setLoadError(t('purchasing.orders.form.loadFailed'))
+      return
     } finally {
       setLoading(false)
+    }
+    // The documents load on their own: a documents failure names itself inside its own section
+    // instead of taking the order, lines and payments down with it.
+    try {
+      const documentPayload = await fetchCrudList<Record<string, unknown>>(ORDER_DOCUMENTS_API_PATH, {
+        orderId,
+        pageSize: DOCUMENT_PAGE_SIZE,
+      })
+      setDocuments((documentPayload.items ?? []).map(toOrderDocumentRecord))
+      setDocumentsLoadFailed(false)
+    } catch {
+      setDocuments([])
+      setDocumentsLoadFailed(true)
     }
     // `scopeVersion` is not read inside the callback on purpose: it is the organization-scope
     // generation, and bumping it must rebuild this callback so the effect below refetches after
@@ -813,6 +1302,11 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
 
   const summary = summarizePayments(order, payments)
   const transitionActions = TRANSITIONS_BY_STATUS[order.status]
+  const ownerName = order.ownerName ?? (typeof order.ownerSnapshot?.name === 'string' ? order.ownerSnapshot.name : null)
+  const customerName = order.customerName ?? (typeof order.customerSnapshot?.name === 'string' ? order.customerSnapshot.name : null)
+  const productCategoryLabel = order.productCategory
+    ? categoryOptions.find((option) => option.value === order.productCategory)?.label ?? order.productCategory
+    : null
 
   return (
     <>
@@ -823,8 +1317,13 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
         title={order.number ?? EMPTY_CELL}
         subtitle={order.supplierName ?? undefined}
         statusBadge={<PurchaseOrderStatusBadge status={order.status} />}
-        actionsContent={transitionActions.length ? (
+        actionsContent={(
           <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline">
+              <Link href={`${ORDERS_LIST_HREF}/${encodeURIComponent(order.id)}/edit`}>
+                {t('purchasing.orders.edit.title')}
+              </Link>
+            </Button>
             {transitionActions.map((action) => (
               <Button
                 key={action}
@@ -844,10 +1343,18 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
               </Button>
             ))}
           </div>
-        ) : undefined}
+        )}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+        <SummaryField label={t('purchasing.orders.detail.businessNumber')}>
+          {order.businessNumber ?? EMPTY_CELL}
+        </SummaryField>
+        <SummaryField label={t('purchasing.orders.detail.productCategory')}>
+          {productCategoryLabel ?? EMPTY_CELL}
+        </SummaryField>
+        <SummaryField label={t('purchasing.orders.detail.owner')}>{ownerName ?? EMPTY_CELL}</SummaryField>
+        <SummaryField label={t('purchasing.orders.detail.customer')}>{customerName ?? EMPTY_CELL}</SummaryField>
         <SummaryField label={t('purchasing.orders.form.field.currency')}>{order.currencyCode}</SummaryField>
         <SummaryField label={t('purchasing.orders.list.columns.total')}>
           {formatMoney(order.total, order.currencyCode, locale)}
@@ -877,6 +1384,13 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
           disableRowClick
         />
       </div>
+
+      <PurchaseOrderDocumentsSection
+        orderId={order.id}
+        documents={documents}
+        loadFailed={documentsLoadFailed}
+        onChanged={load}
+      />
 
       <PurchasePaymentsSection
         orderId={order.id}

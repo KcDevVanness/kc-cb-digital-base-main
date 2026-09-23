@@ -200,6 +200,14 @@ export default function SuppliersTable() {
           <RowActions
             items={[
               { id: 'edit', label: t('purchasing.suppliers.actions.edit'), href: `${LIST_HREF}/${row.id}/edit` },
+              {
+                id: 'supplier-products',
+                label: t('purchasing.suppliers.actions.supplierProducts'),
+                // The library lives in `sourcing` (it owns supplier quotations and their promotion)
+                // but belongs in this menu group, so the link carries the supplier: the buyer lands
+                // on this supplier's list instead of the whole organization's.
+                href: `/backend/sourcing/supplier-products?supplierId=${encodeURIComponent(row.id)}`,
+              },
               { id: 'delete', label: t('purchasing.suppliers.actions.delete'), destructive: true, onSelect: () => { void handleDelete(row) } },
             ]}
           />

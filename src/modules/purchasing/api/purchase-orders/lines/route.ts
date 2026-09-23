@@ -11,10 +11,15 @@ const orderLineItemSchema = z
     id: z.string().uuid(),
     orderId: z.string().uuid(),
     lineNumber: z.number(),
-    catalogProductId: z.string().uuid(),
+    productId: z.string().uuid().nullable().optional(),
+    catalogProductId: z.string().uuid().nullable().optional(),
+    /** The supplier product library row the line was ordered from, when it came from one. */
+    supplierProductId: z.string().uuid().nullable().optional(),
     productTitle: z.string().nullable().optional(),
     productSku: z.string().nullable().optional(),
     productUnit: z.string().nullable().optional(),
+    /** The supplier's own item number, frozen in the snapshot; null on master-only lines. */
+    supplierSku: z.string().nullable().optional(),
     quantity: z.string(),
     receivedQuantity: z.string(),
     unitPrice: z.string(),
@@ -74,6 +79,8 @@ export const { metadata, GET } = makeCrudRoute({
       'id',
       'order_id',
       'line_number',
+      'product_id',
+      'supplier_product_id',
       'catalog_product_id',
       'product_snapshot',
       'quantity',
@@ -99,10 +106,16 @@ export const { metadata, GET } = makeCrudRoute({
       id: String(item.id),
       orderId: orderIdFrom(item.order_id) ?? String(item.order_id ?? ''),
       lineNumber: Number(item.line_number ?? 0),
-      catalogProductId: String(item.catalog_product_id),
+      // New lines carry `productId`; rows written before the switch carry the catalog reference.
+      productId: (item.product_id ?? null) as string | null,
+      catalogProductId: (item.catalog_product_id ?? null) as string | null,
+      // The library row is the supplier-facing identity of the line; both it and the frozen
+      // supplier code are additive keys, so a master-only line just reads null.
+      supplierProductId: (item.supplier_product_id ?? null) as string | null,
       productTitle: snapshotValue(item.product_snapshot, 'title'),
       productSku: snapshotValue(item.product_snapshot, 'sku'),
       productUnit: snapshotValue(item.product_snapshot, 'unit'),
+      supplierSku: snapshotValue(item.product_snapshot, 'supplierSku'),
       quantity: String(item.quantity ?? '0'),
       receivedQuantity: String(item.received_quantity ?? '0'),
       unitPrice: String(item.unit_price ?? '0'),

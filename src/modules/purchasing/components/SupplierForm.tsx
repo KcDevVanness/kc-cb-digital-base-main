@@ -98,7 +98,7 @@ export function buildSupplierPayload(values: SupplierFormValues): Record<string,
   }
 }
 
-const CURRENCY_DICTIONARY_URL = '/api/customers/dictionaries/currency'
+const CURRENCY_DICTIONARY_URL = '/api/currency_policy/currencies'
 
 /**
  * Options come from the seeded currency dictionary — the same store every platform currency
