@@ -39,14 +39,172 @@ export const enabledModules: ModuleEntry[] = [
     from: '@open-mercato/core',
     overrides: {
       widgets: { injection: { 'catalog.injection.product-seo': null } },
+      // The app owns its product master (`src/modules/products/**`, see
+      // .ai/specs/2026-09-22-products-and-trade-docs.md): the installed catalog's product,
+      // variant and category pages are hidden from the navigation so the admin shows exactly
+      // one product surface. The module, its API and `config/catalog` stay enabled on purpose —
+      // `sales` document lines still resolve catalog offers/price kinds, and existing rows keep
+      // working. This is a registry-level hide; no installed file is touched.
+      //
+      // Hidden means `navHidden`, not `null`: `catalog.product.low_stock` notifies with
+      // `linkHref: /backend/catalog/products/{sourceEntityId}`, so the URL must stay resolvable.
+      //
+      // The domain is `routes.pages`, keyed by page pathname. A top-level `pages` key is NOT
+      // a wired domain: the dispatcher only walks `DOMAIN_KEYS`, so it was read by nothing and
+      // hid nothing, silently (see `@open-mercato/shared/modules/overrides`).
+      routes: {
+        pages: {
+          '/backend/catalog/products': { metadata: { navHidden: true } },
+          '/backend/catalog/products/create': { metadata: { navHidden: true } },
+          '/backend/catalog/products/[id]': { metadata: { navHidden: true } },
+          '/backend/catalog/products/[productId]/variants/create': { metadata: { navHidden: true } },
+          '/backend/catalog/products/[productId]/variants/[variantId]': { metadata: { navHidden: true } },
+          '/backend/catalog/categories': { metadata: { navHidden: true } },
+          '/backend/catalog/categories/create': { metadata: { navHidden: true } },
+          '/backend/catalog/categories/[id]/edit': { metadata: { navHidden: true } },
+        },
+      },
     },
   },
-  { id: 'customers', from: '@open-mercato/core' },
-  { id: 'sales', from: '@open-mercato/core' },
-  { id: 'wms', from: '@open-mercato/core' },
-  { id: 'currencies', from: '@open-mercato/core' },
-  { id: 'dictionaries', from: '@open-mercato/core' },
-  { id: 'feature_toggles', from: '@open-mercato/core' },
+  // App policy for the installed ERP business modules (`customers`, `sales`, `wms`,
+  // `currencies`, `dictionaries`, `feature_toggles`): they stay ENABLED — their entities,
+  // commands, events, API routes and ACL are the data layer the app-owned modules build on —
+  // but their authored admin UI is hidden, because the app ships its own surfaces
+  // (`src/modules/products|purchasing|trade_docs|platform_ops|cross_border|sourcing`).
+  //
+  // One mode only: `{ metadata: { navHidden: true } }` on every page. Domain is always
+  // `routes.pages`, keyed by page pathname; a top-level `pages` key is read by nothing (the
+  // dispatcher walks its fixed `DOMAIN_KEYS`), so it hides nothing and warns about nothing.
+  //   `buildAdminNav` drops a `navHidden` entry before it splits entries into the
+  //   main / settings / profile sidebars, so no sidebar and no menu shows the page, while the
+  //   URL keeps resolving.
+  // `null` is NOT an option for these modules: it removes the route manifest entry, so the URL
+  // 404s. Those URLs are deep-link targets of subsystems that stay ENABLED — the installed
+  // notification types (`sales.order.created` → `/backend/sales/orders/{id}`,
+  // `catalog.product.low_stock` → `/backend/catalog/products/{id}`, `customers.deal.won`,
+  // `wms.inventory.low_stock`, …), the row/action links of the official lists that remain
+  // reachable, message-object hrefs and the catalog search presenter. Removing the route turns
+  // every one of those clicks into a 404, including notifications already stored in the
+  // database (their `linkHref` is frozen at emit time). Page-level ACL is unchanged either way:
+  // each page still carries its own `requireFeatures` metadata.
+  // Override metadata is additive: `resolveDeclaredPageRouteMetadata` drops undeclared keys, so
+  // an existing title/group/icon survives the `navHidden` override.
+  {
+    id: 'customers',
+    from: '@open-mercato/core',
+    overrides: {
+      routes: {
+        pages: {
+          '/backend/calendar': { metadata: { navHidden: true } },
+          '/backend/config/customers': { metadata: { navHidden: true } },
+          '/backend/config/customers/deals': { metadata: { navHidden: true } },
+          '/backend/config/customers/pipeline-stages': { metadata: { navHidden: true } },
+          '/backend/customer-tasks': { metadata: { navHidden: true } },
+          '/backend/customers/companies': { metadata: { navHidden: true } },
+          '/backend/customers/deals': { metadata: { navHidden: true } },
+          '/backend/customers/deals/map': { metadata: { navHidden: true } },
+          '/backend/customers/deals/pipeline': { metadata: { navHidden: true } },
+          '/backend/customers/people': { metadata: { navHidden: true } },
+          '/backend/customers/companies/[id]': { metadata: { navHidden: true } },
+          '/backend/customers/companies-v2/[id]': { metadata: { navHidden: true } },
+          '/backend/customers/companies/create': { metadata: { navHidden: true } },
+          '/backend/customers/deals/[id]': { metadata: { navHidden: true } },
+          '/backend/customers/deals/create': { metadata: { navHidden: true } },
+          '/backend/customers/people/[id]': { metadata: { navHidden: true } },
+          '/backend/customers/people-v2/[id]': { metadata: { navHidden: true } },
+          '/backend/customers/people/create': { metadata: { navHidden: true } },
+        },
+      },
+    },
+  },
+  {
+    id: 'sales',
+    from: '@open-mercato/core',
+    overrides: {
+      routes: {
+        pages: {
+          '/backend/config/sales': { metadata: { navHidden: true } },
+          '/backend/sales/channels': { metadata: { navHidden: true } },
+          '/backend/sales/channels/offers': { metadata: { navHidden: true } },
+          '/backend/sales/orders': { metadata: { navHidden: true } },
+          '/backend/sales/quotes': { metadata: { navHidden: true } },
+          '/backend/sales/channels/[channelId]/edit': { metadata: { navHidden: true } },
+          '/backend/sales/channels/[channelId]/offers/[offerId]/edit': { metadata: { navHidden: true } },
+          '/backend/sales/channels/[channelId]/offers/create': { metadata: { navHidden: true } },
+          '/backend/sales/channels/create': { metadata: { navHidden: true } },
+          '/backend/sales/documents/[id]': { metadata: { navHidden: true } },
+          '/backend/sales/documents/create': { metadata: { navHidden: true } },
+          '/backend/sales/orders/[id]': { metadata: { navHidden: true } },
+          '/backend/sales/quotes/[id]': { metadata: { navHidden: true } },
+        },
+      },
+    },
+  },
+  {
+    id: 'wms',
+    from: '@open-mercato/core',
+    overrides: {
+      routes: {
+        pages: {
+          '/backend/config/wms': { metadata: { navHidden: true } },
+          '/backend/wms': { metadata: { navHidden: true } },
+          '/backend/wms/inventory': { metadata: { navHidden: true } },
+          '/backend/wms/locations': { metadata: { navHidden: true } },
+          '/backend/wms/lots': { metadata: { navHidden: true } },
+          '/backend/wms/movements': { metadata: { navHidden: true } },
+          '/backend/wms/reservations': { metadata: { navHidden: true } },
+          '/backend/wms/warehouses': { metadata: { navHidden: true } },
+          '/backend/wms/zones': { metadata: { navHidden: true } },
+          '/backend/wms/location/[id]': { metadata: { navHidden: true } },
+          '/backend/wms/lot/[id]': { metadata: { navHidden: true } },
+          '/backend/wms/sku/[id]': { metadata: { navHidden: true } },
+        },
+      },
+    },
+  },
+  {
+    id: 'currencies',
+    from: '@open-mercato/core',
+    overrides: {
+      routes: {
+        pages: {
+          '/backend/config/currency-fetching': { metadata: { navHidden: true } },
+          '/backend/currencies': { metadata: { navHidden: true } },
+          '/backend/exchange-rates': { metadata: { navHidden: true } },
+          '/backend/currencies/[id]': { metadata: { navHidden: true } },
+          '/backend/currencies/create': { metadata: { navHidden: true } },
+          '/backend/exchange-rates/[id]': { metadata: { navHidden: true } },
+          '/backend/exchange-rates/create': { metadata: { navHidden: true } },
+        },
+      },
+    },
+  },
+  {
+    id: 'dictionaries',
+    from: '@open-mercato/core',
+    overrides: {
+      routes: {
+        pages: {
+          '/backend/config/dictionaries': { metadata: { navHidden: true } },
+        },
+      },
+    },
+  },
+  {
+    id: 'feature_toggles',
+    from: '@open-mercato/core',
+    overrides: {
+      routes: {
+        pages: {
+          '/backend/feature-toggles/global': { metadata: { navHidden: true } },
+          '/backend/feature-toggles/overrides': { metadata: { navHidden: true } },
+          '/backend/feature-toggles/global/[id]': { metadata: { navHidden: true } },
+          '/backend/feature-toggles/global/[id]/edit': { metadata: { navHidden: true } },
+          '/backend/feature-toggles/global/create': { metadata: { navHidden: true } },
+        },
+      },
+    },
+  },
   // App-owned currency policy — last on purpose: its seedDefaults reconciles the FX
   // master and the currency dictionary after `customers`/`currencies` seed theirs.
   // See src/modules/currency_policy/lib/policy.ts and docs/dev/currency-policy.md
@@ -59,7 +217,13 @@ export const enabledModules: ModuleEntry[] = [
 
 // App-owned purchasing module — supplier master first, then purchase orders and stage
 // payments. See .ai/specs/2026-09-21-purchasing-module.md
-enabledModules.push({ id: 'purchasing', from: '@app' })
+enabledModules.push({
+  id: 'purchasing',
+  from: '@app',
+  // Sidebar group order is a single app-wide decision: the six business-role groups come first,
+  // every installed group keeps its existing position after them.
+  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group', 'export_finance.nav.group', 'products.nav.group', 'parties.nav.group', 'platform_ops.nav.group'] } },
+})
 
 // App-owned cross-border module — consignments (shipments) that combine purchase orders, their
 // in-transit milestones, and export documents. See .ai/specs/2026-09-21-cross-border-shipments.md
@@ -74,6 +238,35 @@ enabledModules.push({ id: 'data_sync', from: '@open-mercato/core' })
 // App-owned platform-ops module — marketplace channels, order mirrors, settlements and the
 // reconciliation queue. See .ai/specs/2026-09-21-platform-ops.md
 enabledModules.push({ id: 'platform_ops', from: '@app' })
+
+// App-owned products module — the business product master (types, category tree, products and
+// the three price tiers). See .ai/specs/2026-09-22-products-and-trade-docs.md
+enabledModules.push({ id: 'products', from: '@app' })
+
+// App-owned sourcing module — supplier quotations (imported from supplier workbooks or typed by
+// hand), reusable column-mapping profiles, and the promotion of selected lines into the product
+// master. See .ai/specs/2026-09-22-supplier-quotation-import.md
+enabledModules.push({ id: 'sourcing', from: '@app' })
+
+// App-owned internal-sales surface — its own create/edit pages for quotes and orders, with lines
+// that reference the app-owned product master; the installed `sales` chain (numbering, statuses,
+// shipments, invoices) stays the engine underneath. See
+// .ai/specs/2026-09-22-products-and-trade-docs.md (Phase 6).
+enabledModules.push({ id: 'internal_sales', from: '@app' })
+
+// App-owned trade docs module — purchase/sales contracts and inbound/outbound invoices with the
+// dual amount calibers. See .ai/specs/2026-09-22-products-and-trade-docs.md
+enabledModules.push({ id: 'trade_docs', from: '@app' })
+
+// App-owned export finance module — 收汇档案 per purchase order and 出口退税档案 per container,
+// plus the read-only order-file/container-file projections served to the business and finance
+// views. Reads the purchasing / cross_border / trade_docs tables read-only.
+// See .ai/specs/2026-09-22-order-file-and-export-finance.md
+enabledModules.push({ id: 'export_finance', from: '@app' })
+
+// App-owned trading-party master — buyers, branches and service providers with their bank block.
+// See .ai/specs/2026-09-22-app-owned-party-master.md
+enabledModules.push({ id: 'parties', from: '@app' })
 
 const enterpriseModulesEnabled = parseBooleanWithDefault(process.env.OM_ENABLE_ENTERPRISE_MODULES, false)
 const enterpriseSsoEnabled = parseBooleanWithDefault(process.env.OM_ENABLE_ENTERPRISE_MODULES_SSO, false)
