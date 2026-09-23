@@ -40,7 +40,7 @@ C-1…C-3 由 `storage_ops audit`/`preflight` 断言；C-4…C-8 是运维约定
 ## 3. 当前接线状态（Phase 0，2026-09-23 已交付）
 
 - 依赖：`@open-mercato/storage-s3@0.8.0`（`package.json` 精确版本 + `yarn.lock`）。
-- 注册：`src/modules.ts` 里按 `OM_ENABLE_STORAGE_S3` 条件注册 `storage_s3`；`.env` / `.env.example` 已置 `OM_ENABLE_STORAGE_S3=true`。
+- 注册：`src/modules.ts` 里按 `OM_ENABLE_STORAGE_S3` 条件注册 `storage_s3`；模板文件 `.env.example` 已置 `OM_ENABLE_STORAGE_S3=true`（`.env` 是本地未跟踪文件，生产镜像里没有它 —— 部署环境必须自行注入该变量，见下面的「部署契约」）。
 - 生成物：`yarn generate` 后 DI/路由/worker/i18n/ACL 均已包含该模块（队列 `storage-s3-quota-recovery`，并发 2）。
 - 两个分区**仍是** `storage_driver='local'`；业务上传行为零变化。
 
@@ -81,7 +81,9 @@ docker compose --profile storage-s3 up -d minio
 
 客户端必须开 `forcePathStyle`（MinIO 不支持虚拟主机风格寻址）；`OM_STORAGE_S3_ALLOW_INTERNAL_ENDPOINTS=true` 是内网端点放行开关。
 
-> **2026-09-23 变更**：原先的 `localstack` 服务已换成 `minio`（三个 compose 文件同步）。`localstack/localstack:latest` 现在启动即要求付费的 `LOCALSTACK_AUTH_TOKEN`（“License activation failed”，退出码 55），该 profile 实际上不可用。MinIO 免费、S3 兼容，且本来就是 provider 文档里支持的端点之一（`forcePathStyle` 必开）。
+> **2026-09-23 变更**：原先的 `localstack` 服务已换成 `minio`（**仅本地开发用的两个 compose 文件**：`docker-compose.yml` 与 `docker-compose.fullapp.dev.yml`）。`localstack/localstack:latest` 现在启动即要求付费的 `LOCALSTACK_AUTH_TOKEN`（“License activation failed”，退出码 55），该 profile 实际上不可用。MinIO 免费、S3 兼容，且本来就是 provider 文档里支持的端点之一（`forcePathStyle` 必开）。
+>
+> **部署 compose（`docker-compose.fullapp.yml`）不再内置任何 S3 服务**：那里曾经也是一个带默认口令、并把端口发布到宿主机的对象存储，等于把一个存放私有附件的桶暴露在宿主机网络里。部署环境请指向真实桶（AWS S3 / DO Spaces / R2 / B2），或指向你们自己运维并加固过的 MinIO，通过 Integration Marketplace 或 `OM_INTEGRATION_STORAGE_S3_*` 预置配置。
 
 ## 5. Provider 探针证据（Phase 0 实测，2026-09-23）
 

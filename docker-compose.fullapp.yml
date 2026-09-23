@@ -377,29 +377,14 @@ services:
     networks:
       - mercato-network-fullapp
 
-  # S3-compatible rehearsal endpoint (see docs/deploy/storage.md); MinIO replaced
-  # LocalStack on 2026-09-23 because the LocalStack image now needs a paid token.
-  minio:
-    image: quay.io/minio/minio:latest
-    restart: unless-stopped
-    profiles:
-      - storage-s3
-    command: server /data
-    ports:
-      - "${MINIO_PORT:-4666}:9000"
-      - "${MINIO_CONSOLE_PORT:-4667}:9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks:
-      - mercato-network-fullapp
+  # NOTE (2026-09-23): this file no longer ships a local S3 service. It used to carry a
+  # LocalStack/MinIO service under the `storage-s3` profile, which meant a deployment compose
+  # could publish an object store holding private attachment bytes on host ports with
+  # well-known default credentials. Deployments point the app at a real bucket (AWS S3,
+  # DigitalOcean Spaces, Cloudflare R2, Backblaze B2) or at a MinIO the operator runs and
+  # secures themselves, configured through the Integration Marketplace or the
+  # OM_INTEGRATION_STORAGE_S3_* preset — see docs/deploy/storage.md §3 and §4.
+  # The local rehearsal service lives in docker-compose.yml / docker-compose.fullapp.dev.yml.
 
 volumes:
   postgres_data:
@@ -407,7 +392,6 @@ volumes:
   mcp_shared:
   redis_data:
   meilisearch_data:
-  minio_data:
   init_marker:
   attachments_storage:
 
