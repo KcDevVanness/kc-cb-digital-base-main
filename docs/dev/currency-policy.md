@@ -99,8 +99,8 @@ yarn mercato currency_policy apply
 # 收敛：手插一条 EUR 到 currencies + 字典，重跑后应被关掉/删除
 ```
 
-页面侧：`/backend/customers/deals/create` 的「币种」下拉应列出 16 项且无「尚未配置币种字典」；
-`/backend/sales/documents/create` 同样；`/backend/currencies` 列出 16 个启用币种，USD 带「基础」标记。
+页面侧：`/backend/products/items/create`（自建商品表单）与 `/backend/purchasing/suppliers/create` 的「币种」下拉应列出 16 项且无「尚未配置币种字典」；
+`/backend/currencies`（页面已从侧边栏隐藏，URL 直达）列出 16 个启用币种，USD 带「基础」标记。
 
 ## 相关
 

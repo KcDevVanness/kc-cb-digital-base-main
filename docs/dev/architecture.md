@@ -25,23 +25,59 @@
 
 ## 启用中的模块
 
-`src/modules.ts` 当前启用 26 个，分三类：
+`src/modules.ts` 当前启用 32 个 = 官方 21 + app 自有 11：
 
-- **平台基础（12）**：`auth`、`directory`、`configs`、`entities`、`query_index`、
+- **平台基础（12，官方）**：`auth`、`directory`、`configs`、`entities`、`query_index`、
   `api_docs`、`audit_logs`、`notifications`、`dashboards`、`attachments`（`@open-mercato/core`）、
   `events`（`@open-mercato/events`）、`search`（`@open-mercato/search`）
-- **ERP 业务（7，`@open-mercato/core`）**：`catalog`、`customers`、`sales`、`wms`、
+- **ERP 业务（7，官方 `@open-mercato/core`）**：`catalog`、`customers`、`sales`、`wms`、
   `currencies`、`dictionaries`、`feature_toggles`——见
   [`.ai/specs/2026-09-21-erp-core-module-activation.md`](../../.ai/specs/2026-09-21-erp-core-module-activation.md)
-- **app 自有（5）**：`currency_policy`、`scope_guards`、`purchasing`（供应商/采购单/阶段付款）、
-  `cross_border`（发运/在途/出口单证）、`platform_ops`（平台渠道/订单镜像/结算/对账）——见
+- **集成底座（2，官方 `@open-mercato/core`）**：`integrations`（外部 id 映射与 provider 注册）、
+  `data_sync`（流式导入导出运行、游标、进度）——Phase 4 传输层的接入点
+- **app 自有（11，`from: '@app'`）**：`products`（产品主数据：类型/类目/商品/三档价）、
+  `purchasing`（供应商/采购单/阶段付款）、`sourcing`（供应商报价与导入映射）、
+  `trade_docs`（采购销售合同、进出口发票）、`cross_border`（发运/在途/出口单证）、
+  `export_finance`（收汇按订单 / 出口退税按柜 + 订单档案与柜档案只读投影）、
+  `internal_sales`（对分公司内部销售的自建界面，引擎仍是官方 `sales`）、
+  `parties`（交易对手方主数据：买方/分公司/服务方 + 银行信息）、
+  `platform_ops`（平台渠道/订单镜像/结算/对账）、`currency_policy`（汇率主数据与币种字典对账，
+  无页面）、`scope_guards`（auth 管理命令越权写入拦截，无页面）——见
   [`business-architecture.md`](./business-architecture.md)；每个模块的实现契约、验证命令与回滚方式
   写在 `src/modules/<id>/README.md`
-- **集成底座（2，`@open-mercato/core`）**：`integrations`（外部 id 映射与 provider 注册）、
-  `data_sync`（流式导入导出运行、游标、进度）——Phase 4 传输层的接入点
 
-注意：`src/modules/catalog|customers|sales|wms|currencies|dictionaries|feature_toggles/`
-这些目录本身只放该模块的 `zh` 语言覆盖文件，模块代码仍在框架包里。
+官方模块的后台页面清单按模块生成在 `.ai/guides/modules/<id>/backend-pages.md`；侧边栏入口来自
+这些页面 metadata 的 `pageGroup`/`pageOrder`（`pageContext: 'settings'` 的落在 Settings 面板），
+所以隐藏官方 UI = 覆盖页面路由清单，而不是改框架代码。
+
+### 官方 UI 的隐藏策略
+
+app 自建了业务面（`products`/`purchasing`/`trade_docs`/`platform_ops`/`cross_border`/`sourcing`/`export_finance`），
+所以安装的 ERP 业务模块**保持启用**（实体、命令、事件、API、ACL 是数据层，继续被自建模块使用），
+只隐藏它们自带的 admin UI。写法在 `src/modules.ts` 的 `entry.overrides.routes.pages`：
+
+- `{ metadata: { navHidden: true } }` —— 所有页面（列表/索引/配置页，以及 create/detail/edit 表单页）：
+  页面仍可 URL 直达，但从主导航、Settings 面板、profile 菜单全部消失（`buildAdminNav` 在建条目时
+  先跳过 `navHidden`，再按 `pageContext` 分组）。覆盖 metadata 是增量的，原有 `title`/`group`/`icon` 保留。
+- 不用 `null`。`null` 会把路由清单条目整条摘除，URL 直接 404。这些 URL 是**仍在启用的**子系统的
+  深链目标：官方通知类型（`sales.order.created`/`sales.quote.created` → `/backend/sales/orders|quotes/{id}`、
+  `catalog.product.low_stock` → `/backend/catalog/products/{id}`、`customers.deal.won|lost`、
+  `wms.inventory.low_stock` → `/backend/sales/orders/{id}`）、仍可访问的官方列表的行内链、
+  message-object href、catalog search presenter。通知的 `linkHref` 在创建时就冻结成行数据，
+  所以摘除路由会让**已经存在**的通知点开即 404，改通知类型也救不回来——只能让 URL 继续可解析。
+
+已按此策略隐藏的模块：`catalog`（8 个产品/类目页）、`customers`、`sales`、`wms`、`currencies`、
+`dictionaries`、`feature_toggles`（全部 `navHidden`）。隐藏只作用于导航：模块的 API/命令/实体/ACL
+不受影响，页面自身的 `requireFeatures` 也照旧生效，改回一行即恢复。
+
+坑：顶层 `overrides.pages` **不是**合法 domain。dispatcher 只遍历固定的 `DOMAIN_KEYS`
+（`ai`/`routes`/`events`/`workers`/`widgets`/`notifications`/`interceptors`/`commandInterceptors`/
+`enrichers`/`guards`/`cli`/`setup`/`acl`/`di`/`encryption`/`nav`），未知键既不生效也不告警——
+页面路由必须写在 `routes.pages` 下，key 是页面 pathname。
+
+注意：`src/modules/auth|catalog|customers|sales|wms|currencies|dictionaries|feature_toggles|configs|directory|entities|query_index|attachments|dashboards|notifications|audit_logs|search/`
+这些目录本身只放该模块的 `zh` 语言覆盖文件，模块代码仍在框架包里（`api_docs`、`events`、
+`integrations`、`data_sync` 目前还没有覆盖层）。
 
 条件启用（默认关闭，靠 `.env` 打开）：`record_locks`、`system_status_overlays`、`sso`、
 `security`、`agent_orchestrator`、`agent_examples`——都由
@@ -50,6 +86,29 @@
 `src/modules/` 下存在但**未启用**的目录（`example`、`example_customers_sync`、
 `agent_examples`、`ratelimit_probe`）不会被生成器扫描，其字典/路由都不会进产物。
 判断一个模块是否真正生效，看 `src/modules.ts`，不要看目录是否存在。
+
+## 顶栏与通知面板
+
+顶栏外壳是 `src/components/BackendHeaderChrome.tsx`（铃铛按 `notifications.view` 功能位决定是否渲染），
+`src/components/NotificationBellWrapper.tsx` 把 `@open-mercato/ui` 的 `NotificationBell` 接进来
+（同时注入 `customRenderers`）。通知条目有两条点进去的路径：
+
+| 入口 | 行为 |
+|---|---|
+| 条目本体 | 标为已读 + 打开 `linkHref`（通知创建时冻结的深链），任何时候都可用 |
+| 条目里的动作按钮（查看订单 / 查看报价 / …） | POST `/api/notifications/{id}/action`，服务端返回 `href` 后跳转 |
+
+动作是**一次性**的：同一个动作再次执行，服务端答 `409 Notification action already executed`，响应里不带
+`href`。而上游给 `sales.order.created`、`sales.quote.created`、`wms.inventory.low_stock`、
+`wms.inventory.reservation_shortfall` 写的 renderer **只在动作响应里有 `href` 时才跳转**，并且无论
+`status` 都继续画按钮——于是第一次点击能跳，之后每次点击都是死点击（只弹"执行操作失败"）。
+
+`src/components/notifications/navigatingActionRenderers.tsx` 用 renderer 包装（props transform：不改上游
+文件、不复制 UI）把这四个类型的点击钉在 `linkHref` 上：宿主动作照常执行（首次记录 `action_taken`），
+重复点击即使 409 也照样打开单据。
+
+**以后新增 renderer 类型的判断**：动作是"打开文档"（没有 `commandId`）就一并包进来；动作是真实决策
+（有 `commandId`）的类型**不要**包——重复点击必须保留服务端的拒绝语义。
 
 ## 请求链路
 

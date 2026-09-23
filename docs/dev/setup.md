@@ -37,6 +37,46 @@ yarn initialize           # 建表 + 种子数据；演示账号邮箱会打印�
 生产启动会被 `src/instrumentation.ts` 的 `assertJwtSecretPolicy()` 直接 `exit(1)` 拒绝
 （生成真值：`openssl rand -hex 32`）。见 [deploy/runtime.md](../deploy/runtime.md)。
 
+## 演示账号
+
+| 账号 | 角色 | 密码 |
+|---|---|---|
+| `superadmin@acme.com` | superadmin | `$OM_INIT_SUPERADMIN_PASSWORD`（本机写在 `.env`，不入版本库） |
+| `admin@acme.com` | admin | `secret` |
+| `employee@acme.com` | employee | `secret` |
+
+这三个账号是多个组件写死的开发约定，改掉就会一起失联：dev supervisor 的登录预热
+（`scripts/dev-runtime.mjs` 的 `resolveWarmupCredentials`）、框架集成测试
+（`@open-mercato/core/helpers/integration/auth.ts`）、`yarn mercato init` 的种子、
+`.ai/skills/om-prepare-test-env`。**要保的不是某个固定字符串，而是"值一致"**：superadmin 的值取自
+`OM_INIT_SUPERADMIN_EMAIL` / `OM_INIT_SUPERADMIN_PASSWORD`（这两个键没设时退回
+`superadmin@acme.com` / `secret`），admin / employee 固定 `secret`。只改数据库、或只改 `.env`
+的一边，都会让预热和集成 helper 401。
+
+改 superadmin 密码时**两边一起改**：
+
+```bash
+# 1) 写库：当前策略（≥8 位 + 至少一个数字，见 docs/deploy/runtime.md）会拒绝 `secret` 这类值，
+#    需临时放开策略
+OM_PASSWORD_MIN_LENGTH=6 OM_PASSWORD_REQUIRE_DIGIT=false OM_PASSWORD_REQUIRE_UPPERCASE=false \
+  OM_PASSWORD_REQUIRE_SPECIAL=false \
+  yarn mercato auth set-password --email superadmin@acme.com --password '<新值>'
+# 2) 让消费方跟着走：把 .env 里的 OM_INIT_SUPERADMIN_PASSWORD 改成同一个值，再重启 yarn dev
+```
+
+冒烟测试尽量别动这些账号：`admin@acme.com` / `secret` 一般就够；要测"改密码"这个流程请用 `ru-*` 测试账号。
+`set-password` 直写 `users.password_hash`，不经过命令通道——`action_logs` 里查不到这次改动。
+规则记录：[demo-credentials-must-survive-smoke-tests.md](../../.ai/lessons/demo-credentials-must-survive-smoke-tests.md)。
+
+自查登录：`POST /api/auth/login` 只吃 **form-urlencoded**（`email`/`password`/可选 `tenantId`），
+JSON 体会被解析成空表单并返回 400：
+
+```bash
+curl -s -X POST http://localhost:3000/api/auth/login \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'email=superadmin@acme.com' --data-urlencode 'password=secret'   # → {"ok":true,…}
+```
+
 ## 日常命令
 
 ```bash
