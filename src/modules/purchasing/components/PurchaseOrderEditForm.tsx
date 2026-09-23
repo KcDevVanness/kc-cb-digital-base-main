@@ -65,7 +65,6 @@ function toLineValues(item: Record<string, unknown>): PurchaseOrderLineValues {
     productId: typeof item.productId === 'string' ? item.productId : '',
     catalogProductId: typeof item.catalogProductId === 'string' ? item.catalogProductId : '',
     supplierProductId,
-    supplierProductMode: supplierProductId.length > 0,
     // A library line is identified by the supplier's item number, a master line by its title: the
     // label only seeds the picker's display for a value that is not on the first page of options.
     productLabel: supplierSku || (typeof item.productTitle === 'string' ? item.productTitle : ''),

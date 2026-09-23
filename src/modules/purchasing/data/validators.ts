@@ -187,11 +187,11 @@ export const supplierProductSources = ['manual', 'quote'] as const
 /**
  * The supplier library's write contract.
  *
- * Weights are decimal strings and MOQ/packing counts are integers, exactly like the quotation
- * line columns they are fed from, so an import can copy a value across without a conversion
- * step. `supplierId` is part of the create contract only: a code is unique *per supplier*, so
- * moving a row to another supplier would silently collide — the update schema omits it and the
- * form renders it read-only.
+ * The unit net weight is a decimal string and MOQ/packing counts are integers, exactly like the
+ * quotation line columns they are fed from, so an import can copy a value across without a
+ * conversion step. `supplierId` is part of the create contract only: a code is unique *per
+ * supplier*, so moving a row to another supplier would silently collide — the update schema omits
+ * it and the form renders it read-only.
  */
 export const supplierProductCreateSchema = z.object({
   supplierId: z.string().uuid(),
@@ -207,10 +207,7 @@ export const supplierProductCreateSchema = z.object({
   moqQuantity: nullableNonNegativeIntegerSchema,
   cartonQuantity: nullableNonNegativeIntegerSchema,
   unitNetWeight: nullableDecimalSchema(4, { min: '0' }),
-  cartonGrossWeight: nullableDecimalSchema(4, { min: '0' }),
-  cartonNetWeight: nullableDecimalSchema(4, { min: '0' }),
   innerPacking: dimensionsSchema,
-  outerPacking: dimensionsSchema,
   /**
    * The product photos, as `attachments` ids. Replace-set semantics: the submitted array is the
    * new list, `[]` clears it, and omitting the key leaves the current list alone. Ids are not
@@ -226,10 +223,21 @@ export const supplierProductUpdateSchema = supplierProductCreateSchema.omit({ su
   id: z.string().uuid(),
 })
 
+/**
+ * 建档状态 — the list's link-state filter.
+ *
+ * The filter reads the row's **stored** `product_id`, not the live-resolved label: a row whose
+ * product was deleted afterwards still owns its link and must not silently fall out of the
+ * 已建档 bucket (the list marks it separately instead).
+ */
+export const supplierProductLinkedFilters = ['all', 'linked', 'unlinked'] as const
+
 export const supplierProductListSchema = z.object({
   id: z.string().uuid().optional(),
   ids: z.string().max(4000).optional(),
   supplierId: z.string().uuid().optional(),
+  /** 建档状态 (Phase 8): filters the stored `product_id` server-side. */
+  linked: z.enum(supplierProductLinkedFilters).optional().default('all'),
   search: z.string().max(200).optional(),
   status: z.enum([...supplierProductStatuses, 'all']).default('active'),
   page: pageSchema,
@@ -252,6 +260,30 @@ export const supplierProductImportSchema = z.object({
 })
 
 export const supplierProductPromoteSchema = z.object({ id: z.string().uuid() })
+
+/**
+ * Promote several rows in one request.
+ *
+ * Bounded like the import payload. Duplicates are collapsed to their first occurrence by the
+ * command, so the reported counts always describe distinct rows.
+ */
+export const supplierProductPromoteBatchSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(100),
+})
+
+/**
+ * Link / 换绑 / 解除关联 a library row to a product that already exists.
+ *
+ * `productId: null` is the unlink action, so the key is required — an omitted field cannot be told
+ * apart from an explicit clear, and the two mean different things here.
+ */
+export const supplierProductLinkSchema = z.object({
+  id: z.string().uuid(),
+  productId: z.string().uuid().nullable(),
+})
+
+/** Push the row's current values onto the product it is already linked to. */
+export const supplierProductSyncFieldsSchema = z.object({ id: z.string().uuid() })
 
 export const supplierProductDeleteSchema = z.object({ id: z.string().uuid() })
 
@@ -306,6 +338,9 @@ export type SupplierProductUpdateInput = z.infer<typeof supplierProductUpdateSch
 export type SupplierProductListQuery = z.infer<typeof supplierProductListSchema>
 export type SupplierProductImportInput = z.infer<typeof supplierProductImportSchema>
 export type SupplierProductPromoteInput = z.infer<typeof supplierProductPromoteSchema>
+export type SupplierProductPromoteBatchInput = z.infer<typeof supplierProductPromoteBatchSchema>
+export type SupplierProductLinkInput = z.infer<typeof supplierProductLinkSchema>
+export type SupplierProductSyncFieldsInput = z.infer<typeof supplierProductSyncFieldsSchema>
 export type SupplierProductPriceRowInput = z.infer<typeof supplierProductPriceRowSchema>
 export type SupplierProductPricesReplaceInput = z.infer<typeof supplierProductPricesReplaceSchema>
 export type SupplierProductPriceListQuery = z.infer<typeof supplierProductPriceListSchema>

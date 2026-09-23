@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Image from 'next/image'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Trash2, Upload, Plus } from 'lucide-react'
 import {
   CrudForm,
@@ -94,8 +94,8 @@ async function loadSupplierOptions(errorMessage: string): Promise<CrudFieldOptio
 
 function priceKindLabel(t: TranslateFn, kind: SupplierProductPriceKind): string {
   return kind === 'supplier_cost'
-    ? t('purchasing.supplierProducts.price.kind.supplierCost', '供应商供货价')
-    : t('purchasing.supplierProducts.price.kind.companyOffer', '本公司报价')
+    ? t('purchasing.supplierProducts.price.kind.supplierCost', 'Supplier cost (legacy PK price)')
+    : t('purchasing.supplierProducts.price.kind.companyOffer', 'Our offer (legacy KC price)')
 }
 
 /**
@@ -168,17 +168,17 @@ function SupplierProductPriceRows({ values, setValue, errors, t }: CrudFormGroup
     <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-medium">{t('purchasing.supplierProducts.price.title', '价格 Prices')}</h3>
+          <h3 className="text-sm font-medium">{t('purchasing.supplierProducts.price.title', 'Prices')}</h3>
           <p className="text-xs text-muted-foreground">
             {t(
               'purchasing.supplierProducts.price.hint',
-              '每条 = 价格类型 × 币种 × 起订量；原「PK 单价」= 供应商供货价，原「KC 单价」= 本公司报价。移除的行会被停用，不会删除。',
+              'One row per kind × currency × minimum quantity. The legacy “PK price” column is the supplier cost, “KC price” is our own offer. A removed row is deactivated, never deleted.',
             )}
           </p>
         </div>
         <Button type="button" variant="outline" disabled={rows.length >= 24} onClick={() => setValue('prices', [...rows, createEmptyPriceRow()])}>
           <Plus className="size-4" aria-hidden="true" />
-          {t('purchasing.supplierProducts.price.add', '新增价格')}
+          {t('purchasing.supplierProducts.price.add', 'Add price')}
         </Button>
       </div>
 
@@ -190,7 +190,7 @@ function SupplierProductPriceRows({ values, setValue, errors, t }: CrudFormGroup
 
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {t('purchasing.supplierProducts.price.empty', '还没有价格：点「新增价格」录入供应商供货价或本公司报价。')}
+          {t('purchasing.supplierProducts.price.empty', 'No price yet — add the supplier’s cost or our offer.')}
         </p>
       ) : null}
 
@@ -203,86 +203,95 @@ function SupplierProductPriceRows({ values, setValue, errors, t }: CrudFormGroup
         const activeId = fieldId('active')
         return (
           <div key={row.key} className="rounded-md border bg-background p-3">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-              <div className="space-y-1.5 md:col-span-3">
-                <FieldLabel htmlFor={kindId} required>
-                  {t('purchasing.supplierProducts.price.field.kind', '价格类型 Price kind')}
-                </FieldLabel>
-                <Select
-                  value={row.priceKind}
-                  onValueChange={(next) => updateRow(index, { priceKind: isPriceKind(next) ? next : 'supplier_cost' })}
-                >
-                  <SelectTrigger id={kindId} className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {kindOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5 md:col-span-3">
-                <FieldLabel htmlFor={currencyId} required>
-                  {t('purchasing.supplierProducts.price.field.currency', '币种 Currency')}
-                </FieldLabel>
-                <Select
-                  value={row.currencyCode.trim().toUpperCase() || undefined}
-                  onValueChange={(next) => updateRow(index, { currencyCode: next })}
-                >
-                  <SelectTrigger id={currencyId} className="w-full">
-                    <SelectValue placeholder={t('purchasing.supplierProducts.price.field.currency', '币种 Currency')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {currencyOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5 md:col-span-2">
-                <FieldLabel htmlFor={minQuantityId}>
-                  {t('purchasing.supplierProducts.price.field.minQuantity', '起订量 Min qty')}
-                </FieldLabel>
-                <Input
-                  id={minQuantityId}
-                  value={row.minQuantity}
-                  inputMode="numeric"
-                  onChange={(event) => updateRow(index, { minQuantity: event.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5 md:col-span-2">
-                <FieldLabel htmlFor={unitPriceId} required>
-                  {t('purchasing.supplierProducts.price.field.unitPrice', '单价 Unit price')}
-                </FieldLabel>
-                <Input
-                  id={unitPriceId}
-                  value={row.unitPrice}
-                  inputMode="decimal"
-                  onChange={(event) => updateRow(index, { unitPrice: event.target.value })}
-                />
-              </div>
-              <div className="flex items-end justify-between gap-2 md:col-span-2">
-                <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
-                  <Checkbox
-                    id={activeId}
-                    checked={row.isActive}
-                    onCheckedChange={(next) => updateRow(index, { isActive: next === true })}
+            {/*
+              The row follows the card it is drawn in, not the viewport: the form drops to one column
+              below `lg`, and a 12-column split at ~500px squeezes the pickers back to the width this
+              section was fixed from. `@md` puts the two pickers, then the two numbers, side by side;
+              `@3xl` restores the single-line 12-column row once the container can carry five
+              controls.
+            */}
+            <div className="@container">
+              <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-12">
+                <div className="col-span-2 space-y-1.5 @md:col-span-1 @3xl:col-span-3">
+                  <FieldLabel htmlFor={kindId} required>
+                    {t('purchasing.supplierProducts.price.field.kind', 'Price kind')}
+                  </FieldLabel>
+                  <Select
+                    value={row.priceKind}
+                    onValueChange={(next) => updateRow(index, { priceKind: isPriceKind(next) ? next : 'supplier_cost' })}
+                  >
+                    <SelectTrigger id={kindId} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {kindOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="col-span-2 space-y-1.5 @md:col-span-1 @3xl:col-span-3">
+                  <FieldLabel htmlFor={currencyId} required>
+                    {t('purchasing.supplierProducts.price.field.currency', 'Currency')}
+                  </FieldLabel>
+                  <Select
+                    value={row.currencyCode.trim().toUpperCase() || undefined}
+                    onValueChange={(next) => updateRow(index, { currencyCode: next })}
+                  >
+                    <SelectTrigger id={currencyId} className="w-full">
+                      <SelectValue placeholder={t('purchasing.supplierProducts.price.field.currency', 'Currency')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {currencyOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5 @3xl:col-span-2">
+                  <FieldLabel htmlFor={minQuantityId}>
+                    {t('purchasing.supplierProducts.price.field.minQuantity', 'Min qty')}
+                  </FieldLabel>
+                  <Input
+                    id={minQuantityId}
+                    value={row.minQuantity}
+                    inputMode="numeric"
+                    onChange={(event) => updateRow(index, { minQuantity: event.target.value })}
                   />
-                  {t('purchasing.supplierProducts.price.field.active', '启用')}
-                </label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  aria-label={t('purchasing.supplierProducts.price.remove', '移除该价格行')}
-                  onClick={() => setValue('prices', rows.filter((_, position) => position !== index))}
-                >
-                  <Trash2 className="size-4" aria-hidden="true" />
-                </Button>
+                </div>
+                <div className="space-y-1.5 @3xl:col-span-2">
+                  <FieldLabel htmlFor={unitPriceId} required>
+                    {t('purchasing.supplierProducts.price.field.unitPrice', 'Unit price')}
+                  </FieldLabel>
+                  <Input
+                    id={unitPriceId}
+                    value={row.unitPrice}
+                    inputMode="decimal"
+                    onChange={(event) => updateRow(index, { unitPrice: event.target.value })}
+                  />
+                </div>
+                <div className="col-span-2 flex items-end justify-between gap-2 @3xl:col-span-2">
+                  <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+                    <Checkbox
+                      id={activeId}
+                      checked={row.isActive}
+                      onCheckedChange={(next) => updateRow(index, { isActive: next === true })}
+                    />
+                    {t('purchasing.supplierProducts.price.field.active', 'Active')}
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    aria-label={t('purchasing.supplierProducts.price.remove', 'Remove this price row')}
+                    onClick={() => setValue('prices', rows.filter((_, position) => position !== index))}
+                  >
+                    <Trash2 className="size-4" aria-hidden="true" />
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -293,12 +302,51 @@ function SupplierProductPriceRows({ values, setValue, errors, t }: CrudFormGroup
 }
 
 /**
+ * A photo the operator picked before the row existed. The file cannot be uploaded yet (attachments
+ * are keyed by `entityId` + row id), so it is held with a local preview and uploaded by the create
+ * form's submit, right after the row is created.
+ */
+type PendingImage = { key: string; file: File; previewUrl: string }
+
+type PendingImagesStore = {
+  images: PendingImage[]
+  add: (file: File) => void
+  remove: (key: string) => void
+}
+
+/**
+ * Present only on the create form. The photo group reads it to stage a pick instead of refusing it;
+ * on the edit form (and anywhere else) the store is absent and the upload happens immediately.
+ */
+const PendingImagesContext = React.createContext<PendingImagesStore | null>(null)
+
+function pendingImageKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `photo-${Date.now()}-${Math.round(performance.now())}`
+}
+
+/** Uploads one file against the saved row and returns its attachment id, or null when it failed. */
+async function uploadSupplierProductImage(productId: string, file: File): Promise<string | null> {
+  const body = new FormData()
+  body.set('entityId', ATTACHMENT_ENTITY_ID)
+  body.set('recordId', productId)
+  body.set('file', file)
+  const upload = await apiCall<{ item?: { id?: string } }>('/api/attachments', { method: 'POST', body }, { fallback: null })
+  const attachmentId = upload.ok && typeof upload.result?.item?.id === 'string' ? upload.result.item.id : ''
+  return attachmentId || null
+}
+
+/**
  * The product photos (REQ-SPL-014).
  *
  * Create-then-bind like every other attachment in this app: the file is uploaded against the saved
  * row (`entityId` + row id) and the returned id is appended to the row's `imageAttachmentIds`,
  * which the form then saves. So a failed upload leaves the row exactly as it was, and the list is
  * behind the row's optimistic lock — two editors cannot silently drop each other's photo.
+ *
+ * On the **create** form the row does not exist yet, so a pick is staged locally (thumbnail from a
+ * blob URL) and uploaded by the submit handler once the row has an id. Refusing the pick until the
+ * operator saved first made a single "add an item with photos" task into two visits to the form.
  *
  * Unlinking removes the id only; the uploaded file stays in the attachments module (its history and
  * its ACL stay intact), which also means re-adding a photo is a re-upload, not a resurrection.
@@ -311,85 +359,121 @@ function SupplierProductImages({
 }: CrudFormGroupComponentProps & { productId: string | null; t: TranslateFn }) {
   const [uploading, setUploading] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement | null>(null)
+  const pendingStore = React.useContext(PendingImagesContext)
   const imageIds = readImageIds(values.imageAttachmentIds)
+  const pending = pendingStore?.images ?? []
+  const totalCount = imageIds.length + pending.length
 
   const handleFiles = React.useCallback(
     async (files: FileList | null) => {
       const file = files?.[0]
       if (inputRef.current) inputRef.current.value = ''
       if (!file) return
-      if (!productId) {
-        flash(t('purchasing.supplierProducts.form.images.saveFirst', '请先保存商品，再上传图片'), 'error')
-        return
-      }
-      if (imageIds.length >= MAX_IMAGES) {
+      if (totalCount >= MAX_IMAGES) {
         flash(
-          t('purchasing.supplierProducts.form.images.tooMany', '最多 {count} 张商品图片', { count: MAX_IMAGES }),
+          t('purchasing.supplierProducts.form.images.tooMany', 'At most {count} photos', { count: MAX_IMAGES }),
           'error',
         )
         return
       }
+      if (!productId) {
+        // No row yet: stage the pick, the create form uploads it after the row is written.
+        if (pendingStore) {
+          pendingStore.add(file)
+          return
+        }
+        flash(t('purchasing.supplierProducts.form.images.saveFirst', 'Save the item first, then upload photos'), 'error')
+        return
+      }
       setUploading(true)
       try {
-        const body = new FormData()
-        body.set('entityId', ATTACHMENT_ENTITY_ID)
-        body.set('recordId', productId)
-        body.set('file', file)
-        const upload = await apiCall<{ item?: { id?: string } }>('/api/attachments', { method: 'POST', body }, { fallback: null })
-        const attachmentId = upload.ok && typeof upload.result?.item?.id === 'string' ? upload.result.item.id : ''
+        const attachmentId = await uploadSupplierProductImage(productId, file)
         if (!attachmentId) {
-          flash(t('purchasing.supplierProducts.form.images.uploadFailed', '图片上传失败'), 'error')
+          flash(t('purchasing.supplierProducts.form.images.uploadFailed', 'The photo could not be uploaded'), 'error')
           return
         }
         // Bound in the form's own state, then saved with the row: the operator sees the thumbnail
         // immediately and a rejected row save never leaves a half-bound list behind.
         setValue('imageAttachmentIds', [...imageIds, attachmentId])
-        flash(t('purchasing.supplierProducts.form.images.uploaded', '图片已上传，保存后生效'), 'success')
+        flash(t('purchasing.supplierProducts.form.images.uploaded', 'Photo uploaded; save the item to apply it'), 'success')
       } catch {
-        flash(t('purchasing.supplierProducts.form.images.uploadFailed', '图片上传失败'), 'error')
+        flash(t('purchasing.supplierProducts.form.images.uploadFailed', 'The photo could not be uploaded'), 'error')
       } finally {
         setUploading(false)
       }
     },
-    [imageIds, productId, setValue, t],
+    [imageIds, pendingStore, productId, setValue, t, totalCount],
   )
+
+  const hint = productId
+    ? t('purchasing.supplierProducts.form.images.hint', 'Up to {count} photos; the list applies once you save the item.', { count: MAX_IMAGES })
+    : pendingStore
+      ? t(
+          'purchasing.supplierProducts.form.images.pendingHint',
+          'Up to {count} photos; the picked files are uploaded when you save the item.',
+          { count: MAX_IMAGES },
+        )
+      : t('purchasing.supplierProducts.form.images.saveFirst', 'Save the item first, then upload photos')
 
   return (
     <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-medium">{t('purchasing.supplierProducts.form.images.title', '商品图片 Photos')}</h3>
-          <p className="text-xs text-muted-foreground">
-            {productId
-              ? t('purchasing.supplierProducts.form.images.hint', '最多 {count} 张；保存商品后图片列表才生效。', { count: MAX_IMAGES })
-              : t('purchasing.supplierProducts.form.images.saveFirst', '请先保存商品，再上传图片')}
-          </p>
+          <h3 className="text-sm font-medium">{t('purchasing.supplierProducts.form.images.title', 'Photos')}</h3>
+          <p className="text-xs text-muted-foreground">{hint}</p>
         </div>
         <Button
           type="button"
           variant="outline"
-          disabled={uploading || !productId || imageIds.length >= MAX_IMAGES}
+          disabled={uploading || (!productId && !pendingStore) || totalCount >= MAX_IMAGES}
           onClick={() => inputRef.current?.click()}
         >
           <Upload className="size-4" aria-hidden="true" />
           {uploading
-            ? t('purchasing.supplierProducts.form.images.uploading', '上传中…')
-            : t('purchasing.supplierProducts.form.images.upload', '上传图片')}
+            ? t('purchasing.supplierProducts.form.images.uploading', 'Uploading…')
+            : t('purchasing.supplierProducts.form.images.upload', 'Upload photo')}
         </Button>
         <input
           ref={inputRef}
           type="file"
           accept="image/*"
           className="hidden"
-          aria-label={t('purchasing.supplierProducts.form.images.upload', '上传图片')}
+          aria-label={t('purchasing.supplierProducts.form.images.upload', 'Upload photo')}
           onChange={(event) => void handleFiles(event.target.files)}
         />
       </div>
 
-      {imageIds.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{t('purchasing.supplierProducts.form.images.empty', '还没有图片')}</p>
+      {totalCount === 0 ? (
+        <p className="text-sm text-muted-foreground">{t('purchasing.supplierProducts.form.images.empty', 'No photos yet')}</p>
       ) : (
         <ul className="flex flex-wrap gap-3">
+          {pending.map((entry) => (
+            <li key={entry.key} className="relative">
+              {/*
+                A blob URL from the operator's own disk, not a served asset: `next/image` cannot
+                optimize it (and would need the session the attachments route authorizes), so the
+                preview is a plain img on purpose.
+              */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={entry.previewUrl}
+                alt={t('purchasing.supplierProducts.form.images.alt', 'Product photo')}
+                width={96}
+                height={96}
+                className="size-24 rounded-md border object-cover"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="absolute -right-2 -top-2"
+                aria-label={t('purchasing.supplierProducts.form.images.remove', 'Remove this photo')}
+                onClick={() => pendingStore?.remove(entry.key)}
+              >
+                <Trash2 className="size-4" aria-hidden="true" />
+              </Button>
+            </li>
+          ))}
           {imageIds.map((attachmentId) => (
             <li key={attachmentId} className="relative">
               {/*
@@ -399,7 +483,7 @@ function SupplierProductImages({
               */}
               <Image
                 src={`/api/attachments/file/${encodeURIComponent(attachmentId)}`}
-                alt={t('purchasing.supplierProducts.form.images.alt', '商品图片')}
+                alt={t('purchasing.supplierProducts.form.images.alt', 'Product photo')}
                 width={96}
                 height={96}
                 unoptimized
@@ -410,7 +494,7 @@ function SupplierProductImages({
                 variant="ghost"
                 size="sm"
                 className="absolute -right-2 -top-2"
-                aria-label={t('purchasing.supplierProducts.form.images.remove', '移除该图片')}
+                aria-label={t('purchasing.supplierProducts.form.images.remove', 'Remove this photo')}
                 onClick={() => setValue('imageAttachmentIds', imageIds.filter((id) => id !== attachmentId))}
               >
                 <Trash2 className="size-4" aria-hidden="true" />
@@ -490,10 +574,10 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
       ...supplierFields,
       {
         id: 'supplierSku',
-        label: t('purchasing.supplierProducts.form.field.supplierSku', '供应商货号 Supplier code'),
+        label: t('purchasing.supplierProducts.form.field.supplierSku', 'Supplier code'),
         description: t(
           'purchasing.supplierProducts.form.help.supplierSku',
-          '本供应商下的唯一货号；一个货号永不复用（含已删除行）。',
+          'Unique within this supplier; a code is never reused, including by a deleted row.',
         ),
         type: 'text',
         required: true,
@@ -501,10 +585,10 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
       },
       {
         id: 'name',
-        label: t('purchasing.supplierProducts.form.field.name', '商品名称（供应商原始名）Name (supplier)'),
+        label: t('purchasing.supplierProducts.form.field.name', 'Name (as printed by the supplier)'),
         description: t(
           'purchasing.supplierProducts.form.help.name',
-          '供应商产品表上的原始商品名，照录不改；同步为商品时不覆盖我们自己的中文品名。',
+          'The supplier’s own product name, transcribed as printed. Syncing does not overwrite our Chinese name with it.',
         ),
         type: 'text',
         required: true,
@@ -512,40 +596,40 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
       },
       {
         id: 'nameZh',
-        label: t('purchasing.supplierProducts.form.field.nameZh', '中文品名 Name (Chinese)'),
+        label: t('purchasing.supplierProducts.form.field.nameZh', 'Chinese name (ours)'),
         description: t(
           'purchasing.supplierProducts.form.help.nameZh',
-          '我们自己定义的中文名；同步为商品时写入商品主数据的商品名称。',
+          'Our own Chinese name; becomes the product master’s name when the row is synced.',
         ),
         type: 'text',
         maxLength: 300,
       },
       {
         id: 'nameEn',
-        label: t('purchasing.supplierProducts.form.field.nameEn', '英文品名 Name (English)'),
+        label: t('purchasing.supplierProducts.form.field.nameEn', 'English name (ours)'),
         description: t(
           'purchasing.supplierProducts.form.help.nameEn',
-          '我们自己定义的英文名；用于出口单据，并写入商品主数据的英文名。',
+          'Our own English name; used on export documents and written to the master’s English name.',
         ),
         type: 'text',
         maxLength: 300,
       },
       {
         id: 'hsCode',
-        label: t('purchasing.supplierProducts.form.field.hsCode', 'HS CODE 海关编码'),
+        label: t('purchasing.supplierProducts.form.field.hsCode', 'HS code'),
         description: t(
           'purchasing.supplierProducts.form.help.hsCode',
-          'Harmonized System Code — 海关商品编码。按文本保存，保留前导零与分组点（如 8471.30.0000），不要当数字填。',
+          'Harmonized System Code — stored as text so leading zeros and dotted groups (8471.30.0000) survive. Do not treat it as a number.',
         ),
         type: 'text',
         maxLength: 32,
       },
       {
         id: 'declarationElements',
-        label: t('purchasing.supplierProducts.form.field.declarationElements', '申报要素 Declaration elements'),
+        label: t('purchasing.supplierProducts.form.field.declarationElements', 'Declaration elements'),
         description: t(
           'purchasing.supplierProducts.form.help.declarationElements',
-          '报关申报要素（品名/品牌/型号/材质/用途/规格…），报关单按此填报，照录不改。',
+          'Declaration elements (name, brand, model, material, use, spec…), copied verbatim onto customs paperwork.',
         ),
         type: 'textarea',
         rows: 3,
@@ -553,10 +637,10 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
       },
       {
         id: 'unit',
-        label: t('purchasing.supplierProducts.form.field.unit', '单位 Unit of measure'),
+        label: t('purchasing.supplierProducts.form.field.unit', 'Unit of measure'),
         description: t(
           'purchasing.supplierProducts.form.help.unit',
-          '下拉来自字典 supplier_product_unit（可在「字典库」维护）；字典里没有的编码仍可直接输入。',
+          'Options come from the supplier_product_unit dictionary (maintained under Dictionaries); a code it does not list can still be typed.',
         ),
         type: 'combobox',
         allowCustomValues: true,
@@ -570,62 +654,44 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
       },
       {
         id: 'moqQuantity',
-        label: t('purchasing.supplierProducts.form.field.moqQuantity', 'MOQ 最小起订量'),
+        label: t('purchasing.supplierProducts.form.field.moqQuantity', 'MOQ (minimum order quantity)'),
         description: t(
           'purchasing.supplierProducts.form.help.moqQuantity',
-          'Minimum Order Quantity — 供应商最小起订量。',
+          'Minimum Order Quantity — the smallest quantity the supplier will take.',
         ),
         type: 'number',
       },
       {
         id: 'cartonQuantity',
-        label: t('purchasing.supplierProducts.form.field.cartonQuantity', 'Qty/Box 每箱数量'),
+        label: t('purchasing.supplierProducts.form.field.cartonQuantity', 'Qty/Box (units per carton)'),
         description: t(
           'purchasing.supplierProducts.form.help.cartonQuantity',
-          'Quantity per box — 每箱装箱数量（件/箱），发运分摊与装箱核算按此换算。',
+          'Quantity per box — how many units a carton holds; shipment allocation converts through it.',
         ),
         type: 'number',
       },
       {
         id: 'unitNetWeight',
-        label: t('purchasing.supplierProducts.form.field.unitNetWeight', '单件净重 Unit N.W (kg)'),
-        description: t('purchasing.supplierProducts.form.help.unitNetWeight', '单件净重，单位 kg。'),
-        type: 'number',
-      },
-      {
-        id: 'cartonGrossWeight',
-        label: t('purchasing.supplierProducts.form.field.cartonGrossWeight', 'G.W 毛重（整箱 kg）'),
-        description: t(
-          'purchasing.supplierProducts.form.help.cartonGrossWeight',
-          'Gross Weight — 整箱毛重（含包装），单位 kg；订舱与报关按此申报。',
-        ),
-        type: 'number',
-      },
-      {
-        id: 'cartonNetWeight',
-        label: t('purchasing.supplierProducts.form.field.cartonNetWeight', 'N.W 净重（整箱 kg）'),
-        description: t(
-          'purchasing.supplierProducts.form.help.cartonNetWeight',
-          'Net Weight — 整箱净重（不含包装），单位 kg。',
-        ),
+        label: t('purchasing.supplierProducts.form.field.unitNetWeight', 'Unit net weight (kg)'),
+        description: t('purchasing.supplierProducts.form.help.unitNetWeight', 'Net weight of one unit, in kg.'),
         type: 'number',
       },
       {
         id: 'itemNo',
-        label: t('purchasing.supplierProducts.form.field.itemNo', '原始货号 Item no.'),
+        label: t('purchasing.supplierProducts.form.field.itemNo', 'Item no. (supplier’s own)'),
         description: t(
           'purchasing.supplierProducts.form.help.itemNo',
-          '供应商原始表格上的商品编号；与供应商货号不同时两个都保留展示。',
+          'The item number on the supplier’s own sheet; both codes stay visible when they differ.',
         ),
         type: 'text',
         maxLength: 120,
       },
       {
         id: 'description',
-        label: t('purchasing.supplierProducts.form.field.description', '规格描述 Spec / description'),
+        label: t('purchasing.supplierProducts.form.field.description', 'Spec / description'),
         description: t(
           'purchasing.supplierProducts.form.help.description',
-          '供应商原始规格描述；同步为商品时写入商品主数据的规格说明。',
+          'The supplier’s own spec text; becomes the master’s spec summary on sync.',
         ),
         type: 'textarea',
         rows: 4,
@@ -633,7 +699,7 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
       },
       {
         id: 'status',
-        label: t('purchasing.supplierProducts.form.field.status', '状态 Status'),
+        label: t('purchasing.supplierProducts.form.field.status', 'Status'),
         type: 'select',
         options: [
           { value: 'active', label: t('purchasing.supplierProducts.status.active', 'Active') },
@@ -642,8 +708,8 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
       },
       {
         id: 'notes',
-        label: t('purchasing.supplierProducts.form.field.notes', '备注 Notes'),
-        description: t('purchasing.supplierProducts.form.help.notes', '内部备注，不打印在单据上。'),
+        label: t('purchasing.supplierProducts.form.field.notes', 'Notes'),
+        description: t('purchasing.supplierProducts.form.help.notes', 'Internal note; never printed on a document.'),
         type: 'textarea',
         rows: 3,
         maxLength: 2000,
@@ -656,7 +722,14 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
  * The form's groups, ordered so the two columns read as "what the item is" (column 1) and "what we
  * pay, pack and shipped it as" (column 2).
  *
- * ERP-generic fields live in 商品标识 / 报关信息 / 价格 / 包装与重量; the fields that are transcriptions
+ * The price list is the one group that cannot live in the sidebar: `CrudForm` draws a `column: 2`
+ * group into a `3fr` rail — 389px on a 1440px viewport — and the row's five controls came out 73px
+ * and 45px wide there, with the kind select truncated to 「供应」. Every other rows editor in this app
+ * is a column-1 group for the same reason (purchase orders, contracts, invoices, internal sales,
+ * shipment allocations). The row itself is container-responsive, so it also survives the single
+ * column the form falls back to below `lg`.
+ *
+ * ERP-generic fields live in 商品标识 / 报关信息 / 价格 / 包装与单重; the fields that are transcriptions
  * of the supplier's own workbook live in 供应商原始资料. Keeping that split explicit is what lets a
  * buyer who never saw the workbook find a field by meaning instead of by column order.
  */
@@ -666,7 +739,7 @@ function useSupplierProductGroups(t: TranslateFn, opts: { productId: string | nu
       {
         id: 'goods',
         column: 1,
-        title: t('purchasing.supplierProducts.form.group.goods', '商品标识 Goods identity'),
+        title: t('purchasing.supplierProducts.form.group.goods', 'Goods identity'),
         fields: ['supplierId', 'supplierName', 'supplierSku', 'name', 'nameZh', 'nameEn'],
       },
       {
@@ -678,33 +751,20 @@ function useSupplierProductGroups(t: TranslateFn, opts: { productId: string | nu
       {
         id: 'customs',
         column: 1,
-        title: t('purchasing.supplierProducts.form.group.customs', '报关信息 Customs & unit'),
+        title: t('purchasing.supplierProducts.form.group.customs', 'Customs & unit'),
         fields: ['hsCode', 'declarationElements', 'unit'],
       },
       {
         id: 'prices',
-        column: 2,
+        column: 1,
         bare: true,
         component: (context) => <SupplierProductPriceRows {...context} t={t} />,
       },
       {
         id: 'packing',
         column: 2,
-        title: t('purchasing.supplierProducts.form.group.packing', '包装与重量 Packing & weights（整箱）'),
-        fields: ['cartonQuantity', 'cartonGrossWeight', 'cartonNetWeight', 'unitNetWeight', 'moqQuantity'],
-      },
-      {
-        id: 'outerPacking',
-        column: 2,
-        bare: true,
-        component: (context) => (
-          <PackingEditor
-            {...context}
-            fieldId="outerPacking"
-            label={t('purchasing.supplierProducts.form.field.outerPacking', '外箱尺寸 L×W×H (cm)')}
-            t={t}
-          />
-        ),
+        title: t('purchasing.supplierProducts.form.group.packing', 'Packing & unit weight'),
+        fields: ['cartonQuantity', 'unitNetWeight', 'moqQuantity'],
       },
       {
         id: 'innerPacking',
@@ -714,7 +774,7 @@ function useSupplierProductGroups(t: TranslateFn, opts: { productId: string | nu
           <PackingEditor
             {...context}
             fieldId="innerPacking"
-            label={t('purchasing.supplierProducts.form.field.innerPacking', '内盒尺寸 L×W×H (cm)')}
+            label={t('purchasing.supplierProducts.form.field.innerPacking', 'Product size L×W×H (cm)')}
             t={t}
           />
         ),
@@ -722,13 +782,13 @@ function useSupplierProductGroups(t: TranslateFn, opts: { productId: string | nu
       {
         id: 'supplierSheet',
         column: 2,
-        title: t('purchasing.supplierProducts.form.group.supplierSheet', '供应商原始资料 Supplier sheet'),
+        title: t('purchasing.supplierProducts.form.group.supplierSheet', 'As printed by the supplier'),
         fields: ['itemNo', 'description', 'notes'],
       },
       {
         id: 'settings',
         column: 2,
-        title: t('purchasing.supplierProducts.form.group.settings', '状态 Status'),
+        title: t('purchasing.supplierProducts.form.group.settings', 'Status'),
         fields: ['status'],
       },
     ],
@@ -761,9 +821,10 @@ async function saveSupplierProductPrices(
 
 function SupplierProductCreateForm() {
   const t = useT()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const fields = useSupplierProductFields(t, { supplierEditable: true })
-  // No id yet: the photo uploader is disabled until the row exists (create-then-bind).
+  // No id yet: the photo group stages the picks and this form uploads them once the row exists.
   const groups = useSupplierProductGroups(t, { productId: null })
   // The library list links here with `?supplierId=` when the operator came from a supplier row,
   // so the picker starts on that supplier instead of asking again.
@@ -776,11 +837,33 @@ function SupplierProductCreateForm() {
     [t],
   )
 
+  // Photos picked before the row existed (see PendingImagesContext): the previews live here so the
+  // operator sees them immediately, and the files are uploaded right after the row is created.
+  const [pendingImages, setPendingImages] = React.useState<PendingImage[]>([])
+  const pendingImagesStore = React.useMemo<PendingImagesStore>(
+    () => ({
+      images: pendingImages,
+      add: (file) =>
+        setPendingImages((current) => [
+          ...current,
+          { key: pendingImageKey(), file, previewUrl: URL.createObjectURL(file) },
+        ]),
+      remove: (key) =>
+        setPendingImages((current) => {
+          const hit = current.find((entry) => entry.key === key)
+          if (hit) URL.revokeObjectURL(hit.previewUrl)
+          return current.filter((entry) => entry.key !== key)
+        }),
+    }),
+    [pendingImages],
+  )
+
   const handleSubmit = React.useCallback(async (values: SupplierProductFormValues) => {
+    const payload = buildSupplierProductPayload(values)
     let createdId: string | null = null
     try {
       const created = await createCrud<{ id?: string }>(API_PATH, {
-        ...buildSupplierProductPayload(values),
+        ...payload,
         supplierId: values.supplierId,
       })
       createdId = typeof created.result?.id === 'string' ? created.result.id : null
@@ -794,23 +877,83 @@ function SupplierProductCreateForm() {
       flash(t('purchasing.supplierProducts.form.saveFailed', 'Saving failed'), 'error')
       throw new Error(t('purchasing.supplierProducts.form.saveFailed', 'Saving failed'))
     }
-    await saveSupplierProductPrices(createdId, values.prices, t)
-  }, [t])
+
+    // The row exists from here on: every remaining failure is a "saved, but fix this on the row"
+    // case, so the operator is sent to the row's own edit page instead of a form that would create
+    // a second row on the next save.
+    const editHref = `${LIST_HREF}/${encodeURIComponent(createdId)}/edit`
+
+    const staged = pendingImagesStore.images
+    if (staged.length > 0) {
+      const uploadedIds: string[] = []
+      let failed = 0
+      for (const entry of staged) {
+        try {
+          const attachmentId = await uploadSupplierProductImage(createdId, entry.file)
+          if (attachmentId) uploadedIds.push(attachmentId)
+          else failed += 1
+        } catch {
+          failed += 1
+        }
+      }
+      if (uploadedIds.length > 0) {
+        // Bound with a versioned update: the row was just created by this client, and the lock
+        // keeps a concurrent editor from losing the list they see.
+        try {
+          const fresh = await fetchCrudList<Record<string, unknown>>(API_PATH, { id: createdId, pageSize: 1 })
+          const version = fresh.items?.[0]?.updated_at
+          await updateCrud(API_PATH, {
+            id: createdId,
+            ...payload,
+            imageAttachmentIds: uploadedIds,
+            updatedAt: typeof version === 'string' ? version : null,
+          })
+        } catch {
+          failed += uploadedIds.length
+        }
+      }
+      staged.forEach((entry) => URL.revokeObjectURL(entry.previewUrl))
+      setPendingImages([])
+      if (failed > 0) {
+        flash(
+          t(
+            'purchasing.supplierProducts.form.images.stagedFailed',
+            'The item was saved, but {count} photo(s) could not be attached — add them on this page.',
+            { count: failed },
+          ),
+          'error',
+        )
+        router.push(editHref)
+        return
+      }
+    }
+
+    try {
+      await saveSupplierProductPrices(createdId, values.prices, t)
+    } catch {
+      // The price list is written by its own request; its failure is already reported, and the row
+      // exists — so the operator finishes on the row instead of re-submitting this form.
+      router.push(editHref)
+      return
+    }
+  }, [pendingImagesStore, router, t])
 
   return (
-    <CrudForm<SupplierProductFormValues>
-      entityId={ENTITY_ID}
-      title={t('purchasing.supplierProducts.form.createTitle', 'New supplier product')}
-      titleHeadingLevel={1}
-      backHref={LIST_HREF}
-      fields={fields}
-      groups={groups}
-      initialValues={initialValues}
-      submitLabel={t('purchasing.supplierProducts.form.save', 'Save')}
-      cancelHref={LIST_HREF}
-      successRedirect={successRedirect}
-      onSubmit={handleSubmit}
-    />
+    <PendingImagesContext.Provider value={pendingImagesStore}>
+      <CrudForm<SupplierProductFormValues>
+        entityId={ENTITY_ID}
+        title={t('purchasing.supplierProducts.form.createTitle', 'New supplier product')}
+        titleHeadingLevel={1}
+        backHref={LIST_HREF}
+        fields={fields}
+        groups={groups}
+        initialValues={initialValues}
+        submitLabel={t('purchasing.supplierProducts.form.save', 'Save')}
+        cancelHref={LIST_HREF}
+        successRedirect={successRedirect}
+        onSubmit={handleSubmit}
+      />
+    </PendingImagesContext.Provider>
   )
 }
 

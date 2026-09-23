@@ -10,7 +10,7 @@ import {
   type CrudFormGroup,
   type CrudFormGroupComponentProps,
 } from '@open-mercato/ui/backend/CrudForm'
-import { ComboboxInput } from '@open-mercato/ui/backend/inputs/ComboboxInput'
+import { ComboboxInput, type ComboboxOption } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { createCrud } from '@open-mercato/ui/backend/utils/crud'
@@ -27,11 +27,18 @@ import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import {
   findOptionSnapshot,
   loadCustomerOptions,
+  loadOwnedProductOptions,
   loadOwnerOptions,
   loadProductCategoryOptions,
   loadSupplierProductOptions,
-  readErrorStatus,
+  type SupplierProductOption,
 } from './orderFormOptions'
+import {
+  applyLinePickerValue,
+  linePickerValue,
+  toProductPickerValue,
+  toSupplierProductPickerValue,
+} from '../lib/orderLinePicker'
 
 export const ORDERS_API_PATH = 'purchasing/purchase-orders'
 export const ORDERS_LINES_API_PATH = 'purchasing/purchase-orders/lines'
@@ -40,7 +47,6 @@ export const ORDERS_TRANSITIONS_API_PATH = 'purchasing/purchase-orders/transitio
 export const ORDERS_LIST_HREF = '/backend/purchasing/orders'
 
 const SUPPLIERS_API_PATH = '/api/purchasing/suppliers'
-const PRODUCTS_API_PATH = '/api/products/items'
 const CURRENCY_DICTIONARY_URL = '/api/currency_policy/currencies'
 const OPTION_PAGE_SIZE = 50
 
@@ -248,59 +254,15 @@ export async function loadCurrencyOptions(errorMessage: string): Promise<CrudFie
     .sort((left, right) => left.value.localeCompare(right.value))
 }
 
-function optionFromOwnedProduct(item: Record<string, unknown>): CrudFieldOption | null {
-  const value = readText(item, 'id')
-  if (!value) return null
-  const title = readText(item, 'name', 'title')
-  const sku = readText(item, 'sku')
-  const label = sku && title ? `${sku} — ${title}` : sku || title
-  return { value, label: label || value }
-}
-
-/**
- * Products the current organization can buy, from the app-owned master.
- *
- * The order line references `products_products.id` (see
- * .ai/specs/2026-09-22-products-and-trade-docs.md); the installed catalog is no longer consulted
- * for new lines. `organizationId` narrows the list to the selected organization because the write
- * command resolves the product in that scope.
- */
-export async function loadOwnedProductOptions(
-  errorMessage: string,
-  forbiddenMessage: string,
-  query?: string,
-  organizationId?: string | null,
-): Promise<CrudFieldOption[]> {
-  const params = new URLSearchParams({ page: '1', pageSize: String(OPTION_PAGE_SIZE), status: 'active' })
-  if (organizationId) params.set('organizationId', organizationId)
-  const term = query?.trim()
-  if (term) params.set('search', term)
-  try {
-    const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
-      `${PRODUCTS_API_PATH}?${params.toString()}`,
-      undefined,
-      { fallback: { items: [] }, errorMessage },
-    )
-    return (payload.items ?? [])
-      .map(optionFromOwnedProduct)
-      .filter((option): option is CrudFieldOption => option !== null)
-  } catch (error) {
-    // A refusal is named, not swallowed: an empty master picker otherwise reads as "no products".
-    const status = readErrorStatus(error)
-    flash(status === 401 || status === 403 ? forbiddenMessage : errorMessage, 'error')
-    return []
-  }
-}
-
 /**
  * One editable order line. `key` keeps React (and the picker's resolved label) anchored to a
  * line while lines are added and removed; `productLabel` only ever seeds the picker's display
  * for a product that is not on the first page of options, and is never submitted.
  *
  * A line is picked either from the product master or from the supplier's own library, and the two
- * references are never sent together. `supplierProductMode` remembers which picker the operator is
- * working in while nothing is chosen yet — an empty library reference is indistinguishable from an
- * empty master one — and is form-only: the payload carries ids, never the editing mode.
+ * references are never sent together — but the operator picks from **one** search box: the source
+ * travels in the picker's option value (`lib/orderLinePicker.ts`), not in a mode the operator has to
+ * understand, and the payload still carries ids only.
  */
 export type PurchaseOrderLineValues = {
   key: string
@@ -310,14 +272,55 @@ export type PurchaseOrderLineValues = {
   catalogProductId: string
   /** Reference to a supplier product library row (`purchasing_supplier_products.id`). */
   supplierProductId: string
-  /** True while this line is being picked from the supplier library instead of the master. */
-  supplierProductMode: boolean
   productLabel: string
   quantity: string
   unitPrice: string
   taxRate: string
   priceIncludesTax: boolean
   note: string
+}
+
+/**
+ * Both lists in one search, the supplier's own library first.
+ *
+ * A purchase order is placed on one supplier, so "what does this supplier sell us" is the question
+ * the picker is usually asked; the master is the fallback for goods that are not in that supplier's
+ * list yet (or that we track centrally). The operator never has to decide which library to search —
+ * the option's description names the source, and the pick's reference follows from it.
+ *
+ * A library row that has no product record yet says so on the option: it stays pickable (ordering
+ * before archiving is a legitimate step) but the buyer is told, at the moment of choosing, that it
+ * cannot be shipped or received until it is promoted and catalog-linked.
+ */
+async function loadLineProductOptions(
+  errorMessage: string,
+  masterForbiddenMessage: string,
+  libraryForbiddenMessage: string,
+  librarySourceLabel: string,
+  libraryUnlinkedLabel: string,
+  masterSourceLabel: string,
+  supplierId: string | null,
+  query?: string,
+  organizationId?: string | null,
+): Promise<ComboboxOption[]> {
+  const [library, master] = await Promise.all([
+    supplierId
+      ? loadSupplierProductOptions(errorMessage, libraryForbiddenMessage, supplierId, query, organizationId)
+      : Promise.resolve<SupplierProductOption[]>([]),
+    loadOwnedProductOptions(errorMessage, masterForbiddenMessage, query, organizationId),
+  ])
+  return [
+    ...library.map((option) => ({
+      value: toSupplierProductPickerValue(option.value),
+      label: option.label,
+      description: option.linked ? librarySourceLabel : `${librarySourceLabel} · ${libraryUnlinkedLabel}`,
+    })),
+    ...master.map((option) => ({
+      value: toProductPickerValue(option.value),
+      label: option.label,
+      description: masterSourceLabel,
+    })),
+  ]
 }
 
 export type PurchaseOrderFormValues = {
@@ -368,7 +371,6 @@ function createEmptyLine(): PurchaseOrderLineValues {
     productId: '',
     catalogProductId: '',
     supplierProductId: '',
-    supplierProductMode: false,
     productLabel: '',
     quantity: '',
     unitPrice: '',
@@ -383,15 +385,11 @@ function readLines(value: unknown): PurchaseOrderLineValues[] {
   return value.flatMap<PurchaseOrderLineValues>((entry) => {
     if (!entry || typeof entry !== 'object') return []
     const line = entry as Record<string, unknown>
-    const supplierProductId = readText(line, 'supplierProductId')
     return [{
       key: typeof line.key === 'string' && line.key.length ? line.key : newLineKey(),
       productId: readText(line, 'productId'),
       catalogProductId: readText(line, 'catalogProductId'),
-      supplierProductId,
-      // A line reopened from a saved order keeps library mode through its reference, so the flag
-      // only has to survive the editing session itself.
-      supplierProductMode: line.supplierProductMode === true || supplierProductId.length > 0,
+      supplierProductId: readText(line, 'supplierProductId'),
       productLabel: readText(line, 'productLabel'),
       quantity: readText(line, 'quantity'),
       unitPrice: readText(line, 'unitPrice'),
@@ -538,95 +536,49 @@ export function PurchaseOrderLinesEditor({
         const unitPriceId = fieldId('unitPrice')
         const taxRateId = fieldId('taxRate')
         const noteId = fieldId('note')
-        // The reference decides the picker, so a saved line reopens on the library it was ordered
-        // from and the mode flag is only needed while the operator is still choosing.
-        const supplierMode = line.supplierProductMode || line.supplierProductId.length > 0
-        // Switching pickers clears the other side: the command accepts one reference per line, and
-        // a label seeded for the other picker would show a product the line no longer references.
-        const switchPicker = () => {
-          if (supplierMode) {
-            updateLine(index, { supplierProductMode: false, supplierProductId: '', productLabel: '' })
-            return
-          }
-          updateLine(index, { supplierProductMode: true, productId: '', catalogProductId: '', productLabel: '' })
-        }
+        // The picker searches both sources at once, so a saved line reopens on the reference it was
+        // ordered from without the operator having to know which library it lives in.
+        const pickerValue = linePickerValue(line)
 
         return (
           <div key={line.key} className="rounded-md border bg-background p-3">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
               <div className="space-y-1.5 md:col-span-5">
-                <FieldLabel required>
-                  {t(
-                    supplierMode
-                      ? 'purchasing.orders.form.lines.supplierProduct'
-                      : 'purchasing.orders.form.lines.product',
-                  )}
-                </FieldLabel>
-                {supplierMode ? (
-                  <ComboboxInput
-                    value={line.supplierProductId}
-                    onChange={(next) => updateLine(index, { supplierProductId: next })}
-                    seedOptions={
-                      line.supplierProductId && line.productLabel
-                        ? [{ value: line.supplierProductId, label: line.productLabel }]
-                        : undefined
-                    }
-                    loadSuggestions={(query) =>
-                      loadSupplierProductOptions(
-                        t('purchasing.orders.form.loadFailed'),
-                        t('purchasing.orders.form.lines.supplierProductForbidden'),
-                        supplierId,
-                        query,
-                        organizationId,
-                      )
-                    }
-                    allowCustomValues={false}
-                    clearable
-                    disabled={!supplierId}
-                  />
-                ) : (
-                  <ComboboxInput
-                    value={line.productId || line.catalogProductId}
-                    onChange={(next) => updateLine(index, { productId: next, catalogProductId: '' })}
-                    seedOptions={
-                      line.productLabel
-                        ? [{ value: line.productId || line.catalogProductId, label: line.productLabel }]
-                        : undefined
-                    }
-                    loadSuggestions={(query) =>
-                      loadOwnedProductOptions(
-                        t('purchasing.orders.form.loadFailed'),
-                        t('purchasing.orders.form.lines.masterForbidden'),
-                        query,
-                        organizationId,
-                      )
-                    }
-                    allowCustomValues={false}
-                    clearable
-                  />
-                )}
-                {supplierMode && !supplierId ? (
+                <FieldLabel required>{t('purchasing.orders.form.lines.product')}</FieldLabel>
+                <ComboboxInput
+                  value={pickerValue}
+                  onChange={(next) => updateLine(index, applyLinePickerValue(next))}
+                  seedOptions={
+                    pickerValue && line.productLabel ? [{ value: pickerValue, label: line.productLabel }] : undefined
+                  }
+                  loadSuggestions={(query) =>
+                    loadLineProductOptions(
+                      t('purchasing.orders.form.loadFailed'),
+                      t('purchasing.orders.form.lines.masterForbidden'),
+                      t('purchasing.orders.form.lines.supplierProductForbidden'),
+                      t('purchasing.orders.form.lines.source.supplierLibrary'),
+                      t('purchasing.orders.form.lines.source.supplierLibraryUnlinked'),
+                      t('purchasing.orders.form.lines.source.master'),
+                      supplierId,
+                      query,
+                      organizationId,
+                    )
+                  }
+                  placeholder={t('purchasing.orders.form.lines.pickerPlaceholder')}
+                  allowCustomValues={false}
+                  clearable
+                />
+                {!supplierId ? (
                   <p className="text-xs text-muted-foreground">
                     {t('purchasing.orders.form.lines.supplierRequired')}
                   </p>
                 ) : null}
-                {/* One line per source: an operator has to know which list they are choosing from and
-                    what each choice costs them downstream (the master picker needs the catalog link to
-                    ship, the library picker needs a sync first). */}
+                {/* One line, two sources: the hint says which list is searched first and what each
+                    choice costs downstream (a library row needs a sync, a master product needs its
+                    catalog link before it can ship). */}
                 <p className="text-xs text-muted-foreground">
-                  {t(
-                    supplierMode
-                      ? 'purchasing.orders.form.lines.supplierProductHint'
-                      : 'purchasing.orders.form.lines.masterHint',
-                  )}
+                  {t('purchasing.orders.form.lines.pickerHint')}
                 </p>
-                <Button type="button" variant="link" size="2xs" className="h-auto px-0" onClick={switchPicker}>
-                  {t(
-                    supplierMode
-                      ? 'purchasing.orders.form.lines.switchToMaster'
-                      : 'purchasing.orders.form.lines.switchToSupplierProduct',
-                  )}
-                </Button>
               </div>
               <div className="space-y-1.5 md:col-span-2">
                 <FieldLabel htmlFor={quantityId} required>

@@ -63,6 +63,10 @@ type LibraryItem = {
   declarationElements: string | null
   unit: string
   hsCode: string | null
+  moqQuantity: number | null
+  cartonQuantity: number | null
+  unitNetWeight: string | null
+  innerPacking: Record<string, unknown> | null
   imageAttachmentIds: string[]
   productId: string | null
   productSku: string | null
@@ -202,6 +206,7 @@ test.describe.serial('purchasing — supplier product library', () => {
       unit: 'PCS',
       moqQuantity: 10,
       cartonQuantity: 8,
+      unitNetWeight: '1.28',
       innerPacking: { length: 21.9, width: 21.9, height: 18.5, unit: 'cm' },
     })
     const createdBody = await readJsonSafe<{ id?: string; error?: string; code?: string }>(created)
@@ -227,6 +232,11 @@ test.describe.serial('purchasing — supplier product library', () => {
     expect(page?.items?.[0]?.supplierSku).toBe(supplierCode)
     expect(page?.items?.[0]?.supplierId).toBe(supplierId)
     expect(page?.items?.[0]?.status).toBe('active')
+    // Single-unit packing is what purchasing reads: Qty/Box, the piece's net weight and its size
+    // all survive the round trip, while the whole-carton figures are no longer part of the row.
+    expect(page?.items?.[0]?.cartonQuantity).toBe(8)
+    expect(Number(page?.items?.[0]?.unitNetWeight)).toBe(1.28)
+    expect(page?.items?.[0]?.innerPacking).toEqual({ length: 21.9, width: 21.9, height: 18.5, unit: 'cm' })
   })
 
   test('imports an approved quotation line once and reports the second run as skipped', async () => {
@@ -577,5 +587,407 @@ test.describe.serial('purchasing — supplier product library', () => {
       selectedOrgId: hqOrgId,
     })
     expect(viewerDenied.status(), 'a role without purchasing.supplier-products.view is refused').toBe(403)
+  })
+
+  test('Phase 8 — links, re-points and clears a library row, and refuses targets it cannot own (TEST-SPL-009)', async () => {
+    const branchOrg = branchOrgId
+    expect(branchOrg, 'the branch organization fixture exists').toBeTruthy()
+    if (!branchOrg) return
+
+    // Two linkable master rows in HQ and one in the child branch organization: a link written from an
+    // HQ-scoped request must not be able to point at the latter, even though the branch is an
+    // organization the caller can read.
+    const linkTargetIds: string[] = []
+    for (const suffix of ['A', 'B']) {
+      const created = await staffRequest('POST', '/api/products/items', {
+        sku: `${supplierCode}-LINK-${suffix}`,
+        name: `Link target ${suffix} ${stamp}`,
+        unit: 'PCS',
+      })
+      const body = await readJsonSafe<{ id?: string }>(created)
+      expect(created.status(), `POST /api/products/items answered ${JSON.stringify(body)}`).toBe(201)
+      linkTargetIds.push(String(body?.id ?? ''))
+    }
+    const [firstTargetId, secondTargetId] = linkTargetIds
+    expect(firstTargetId && secondTargetId, 'both HQ link targets exist').toBeTruthy()
+
+    const branchProduct = await apiRequestWithSelectedOrg(api, 'POST', '/api/products/items', {
+      token: rootToken,
+      selectedOrgId: branchOrg,
+      data: { sku: `${supplierCode}-LINK-BRANCH`, name: `Branch link target ${stamp}`, unit: 'PCS' },
+    })
+    const branchProductBody = await readJsonSafe<{ id?: string }>(branchProduct)
+    expect(branchProduct.status(), `the branch product answered ${JSON.stringify(branchProductBody)}`).toBe(201)
+    const branchProductId = String(branchProductBody?.id ?? '')
+    expect(branchProductId, 'the child organization owns its own product').toBeTruthy()
+
+    // The supplier's own code deliberately differs from every master SKU: linking is exactly how a
+    // code that does not match ours is attached without spawning a duplicate product.
+    const rowSku = `${supplierCode}-LINK-ROW`
+    const createdRow = await staffRequest('POST', LIBRARY_URL, {
+      supplierId,
+      supplierSku: rowSku,
+      name: 'Linkable item',
+      unit: 'PCS',
+    })
+    const createdRowBody = await readJsonSafe<{ id?: string }>(createdRow)
+    expect(createdRow.status(), `POST ${LIBRARY_URL} answered ${JSON.stringify(createdRowBody)}`).toBe(201)
+    const rowId = String(createdRowBody?.id ?? '')
+    expect(rowId, 'the library row is the link source').toBeTruthy()
+
+    const productCount = async () => {
+      const list = await staffRequest('GET', `/api/products/items?pageSize=1&search=${encodeURIComponent(supplierCode)}`)
+      expect(list.status(), 'the product list answers while counting').toBe(200)
+      return (await readJsonSafe<ListResponse<{ id: string }>>(list))?.total ?? 0
+    }
+    const beforeLink = await productCount()
+
+    const link = await staffRequest('POST', `${LIBRARY_URL}/link`, { id: rowId, productId: firstTargetId })
+    const linkBody = await readJsonSafe<{ id?: string; productId?: string | null; code?: string }>(link)
+    expect(link.status(), `POST ${LIBRARY_URL}/link answered ${JSON.stringify(linkBody)}`).toBe(200)
+    expect(linkBody?.id).toBe(rowId)
+    expect(linkBody?.productId, 'the link action echoes the product it points at').toBe(firstTargetId)
+
+    const linked = await staffRequest('GET', `${LIBRARY_URL}?ids=${encodeURIComponent(rowId)}`)
+    const linkedRow = (await readJsonSafe<ListResponse<LibraryItem & { productDeleted?: boolean }>>(linked))?.items?.[0]
+    expect(linkedRow?.productId, 'the row stores the link (关联已有商品)').toBe(firstTargetId)
+    expect(linkedRow?.productSku, 'the list resolves the linked product’s SKU').toBe(`${supplierCode}-LINK-A`)
+    expect(linkedRow?.productDeleted, 'a live link is not flagged as deleted').toBe(false)
+    expect(await productCount(), 'linking writes only the library row, never a product').toBe(beforeLink)
+
+    // 换绑: the same action re-points an existing link.
+    const relink = await staffRequest('POST', `${LIBRARY_URL}/link`, { id: rowId, productId: secondTargetId })
+    expect(relink.status(), 're-pointing a link is the same action (换绑)').toBe(200)
+    const relinked = await staffRequest('GET', `${LIBRARY_URL}?ids=${encodeURIComponent(rowId)}`)
+    const relinkedRow = (await readJsonSafe<ListResponse<LibraryItem>>(relinked))?.items?.[0]
+    expect(relinkedRow?.productId, 'the link moved to the second product').toBe(secondTargetId)
+    expect(relinkedRow?.productSku).toBe(`${supplierCode}-LINK-B`)
+
+    // 解除关联: an explicit null clears it.
+    const cleared = await staffRequest('POST', `${LIBRARY_URL}/link`, { id: rowId, productId: null })
+    const clearedBody = await readJsonSafe<{ productId?: string | null }>(cleared)
+    expect(cleared.status(), `clearing the link answered ${JSON.stringify(clearedBody)}`).toBe(200)
+    expect(clearedBody?.productId, 'productId: null clears the link (解除关联)').toBeNull()
+    const afterClear = await staffRequest('GET', `${LIBRARY_URL}?ids=${encodeURIComponent(rowId)}`)
+    const clearedRow = (await readJsonSafe<ListResponse<LibraryItem & { productDeleted?: boolean }>>(afterClear))?.items?.[0]
+    expect(clearedRow?.productId, 'the cleared row carries no link').toBeNull()
+    expect(clearedRow?.supplierSku, 'the row itself is still readable after clearing').toBe(rowSku)
+
+    // A product of the child organization is outside the HQ scope the request writes in.
+    const foreign = await staffRequest('POST', `${LIBRARY_URL}/link`, { id: rowId, productId: branchProductId })
+    const foreignBody = await readJsonSafe<{ code?: string }>(foreign)
+    expect(foreign.status(), `linking a product of the child organization answered ${JSON.stringify(foreignBody)}`).toBe(404)
+    expect(foreignBody?.code).toBe('product_not_found')
+
+    // A soft-deleted target is refused too, and nothing is written.
+    const doomedTarget = await staffRequest('POST', '/api/products/items', {
+      sku: `${supplierCode}-LINK-DELETED`,
+      name: `Deleted link target ${stamp}`,
+      unit: 'PCS',
+    })
+    const doomedTargetId = String((await readJsonSafe<{ id?: string }>(doomedTarget))?.id ?? '')
+    expect(doomedTarget.status(), 'the doomed link target exists').toBe(201)
+    const removeDoomed = await staffRequest('DELETE', `/api/products/items?id=${encodeURIComponent(doomedTargetId)}`)
+    expect(removeDoomed.status(), 'DELETE /api/products/items soft-deletes the product').toBe(200)
+
+    const toDeleted = await staffRequest('POST', `${LIBRARY_URL}/link`, { id: rowId, productId: doomedTargetId })
+    const toDeletedBody = await readJsonSafe<{ code?: string }>(toDeleted)
+    expect(toDeleted.status(), `linking a deleted product answered ${JSON.stringify(toDeletedBody)}`).toBe(422)
+    expect(toDeletedBody?.code).toBe('product_deleted')
+    const stillCleared = await staffRequest('GET', `${LIBRARY_URL}?ids=${encodeURIComponent(rowId)}`)
+    expect(
+      (await readJsonSafe<ListResponse<LibraryItem>>(stillCleared))?.items?.[0]?.productId,
+      'a refused link leaves the row unlinked',
+    ).toBeNull()
+
+    // A link can outlive its target: link a live product, delete that product, and the row must say so
+    // instead of reading as simply unlinked.
+    const vanishingTarget = await staffRequest('POST', '/api/products/items', {
+      sku: `${supplierCode}-LINK-GONE`,
+      name: `Vanishing link target ${stamp}`,
+      unit: 'PCS',
+    })
+    const vanishingTargetId = String((await readJsonSafe<{ id?: string }>(vanishingTarget))?.id ?? '')
+    expect(vanishingTarget.status(), 'the vanishing link target exists').toBe(201)
+    const linkVanishing = await staffRequest('POST', `${LIBRARY_URL}/link`, { id: rowId, productId: vanishingTargetId })
+    expect(linkVanishing.status(), 'a live product links').toBe(200)
+    const removeVanishing = await staffRequest('DELETE', `/api/products/items?id=${encodeURIComponent(vanishingTargetId)}`)
+    expect(removeVanishing.status(), 'the linked product is soft-deleted afterwards').toBe(200)
+
+    const orphaned = await staffRequest('GET', `${LIBRARY_URL}?ids=${encodeURIComponent(rowId)}`)
+    const orphanedRow = (await readJsonSafe<ListResponse<LibraryItem & { productDeleted?: boolean }>>(orphaned))?.items?.[0]
+    expect(orphanedRow?.productId, 'the stored link survives the product’s deletion').toBe(vanishingTargetId)
+    expect(orphanedRow?.productDeleted, 'the list flags the link whose product is gone').toBe(true)
+
+    const linkedFilter = await staffRequest('GET', `${LIBRARY_URL}?linked=linked&search=${encodeURIComponent(rowSku)}`)
+    expect(linkedFilter.status()).toBe(200)
+    const linkedPage = await readJsonSafe<ListResponse<LibraryItem>>(linkedFilter)
+    expect(
+      linkedPage?.items?.some((entry) => entry.id === rowId),
+      '建档状态 filters the stored link, so a deleted target stays in 已建档',
+    ).toBe(true)
+
+    const unlinkedFilter = await staffRequest('GET', `${LIBRARY_URL}?linked=unlinked&search=${encodeURIComponent(rowSku)}`)
+    expect(unlinkedFilter.status()).toBe(200)
+    const unlinkedPage = await readJsonSafe<ListResponse<LibraryItem>>(unlinkedFilter)
+    expect(
+      unlinkedPage?.items?.some((entry) => entry.id === rowId),
+      'and it is not offered as 未建档 while the link is still stored',
+    ).toBe(false)
+
+    const clearOrphan = await staffRequest('POST', `${LIBRARY_URL}/link`, { id: rowId, productId: null })
+    expect(clearOrphan.status(), 'clearing a link whose product is gone is allowed').toBe(200)
+    const afterOrphanClear = await staffRequest('GET', `${LIBRARY_URL}?linked=unlinked&search=${encodeURIComponent(rowSku)}`)
+    const unlinkedAfterClear = await readJsonSafe<ListResponse<LibraryItem>>(afterOrphanClear)
+    expect(
+      unlinkedAfterClear?.items?.some((entry) => entry.id === rowId),
+      'once cleared the row moves to 未建档',
+    ).toBe(true)
+  })
+
+  test('Phase 8 — sync-fields pushes the row’s values and its purchase price onto the linked product (TEST-SPL-010)', async () => {
+    const syncProductSku = `${supplierCode}-SYNC`
+    const createdProduct = await staffRequest('POST', '/api/products/items', {
+      sku: syncProductSku,
+      name: `Master name before sync ${stamp}`,
+      unit: 'PCS',
+    })
+    const createdProductBody = await readJsonSafe<{ id?: string }>(createdProduct)
+    expect(createdProduct.status(), `POST /api/products/items answered ${JSON.stringify(createdProductBody)}`).toBe(201)
+    const syncProductId = String(createdProductBody?.id ?? '')
+    expect(syncProductId, 'the sync target exists').toBeTruthy()
+
+    const masterPricesUrl = '/api/products/prices'
+    const replaced = await staffRequest('PUT', masterPricesUrl, {
+      productId: syncProductId,
+      rows: [
+        { priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 1, unitPrice: '10.000000' },
+        { priceTier: 'internal', currencyCode: 'CNY', minQuantity: 1, unitPrice: '20.000000' },
+        { priceTier: 'export', currencyCode: 'CNY', minQuantity: 1, unitPrice: '30.000000' },
+      ],
+    })
+    expect(replaced.status(), `PUT ${masterPricesUrl} answered ${await replaced.text()}`).toBe(200)
+
+    const masterPrices = async () => {
+      const listed = await staffRequest(
+        'GET',
+        `${masterPricesUrl}?productId=${encodeURIComponent(syncProductId)}&isActive=true`,
+      )
+      expect(listed.status(), 'the price list answers').toBe(200)
+      return (
+        (await readJsonSafe<ListResponse<{ id: string; priceTier: string; currencyCode: string; unitPrice: string }>>(listed))
+          ?.items ?? []
+      )
+    }
+    const pricesBefore = await masterPrices()
+    const internalBefore = pricesBefore.find((entry) => entry.priceTier === 'internal')
+    const exportBefore = pricesBefore.find((entry) => entry.priceTier === 'export')
+    expect(internalBefore && exportBefore, 'the product starts with all three price tiers').toBeTruthy()
+
+    const syncRowSku = `${supplierCode}-SYNC-ROW`
+    const createdRow = await staffRequest('POST', LIBRARY_URL, {
+      supplierId,
+      supplierSku: syncRowSku,
+      name: 'Sync source (supplier wording)',
+      nameZh: '同步前的名称',
+      description: 'Material: ABS',
+      unit: 'PCS',
+    })
+    const createdRowBody = await readJsonSafe<{ id?: string }>(createdRow)
+    expect(createdRow.status(), `POST ${LIBRARY_URL} answered ${JSON.stringify(createdRowBody)}`).toBe(201)
+    const syncRowId = String(createdRowBody?.id ?? '')
+    expect(syncRowId, 'the library row is the sync source').toBeTruthy()
+
+    const link = await staffRequest('POST', `${LIBRARY_URL}/link`, { id: syncRowId, productId: syncProductId })
+    expect(link.status(), 'the row must be linked before its fields can be pushed').toBe(200)
+
+    // The row's own confirmed supplier cost is the price the `purchase` tier follows.
+    const rowPrices = await staffRequest('PUT', `${LIBRARY_URL}/prices`, {
+      supplierProductId: syncRowId,
+      rows: [{ priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '18.500000' }],
+    })
+    expect(rowPrices.status(), `PUT ${LIBRARY_URL}/prices answered ${await rowPrices.text()}`).toBe(200)
+
+    const rowUpdated = await staffRequest('PUT', LIBRARY_URL, {
+      id: syncRowId,
+      supplierSku: syncRowSku,
+      name: 'Sync source (supplier wording)',
+      nameZh: '同步后的名称',
+      description: 'Material: ABS\nCapacity: 2.0L',
+      unit: 'PCS',
+    })
+    expect(rowUpdated.status(), `PUT ${LIBRARY_URL} answered ${await rowUpdated.text()}`).toBe(200)
+
+    const sync = await staffRequest('POST', `${LIBRARY_URL}/sync-fields`, { id: syncRowId })
+    const syncBody = await readJsonSafe<{
+      productId?: string
+      fieldsChanged?: string[]
+      priceChanged?: boolean
+      code?: string
+    }>(sync)
+    expect(sync.status(), `POST ${LIBRARY_URL}/sync-fields answered ${JSON.stringify(syncBody)}`).toBe(200)
+    expect(syncBody?.productId, 'the sync names the product it wrote').toBe(syncProductId)
+    expect(syncBody?.fieldsChanged, 'the report names exactly the fields the sync wrote').toEqual(['name', 'specSummary'])
+    expect(syncBody?.priceChanged, 'the row’s supplier cost moved the purchase tier').toBe(true)
+
+    const detail = await staffRequest('GET', `/api/products/items/${encodeURIComponent(syncProductId)}`)
+    expect(detail.status(), `GET /api/products/items/{id} answered ${await detail.text()}`).toBe(200)
+    const item = (
+      await readJsonSafe<{ item?: { name: string; nameEn: string | null; specSummary: string | null; unit: string } }>(detail)
+    )?.item
+    expect(item?.name, 'our Chinese name is what the master displays').toBe('同步后的名称')
+    expect(item?.specSummary, 'the description becomes the master’s spec summary').toBe('Material: ABS / Capacity: 2.0L')
+
+    const pricesAfter = await masterPrices()
+    const purchaseAfter = pricesAfter.find((entry) => entry.priceTier === 'purchase')
+    expect(purchaseAfter?.currencyCode, 'the purchase tier keeps the library row’s currency').toBe('CNY')
+    expect(Number(purchaseAfter?.unitPrice), 'the purchase tier follows the library row').toBe(18.5)
+    const internalAfter = pricesAfter.find((entry) => entry.priceTier === 'internal')
+    const exportAfter = pricesAfter.find((entry) => entry.priceTier === 'export')
+    expect(internalAfter?.id, 'the internal tier is the same row it was before the sync').toBe(internalBefore?.id)
+    expect(Number(internalAfter?.unitPrice), 'the internal tier is never touched').toBe(20)
+    expect(exportAfter?.id, 'the export tier is the same row it was before the sync').toBe(exportBefore?.id)
+    expect(Number(exportAfter?.unitPrice), 'the export tier is never touched').toBe(30)
+
+    const second = await staffRequest('POST', `${LIBRARY_URL}/sync-fields`, { id: syncRowId })
+    const secondBody = await readJsonSafe<{ fieldsChanged?: string[]; priceChanged?: boolean }>(second)
+    expect(second.status(), 'a second sync is accepted').toBe(200)
+    expect(secondBody?.fieldsChanged, 'a second sync finds nothing left to write').toEqual([])
+    expect(secondBody?.priceChanged, 'and no price to move').toBe(false)
+
+    // An unlinked row has no product to push to.
+    const unlinkedRow = await staffRequest('POST', LIBRARY_URL, {
+      supplierId,
+      supplierSku: `${supplierCode}-SYNC-UNLINKED`,
+      name: 'Never linked',
+      unit: 'PCS',
+    })
+    const unlinkedRowBody = await readJsonSafe<{ id?: string }>(unlinkedRow)
+    expect(unlinkedRow.status(), `POST ${LIBRARY_URL} answered ${JSON.stringify(unlinkedRowBody)}`).toBe(201)
+    const refused = await staffRequest('POST', `${LIBRARY_URL}/sync-fields`, { id: String(unlinkedRowBody?.id ?? '') })
+    const refusedBody = await readJsonSafe<{ code?: string }>(refused)
+    expect(refused.status(), `an unlinked row answered ${JSON.stringify(refusedBody)}`).toBe(422)
+    expect(refusedBody?.code).toBe('supplier_product_not_linked')
+  })
+
+  test('Phase 8 — promote-batch isolates one row’s failure, collapses duplicates and refuses an empty payload (TEST-SPL-011)', async () => {
+    const batchNewSku = `${supplierCode}-BATCH-NEW`
+    const batchExistingSku = `${supplierCode}-BATCH-EXISTING`
+    const batchDeletedSku = `${supplierCode}-BATCH-DELETED`
+
+    const createRow = async (supplierSku: string, name: string) => {
+      const created = await staffRequest('POST', LIBRARY_URL, { supplierId, supplierSku, name, unit: 'PCS' })
+      const body = await readJsonSafe<{ id?: string }>(created)
+      expect(created.status(), `POST ${LIBRARY_URL} for ${supplierSku} answered ${JSON.stringify(body)}`).toBe(201)
+      return String(body?.id ?? '')
+    }
+
+    const rowNew = await createRow(batchNewSku, 'Batch item (new SKU)')
+    const rowExisting = await createRow(batchExistingSku, 'Batch item (existing SKU)')
+    const rowDeleted = await createRow(batchDeletedSku, 'Batch item (deleted SKU)')
+    expect(rowNew && rowExisting && rowDeleted, 'the three batch rows exist').toBeTruthy()
+
+    // The second row's SKU already exists as a live product, but under a different name, so the
+    // promotion has something to write (`updated`) instead of nothing (`skipped`).
+    const existingProduct = await staffRequest('POST', '/api/products/items', {
+      sku: batchExistingSku,
+      name: `Legacy master name ${stamp}`,
+      unit: 'PCS',
+    })
+    const existingProductBody = await readJsonSafe<{ id?: string }>(existingProduct)
+    expect(existingProduct.status(), `the existing product answered ${JSON.stringify(existingProductBody)}`).toBe(201)
+    const existingProductId = String(existingProductBody?.id ?? '')
+    expect(existingProductId, 'the row’s SKU is already owned by a product').toBeTruthy()
+
+    // The third row's SKU is owned by a product that is already soft-deleted: the promotion must
+    // refuse it alone instead of reviving the deleted row.
+    const deletedProduct = await staffRequest('POST', '/api/products/items', {
+      sku: batchDeletedSku,
+      name: `Deleted master name ${stamp}`,
+      unit: 'PCS',
+    })
+    const deletedProductBody = await readJsonSafe<{ id?: string }>(deletedProduct)
+    expect(deletedProduct.status(), `the deleted product answered ${JSON.stringify(deletedProductBody)}`).toBe(201)
+    const deletedProductId = String(deletedProductBody?.id ?? '')
+    const removeDeletedProduct = await staffRequest('DELETE', `/api/products/items?id=${encodeURIComponent(deletedProductId)}`)
+    expect(removeDeletedProduct.status(), 'the third row’s SKU belongs to a soft-deleted product').toBe(200)
+
+    const productCount = async () => {
+      const list = await staffRequest('GET', `/api/products/items?pageSize=1&search=${encodeURIComponent(supplierCode)}`)
+      expect(list.status(), 'the product list answers while counting').toBe(200)
+      return (await readJsonSafe<ListResponse<{ id: string }>>(list))?.total ?? 0
+    }
+    const beforeBatch = await productCount()
+
+    type BatchResult = {
+      created?: number
+      updated?: number
+      skipped?: number
+      failed?: Array<{ id: string; code: string; message: string }>
+    }
+    const batch = await staffRequest('POST', `${LIBRARY_URL}/promote-batch`, {
+      ids: [rowNew, rowExisting, rowDeleted],
+    })
+    const batchBody = await readJsonSafe<BatchResult>(batch)
+    expect(batch.status(), `POST ${LIBRARY_URL}/promote-batch answered ${JSON.stringify(batchBody)}`).toBe(200)
+    expect(batchBody?.created, 'the row whose SKU is unknown creates a product').toBe(1)
+    expect(batchBody?.updated, 'the row whose SKU already existed updates that product').toBe(1)
+    expect(batchBody?.skipped).toBe(0)
+    expect(batchBody?.failed?.length, 'only the row owned by a deleted product fails').toBe(1)
+    expect(batchBody?.failed?.[0]?.id).toBe(rowDeleted)
+    expect(batchBody?.failed?.[0]?.code, 'the failure names the deleted-SKU rule').toBe('sku_belongs_to_deleted_product')
+
+    const batchRows = await staffRequest(
+      'GET',
+      `${LIBRARY_URL}?ids=${encodeURIComponent([rowNew, rowExisting, rowDeleted].join(','))}`,
+    )
+    const batchItems = (await readJsonSafe<ListResponse<LibraryItem>>(batchRows))?.items ?? []
+    expect(
+      batchItems.find((entry) => entry.id === rowNew)?.productId,
+      'the created row is linked to its new product',
+    ).toBeTruthy()
+    expect(
+      batchItems.find((entry) => entry.id === rowExisting)?.productId,
+      'the existing product is reused, not duplicated',
+    ).toBe(existingProductId)
+    expect(
+      batchItems.find((entry) => entry.id === rowDeleted)?.productId,
+      'the failed row is left untouched',
+    ).toBeNull()
+    const afterBatch = await productCount()
+    expect(afterBatch, 'one product per distinct successful row, and none for the refused one').toBe(beforeBatch + 1)
+
+    // Re-running is idempotent for the two that landed, and repeats the same failure.
+    const repeat = await staffRequest('POST', `${LIBRARY_URL}/promote-batch`, {
+      ids: [rowNew, rowExisting, rowDeleted],
+    })
+    const repeatBody = await readJsonSafe<BatchResult>(repeat)
+    expect(repeat.status()).toBe(200)
+    expect(repeatBody?.created, 'a repeated batch creates nothing').toBe(0)
+    expect(
+      (repeatBody?.updated ?? 0) + (repeatBody?.skipped ?? 0),
+      'both linked rows are already done, reported as skipped or updated',
+    ).toBe(2)
+    expect(repeatBody?.failed?.length, 'the deleted-SKU failure repeats').toBe(1)
+    expect(repeatBody?.failed?.[0]?.code).toBe('sku_belongs_to_deleted_product')
+    expect(await productCount(), 'a repeated batch creates no product').toBe(afterBatch)
+
+    // Duplicate ids collapse to their first occurrence: the counts describe distinct rows.
+    const rowDuplicate = await createRow(`${supplierCode}-BATCH-DUPLICATE`, 'Batch item (duplicate ids)')
+    const duplicated = await staffRequest('POST', `${LIBRARY_URL}/promote-batch`, {
+      ids: [rowDuplicate, rowDuplicate, rowDuplicate],
+    })
+    const duplicatedBody = await readJsonSafe<BatchResult>(duplicated)
+    expect(duplicated.status(), `a duplicated payload answered ${JSON.stringify(duplicatedBody)}`).toBe(200)
+    expect(duplicatedBody?.created, 'the repeated id is promoted once').toBe(1)
+    expect(
+      (duplicatedBody?.created ?? 0) + (duplicatedBody?.updated ?? 0) + (duplicatedBody?.skipped ?? 0),
+      'the row is counted once, not once per occurrence',
+    ).toBe(1)
+    expect(duplicatedBody?.failed, 'a collapsed duplicate is not a failure').toEqual([])
+    expect(await productCount(), 'the collapsed row created exactly one product').toBe(afterBatch + 1)
+
+    const empty = await staffRequest('POST', `${LIBRARY_URL}/promote-batch`, { ids: [] })
+    expect(empty.status(), 'a payload with no ids is refused').toBe(400)
   })
 })

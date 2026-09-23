@@ -9,12 +9,21 @@ import { PurchasingSupplierProduct } from '../data/entities'
 import {
   supplierProductCreateSchema,
   supplierProductImportSchema,
+  supplierProductLinkSchema,
+  supplierProductPromoteBatchSchema,
   supplierProductPromoteSchema,
+  supplierProductSyncFieldsSchema,
   supplierProductUpdateSchema,
   type SupplierProductImportInput,
 } from '../data/validators'
 import { importQuoteLinesIntoLibraries, type SupplierProductImportResult } from '../lib/supplierProductImport'
-import { promoteSupplierProduct, type CommandBusLike, type SupplierProductPromotionResult } from '../lib/supplierProductPromotion'
+import { writeSupplierProductLink } from '../lib/supplierProductLinking'
+import {
+  applySupplierProductToMaster,
+  promoteSupplierProduct,
+  type CommandBusLike,
+  type SupplierProductPromotionResult,
+} from '../lib/supplierProductPromotion'
 import { loadQuote } from '../lib/quoteLineReads'
 import {
   SUPPLIER_PRODUCT_RESOURCE_KIND,
@@ -79,10 +88,7 @@ const createSupplierProductCommand: CommandHandler<Record<string, unknown>, Purc
         moqQuantity: parsed.moqQuantity ?? null,
         cartonQuantity: parsed.cartonQuantity ?? null,
         unitNetWeight: parsed.unitNetWeight ?? null,
-        cartonGrossWeight: parsed.cartonGrossWeight ?? null,
-        cartonNetWeight: parsed.cartonNetWeight ?? null,
         innerPacking: parsed.innerPacking,
-        outerPacking: parsed.outerPacking,
         imageAttachmentIds: parsed.imageAttachmentIds ?? [],
         status: parsed.status,
         source: 'manual',
@@ -136,10 +142,7 @@ const updateSupplierProductCommand: CommandHandler<Record<string, unknown>, Purc
         if (parsed.moqQuantity !== undefined) entity.moqQuantity = parsed.moqQuantity ?? null
         if (parsed.cartonQuantity !== undefined) entity.cartonQuantity = parsed.cartonQuantity ?? null
         if (parsed.unitNetWeight !== undefined) entity.unitNetWeight = parsed.unitNetWeight ?? null
-        if (parsed.cartonGrossWeight !== undefined) entity.cartonGrossWeight = parsed.cartonGrossWeight ?? null
-        if (parsed.cartonNetWeight !== undefined) entity.cartonNetWeight = parsed.cartonNetWeight ?? null
         if (parsed.innerPacking !== undefined) entity.innerPacking = parsed.innerPacking
-        if (parsed.outerPacking !== undefined) entity.outerPacking = parsed.outerPacking
         // Replace-set: the submitted list is the new photo list, `[]` clears it, and an omitted key
         // leaves it alone — binding a photo is a row write, so the list sits behind the same lock.
         if (parsed.imageAttachmentIds !== undefined) entity.imageAttachmentIds = parsed.imageAttachmentIds
@@ -250,16 +253,149 @@ const promoteSupplierProductCommand: CommandHandler<Record<string, unknown>, Sup
   },
 }
 
+/**
+ * `purchasing.supplier-products.link` — point a library row at a product that already exists
+ * (关联已有商品), re-point it (换绑), or clear the link (解除关联, `productId: null`).
+ *
+ * It writes **only** `product_id`: the master's fields and prices have their own owners, and a link
+ * that also rewrote them would overwrite a product manager's edits with no review step. That is the
+ * whole reason this action exists next to `promote` — a supplier code that deliberately differs
+ * from our SKU can be linked instead of spawning a duplicate product.
+ */
+const linkSupplierProductCommand: CommandHandler<Record<string, unknown>, { id: string; productId: string | null }> = {
+  id: 'purchasing.supplier-products.link',
+  isUndoable: false,
+  async execute(rawInput, ctx) {
+    const parsed = supplierProductLinkSchema.parse(rawInput)
+    const scope = ensureScope(ctx)
+    const em = ctx.container.resolve('em') as EntityManager
+    const de = ctx.container.resolve('dataEngine') as DataEngine
+
+    const productId = parsed.productId ?? null
+    // The scope check, the target check and the write share one transaction (`writeSupplierProductLink`),
+    // and the row is deliberately **not** loaded through the EM first: the write is raw Kysely, so a
+    // pre-loaded entity could answer the side-effect read below from a stale identity map.
+    await writeSupplierProductLink({ em, scope, supplierProductId: parsed.id, productId })
+
+    const updated = await em.fork().findOne(PurchasingSupplierProduct, supplierProductFilter(scope, parsed.id))
+    if (!updated) throw notFound('Supplier product not found')
+    await emitCrudSideEffects({
+      dataEngine: de,
+      action: 'updated',
+      entity: updated,
+      identifiers: { id: String(updated.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      events: supplierProductCrudEvents,
+      indexer: supplierProductCrudIndexer,
+    })
+    return { id: String(updated.id), productId }
+  },
+}
+
+/**
+ * `purchasing.supplier-products.sync-fields` — push the row's current values onto the product it is
+ * already linked to.
+ *
+ * `promote` is idempotent on a linked row (`skipped`), so without this a name, spec or price
+ * corrected in the library would never reach the master again. The write is the same
+ * non-destructive one `promote` performs — non-empty/changed fields plus the `purchase` price
+ * tier — and it reports exactly what it changed, because "synced" alone tells a buyer nothing.
+ */
+const syncSupplierProductFieldsCommand: CommandHandler<
+  Record<string, unknown>,
+  { productId: string; fieldsChanged: string[]; priceChanged: boolean }
+> = {
+  id: 'purchasing.supplier-products.sync-fields',
+  isUndoable: false,
+  async execute(rawInput, ctx) {
+    const parsed = supplierProductSyncFieldsSchema.parse(rawInput)
+    const scope = ensureScope(ctx)
+    const em = ctx.container.resolve('em') as EntityManager
+    const product = await loadSupplierProduct(em, scope, parsed.id)
+    if (!product.productId) {
+      throw new CrudHttpError(422, {
+        error: 'This library row is not linked to a product yet; create or link one first',
+        code: 'supplier_product_not_linked',
+      })
+    }
+
+    const result = await applySupplierProductToMaster({
+      em,
+      scope,
+      commandBus: ctx.container.resolve('commandBus') as CommandBusLike,
+      ctx,
+      product,
+      productId: String(product.productId),
+    })
+    return { productId: String(product.productId), ...result }
+  },
+}
+
+/** One row's failure inside a batch: named by id, with the code the single-row action would raise. */
+export type SupplierProductPromoteBatchFailure = { id: string; code: string; message: string }
+
+export type SupplierProductPromoteBatchResult = {
+  created: number
+  updated: number
+  skipped: number
+  failed: SupplierProductPromoteBatchFailure[]
+}
+
+function promotionFailure(id: string, error: unknown): SupplierProductPromoteBatchFailure {
+  const message = error instanceof Error && error.message ? error.message : 'Promotion failed'
+  const code =
+    error instanceof CrudHttpError && typeof error.body?.code === 'string' ? String(error.body.code) : 'promotion_failed'
+  return { id, code, message }
+}
+
+/**
+ * `purchasing.supplier-products.promote-batch` — clear a backlog without clicking row by row.
+ *
+ * Per-row isolation, exactly like the quotation import: one row whose SKU is owned by a deleted
+ * product fails alone and the rest still land. Duplicate ids are collapsed to their first
+ * occurrence, so the counts always describe distinct rows.
+ */
+const promoteSupplierProductsBatchCommand: CommandHandler<Record<string, unknown>, SupplierProductPromoteBatchResult> = {
+  id: 'purchasing.supplier-products.promote-batch',
+  isUndoable: false,
+  async execute(rawInput, ctx) {
+    const parsed = supplierProductPromoteBatchSchema.parse(rawInput)
+    const scope = ensureScope(ctx)
+    const em = ctx.container.resolve('em') as EntityManager
+    const de = ctx.container.resolve('dataEngine') as DataEngine
+    const commandBus = ctx.container.resolve('commandBus') as CommandBusLike
+
+    const result: SupplierProductPromoteBatchResult = { created: 0, updated: 0, skipped: 0, failed: [] }
+    for (const id of Array.from(new Set(parsed.ids))) {
+      try {
+        const product = await loadSupplierProduct(em, scope, id)
+        const promoted = await promoteSupplierProduct({ em, ctx, scope, de, commandBus, product })
+        if (promoted.action === 'created') result.created += 1
+        else if (promoted.action === 'updated') result.updated += 1
+        else result.skipped += 1
+      } catch (error) {
+        result.failed.push(promotionFailure(id, error))
+      }
+    }
+    return result
+  },
+}
+
 registerCommand(createSupplierProductCommand)
 registerCommand(updateSupplierProductCommand)
 registerCommand(deleteSupplierProductCommand)
 registerCommand(importSupplierProductsCommand)
 registerCommand(promoteSupplierProductCommand)
+registerCommand(linkSupplierProductCommand)
+registerCommand(syncSupplierProductFieldsCommand)
+registerCommand(promoteSupplierProductsBatchCommand)
 
 export {
   createSupplierProductCommand,
   deleteSupplierProductCommand,
   importSupplierProductsCommand,
+  linkSupplierProductCommand,
   promoteSupplierProductCommand,
+  promoteSupplierProductsBatchCommand,
+  syncSupplierProductFieldsCommand,
   updateSupplierProductCommand,
 }

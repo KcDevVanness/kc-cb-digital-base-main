@@ -48,13 +48,15 @@ const supplierProductListItemSchema = z
     moqQuantity: z.number().nullable().optional(),
     cartonQuantity: z.number().nullable().optional(),
     unitNetWeight: z.string().nullable().optional(),
-    cartonGrossWeight: z.string().nullable().optional(),
-    cartonNetWeight: z.string().nullable().optional(),
     innerPacking: z.record(z.string(), z.unknown()).nullable().optional(),
-    outerPacking: z.record(z.string(), z.unknown()).nullable().optional(),
     productId: z.string().uuid().nullable().optional(),
     productSku: z.string().nullable().optional(),
     productName: z.string().nullable().optional(),
+    /**
+     * Phase 8: `productId` is set but no live product resolves for it (deleted, or outside this
+     * scope). Presentation only — the list still counts the row as 已建档.
+     */
+    productDeleted: z.boolean().optional(),
     status: z.string(),
     source: z.string(),
     lastQuoteId: z.string().uuid().nullable().optional(),
@@ -124,10 +126,7 @@ const listFields = [
   'moq_quantity',
   'carton_quantity',
   'unit_net_weight',
-  'carton_gross_weight',
-  'carton_net_weight',
   'inner_packing',
-  'outer_packing',
   'image_attachment_ids',
   'product_id',
   'status',
@@ -184,6 +183,11 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       }
       if (query.supplierId) filters.supplier_id = query.supplierId
       if (query.status !== 'all') filters.status = query.status
+      // 建档状态 (Phase 8): the row's **stored** link decides the bucket, so a row whose product was
+      // deleted afterwards stays in 已建档 (the list marks it `productDeleted` instead of dropping it
+      // out of sight, which is what a live-label filter would do).
+      if (query.linked === 'linked') filters.product_id = { $ne: null }
+      else if (query.linked === 'unlinked') filters.product_id = null
       if (query.search && query.search.trim().length > 0) {
         const term = `%${escapeLikePattern(query.search.trim())}%`
         // Our own names are searchable because they are what the list leads with; the supplier's
@@ -198,27 +202,32 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       }
       return filters
     },
+    /**
+     * CSV/JSON export columns. The factory takes a static `header` string — there is no per-request
+     * locale on this seam — so the export stays in one language (English, like most of its columns)
+     * instead of mixing Chinese and English in the same header row.
+     */
     export: {
       columns: [
         { field: 'supplierName', header: 'Supplier' },
         { field: 'supplierSku', header: 'Supplier code' },
         { field: 'itemNo', header: 'Item no.' },
         { field: 'name', header: 'Name (supplier)' },
-        { field: 'nameZh', header: '中文品名' },
-        { field: 'nameEn', header: '英文品名' },
+        { field: 'nameZh', header: 'Chinese name' },
+        { field: 'nameEn', header: 'English name' },
         { field: 'unit', header: 'Unit' },
         { field: 'moqQuantity', header: 'MOQ' },
         { field: 'cartonQuantity', header: 'Qty/Box' },
         { field: 'hsCode', header: 'HS code' },
-        { field: 'declarationElements', header: '申报要素' },
+        { field: 'declarationElements', header: 'Declaration elements' },
         {
           field: 'supplierCostPrice',
-          header: '供应商供货价',
+          header: 'Supplier cost',
           resolve: (item: Record<string, unknown>) => formatPriceCell(item.supplierCostPrice),
         },
         {
           field: 'companyOfferPrice',
-          header: '本公司报价',
+          header: 'Our offer',
           resolve: (item: Record<string, unknown>) => formatPriceCell(item.companyOfferPrice),
         },
         { field: 'status' },
@@ -242,10 +251,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       moqQuantity: asNullableNumber(item.moq_quantity),
       cartonQuantity: asNullableNumber(item.carton_quantity),
       unitNetWeight: asNullableString(item.unit_net_weight),
-      cartonGrossWeight: asNullableString(item.carton_gross_weight),
-      cartonNetWeight: asNullableString(item.carton_net_weight),
       innerPacking: asNullableRecord(item.inner_packing),
-      outerPacking: asNullableRecord(item.outer_packing),
       productId: asNullableString(item.product_id),
       status: String(item.status ?? 'active'),
       source: String(item.source ?? 'manual'),
@@ -287,6 +293,10 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
           const label = productId ? labels[productId] : undefined
           item.productSku = label?.sku ?? null
           item.productName = label?.name ?? null
+          // The link can outlive its target: `product_id` is a scalar id with no foreign key, so a
+          // linked row that resolves to no live product is flagged instead of rendering as if it
+          // were simply unlinked — promote would skip it and sync-fields would refuse it.
+          item.productDeleted = productId !== null && label === undefined
         }
       }
 

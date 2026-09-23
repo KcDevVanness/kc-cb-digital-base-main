@@ -7,7 +7,7 @@ import { MAX_PRICE_ROWS, changedProductFields, mergePriceRows, type DesiredPrice
 import { PurchasingSupplierProduct } from '../data/entities'
 import { supplierProductCrudEvents, supplierProductCrudIndexer, type PurchasingScope } from '../commands/shared'
 import { supplierProductToProductFields } from './productMapping'
-import { findProductBySku, loadProductPrices } from './productsReads'
+import { findProductById, findProductBySku, loadProductPrices } from './productsReads'
 import { findLatestQuotedPrice } from './quoteLineReads'
 import { findBasePriceOfItem } from './supplierProductPrices'
 
@@ -27,6 +27,11 @@ import { findBasePriceOfItem } from './supplierProductPrices'
  *
  * Every write goes through the products module's commands, because that is where the product's
  * events, query-index entries, audit rows and validation live.
+ *
+ * Two shapes reach this bridge, and they share every write leg below:
+ * - `promoteSupplierProduct` — no master row yet: create or update **by SKU**, then link.
+ * - `syncSupplierProductFields` — already linked: push the row's current values onto *that* product,
+ *   so a name, spec or price corrected in the library does not stay stranded there.
  */
 
 export type SupplierProductPromotionResult = {
@@ -36,12 +41,158 @@ export type SupplierProductPromotionResult = {
   priceSkipped: boolean
 }
 
+/** What one master write actually changed, so the caller can say so instead of "synced". */
+export type SupplierProductMasterWriteResult = {
+  /** The `products.items.update` payload's keys: empty when the master already matched the row. */
+  fieldsChanged: string[]
+  priceChanged: boolean
+}
+
 /** The command bus this path uses to call the products module's commands. */
 export type CommandBusLike = {
   execute<TInput = Record<string, unknown>, TResult = unknown>(
     commandId: string,
     options: { input: TInput; ctx: CommandRuntimeContext },
   ): Promise<{ result: TResult }>
+}
+
+/**
+ * The context a master write runs under.
+ *
+ * The products commands read the optimistic-lock version from the request headers; the header on
+ * this request belongs to the library row, so it must not be forwarded to a product write.
+ */
+function productWriteContext(ctx: CommandRuntimeContext): CommandRuntimeContext {
+  return { ...ctx, request: undefined, syncOrigin: 'purchasing:supplier-product-promote' }
+}
+
+/**
+ * The price a promotion should write: the item's own price list wins over the newest quotation
+ * line — the buyer maintains it on the library row, it is the price they last confirmed, and the
+ * quotation remains the document that negotiated it. Falling back to the newest matching line keeps
+ * rows that never quoted a price behaving exactly as before.
+ */
+async function resolveDesiredPurchasePrice(
+  em: EntityManager,
+  scope: PurchasingScope,
+  product: PurchasingSupplierProduct,
+): Promise<DesiredPriceRow | null> {
+  const libraryPrice = await findBasePriceOfItem(em, scope, String(product.id), 'supplier_cost')
+  const quoted = libraryPrice ? null : await findLatestQuotedPrice(em, scope, product.supplierId, product.supplierSku)
+
+  if (libraryPrice) {
+    return {
+      priceTier: 'purchase',
+      currencyCode: libraryPrice.currencyCode,
+      minQuantity: libraryPrice.minQuantity >= 1 ? libraryPrice.minQuantity : 1,
+      unitPrice: libraryPrice.unitPrice,
+      startsAt: null,
+      endsAt: null,
+      isActive: true,
+    }
+  }
+  if (!quoted) return null
+
+  // The library row's own MOQ is the ladder step the buyer works with; it wins over the line's.
+  const minQuantity =
+    product.moqQuantity && product.moqQuantity >= 1 ? Math.round(product.moqQuantity) : quoted.minQuantity
+  return {
+    priceTier: 'purchase',
+    currencyCode: quoted.currencyCode,
+    minQuantity,
+    unitPrice: quoted.unitPrice,
+    startsAt: null,
+    endsAt: null,
+    isActive: true,
+  }
+}
+
+/**
+ * Merge the row's `purchase` price into the product's price set, submitting the whole set so the
+ * other tiers survive. Returns whether anything was written.
+ */
+async function mergePurchasePrice(input: {
+  em: EntityManager
+  scope: PurchasingScope
+  commandBus: CommandBusLike
+  productContext: CommandRuntimeContext
+  product: PurchasingSupplierProduct
+  productId: string
+}): Promise<{ priceChanged: boolean; priceSkipped: boolean }> {
+  const desired = await resolveDesiredPurchasePrice(input.em, input.scope, input.product)
+  if (!desired) return { priceChanged: false, priceSkipped: true }
+
+  const currentPrices = await loadProductPrices(input.em, input.scope, input.productId)
+  const merged = mergePriceRows(currentPrices, desired)
+  if (merged.rows.length > MAX_PRICE_ROWS) {
+    throw new CrudHttpError(422, {
+      error: `Product ${input.product.supplierSku} already has ${merged.rows.length} price rows; the price set cannot exceed ${MAX_PRICE_ROWS}`,
+      code: 'too_many_price_rows',
+    })
+  }
+  if (!merged.changed) return { priceChanged: false, priceSkipped: false }
+
+  await input.commandBus.execute('products.prices.replace', {
+    input: { productId: input.productId, rows: merged.rows },
+    ctx: input.productContext,
+  })
+  return { priceChanged: true, priceSkipped: false }
+}
+
+/**
+ * Write one already-linked library row's values onto its product.
+ *
+ * Non-destructive by construction: `changedProductFields` drops null/unchanged values, so a field
+ * the row does not carry is never cleared, and the price leg submits the whole set so only the
+ * `purchase` tier moves. The catalog link, the `internal`/`export` tiers and the variants are never
+ * touched — the master owns them.
+ *
+ * A linked product that is gone (deleted, or not readable in this scope) is refused instead of
+ * silently skipped: `product_id` is a scalar id with no foreign key, so this is a reachable state
+ * and the operator needs to hear about it (the list flags it as 已关联的商品已删除).
+ */
+export async function applySupplierProductToMaster(input: {
+  em: EntityManager
+  scope: PurchasingScope
+  commandBus: CommandBusLike
+  ctx: CommandRuntimeContext
+  product: PurchasingSupplierProduct
+  productId: string
+}): Promise<SupplierProductMasterWriteResult> {
+  const existing = await findProductById(input.em, input.scope, input.productId, { includeDeleted: true })
+  if (!existing) {
+    throw new CrudHttpError(404, {
+      error: `Linked product not found in this organization: ${input.productId}`,
+      code: 'product_not_found',
+    })
+  }
+  if (existing.deletedAt) {
+    throw new CrudHttpError(422, {
+      error: 'The linked product is deleted; re-link this row (换绑) or clear the link first',
+      code: 'product_deleted',
+    })
+  }
+
+  const productContext = productWriteContext(input.ctx)
+  const fields = supplierProductToProductFields(input.product)
+  const payload = changedProductFields(existing, fields)
+  const fieldsChanged = Object.keys(payload)
+  if (fieldsChanged.length > 0) {
+    await input.commandBus.execute('products.items.update', {
+      input: { id: input.productId, ...payload },
+      ctx: productContext,
+    })
+  }
+
+  const { priceChanged } = await mergePurchasePrice({
+    em: input.em,
+    scope: input.scope,
+    commandBus: input.commandBus,
+    productContext,
+    product: input.product,
+    productId: input.productId,
+  })
+  return { fieldsChanged, priceChanged }
 }
 
 export async function promoteSupplierProduct(input: {
@@ -57,14 +208,7 @@ export async function promoteSupplierProduct(input: {
     return { productId: product.productId, action: 'skipped', priceSkipped: false }
   }
 
-  // The products commands read the optimistic-lock version from the request headers; the header on
-  // this request belongs to the library row, so it must not be forwarded to a product write.
-  const productContext: CommandRuntimeContext = {
-    ...input.ctx,
-    request: undefined,
-    syncOrigin: 'purchasing:supplier-product-promote',
-  }
-
+  const productContext = productWriteContext(input.ctx)
   const fields = supplierProductToProductFields(product)
   const existing = await findProductBySku(input.em, scope, product.supplierSku)
   if (existing?.deletedAt) {
@@ -89,9 +233,6 @@ export async function promoteSupplierProduct(input: {
         netWeight: fields.netWeight,
         dimensions: fields.dimensions,
         cartonQuantity: fields.cartonQuantity,
-        cartonDimensions: fields.cartonDimensions,
-        cartonGrossWeight: fields.cartonGrossWeight,
-        cartonNetWeight: fields.cartonNetWeight,
         status: 'active',
       },
       ctx: productContext,
@@ -112,57 +253,14 @@ export async function promoteSupplierProduct(input: {
     }
   }
 
-  let priceSkipped = false
-  // The item's own price list wins over the newest quotation line: the buyer maintains it on the
-  // library row, it is the price they last confirmed, and the quotation remains the document that
-  // negotiated it. Falling back to the newest matching line keeps rows that never quoted a price
-  // behaving exactly as before.
-  const libraryPrice = await findBasePriceOfItem(input.em, scope, String(product.id), 'supplier_cost')
-  const quoted = libraryPrice ? null : await findLatestQuotedPrice(input.em, scope, product.supplierId, product.supplierSku)
-
-  let desired: DesiredPriceRow | null = null
-  if (libraryPrice) {
-    desired = {
-      priceTier: 'purchase',
-      currencyCode: libraryPrice.currencyCode,
-      minQuantity: libraryPrice.minQuantity >= 1 ? libraryPrice.minQuantity : 1,
-      unitPrice: libraryPrice.unitPrice,
-      startsAt: null,
-      endsAt: null,
-      isActive: true,
-    }
-  } else if (quoted) {
-    desired = {
-      priceTier: 'purchase',
-      currencyCode: quoted.currencyCode,
-      minQuantity: quoted.minQuantity,
-      unitPrice: quoted.unitPrice,
-      startsAt: null,
-      endsAt: null,
-      isActive: true,
-    }
-    // The library row's own MOQ is the ladder step the buyer works with; it wins over the line's.
-    if (product.moqQuantity && product.moqQuantity >= 1) desired.minQuantity = Math.round(product.moqQuantity)
-  }
-
-  if (!desired) {
-    priceSkipped = true
-  } else {
-    const currentPrices = await loadProductPrices(input.em, scope, productId)
-    const merged = mergePriceRows(currentPrices, desired)
-    if (merged.rows.length > MAX_PRICE_ROWS) {
-      throw new CrudHttpError(422, {
-        error: `Product ${product.supplierSku} already has ${merged.rows.length} price rows; the price set cannot exceed ${MAX_PRICE_ROWS}`,
-        code: 'too_many_price_rows',
-      })
-    }
-    if (merged.changed) {
-      await input.commandBus.execute('products.prices.replace', {
-        input: { productId, rows: merged.rows },
-        ctx: productContext,
-      })
-    }
-  }
+  const { priceSkipped } = await mergePurchasePrice({
+    em: input.em,
+    scope,
+    commandBus: input.commandBus,
+    productContext,
+    product,
+    productId,
+  })
 
   const updated = await input.de.updateOrmEntity({
     entity: PurchasingSupplierProduct,
