@@ -2,8 +2,9 @@
 
 ## 适用范围
 
-本仓的镜像构建、启动入口、Railway / Docker Compose 两种部署形态、以及生产启动守卫。
-具体云账号、域名、密钥值不在本文范围。
+本仓的镜像构建、启动入口、Railway / Docker Compose / AWS 三种部署形态、以及生产启动守卫。
+具体云账号、域名、密钥值不在本文范围；`production` 分支的发布流水线与主机契约见
+[cicd.md](./cicd.md)。
 
 ## 镜像构建（`Dockerfile`）
 
@@ -33,6 +34,7 @@
 | Railway（Web） | `sh ./scripts/railway-start.sh` | 设 `CACHE_STRATEGY=redis`、`QUEUE_STRATEGY=async` → 跑 `docker/scripts/init-or-migrate.sh` → `.mercato/generated` 缺失则 `yarn generate` → `yarn start` |
 | Railway（Worker） | `sh ./scripts/railway-worker.sh` | 同上，但 `AUTO_SPAWN_WORKERS=false`，最后 `yarn mercato queue worker --all` |
 | Docker Compose（全栈） | `docker-compose.fullapp.yml` 的 app 服务 | `init-or-migrate.sh` → `yarn start` |
+| AWS（`production` 分支） | `docker-compose.deploy.yml` 的 app 服务 | 同上，但 `image:` 来自 GHCR，主机不构建 |
 
 Web 与 Worker 用**同一个镜像**，只有启动命令不同。Worker 必须显式关掉自动拉起（两个
 环境变量都要设，框架里两份都读），否则会与独立 Worker 抢队列。
