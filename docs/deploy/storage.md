@@ -101,21 +101,25 @@ docker compose --profile storage-s3 up -d minio
 | 作用域断言（驱动带 scope） | 无 `org_/tenant_` 段、或指向别的租户的 key，store/read 均被拒：`[internal] S3 key is not scoped to the active tenant` |
 | 作用域断言（驱动无 scope） | **不校验**（见 C-9） |
 
-## 6. 切换与回滚（Phase 1 交付 `storage_ops` 后执行）
+## 6. 切换与回滚（`storage_ops` 已交付，2026-09-23）
 
-一键命令（Phase 1 落地）：
+一键命令（`src/modules/storage_ops`，别名 `yarn storage:audit` / `yarn storage:migrate`）：
 
 ```bash
 yarn mercato storage_ops audit    --partition privateAttachments     # 阻断项必须为 0；孤儿单独确认
 yarn mercato storage_ops migrate  --partition privateAttachments --dry-run
-yarn mercato storage_ops migrate  --partition privateAttachments --yes
+yarn mercato storage_ops migrate  --partition privateAttachments --yes \
+  --s3-config '{"bucket":"<bucket>","region":"<region>","endpoint":"<endpoint>","forcePathStyle":true,"credentialsEnvPrefix":"OM_INTEGRATION_STORAGE_S3"}'
 yarn mercato storage_ops verify   --partition privateAttachments --sample 20
 yarn mercato storage_ops rollback --partition privateAttachments --yes
+yarn mercato storage_ops prune-local --partition privateAttachments --older-than 30 --yes
 ```
 
-窗口纪律：先 `audit` 清阻断项 → 停应用（或只读）→ `migrate`（单事务翻转）→ 重启 → 抽查一次老文件下载 + 一次新上传 → 本地文件按保留期保留，之后 `prune-local` 才删。
+窗口纪律：先 `audit` 清阻断项 → 停应用（或只读）→ `migrate`（单事务翻转）→ 重启 → 抽查一次老文件下载 + 一次新上传 → 本地文件按保留期保留，之后 `prune-local` 才删（`prune-local` 默认 dry-run，只删「对象可读且长度一致」的文件）。
 
-> 本节的完整 runbook（快照、SQL 形状、`config_json` 载荷、回滚语义）在规格 § Rollout, Migration, and Rollback；Phase 2 执行后本节会补齐实测记录。
+**已实测（2026-09-23，MinIO 彩排）**：`migrate` 3 行 / 1.2 MB → `copy: copied=3 skipped=0`、`verify: checked=3 hashed=3 mismatches=0`、`flip: rows=3`；对象字节与本地 sha256 一致；重复 `migrate` 被拒（`already on driver "s3"`）；`prune-local --yes` 删除 3 个本地文件后 `rollback` 从桶里**重新落盘** 3 个文件（sha256 一致）；回滚后再次 `migrate` 走读回校验路径 `copy: copied=0 skipped=3`（不触发对象存储的条件写入冲突）。
+
+> 本节的完整 runbook（快照、SQL 形状、`config_json` 载荷、回滚语义）在规格 § Rollout, Migration, and Rollback；Phase 2 执行后本节会补齐生产实测记录。
 
 ## 7. 复核当前状态（复现命令）
 

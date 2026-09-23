@@ -280,6 +280,12 @@ enabledModules.push({ id: 'export_finance', from: '@app' })
 // See .ai/specs/2026-09-22-app-owned-party-master.md
 enabledModules.push({ id: 'parties', from: '@app' })
 
+// App-owned storage-operations CLI — `audit`, `migrate`, `verify`, `rollback`, `prune-local` for the
+// local → object-storage move. No entity, no route, no page: it is an operator tool that drives the
+// installed attachments driver factory (see .ai/specs/2026-09-23-local-to-s3-storage-migration.md,
+// Phase 1). It is enabled unconditionally because it only reads/writes when an operator runs it.
+enabledModules.push({ id: 'storage_ops', from: '@app' })
+
 // Optional S3-compatible object storage provider, gated by the flag the shipped `.env` block
 // documents ("When true, `storage_s3` is added to enabledModules in modules.ts"). Phase 0 of
 // .ai/specs/2026-09-23-local-to-s3-storage-migration.md installs and credentials it while both

@@ -16,6 +16,8 @@
     "dev:reset": "node ./scripts/dev-reset.mjs",
     "build": "yarn generate && cross-env NODE_ENV=production NODE_OPTIONS=--max-old-space-size=8192 next build",
     "mercato": "node ./scripts/mercato-cli.mjs",
+    "storage:migrate": "yarn mercato storage_ops migrate",
+    "storage:audit": "yarn mercato storage_ops audit",
     "start": "yarn mercato server start",
     "documents:collab": "node ./node_modules/@open-mercato/documents/dist/server/documents-collab-server.js",
     "lint": "eslint .",
