@@ -88,7 +88,7 @@
   "purchasing.orders.form.lines.masterHint": "从商品主数据里选：外购、自产、委托加工的商品都在这一个库里。商品填了「官方目录链接」才能发运/收货，没填的只能下单。",
   "purchasing.orders.form.lines.supplierProductHint": "从这家供应商自己的货品清单里选：未同步为商品的行可以下单，但发运/收货前必须先「同步为商品」。",
   "purchasing.orders.form.lines.masterForbidden": "当前角色没有商品库的查看权限（products.items.view），选不到商品；请联系管理员授权后重试。",
-  "purchasing.orders.form.lines.supplierProductForbidden": "当前角色没有供应商产品库的查看权限（sourcing.supplier-products.view），列表会是空的；请联系管理员授权后重试。",
+  "purchasing.orders.form.lines.supplierProductForbidden": "当前角色没有供应商产品库的查看权限（purchasing.supplier-products.view），列表会是空的；请联系管理员授权后重试。",
   "purchasing.orders.form.lines.switchToMaster": "改从商品库选择",
   "purchasing.orders.form.lines.switchToSupplierProduct": "改从供应商产品库选择",
   "purchasing.orders.form.lines.supplierRequired": "请先选择供应商",

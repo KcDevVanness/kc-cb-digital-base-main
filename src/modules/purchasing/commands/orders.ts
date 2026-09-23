@@ -202,7 +202,7 @@ type ResolvedLine = {
  *
  * New lines point at the app-owned master (`products_products`, see
  * .ai/specs/2026-09-22-products-and-trade-docs.md) or at the supplier product library
- * (`sourcing_supplier_products`); lines written before that slice point at the installed catalog.
+ * (`purchasing_supplier_products`); lines written before that slice point at the installed catalog.
  * All three are read with raw, scoped Kysely queries — this module must not import another
  * module's entities, and it only needs a handful of display columns for the snapshot.
  * A product that is not visible in this organization fails the whole order: silently dropping a

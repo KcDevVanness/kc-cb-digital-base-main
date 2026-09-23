@@ -88,7 +88,7 @@
   "purchasing.orders.form.lines.masterHint": "Picked from the product master: purchased, self-made and commission-produced goods share this one catalogue. Shipping and overseas receipt need the product's catalog link; without it the line can be ordered only.",
   "purchasing.orders.form.lines.supplierProductHint": "Picked from this supplier's own goods list: a row that has not been synced to the product master can be ordered, but must be synced before it can be shipped or received.",
   "purchasing.orders.form.lines.masterForbidden": "Your role cannot read the product master (products.items.view), so no product can be picked here; ask an administrator to grant it.",
-  "purchasing.orders.form.lines.supplierProductForbidden": "Your role cannot read the supplier product library (sourcing.supplier-products.view), so the list stays empty; ask an administrator to grant it.",
+  "purchasing.orders.form.lines.supplierProductForbidden": "Your role cannot read the supplier product library (purchasing.supplier-products.view), so the list stays empty; ask an administrator to grant it.",
   "purchasing.orders.form.lines.switchToMaster": "Pick from product master",
   "purchasing.orders.form.lines.switchToSupplierProduct": "Pick from supplier products",
   "purchasing.orders.form.lines.supplierRequired": "Select a supplier first",
