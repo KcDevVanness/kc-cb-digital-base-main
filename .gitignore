@@ -114,6 +114,9 @@ skills-lock.json
 .ai/qa/test-env-boot.log
 .ai/qa/artifacts_*/
 .ai/qa/ephemeral*
+# outbound mail a QA run captured through the test-env mail sink — runtime
+# evidence of that run, never source
+.ai/qa/email-capture.jsonl
 # entrypoint scripts om-prepare-test-env compiles are bound to the machine that
 # generated them (ports, process tools, shell) — keep them local, never commit
 .ai/scripts/test-env-*
