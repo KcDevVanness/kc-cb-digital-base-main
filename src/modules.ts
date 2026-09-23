@@ -280,6 +280,29 @@ enabledModules.push({ id: 'export_finance', from: '@app' })
 // See .ai/specs/2026-09-22-app-owned-party-master.md
 enabledModules.push({ id: 'parties', from: '@app' })
 
+// Optional S3-compatible object storage provider, gated by the flag the shipped `.env` block
+// documents ("When true, `storage_s3` is added to enabledModules in modules.ts"). Phase 0 of
+// .ai/specs/2026-09-23-local-to-s3-storage-migration.md installs and credentials it while both
+// attachment partitions keep `storage_driver: 'local'`, so the eventual cutover is a partition
+// config change instead of a dependency install + image rebuild.
+//
+// Registration matters for correctness, not just for the settings UI: the module registers its
+// `s3` driver at import time, and with the module off `StorageDriverFactory.resolveForAttachment`
+// silently falls back to the local driver for an unknown key
+// (`@open-mercato/core/modules/attachments/lib/drivers/driverFactory.ts:69`) — so a partition
+// configured `s3` would read and write local disk with S3-shaped paths. `storage_ops` preflight
+// asserts the resolved driver key matches the partition, which is only meaningful when this entry
+// is present.
+//
+// Keep this flag identical at generate/build time and at runtime: module loading comes from the
+// generated registry baked by `yarn generate`/`yarn build`, while the partition settings page
+// gates its S3 option on the request-time `process.env`. Build-false + runtime-true is the
+// dangerous combination (UI offers S3, no driver registered). Production images carry no `.env`,
+// so the deployment environment must inject it — see docs/deploy/storage.md.
+if (parseBooleanWithDefault(process.env.OM_ENABLE_STORAGE_S3, false)) {
+  enabledModules.push({ id: 'storage_s3', from: '@open-mercato/storage-s3' })
+}
+
 const enterpriseModulesEnabled = parseBooleanWithDefault(process.env.OM_ENABLE_ENTERPRISE_MODULES, false)
 const enterpriseSsoEnabled = parseBooleanWithDefault(process.env.OM_ENABLE_ENTERPRISE_MODULES_SSO, false)
 const enterpriseSecurityEnabled = parseBooleanWithDefault(process.env.OM_ENABLE_ENTERPRISE_MODULES_SECURITY, false)

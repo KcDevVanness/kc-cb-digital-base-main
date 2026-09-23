@@ -377,21 +377,24 @@ services:
     networks:
       - mercato-network-fullapp
 
-  localstack:
-    image: localstack/localstack:latest
+  # S3-compatible rehearsal endpoint (see docs/deploy/storage.md); MinIO replaced
+  # LocalStack on 2026-09-23 because the LocalStack image now needs a paid token.
+  minio:
+    image: quay.io/minio/minio:latest
     restart: unless-stopped
     profiles:
       - storage-s3
+    command: server /data
     ports:
-      - "${LOCALSTACK_PORT:-4566}:4566"
+      - "${MINIO_PORT:-4666}:9000"
+      - "${MINIO_CONSOLE_PORT:-4667}:9001"
     environment:
-      SERVICES: s3
-      AWS_DEFAULT_REGION: us-east-1
-      LOCALSTACK_HOST: localhost
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
-      - localstack_data:/var/lib/localstack
+      - minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:4566/_localstack/health"]
+      test: ["CMD", "mc", "ready", "local"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -404,7 +407,7 @@ volumes:
   mcp_shared:
   redis_data:
   meilisearch_data:
-  localstack_data:
+  minio_data:
   init_marker:
   attachments_storage:
 
