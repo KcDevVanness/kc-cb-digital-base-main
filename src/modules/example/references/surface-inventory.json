@@ -1944,7 +1944,7 @@
     {
       "capabilityId": "umes.injection-table",
       "title": "Widget injection table (spot id to widget id mapping)",
-      "description": "`ModuleInjectionTable` mapping every supported spot-id shape — portal sections, `crud-form:<entityId>`, `data-table:<tableId>:<surface>`, menu spots, detail spots, tab groups, and a nested widget addon spot — to widget ids. Exported as one unconditional object literal, which is what the fact extractor can fold: it reads 26 contributions from this file (it read 0 while the export was chosen by an env-flag ternary). Cross-module entries ship always-on and are inert without their host module.",
+      "description": "`ModuleInjectionTable` mapping every supported spot-id shape — portal sections, `crud-form:<entityId>`, `data-table:<tableId>:<surface>`, menu spots, detail spots, tab groups, and a nested widget addon spot — to widget ids. Exported as one unconditional object literal, which is what the fact extractor can fold: it reads 25 contributions from this file (it read 0 while the export was chosen by an env-flag ternary). Cross-module entries ship always-on and are inert without their host module.",
       "coverageKind": "example",
       "referenceStatus": "canonical",
       "readStatus": "readable",

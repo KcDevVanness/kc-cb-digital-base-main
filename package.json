@@ -16,6 +16,8 @@
     "dev:reset": "node ./scripts/dev-reset.mjs",
     "build": "yarn generate && cross-env NODE_ENV=production NODE_OPTIONS=--max-old-space-size=8192 next build",
     "mercato": "node ./scripts/mercato-cli.mjs",
+    "storage:migrate": "yarn mercato storage_ops migrate",
+    "storage:audit": "yarn mercato storage_ops audit",
     "start": "yarn mercato server start",
     "documents:collab": "node ./node_modules/@open-mercato/documents/dist/server/documents-collab-server.js",
     "lint": "eslint .",
@@ -79,6 +81,7 @@
     "@open-mercato/scheduler": "0.8.0",
     "@open-mercato/search": "0.8.0",
     "@open-mercato/shared": "0.8.0",
+    "@open-mercato/storage-s3": "0.8.0",
     "@open-mercato/sync-akeneo": "0.8.0",
     "@open-mercato/telemetry": "0.8.0",
     "@open-mercato/tillio": "0.8.0",
@@ -132,6 +135,7 @@
     "semver": "^7.8.5",
     "svix": "^1.96.1",
     "tailwind-merge": "^3.6.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^4.4.3"
   },
   "devDependencies": {

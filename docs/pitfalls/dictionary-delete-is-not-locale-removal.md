@@ -50,6 +50,10 @@ resolver 槽来表达。
 见 [docs/dev/i18n.md](../dev/i18n.md)。要点：一个 owner（`app-locales.ts`）+ 三处接线
 （layout filter、resolver 槽、字典 loader 的 `default` 分支），缺一处就会漏。
 
+## 相关规则
+
+同一条规则的可执行版本：`.ai/lessons/locale-served-set-seams.md`（agent 读的短规则，本文只留现场证据）。
+
 ## 如何避免
 
 - 「删资源」类改动先问：**有几个地方在独立判定它的存在？** 删文件通常只影响其中一处。

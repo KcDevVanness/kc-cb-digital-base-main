@@ -37,10 +37,34 @@
 两者内容重叠时，`.ai/specs/` 是执行口径，本文档是沟通口径——不要互相复制整段，
 链过去即可。
 
-## 索引
+## 规格状态板（`.ai/specs/`）
 
-暂无。新增后在这里加一行：
+**权威状态是每份 spec 的 `**Status**` 行**（那里写清已交付到哪一阶段、哪些还开着）；
+下表只是给人看的总览，2026-09-23 与代码核对过一遍。逐条实测证据见
+[`cross-border-erp.md`](./cross-border-erp.md) 的"进度"表。
+
+| 规格 | 状态 | 覆盖 |
+|---|---|---|
+| [2026-09-21-app-owned-business-module.md](../../.ai/specs/2026-09-21-app-owned-business-module.md) | 已被子规格取代，作为共享决策索引保留；REQ-011（传输层）/REQ-013（分公司仪表盘）未完成 | 总纲 |
+| [2026-09-21-erp-core-module-activation.md](../../.ai/specs/2026-09-21-erp-core-module-activation.md) | 已实现 | 7 个官方 ERP 模块 + zh 覆盖层 |
+| [2026-09-21-purchasing-module.md](../../.ai/specs/2026-09-21-purchasing-module.md) | 已实现（分公司仪表盘/区块未做） | `purchasing` |
+| [2026-09-21-cross-border-shipments.md](../../.ai/specs/2026-09-21-cross-border-shipments.md) | 已实现（Q1–Q3 用可逆默认） | `cross_border` |
+| [2026-09-21-platform-ops.md](../../.ai/specs/2026-09-21-platform-ops.md) | 已实现 A+B；Phase C 传输层待 PRD Q4 | `platform_ops` |
+| [2026-09-21-auth-scope-guard-hardening.md](../../.ai/specs/2026-09-21-auth-scope-guard-hardening.md) | 已实现（组织树写缺口不在范围、仍未立项） | `scope_guards` |
+| [2026-09-21-catalog-customization-and-eject-decision.md](../../.ai/specs/2026-09-21-catalog-customization-and-eject-decision.md) | 已被取代，仅保留决策记录与官方 catalog 的保留契约清单 | `catalog`（不 eject） |
+| [2026-09-22-products-and-trade-docs.md](../../.ai/specs/2026-09-22-products-and-trade-docs.md) | 已实现 | `products` / `trade_docs` / `internal_sales` |
+| [2026-09-22-product-variants.md](../../.ai/specs/2026-09-22-product-variants.md) | Phases 1–2 已实现；Phase 3（wms 轮）延后 | `products` 变体 |
+| [2026-09-22-app-owned-party-master.md](../../.ai/specs/2026-09-22-app-owned-party-master.md) | Phases 1–3 已实现；Phase 4 待 Q-P-004 | `parties` |
+| [2026-09-22-supplier-quotation-import.md](../../.ai/specs/2026-09-22-supplier-quotation-import.md) | 已实现 | `sourcing` 报价导入 |
+| [2026-09-22-supplier-product-library.md](../../.ai/specs/2026-09-22-supplier-product-library.md) | Phases 1–7 已实现并验证；产品库 2026-09-23 整体移交 `purchasing`（D4，表改名保留数据）。**Phase 8（关联商品：直觉化 + 手动关联）2026-09-23 已实现并验证**（集成 TEST-SPL-009/010/011 全绿 + 浏览器冒烟；无新表无迁移） | `purchasing` 产品库 |
+| [2026-09-22-order-file-and-export-finance.md](../../.ai/specs/2026-09-22-order-file-and-export-finance.md) | 已实现（仅投影单测，集成测试待补） | `purchasing`/`cross_border`/`trade_docs`/`export_finance` |
+| [2026-09-23-product-taxonomy-consolidation.md](../../.ai/specs/2026-09-23-product-taxonomy-consolidation.md) | 已实现（Phase 0–3：术语定名 → 两页合并为 `/backend/products/taxonomy` 两页签、旧 URL 直接渲染并规范化 → 品类真树（默认全开、可折叠、行内新增子类）→ 维护页收窄到所选组织）；spec 机制描述已与实装对齐，实测证据见各 Phase 的 "Shipped — evidence" | `products` 产品线/产品品类页面合并 + 导航修复 + 维护页按组织收窄 |
+| [2026-09-23-local-to-s3-storage-migration.md](../../.ai/specs/2026-09-23-local-to-s3-storage-migration.md) | **Phase 0 + Phase 1 已交付**（provider 已装/已探针；`storage_ops` 五条命令 + 13 单测 + 9 集成用例，MinIO 全流程彩排通过；分区仍 local）；**Phase 2 实作手册已备**（`docs/deploy/storage-cutover-runbook.md`），待对象存储服务开通 | `attachments` 本地→S3 迁移前置与一键迁移 |
+| [2026-08-06-reference-module-activation.md](../../.ai/specs/2026-08-06-reference-module-activation.md)、`SPEC-000-template.md`、`README.md` | **harness 托管文件**（`.ai/harness/manifest.json` 标 `userEditable: false`）：勿手改，会随 `yarn mercato agentic:init --update-harness` 重写 | 参考模块启用 / 模板 |
+
+## 索引
 
 | 文档 | 状态 |
 |---|---|
-| — | — |
+| [lookup-field-dropdown.md](./lookup-field-dropdown.md) | 阶段一进行中（补丁已交付，待上游接受） |
+| [cross-border-erp.md](./cross-border-erp.md) | 阶段一~四、六、七完成并验证；阶段五（收尾）进行中 |

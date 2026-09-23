@@ -1,0 +1,5 @@
+{
+  "scope_guards.errors.userDestinationOutsideScope": "Cannot assign a user to a destination organization outside your scope.",
+  "scope_guards.errors.aclTargetOutsideScope": "The target permission record is scoped outside the organizations you may manage.",
+  "scope_guards.errors.scopeResolutionFailed": "Your organization scope could not be verified, so the operation was rejected."
+}

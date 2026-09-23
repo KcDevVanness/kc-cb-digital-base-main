@@ -11,3 +11,5 @@
 | 文档 | 内容 |
 |---|---|
 | [runtime.md](./runtime.md) | 镜像构建、启动入口、Railway/compose 差异、环境变量与启动守卫 |
+| [storage.md](./storage.md) | 附件字节存哪、S3 兼容对象存储的接线/迁移/回滚、C-1…C-10 约束、MinIO 彩排环境 |
+| [storage-cutover-runbook.md](./storage-cutover-runbook.md) | Phase 2 切换实作手册：桶/凭据申请参数、窗口内逐条命令与预期输出、失败判据、回滚决策树、保留期、证据记录表 |
