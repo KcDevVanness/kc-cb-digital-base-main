@@ -10,13 +10,20 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
 
 | 层 | 内容 |
 |---|---|
-| 页面 | `/backend/internal-sales/quotes`、`/quotes/create`、`/quotes/[id]/edit`；`/backend/internal-sales/orders`、`/orders/create`、`/orders/[id]/edit`（导航分组「内部销售」） |
+| 页面 | `/backend/internal-sales/quotes`、`/quotes/create`、`/quotes/[id]/edit`；`/backend/internal-sales/orders`、`/orders/create`、`/orders/[id]/edit`（六个页面的 `pageGroupKey` 都是 `cross_border.nav.group`，即侧边栏「外贸」组；本模块没有自己的导航分组） |
 | 组件 | `components/InternalSalesTable.tsx`（列表）、`components/InternalSalesForm.tsx`（抬头 + 行编辑器，一次提交整单） |
 | 读 | 官方 `GET /api/sales/{quotes,orders}`（抬头）与 `GET /api/sales/{quote,order}-lines?quoteId\|orderId=`（行，**snake_case** 列名，`pageSize` 上限 **100**） |
 | 新建写 | 官方 `POST /api/sales/{quotes,orders}`（抬头 + 行一次提交；命令 `sales.quotes\|orders.create`） |
-| 编辑写 | 抬头 `PUT /api/sales/{quotes,orders}`（**只写抬头标量字段**）+ 行 `PUT/DELETE /api/sales/{quote,order}-lines`（两条动词都走同一个 `…lines.upsert`/delete 命令） |
-| 权限 | **复用官方功能位** `sales.quotes.manage` / `sales.orders.manage`（本模块不新造功能位：真正的门禁在官方 API 上） |
+| 编辑写 | 抬头 `PUT /api/sales/{quotes,orders}`（**只写抬头标量字段**）+ 行 `PUT/DELETE /api/sales/{quote,order}-lines`（`PUT` → `…lines.upsert`，`DELETE` → `…lines.delete`） |
+| 权限 | 列表页声明读功能位 `sales.quote.view` / `sales.order.view`，新建/编辑页声明 `sales.quotes.manage` / `sales.orders.manage`（本模块不新造功能位：写入的门禁在官方 API 上） |
+| 事件 | **无**（本模块不声明 `events.ts`；单据的 `sales.*` 事件由官方命令发出） |
 | 实体/迁移 | **无**（不新增表；单据写在官方 `sales_*` 表里） |
+
+> 读功能位的 id 与安装层不一致：本模块列表页声明的是**单数** `sales.quote.view` / `sales.order.view`，
+> 而安装层 `sales` 自己的列表页与 API 声明的是**复数** `sales.quotes.view` / `sales.orders.view`，
+> 两者并不互相匹配（`matchFeature` 只做精确/前缀通配匹配，不认单复数）——超管之所以照常打开，
+> 是因为 `rbacService.userHasAllFeatures` 对 `isSuperAdmin` 直接放行，而不是因为 id 对上了。
+> 要按角色真正收紧门禁，先把两边的 id 统一。
 
 ## 为什么这样做（而不是 eject `sales`）
 
@@ -25,8 +32,10 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
 - 官方 `LineItemDialog` 硬编码 `/api/catalog/products`、没有 injection spot、也没有注册组件替换句柄（平台只有
   `page:`/`data-table:`/`crud-form:`/`section:` 四种），按配置换不了，只能整页替换或 eject；eject 会把整条链的
   升级责任接过来（当初 `catalog` eject 就是因此被否），而本模块只要 6 个页面。
-- 官方**新建**页 `/backend/sales/documents/create`（唯一强绑官方目录的创建流程）已隐藏；官方报价/订单**列表**保留在
-  自己的导航分组里作为平台视角，`config/sales`、渠道与价格相关页面不动。
+- 官方**新建**页 `/backend/sales/documents/create`（唯一强绑官方目录的创建流程）已隐藏；官方报价/订单**列表**
+  （`/backend/sales/quotes`、`/backend/sales/orders`）同样只做 `navHidden`——`src/modules.ts` 把它们的
+  `routes.pages` 条目改成 `{ metadata: { navHidden: true } }`，所以它们不进侧边栏，但 URL 仍可解析、平台视角还在。
+  `config/sales`、渠道与价格相关页面不动。
 
 ## 两条平台行为，本模块必须照着做
 
@@ -65,10 +74,11 @@ yarn generate && yarn typecheck && yarn lint && yarn ds:check
 #  UI 新建报价/订单（选自建商品 + 数量 + 未税单价）→ 201；落库行 productId=products_products.id、
 #  有官方目录链接的商品 productVariantId 自动填默认变体、catalogSnapshot 有 sku/name/spec；
 #  列表出现该单；行操作进入本模块编辑页；改数量保存 → PUT 抬头 200 + PUT …-lines 200，行 id 不变、引用与快照保留。
-#  /backend/sales/documents/create 已隐藏（404）。
+#  /backend/sales/documents/create 只做 `navHidden`：不在侧边栏，但 URL 仍可解析（不是 404）。
 ```
 
 ## 回滚
 
-从 `src/modules.ts` 移除 `{ id: 'internal_sales', from: '@app' }` 并 `yarn generate`；单据数据仍在官方
-`sales_*` 表里，不受影响。同时把 `sales` 的 `routes.pages` 覆盖去掉即可恢复官方新建页。
+从 `src/modules.ts` 移除 `{ id: 'internal_sales', from: '@app' }` 并 `yarn generate`；本模块没有自己的表与迁移
+（无 DDL 可回退），单据数据仍在官方 `sales_*` 表里，不受影响。同时把 `sales` 的 `routes.pages` 覆盖去掉即可恢复
+官方新建页的侧边栏入口——该覆盖只改导航可见性，那些 URL 一直是可解析的。

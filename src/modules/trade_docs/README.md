@@ -9,8 +9,8 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 | 层 | 内容 |
 |---|---|
 | 实体（`data/entities.ts`） | `TradeDocsContract` / `TradeDocsContractLine` / `TradeDocsInvoice` / `TradeDocsInvoiceLine` → 表 `trade_docs_contracts` / `trade_docs_contract_lines` / `trade_docs_invoices` / `trade_docs_invoice_lines` |
-| API | `GET|POST|PUT|DELETE /api/trade_docs/contracts`、`/contracts/lines`、`POST /api/trade_docs/contracts/transitions`、`POST|GET /api/trade_docs/contracts/[id]/document`（生成 / 下载合同 Excel）、`/invoices`、`/invoices/lines`、`/invoices/transitions`、`PUT /api/trade_docs/invoices/attach` |
-| 命令 | `trade_docs.contracts.{create,update,delete,transition,generate-document}`、`trade_docs.invoices.{create,update,delete,transition,attach}` |
+| API | `GET|POST|PUT|DELETE /api/trade_docs/contracts`、`/invoices`；`GET /contracts/lines`、`/invoices/lines`（只读行面，行只经合同 / 发票命令写入）；`POST /contracts/transitions`、`/invoices/transitions`（状态流转：同路径的 GET 列表只为 CRUD 工厂解析作用域，不是 UI 契约）；`PUT /contracts/attach`（绑定盖章扫描件，`attachmentId: null` 解绑）、`PUT /invoices/attach`；`POST|GET /contracts/[id]/document`（生成 / 下载合同 Excel） |
+| 命令 | `trade_docs.contracts.{create,update,delete,transition,attach,generate-document}`、`trade_docs.invoices.{create,update,delete,transition,attach}` |
 | 后台页面 | `/backend/trade-docs/contracts`（列表/新建/详情/编辑）、`/backend/trade-docs/invoices`（列表/新建/编辑+确认/作废/附件） |
 | 事件 | `trade_docs.contract.{created,updated,deleted,issued,signed,closed,cancelled,document.generated}`、`trade_docs.invoice.{created,updated,deleted,confirmed,voided,attached}` |
 | 权限 | `trade_docs.contracts.view|manage`、`trade_docs.invoices.view|manage` |
@@ -38,10 +38,17 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 - **签发后锁定**：非 draft 合同不能编辑（409），明细与抬头都冻结。
 - **行存快照**：`name/sku/model/spec/unit` 在写入时从 `products` 冻结，商品改名/删除不改写已出合同；
   引用只存标量 id（无跨模块 ORM 关联），`products` 侧的读取走 scoped Kysely。
+  行的「单位」是从 `supplier_product_unit` 字典（`products/lib/unitOptions.ts`，与产品主数据、供应商产品库
+  同一份词表）选的下拉；**已有值即使不在词表里也作为该行自己的选项保留**（`withCurrentUnit`），
+  不会被静默清空 —— 要新增单位先在「字典库」里加一条。
 - **发票金额以票面为准**：`amount` 不等于 `数量×单价` 也允许（真实发票有运费/折扣/舍入），
   合同行绑定它之后财务口径取票面值，差额留痕。
+- **合同头的三处词表**：`paymentTerms` / `shippingMethod` 读本模块播种的 `payment_terms` / `shipping_method`
+  字典（`setup.ts` 幂等写入，`yarn mercato seed:defaults --module trade_docs`；付款方式是合同上印刷的措辞，
+  运输方式是海运/空运/铁路/快递/陆运），`destination` 读外贸模块的 `port` 字典。三者都是**带建议的输入框**：
+  合同打印的是双方签下的原文，字典没收录的写法必须还能填。
 - **发票号不唯一**：外部票号只建索引，不建唯一约束（两家系统可能重号）。
-- **附件先建后绑**：发票先建 → 上传 `/api/attachments` → `attach` 绑 `attachment_id`；上传失败不回滚发票，行内可重试；本期只归档与下载，不解析。
+- **附件先建后绑**：发票先建 → 上传 `/api/attachments` → `attach` 绑 `attachment_id`；上传失败不回滚发票，行内可重试；本期只归档与下载，不解析。合同的双方盖章扫描件同理走 `PUT /api/trade_docs/contracts/attach`（`attachmentId: null` 解绑），它只动 `attachment_id`，生成的 XLSX 存在 `generated_attachment_id`，互不覆盖。
 - **合同 Excel 最后补**：`lib/contractTemplate.ts` 的常量是唯一模板出处，`buildXlsx`（平台零依赖写入器）生成后**归档为附件**（重新生成会换新文件，旧文件保留）；金额写数字便于 Excel 求和；大写金额见 `lib/amountInWords.ts`。
 - **读写作用域**：读（列表）展开到下级组织，写（命令）只在当前选定组织生效 —— 下级组织的单据要切换组织后再操作，服务端会明确提示。
 
@@ -58,5 +65,6 @@ yarn jest --config jest.config.cjs src/modules/trade_docs
 ## 回滚
 
 从 `src/modules.ts` 移除 `{ id: 'trade_docs', from: '@app' }` 并 `yarn generate`；表与迁移保留
-（数据回滚需另行走 `yarn db:migrate:down` 并确认目标库）。合同 Excel 生成的附件仍留在存储驱动中
-（不随模块回滚删除）。
+（迁移是**向前-only** 的，`yarn mercato db` 只有 `generate` / `migrate` / `greenfield`，没有 `down`：
+回滚数据只能从备份恢复，或用 `yarn db:greenfield` 重建库——后者是破坏性的，需所有者批准）。
+合同 Excel 生成的附件仍留在存储驱动中（不随模块回滚删除）。

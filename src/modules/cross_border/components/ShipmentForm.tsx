@@ -25,7 +25,7 @@ import {
   toUtcDateInputValue,
 } from '@open-mercato/ui/primitives/date-format'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
-import { loadContainerTypeOptions } from './shipmentFormOptions'
+import { loadCarrierOptions, loadContainerTypeOptions, loadPortOptions } from './shipmentFormOptions'
 
 /**
  * This file owns the shipment contract shared with the list and detail surfaces: the record
@@ -868,8 +868,14 @@ function useShipmentFields(t: TranslateFn): CrudField[] {
     {
       id: 'carrierName',
       label: t('cross_border.shipments.form.field.carrierName'),
-      type: 'text',
+      // Suggestions from the `carrier` dictionary this module seeds; typing stays allowed so a
+      // carrier or forwarder the list does not carry yet never blocks a shipment.
+      type: 'combobox',
       layout: 'half',
+      description: t('cross_border.shipments.form.field.carrierNameHelp'),
+      allowCustomValues: true,
+      resolveLabel: (value) => value,
+      loadOptions: (query) => loadCarrierOptions(query),
     },
     {
       id: 'forwarderContact',
@@ -880,8 +886,14 @@ function useShipmentFields(t: TranslateFn): CrudField[] {
     {
       id: 'departurePort',
       label: t('cross_border.shipments.form.field.departurePort'),
-      type: 'text',
+      // Same `port` dictionary the contract header's 目的地 reads; a port it does not list yet can
+      // still be typed, because a booking is never held up by a dictionary gap.
+      type: 'combobox',
       layout: 'half',
+      description: t('cross_border.shipments.form.field.departurePortHelp'),
+      allowCustomValues: true,
+      resolveLabel: (value) => value,
+      loadOptions: (query) => loadPortOptions(query),
     },
     {
       id: 'containerType',

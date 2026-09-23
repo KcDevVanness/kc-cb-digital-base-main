@@ -4,8 +4,8 @@ import { Entity, Index, ManyToOne, PrimaryKey, Property, Unique } from '@mikro-o
 /**
  * A signed purchase or sales contract — the document the business actually signs.
  *
- * `direction` separates the two sides of the same physical shipment (`purchase`: the Guangzhou
- * company buys from Petkit/its agent; `sales`: it sells to the overseas subsidiary), and the
+ * `direction` separates the two sides of the same physical shipment (`purchase`: we buy the goods
+ * from a brand owner, an agent or our own factory; `sales`: we sell to the overseas subsidiary), and the
  * head stores **three** money columns rather than one:
  *
  * - `contractTotal` — the sum of the lines' contract amounts (2 decimals): what the paper says.

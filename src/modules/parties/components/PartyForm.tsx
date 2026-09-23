@@ -1,13 +1,14 @@
 "use client"
 
 import * as React from 'react'
-import { CrudForm, type CrudField, type CrudFormGroup } from '@open-mercato/ui/backend/CrudForm'
+import { CrudForm, type CrudField, type CrudFieldOption, type CrudFormGroup } from '@open-mercato/ui/backend/CrudForm'
 import { ErrorMessage, RecordNotFoundState } from '@open-mercato/ui/backend/detail'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { createCrud, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
-import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { buildCountryOptions, resolveCountryName } from '@open-mercato/shared/lib/location/countries'
+import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { BankAccountsEditor, readBankAccountRows, type PartyBankAccountValue } from './BankAccountsEditor'
 
 const API_PATH = 'parties'
@@ -139,6 +140,21 @@ export function buildPartyPayload(values: PartyFormValues): Record<string, unkno
 }
 
 function usePartyFields(t: TranslateFn): CrudField[] {
+  const locale = useLocale()
+  /**
+   * Countries come from the shared ISO-3166 registry, labelled with the country name in the
+   * operator's own locale: a two-letter code is exactly the value nobody should be typing from
+   * memory. Free typing is refused because the registry is complete, and a stored code the
+   * registry does not know still renders as itself instead of blanking the field.
+   */
+  const countryOptions = React.useMemo<CrudFieldOption[]>(
+    () =>
+      buildCountryOptions({
+        locale,
+        transformLabel: (code, label) => `${label} (${code})`,
+      }).map((option) => ({ value: option.code, label: option.label })),
+    [locale],
+  )
   return React.useMemo<CrudField[]>(
     () => [
       {
@@ -156,8 +172,12 @@ function usePartyFields(t: TranslateFn): CrudField[] {
       {
         id: 'countryCode',
         label: t('parties.form.field.countryCode'),
-        type: 'text',
-        maxLength: 2,
+        type: 'combobox',
+        options: countryOptions,
+        allowCustomValues: false,
+        // The column is nullable, so the picker keeps the clear affordance the text field had.
+        clearable: true,
+        resolveLabel: (value) => resolveCountryName(value, { locale }),
       },
       {
         id: 'status',
@@ -216,7 +236,7 @@ function usePartyFields(t: TranslateFn): CrudField[] {
         component: BankAccountsEditor,
       },
     ],
-    [t],
+    [countryOptions, locale, t],
   )
 }
 

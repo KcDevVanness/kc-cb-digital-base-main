@@ -25,6 +25,7 @@
   "platform_ops.channels.form.field.name": "名称",
   "platform_ops.channels.form.field.code": "编码",
   "platform_ops.channels.form.field.platform": "平台",
+  "platform_ops.channels.form.field.platformHelp": "选项来自「字典库」维护的销售平台字典；字典里没有的平台仍可直接输入。",
   "platform_ops.channels.form.field.externalAccountId": "外部账号 ID",
   "platform_ops.channels.form.field.currencyCode": "币种",
   "platform_ops.channels.form.field.isActive": "启用",

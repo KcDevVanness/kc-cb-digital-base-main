@@ -18,15 +18,27 @@ import { Button } from '@open-mercato/ui/primitives/button'
 import { IconButton } from '@open-mercato/ui/primitives/icon-button'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { FieldLabel } from '@open-mercato/ui/primitives/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@open-mercato/ui/primitives/select'
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { CONTRACT_DIRECTIONS, CONTRACT_STATUSES, directionLabel } from './contractLabels'
 import {
   loadCounterpartyOptions,
   loadCurrencyOptions,
+  loadPaymentTermOptions,
+  loadPortOptions,
   loadProductOption,
   loadProductOptions,
+  loadShippingMethodOptions,
   readText,
+  useUnitOptions,
+  withCurrentUnit,
   type ProductOption,
 } from './formOptions'
 
@@ -242,6 +254,9 @@ function ContractLinesEditor(
   { values, setValue, t }: CrudFormGroupComponentProps & { t: TranslateFn },
 ) {
   const { organizationId } = useOrganizationScopeDetail()
+  // The unit list is the app's dictionary; a code the row already carries is merged per line, so a
+  // document saved before the dictionary changed opens with its own unit still selected.
+  const unitOptions = useUnitOptions()
   const lines = React.useMemo(() => {
     const raw = values.lines
     return Array.isArray(raw) ? (raw as ContractLineValues[]) : []
@@ -419,11 +434,27 @@ function ContractLinesEditor(
                 <FieldLabel htmlFor={`contract-line-unit-${index}`}>
                   {t('trade_docs.contracts.form.lines.unit')}
                 </FieldLabel>
-                <Input
-                  id={`contract-line-unit-${index}`}
+                {/*
+                 * Picked from the app's unit dictionary: the code prints on the contract and travels
+                 * into the export paperwork, so it must be the same spelling the product master
+                 * stores. A value the dictionary does not list stays selectable on the row it is
+                 * already on rather than being silently dropped.
+                 */}
+                <Select
                   value={line.unit}
-                  onChange={(event) => updateLine(index, { unit: event.target.value })}
-                />
+                  onValueChange={(next) => updateLine(index, { unit: next })}
+                >
+                  <SelectTrigger id={`contract-line-unit-${index}`}>
+                    <SelectValue placeholder={t('trade_docs.contracts.form.lines.selectUnit')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {withCurrentUnit(unitOptions, line.unit).map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5 md:col-span-3">
                 <FieldLabel htmlFor={`contract-line-quantity-${index}`}>
@@ -545,20 +576,35 @@ function useContractFields(t: TranslateFn): CrudField[] {
     {
       id: 'paymentTerms',
       label: t('trade_docs.contracts.form.field.paymentTerms'),
-      type: 'text',
+      // The dictionary suggests the phrasings this business signs with; the contract prints what is
+      // in the field, so a negotiated wording that is not in the list stays typeable.
+      type: 'combobox',
       layout: 'half',
+      description: t('trade_docs.contracts.form.field.paymentTermsHelp'),
+      allowCustomValues: true,
+      resolveLabel: (value) => value,
+      loadOptions: (query) => loadPaymentTermOptions(query),
     },
     {
       id: 'shippingMethod',
       label: t('trade_docs.contracts.form.field.shippingMethod'),
-      type: 'text',
+      type: 'combobox',
       layout: 'half',
+      description: t('trade_docs.contracts.form.field.shippingMethodHelp'),
+      allowCustomValues: true,
+      resolveLabel: (value) => value,
+      loadOptions: (query) => loadShippingMethodOptions(query),
     },
     {
       id: 'destination',
       label: t('trade_docs.contracts.form.field.destination'),
-      type: 'text',
+      // Same `port` dictionary the shipment's 出口口岸 reads.
+      type: 'combobox',
       layout: 'half',
+      description: t('trade_docs.contracts.form.field.destinationHelp'),
+      allowCustomValues: true,
+      resolveLabel: (value) => value,
+      loadOptions: (query) => loadPortOptions(query),
     },
     {
       id: 'marks',

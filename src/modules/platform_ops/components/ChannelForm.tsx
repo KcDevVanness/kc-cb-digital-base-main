@@ -7,6 +7,7 @@ import { ErrorMessage, RecordNotFoundState } from '@open-mercato/ui/backend/deta
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
+import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionaries/lib/clientEntries'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 
 /**
@@ -19,6 +20,18 @@ export const CHANNELS_API_PATH = 'platform_ops/channels'
 export const CHANNELS_LIST_HREF = '/backend/platform_ops/channels'
 
 const CURRENCY_DICTIONARY_URL = '/api/currency_policy/currencies'
+const PLATFORM_DICTIONARY_KEY = 'channel_platform'
+
+/**
+ * Marketplaces come from the dictionary this module seeds (`setup.ts`), so a new platform is added
+ * once in the dictionary library instead of being typed per channel. The field keeps
+ * `allowCustomValues`: `platform` is descriptive metadata that an ingest or a marketplace launch can
+ * legitimately outrun, and a dictionary gap must not block a channel.
+ */
+async function loadPlatformOptions(): Promise<CrudFieldOption[]> {
+  const entries = await loadDictionaryEntriesByKey(PLATFORM_DICTIONARY_KEY)
+  return entries.map((entry) => ({ value: entry.value, label: entry.label }))
+}
 
 export type ChannelFormValues = {
   id?: string
@@ -144,8 +157,14 @@ function useChannelFields(t: TranslateFn): CrudField[] {
     {
       id: 'platform',
       label: t('platform_ops.channels.form.field.platform'),
-      type: 'text',
+      // Suggestions from the `channel_platform` dictionary; typing stays allowed for a marketplace
+      // the list does not carry yet.
+      type: 'combobox',
       required: true,
+      description: t('platform_ops.channels.form.field.platformHelp'),
+      allowCustomValues: true,
+      resolveLabel: (value) => value,
+      loadOptions: () => loadPlatformOptions(),
     },
     {
       id: 'externalAccountId',

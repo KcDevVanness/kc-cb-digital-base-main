@@ -49,9 +49,10 @@ const CATALOG_VARIANTS_URL = '/api/catalog/variants'
 /**
  * This module's own list routes.
  *
- * The installed lists (`/backend/sales/quotes`, `/backend/sales/orders`) stay visible in their own
- * navigation group as the platform's view of the same documents; these are where the operator
- * creates and edits them.
+ * The installed lists (`/backend/sales/quotes`, `/backend/sales/orders`) are `navHidden` in
+ * `src/modules.ts`: they leave the sidebar but their URLs stay resolvable, and they remain the
+ * platform's view of the same documents. These app-owned routes are where the operator creates and
+ * edits them.
  */
 const QUOTES_HREF = '/backend/internal-sales/quotes'
 /** Bound of the installed sales line collections; a larger `pageSize` is answered with a 400. */

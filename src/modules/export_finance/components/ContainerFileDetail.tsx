@@ -47,6 +47,7 @@ import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primiti
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useCurrencyOptions, withCurrentCurrency } from '../../currency_policy/lib/clientOptions'
 import { quantizeExactDecimal, subtractExactDecimal, toAmountString } from '../../trade_docs/lib/money'
 import type { ShipmentStatus } from '../../cross_border/data/validators'
 import { REFUND_DOC_TYPES, type ExportFinanceTaxRefundStatus } from '../data/validators'
@@ -130,6 +131,7 @@ type RefundDocumentFormValues = {
 
 type RefundFormValues = {
   status: ExportFinanceTaxRefundStatus
+  currencyCode: string
   amount: string
   note: string
 }
@@ -635,7 +637,16 @@ export default function ContainerFileDetail({ shipmentId }: { shipmentId: string
   const [refund, setRefund] = React.useState<RefundRecord | null>(null)
   const [documents, setDocuments] = React.useState<RefundDocumentRecord[]>([])
   const [documentsLoadFailed, setDocumentsLoadFailed] = React.useState(false)
-  const [form, setForm] = React.useState<RefundFormValues>({ status: 'unknown', amount: '', note: '' })
+  const [form, setForm] = React.useState<RefundFormValues>({ status: 'unknown', currencyCode: '', amount: '', note: '' })
+  // The currency dictionary is the app's picker source; the code the record carries is merged into
+  // the list so opening a container can never blank it.
+  const dictionaryCurrencies = useCurrencyOptions(
+    t('export_finance.currencies.loadFailed', 'Currencies could not be loaded'),
+  )
+  const currencyOptions = React.useMemo(
+    () => withCurrentCurrency(dictionaryCurrencies, form.currencyCode),
+    [dictionaryCurrencies, form.currencyCode],
+  )
   const [readOnly, setReadOnly] = React.useState(false)
   const [refundError, setRefundError] = React.useState<string | null>(null)
   const [isSaving, setIsSaving] = React.useState(false)
@@ -684,6 +695,7 @@ export default function ContainerFileDetail({ shipmentId }: { shipmentId: string
       setRefund(record)
       setForm({
         status: record?.taxRefundStatus ?? 'unknown',
+        currencyCode: record?.currencyCode ?? DEFAULT_CURRENCY_CODE,
         amount: formatAmount(record?.taxRefundAmount ?? null) ?? '',
         note: record?.taxRefundNote ?? '',
       })
@@ -745,7 +757,7 @@ export default function ContainerFileDetail({ shipmentId }: { shipmentId: string
     const payload = {
       shipmentId,
       shipmentNumber: row?.shipmentNumber ?? refund?.shipmentNumber ?? null,
-      currencyCode: refund?.currencyCode ?? DEFAULT_CURRENCY_CODE,
+      currencyCode: form.currencyCode.trim().toUpperCase() || refund?.currencyCode || DEFAULT_CURRENCY_CODE,
       taxRefundStatus: form.status,
       taxRefundAmount: toOptionalText(form.amount),
       taxRefundNote: toOptionalText(form.note),
@@ -998,6 +1010,25 @@ export default function ContainerFileDetail({ shipmentId }: { shipmentId: string
               <SelectContent>
                 {REFUND_STATUS_OPTIONS.map((value) => (
                   <SelectItem key={value} value={value}>{refundStatusLabel(t, value)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="container-refund-currency">
+              {t('export_finance.cabinets.detail.refund.field.currency')}
+            </Label>
+            <Select
+              value={form.currencyCode}
+              disabled={readOnly || isSaving}
+              onValueChange={(next) => setForm((current) => ({ ...current, currencyCode: next }))}
+            >
+              <SelectTrigger id="container-refund-currency">
+                <SelectValue placeholder={EMPTY_CELL} />
+              </SelectTrigger>
+              <SelectContent>
+                {currencyOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

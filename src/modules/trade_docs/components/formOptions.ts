@@ -1,6 +1,7 @@
 import type { CrudFieldOption } from '@open-mercato/ui/backend/CrudForm'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
+import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionaries/lib/clientEntries'
 
 /**
  * Re-exported from the product master, which owns how its own products are listed.
@@ -9,6 +10,43 @@ import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
  * the app, so a change to the list route or the option shape lands in one place.
  */
 export { loadProductOption, loadProductOptions, type ProductOption } from '../../products/components/formOptions'
+
+/**
+ * Units of measure, from the vocabulary the product master and the supplier library share: a
+ * contract line prints the same code the product master stores, so the picker reads that list
+ * instead of letting each document type its own spelling.
+ */
+export { loadUnitOptions, useUnitOptions, withCurrentUnit } from '../../products/lib/unitOptions'
+
+/**
+ * Ports of the logistics module's own dictionary: a contract's 目的地 and a shipment's 出口口岸 are
+ * the same places, so both read one list instead of each keeping a copy.
+ */
+export { loadPortOptions } from '../../cross_border/components/shipmentFormOptions'
+
+export const PAYMENT_TERM_DICTIONARY_KEY = 'payment_terms'
+export const SHIPPING_METHOD_DICTIONARY_KEY = 'shipping_method'
+
+/**
+ * Suggestions from one of this module's own dictionaries (payment terms, shipping methods). These
+ * headers print the wording a deal was signed with, so the field keeps `allowCustomValues`: the list
+ * is a shortcut, never a constraint, and an unreadable dictionary simply yields no suggestions.
+ */
+async function loadDictionaryOptions(key: string, query?: string): Promise<CrudFieldOption[]> {
+  const entries = await loadDictionaryEntriesByKey(key)
+  const term = query?.trim().toLowerCase() ?? ''
+  return entries
+    .map((entry) => ({ value: entry.value, label: entry.label }))
+    .filter((option) => (term.length ? `${option.value} ${option.label}`.toLowerCase().includes(term) : true))
+}
+
+export function loadPaymentTermOptions(query?: string): Promise<CrudFieldOption[]> {
+  return loadDictionaryOptions(PAYMENT_TERM_DICTIONARY_KEY, query)
+}
+
+export function loadShippingMethodOptions(query?: string): Promise<CrudFieldOption[]> {
+  return loadDictionaryOptions(SHIPPING_METHOD_DICTIONARY_KEY, query)
+}
 
 /**
  * Option loaders shared by the contract and invoice forms.

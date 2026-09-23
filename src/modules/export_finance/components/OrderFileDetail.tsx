@@ -44,6 +44,7 @@ import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primiti
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT } from '@open-mercato/shared/lib/i18n/context'
+import { useCurrencyOptions, withCurrentCurrency } from '../../currency_policy/lib/clientOptions'
 import type {
   CollectionDocType,
   ExportFinanceCollectionStatus,
@@ -551,6 +552,16 @@ function OrderCollectionSection({
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const [collection, setCollection] = React.useState<CollectionRecord | null>(null)
   const [statusValue, setStatusValue] = React.useState<ExportFinanceCollectionStatus>('unknown')
+  const [currencyValue, setCurrencyValue] = React.useState('')
+  // The currency dictionary is the app's picker source; a code the record already carries stays
+  // selectable so opening the record can never blank it.
+  const dictionaryCurrencies = useCurrencyOptions(
+    t('export_finance.currencies.loadFailed', 'Currencies could not be loaded'),
+  )
+  const currencyOptions = React.useMemo(
+    () => withCurrentCurrency(dictionaryCurrencies, currencyValue),
+    [currencyValue, dictionaryCurrencies],
+  )
   const [isLoading, setIsLoading] = React.useState(true)
   const [loadFailed, setLoadFailed] = React.useState(false)
   const [isSaving, setIsSaving] = React.useState(false)
@@ -598,6 +609,7 @@ function OrderCollectionSection({
       const item = toCollectionRecord(call.result?.item ?? null)
       setCollection(item)
       setStatusValue(item?.collectionStatus ?? 'unknown')
+      setCurrencyValue(item?.currencyCode ?? DEFAULT_CURRENCY_CODE)
     } catch {
       setCollection(null)
       setLoadFailed(true)
@@ -643,7 +655,7 @@ function OrderCollectionSection({
     const payload: Record<string, unknown> = {
       purchaseOrderId,
       purchaseOrderNumber,
-      currencyCode: collection?.currencyCode ?? DEFAULT_CURRENCY_CODE,
+      currencyCode: currencyValue.trim().toUpperCase() || collection?.currencyCode || DEFAULT_CURRENCY_CODE,
       collectionStatus: statusValue,
       ...(collection?.updatedAt ? { updatedAt: collection.updatedAt } : {}),
     }
@@ -671,7 +683,7 @@ function OrderCollectionSection({
     } finally {
       setIsSaving(false)
     }
-  }, [collection, loadCollection, mutationContext, onForbidden, purchaseOrderId, purchaseOrderNumber, runMutation, statusValue, t])
+  }, [collection, currencyValue, loadCollection, mutationContext, onForbidden, purchaseOrderId, purchaseOrderNumber, runMutation, statusValue, t])
 
   const fields = React.useMemo<CrudField[]>(() => [
     {
@@ -858,6 +870,27 @@ function OrderCollectionSection({
                     {COLLECTION_STATUS_OPTIONS.map((value) => (
                       <SelectItem key={value} value={value}>
                         {t(COLLECTION_STATUS_LABEL_KEYS[value])}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-full space-y-1 sm:w-64">
+                <Label htmlFor="collection-currency">
+                  {t('export_finance.orders.collection.field.currency')}
+                </Label>
+                <Select
+                  value={currencyValue}
+                  disabled={!canManage || isSaving}
+                  onValueChange={setCurrencyValue}
+                >
+                  <SelectTrigger id="collection-currency" size="lg">
+                    <SelectValue placeholder={EMPTY_CELL} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currencyOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>

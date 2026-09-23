@@ -1,7 +1,9 @@
 export const metadata = {
   requireAuth: true,
-  // The gate is the installed chain's own feature: this list reads `/api/sales/{quotes,orders}`,
-  // which checks the same id, so declaring a second one here would gate nothing.
+  // The read this page performs goes to `/api/sales/orders`, whose installed route gates on the
+  // **plural** id `sales.orders.view` — this page declares the singular `sales.order.view`, so the
+  // two do not match. A superadmin passes through `userHasAllFeatures`' isSuperAdmin bypass; a
+  // non-superadmin role must be granted the plural id as well until this is reconciled.
   requireFeatures: ['sales.order.view'],
   pageTitle: 'Internal sales orders',
   pageTitleKey: 'internal_sales.list.order.title',

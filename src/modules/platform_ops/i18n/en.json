@@ -25,6 +25,7 @@
   "platform_ops.channels.form.field.name": "Name",
   "platform_ops.channels.form.field.code": "Code",
   "platform_ops.channels.form.field.platform": "Platform",
+  "platform_ops.channels.form.field.platformHelp": "Suggestions come from the sales-platform dictionary the dictionary library maintains; a marketplace it does not list yet can still be typed.",
   "platform_ops.channels.form.field.externalAccountId": "External account id",
   "platform_ops.channels.form.field.currencyCode": "Currency",
   "platform_ops.channels.form.field.isActive": "Active",
