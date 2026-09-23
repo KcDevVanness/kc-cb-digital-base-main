@@ -67,9 +67,14 @@ app 自建了业务面（`products`/`purchasing`/`trade_docs`/`platform_ops`/`cr
   message-object href、catalog search presenter。通知的 `linkHref` 在创建时就冻结成行数据，
   所以摘除路由会让**已经存在**的通知点开即 404，改通知类型也救不回来——只能让 URL 继续可解析。
 
-已按此策略隐藏的模块：`catalog`（8 个产品/类目页）、`customers`、`sales`、`wms`、`currencies`、
+已按此策略隐藏的模块：`catalog`（8 个产品/类目页 + `config/catalog` 配置页）、`customers`、`sales`、`wms`、`currencies`、
 `feature_toggles`（全部 `navHidden`）。隐藏只作用于导航：模块的 API/命令/实体/ACL
 不受影响，页面自身的 `requireFeatures` 也照旧生效，改回一行即恢复。
+
+`config/catalog` 是 2026-09-23 追加的一项（业主口径：Settings 面板条目太多）：页面只维护
+catalog 价格类型与欧盟单位价展示开关，本部署没有自有面读它（价格词表在 `products_prices.price_tier`，
+`purchasing`/`sourcing` 用自己的 `supplier_cost`/`company_offer` 码，`catalog_price_kinds` 为空表），
+但 catalog 搜索 presenter 会把 `catalog:catalog_price_kind` 的结果链到该 URL，所以仍走 `navHidden` 而不是 `null`。
 
 **唯一的例外是 `dictionaries`**：字典库的页面体是 app 自建的
 （`src/modules/dictionaries/backend/config/dictionaries/page.tsx` 遮蔽包内同名文件），而 app 的主数据下拉

@@ -48,9 +48,21 @@ export const enabledModules: ModuleEntry[] = [
       // The app owns its product master (`src/modules/products/**`, see
       // .ai/specs/2026-09-22-products-and-trade-docs.md): the installed catalog's product,
       // variant and category pages are hidden from the navigation so the admin shows exactly
-      // one product surface. The module, its API and `config/catalog` stay enabled on purpose —
-      // `sales` document lines still resolve catalog offers/price kinds, and existing rows keep
-      // working. This is a registry-level hide; no installed file is touched.
+      // one product surface. The module and its API stay enabled on purpose — `sales` document
+      // lines still resolve catalog offers/price kinds, `cross_border` receives stock through
+      // `catalog_product_variants`, and existing rows keep working. This is a registry-level
+      // hide; no installed file is touched.
+      //
+      // `config/catalog` is hidden as well (2026-09-23, owner request: fewer entries in the
+      // Settings panel). The page manages catalog price kinds and the EU unit-price display
+      // toggle, and no app-owned surface reads either one: the app's price vocabulary is
+      // `products_prices.price_tier`, `purchasing`/`sourcing` carry their own
+      // `supplier_cost`/`company_offer` codes in their own tables, and `catalog_price_kinds` is
+      // empty (the module's `seedDefaults` never ran for this tenant). Hiding is `navHidden`,
+      // not `null`, for two reasons: the catalog search presenter resolves
+      // `catalog:catalog_price_kind` hits to this URL (`catalog/search.ts`), and re-enabling the
+      // entry is deleting this one line. The page keeps working by URL while hidden — the
+      // price-kind API and the `unit_price_display_enabled` PUT are untouched.
       //
       // Hidden means `navHidden`, not `null`: `catalog.product.low_stock` notifies with
       // `linkHref: /backend/catalog/products/{sourceEntityId}`, so the URL must stay resolvable.
@@ -60,6 +72,7 @@ export const enabledModules: ModuleEntry[] = [
       // hid nothing, silently (see `@open-mercato/shared/modules/overrides`).
       routes: {
         pages: {
+          '/backend/config/catalog': { metadata: { navHidden: true } },
           '/backend/catalog/products': { metadata: { navHidden: true } },
           '/backend/catalog/products/create': { metadata: { navHidden: true } },
           '/backend/catalog/products/[id]': { metadata: { navHidden: true } },
