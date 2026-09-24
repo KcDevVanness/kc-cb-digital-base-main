@@ -225,6 +225,17 @@ docker compose exec -T app sh -lc "yarn mercato query_index reindex"
 docker compose exec -T app sh -lc "yarn mercato search reindex"
 ```
 
+两条管线实测表现不同，动手前先看这张表：
+
+| 命令 | 实测结果 |
+|---|---|
+| `search reindex` | **正常完成**（39/39 实体，约 3 秒）。它重建的是**向量**索引，而向量检索需要 embeddings 提供方凭据；未配 `OPENAI_API_KEY` 之类时 `/api/search/index` 返回 503 `Vector search is unavailable`，属预期降级 |
+| `query_index reindex` | **会卡死**。实测在含 `integrations` 数据的库上，enricher `integrations.external-id-mapping` 向 uuid 列传了空串（`invalid input syntax for type uuid: ""`），随后任务全部停在 `reindexing` 不再推进——`entity_index_jobs` 行数翻倍而计数不变、CPU 掉到 3%、日志无新行 |
+
+`query_index` 卡死是**应用侧 bug，不是部署或资源问题**：本地库同样有 160 行卡在
+`reindexing`，把机器从 2 GB 升到 8 GB 后现象不变。在它修好之前不要把
+`query_index reindex` 放进部署流程；Postgres 侧的索引随库恢复，列表与详情页照常可用。
+
 **安全边界**：本地库的 `TENANT_DATA_ENCRYPTION_FALLBACK_KEY` 常常就是 `.env.example` 里那个
 **公开占位值**。对齐密钥等于让 review 环境也用这个公开值——**该环境因此不能承载真实敏感数据**。
 review 结束后应换回独立密钥并重新初始化。
