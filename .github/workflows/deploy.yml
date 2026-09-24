@@ -46,7 +46,7 @@ jobs:
           # the image. The test is deliberately an allow-list: anything not
           # listed rebuilds, so adding a new source directory can only cost
           # build time, never ship a stale image.
-          DEPLOY_ONLY='^(\.github/|docs/|[^/]*\.md$|docker-compose\.deploy\.yml$|docker/caddy/|scripts/deploy/)'
+          DEPLOY_ONLY='^(\.github/|docs/|[^/]*\.md$|\.gitignore$|docker-compose\.deploy\.yml$|docker/caddy/|scripts/deploy/)'
           BEFORE='${{ github.event.before }}'
 
           if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
