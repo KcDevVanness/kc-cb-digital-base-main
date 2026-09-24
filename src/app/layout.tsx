@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import '@/lib/i18n/register-dictionary-loader'
 import { AppProviders } from '@/components/AppProviders'
+import { collectPasswordPolicyEnv } from '@/lib/password-policy-env'
 
 import { THEME_INIT_SCRIPT } from '@open-mercato/ui/theme/theme-init-script'
 import { detectLocale, loadDictionary } from '@open-mercato/shared/lib/i18n/server'
@@ -32,6 +33,10 @@ export default async function RootLayout({
   const dict = await loadDictionary(locale)
   const localeLocked = resolveForcedLocale(process.env) !== null
   const demoModeEnabled = process.env.DEMO_MODE !== 'false'
+  // The auth forms read the policy from the browser's `process.env`; hand them what this
+  // server resolved so the form and the API answer to the same rule. See
+  // src/lib/password-policy-env.ts.
+  const passwordPolicyEnv = collectPasswordPolicyEnv(process.env)
   const noticeBarsEnabled = process.env.OM_INTEGRATION_TEST !== 'true'
   const devRuntime = resolveDevRuntimeLayoutConfig(process.env)
   return (
@@ -43,7 +48,7 @@ export default async function RootLayout({
       </head>
       <body className="antialiased" suppressHydrationWarning data-gramm="false">
         <script id="om-theme-init" dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
-        <AppProviders locale={locale} dict={dict} localeLocked={localeLocked} supportedLocales={supportedLocales} demoModeEnabled={demoModeEnabled} noticeBarsEnabled={noticeBarsEnabled}>
+        <AppProviders locale={locale} dict={dict} localeLocked={localeLocked} supportedLocales={supportedLocales} demoModeEnabled={demoModeEnabled} noticeBarsEnabled={noticeBarsEnabled} passwordPolicyEnv={passwordPolicyEnv}>
           {devRuntime.enabled ? <DevRuntimeReporter /> : null}
           {devRuntime.bannerEnabled ? <DevRuntimeDiagnosticsBanner /> : null}
           {children}

@@ -8,6 +8,10 @@ const ignores = [
   '.next/**',
   '.mercato/**',
   '.ai/framework-context/**',
+  // Handoff/analysis artifacts (.ai/analysis/**): patch sources and scratch
+  // copies of installed package files, not app source. They are linted upstream,
+  // in the package they belong to.
+  '.ai/analysis/**',
   'dist/**',
   'out/**',
   'build/**',

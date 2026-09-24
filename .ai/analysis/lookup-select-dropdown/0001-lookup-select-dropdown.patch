@@ -1,0 +1,924 @@
+diff --git a/packages/ui/src/backend/inputs/LookupSelect.tsx b/packages/ui/src/backend/inputs/LookupSelect.tsx
+--- a/packages/ui/src/backend/inputs/LookupSelect.tsx
++++ b/packages/ui/src/backend/inputs/LookupSelect.tsx
+@@ -4,6 +4,7 @@
+ import { Check, Loader2, Search, X } from 'lucide-react'
+ import { useT } from '@open-mercato/shared/lib/i18n/context'
+ import { Button } from '../../primitives/button'
++import { Popover, PopoverAnchor, PopoverContent } from '../../primitives/popover'
+ import { cn } from '@open-mercato/shared/lib/utils'
+ import { createLogger } from '@open-mercato/shared/lib/logger'
+ 
+@@ -26,7 +27,25 @@
+   fetchItems?: (query: string) => Promise<LookupSelectItem[]>
+   fetchOptions?: (query?: string) => Promise<LookupSelectItem[]>
+   options?: LookupSelectItem[]
++  /**
++   * Minimum number of typed characters before the query reaches the loader.
++   * Defaults to 0: in the default `dropdown` variant the loader also runs with an
++   * empty query as soon as the panel opens, so the control shows a browsable first
++   * page before the user types anything — someone who does not know the record can
++   * pick it from the list. Passing an explicit threshold keeps the type-to-search
++   * contract: the panel opens on the "type at least N characters" hint instead of a
++   * list, exactly as the control behaved before.
++   */
+   minQuery?: number
++  /**
++   * `dropdown` (default) renders the result list in a popover panel anchored to the
++   * search box, so the field keeps its height in long forms and options appear on
++   * focus/click (or on ArrowDown). `inline` is the legacy presentation: the list
++   * renders in normal flow beneath the input. A `disabled` control always renders
++   * `inline`, because a locked field cannot open a panel and must still show its
++   * selection.
++   */
++  variant?: 'dropdown' | 'inline'
+   actionSlot?: React.ReactNode
+   onReady?: (controls: { setQuery: (value: string) => void }) => void
+   searchPlaceholder?: string
+@@ -41,6 +60,13 @@
+   selectedHintLabel?: (id: string) => string
+   disabled?: boolean
+   loading?: boolean
++  /**
++   * Loads the first page on mount instead of waiting for the control to be
++   * engaged. The inline variant also renders it immediately, as before; the
++   * dropdown variant keeps its panel closed until focus/click/ArrowDown, because a
++   * floating panel that opens itself over the surrounding dialog is worse than one
++   * that opens on intent — the data is already there when it opens.
++   */
+   defaultOpen?: boolean
+ }
+ 
+@@ -50,7 +76,8 @@
+   fetchItems,
+   fetchOptions,
+   options,
+-  minQuery = 2,
++  minQuery = 0,
++  variant = 'dropdown',
+   actionSlot,
+   onReady,
+   placeholder,
+@@ -89,6 +116,7 @@
+   // record id out of the DOM (TC-EUDR-013) — would never render.
+   const [collapsed, setCollapsed] = React.useState(false)
+   const [hasTyped, setHasTyped] = React.useState(defaultOpen)
++  const [panelOpen, setPanelOpen] = React.useState(false)
+   const [error, setError] = React.useState<string | null>(null)
+   const [fetchKey, setFetchKey] = React.useState(0)
+   const [activeIndex, setActiveIndex] = React.useState(-1)
+@@ -121,12 +149,25 @@
+     if (onReadyRef.current) onReadyRef.current({ setQuery })
+   }, [setQuery])
+ 
+-  // A set `value` always opens the list: it is the only place the selected row,
+-  // its checkmark and the clear control render, so collapsing over a selection
+-  // would hide it with no way to see or undo it. This used to also require an
+-  // `options` prop, which left every caller that resolves its selection through
+-  // `fetchItems` blind whenever minQuery kept the list shut.
+-  const shouldSearch = defaultOpen || query.trim().length >= minQuery || Boolean(value)
++  // A locked control cannot open a panel, so it keeps the inline presentation —
++  // the only shape in which its selected row stays readable.
++  const resolvedVariant: 'dropdown' | 'inline' = disabled ? 'inline' : variant
++  // At the default threshold an empty query is not a search: the dropdown searches
++  // when its panel opens (showing a browsable first page) and the inline variant
++  // keeps its historical pre-expanded behaviour. An explicit threshold keeps its
++  // meaning in both variants.
++  const browsable = minQuery <= 0
++  // A set `value` always searches: the selected row, its checkmark and the clear
++  // control render from the fetched page, so collapsing over a selection would hide
++  // it with no way to see or undo it. This used to also require an `options` prop,
++  // which left every caller that resolves its selection through `fetchItems` blind
++  // whenever minQuery kept the list shut.
++  const shouldSearch =
++    defaultOpen
++    || Boolean(value)
++    || (browsable ? query.trim().length > 0 : query.trim().length >= minQuery)
++    || (resolvedVariant === 'inline' && browsable)
++    || (resolvedVariant === 'dropdown' && browsable && panelOpen)
+ 
+   React.useEffect(() => {
+     setActiveIndex(-1)
+@@ -164,9 +205,40 @@
+     }
+   }, [activeIndex, optionDomId])
+ 
+-  const listboxVisible = shouldSearch && !disabled
++  const listboxVisible = shouldSearch && !collapsed && !disabled && (items.length > 0 || query.trim().length > 0)
++  const panelVisible = resolvedVariant === 'dropdown'
++    && panelOpen
++    && !collapsed
++    && !disabled
++    && (items.length > 0 || query.trim().length > 0 || loading || loadingProp)
++  // `panelVisible` / `listboxVisible` answer "is a list on screen"; this answers
++  // "can the keyboard reach an option right now" — the open panel in the dropdown
++  // variant, the rendered list in the inline variant.
++  const interactiveList = resolvedVariant === 'dropdown' ? panelVisible : listboxVisible
++
++  // A selection closes the panel in the dropdown variant: the value is then shown
++  // by the summary beneath the input (or by the host's own label), and the search
++  // box reverts to its placeholder instead of keeping the last query.
++  const selectItem = React.useCallback((item: LookupSelectItem) => {
++    onChange(item.id)
++    setActiveIndex(-1)
++    if (resolvedVariant === 'dropdown') {
++      setPanelOpen(false)
++      setQuery('')
++      setCollapsed(true)
++    }
++  }, [onChange, resolvedVariant])
++
+   const handleInputKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+-    if (!listboxVisible) return
++    if (!interactiveList) {
++      // Keyboard users must be able to open the panel without a pointer.
++      if (event.key === 'ArrowDown' && !disabled && resolvedVariant === 'dropdown') {
++        event.preventDefault()
++        setCollapsed(false)
++        setPanelOpen(true)
++      }
++      return
++    }
+     if (event.key === 'ArrowDown') {
+       event.preventDefault()
+       moveActiveIndex(1)
+@@ -182,8 +254,7 @@
+       const item = items[activeIndex]
+       if (!isInteractiveItem(item)) return
+       event.preventDefault()
+-      onChange(item.id)
+-      setActiveIndex(-1)
++      selectItem(item)
+       return
+     }
+     if (event.key === 'Escape') {
+@@ -193,8 +264,9 @@
+       setQuery('')
+       setActiveIndex(-1)
+       setCollapsed(true)
++      setPanelOpen(false)
+     }
+-  }, [activeIndex, items, isInteractiveItem, listboxVisible, moveActiveIndex, onChange, query])
++  }, [activeIndex, disabled, interactiveList, isInteractiveItem, items, moveActiveIndex, query, resolvedVariant, selectItem])
+   React.useEffect(() => {
+     if (disabled) {
+       setItems(options ?? [])
+@@ -248,187 +320,239 @@
+   }, [items, value])
+ 
+   /*
+-   * The collapsed summary is opt-in: only a consumer that supplies
+-   * `selectedHintLabel` asks this component to display the selection, so
+-   * consumers rendering their own selected-value label keep their layout and
+-   * never get a second summary. A resolver that falls back to the id
+-   * (`known.get(id) ?? id`) is treated as unresolved and falls through to the
+-   * title of the item that was actually fetched — a record id must never reach
+-   * the DOM as a label.
++   * The collapsed summary is opt-in for the inline variant: only a consumer that
++   * supplies `selectedHintLabel` asks this component to display the selection, so
++   * consumers rendering their own selected-value label keep their layout and never
++   * get a second summary. The dropdown variant has no rendered list to fall back on
++   * once its panel closes, so there it resolves the selection from the fetched page
++   * as well — a record id must never reach the DOM as a label in either case.
+    */
+   const collapsedSelectionLabel = React.useMemo(() => {
+-    if (!value || !selectedHintLabel) return null
++    if (!value) return null
++    if (!selectedHintLabel) {
++      if (resolvedVariant === 'inline') return null
++      const title = selectedItem && selectedItem.id === value ? selectedItem.title : null
++      return title && title !== value ? title : null
++    }
+     const hinted = selectedHintLabel(value)
+     if (hinted && hinted !== value) return hinted
+     const fetchedTitle = selectedItem && selectedItem.id === value ? selectedItem.title : null
+     return fetchedTitle && fetchedTitle !== value ? fetchedTitle : null
+-  }, [selectedHintLabel, selectedItem, value])
++  }, [resolvedVariant, selectedHintLabel, selectedItem, value])
+ 
+-  return (
+-    <div className="space-y-3">
+-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+-        <div className="relative flex-1">
+-          <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+-          <input
+-            className="w-full h-10 rounded-lg border border-input bg-background pl-10 pr-3 text-sm shadow-xs transition-colors outline-none placeholder:text-muted-foreground hover:border-foreground/20 focus-visible:shadow-focus focus-visible:border-brand-violet disabled:bg-bg-disabled disabled:border-border-disabled disabled:text-muted-foreground disabled:cursor-not-allowed"
+-            value={query}
+-            onChange={(event) => {
+-              setQuery(event.target.value)
+-              setHasTyped(true)
+-              setCollapsed(false)
+-            }}
+-            onKeyDown={handleInputKeyDown}
+-            placeholder={resolvedSearchPlaceholder}
+-            disabled={disabled}
+-            role="combobox"
+-            aria-expanded={listboxVisible}
+-            aria-controls={listboxId}
+-            aria-autocomplete="list"
+-            aria-activedescendant={activeIndex >= 0 ? optionDomId(activeIndex) : undefined}
+-          />
++  const belowThreshold = !browsable && query.trim().length < minQuery
++  const listBody = (
++    <>
++      {loading || loadingProp ? (
++        <div className="flex items-center gap-2 text-sm text-muted-foreground">
++          <Loader2 className="h-4 w-4 animate-spin" />
++          {resolvedLoadingLabel}
+         </div>
+-        {actionSlot && !disabled ? <div className="sm:self-start">{actionSlot}</div> : null}
+-      </div>
+-      {/*
+-       * `shouldSearch` decides whether to FETCH; this decides whether to RENDER a
+-       * list. They differ for a set value whose lookup comes back empty: develop's
+-       * #5248 work needs the list (and its selected option) whenever items exist,
+-       * while the collapsed summary — which keeps a selection visible after the
+-       * search box reverts to its placeholder, and keeps a raw record id out of the
+-       * DOM (TC-EUDR-013) — is only reachable when they do not. Falling through on
+-       * an empty result satisfies both. A non-empty query still renders the list so
+-       * its spinner and empty-state are reachable while the user is searching.
+-       */}
+-      {shouldSearch && !collapsed && (items.length > 0 || query.trim().length > 0) ? (
+-        <div className="space-y-2">
+-          {loading || loadingProp ? (
+-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+-              <Loader2 className="h-4 w-4 animate-spin" />
+-              {resolvedLoadingLabel}
+-            </div>
+-          ) : null}
+-          {!loading && !loadingProp && !items.length ? (
+-            <p className="text-xs text-muted-foreground">{resolvedEmptyLabel}</p>
+-          ) : null}
+-          <div
+-            id={listboxId}
+-            role="listbox"
+-            className="flex flex-col gap-1.5 max-h-80 overflow-y-auto -mx-0.5 px-0.5 py-0.5"
+-          >
+-            {items.map((item, index) => {
+-              const isSelected = value === item.id
+-              const isInteractive = isInteractiveItem(item)
+-              const isActive = index === activeIndex
+-              return (
+-                <div
+-                  key={item.id}
+-                  id={optionDomId(index)}
+-                  className={cn(
+-                    'group flex items-center gap-4 rounded-xl border p-4 transition-all duration-150 focus-visible:outline-none focus-visible:shadow-focus',
+-                    isInteractive ? 'cursor-pointer' : 'cursor-not-allowed opacity-60',
+-                    isSelected
+-                      ? 'border-brand-violet bg-brand-violet/5 shadow-sm'
+-                      : 'border-input bg-card hover:border-foreground/20 hover:bg-muted/30 hover:shadow-sm',
+-                    isActive && !isSelected ? 'border-foreground/20 bg-muted/30 shadow-sm' : null
+-                  )}
+-                  role="option"
+-                  tabIndex={isInteractive ? 0 : -1}
+-                  onClick={() => {
+-                    if (!isInteractive) return
+-                    onChange(item.id)
+-                  }}
+-                  onKeyDown={(event) => {
+-                    if (event.key === 'Enter' || event.key === ' ') {
+-                      event.preventDefault()
+-                      if (!isInteractive) return
+-                      onChange(item.id)
+-                    }
+-                  }}
+-                  aria-selected={isSelected}
+-                  aria-disabled={isInteractive ? undefined : true}
+-                  title={isSelected ? resolvedSelectedLabel : isInteractive ? resolvedSelectLabel : undefined}
+-                >
+-                  {item.icon ? (
+-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden [&>svg]:size-6 [&_svg]:text-muted-foreground">
+-                      {item.icon}
+-                    </div>
+-                  ) : (
+-                    <div className={cn(
+-                      'flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border transition-colors',
+-                      isSelected
+-                        ? 'border-brand-violet/40 bg-brand-violet/10 text-brand-violet'
+-                        : 'border-input bg-muted text-muted-foreground group-hover:border-foreground/20'
+-                    )}>
+-                      <span className="text-base font-semibold uppercase">{item.title.slice(0, 1)}</span>
+-                    </div>
+-                  )}
+-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+-                    <div className="flex items-center justify-between gap-3">
+-                      <div className="truncate text-sm font-semibold text-foreground">{item.title}</div>
+-                      {item.rightLabel ? (
+-                        <div className="shrink-0 text-overline font-medium uppercase tracking-wider text-muted-foreground">
+-                          {item.rightLabel}
+-                        </div>
+-                      ) : null}
+-                    </div>
+-                    {item.subtitle ? (
+-                      <div className="text-xs text-muted-foreground truncate">{item.subtitle}</div>
+-                    ) : null}
+-                    {item.description ? (
+-                      <div className="text-xs text-muted-foreground/70 truncate">{item.description}</div>
+-                    ) : null}
+-                  </div>
+-                  <div className="flex shrink-0 items-center justify-center">
+-                    {isSelected ? (
+-                      <Check className="size-5 text-brand-violet" aria-hidden="true" />
+-                    ) : (
+-                      <div className="size-5" aria-hidden="true" />
+-                    )}
+-                  </div>
+-                </div>
+-              )
+-            })}
+-          </div>
+-          {value && !disabled ? (
+-            <Button
+-              type="button"
+-              variant="ghost"
+-              size="sm"
+-              className="w-fit gap-1 text-sm font-normal"
+-              onClick={() => onChange(null)}
++      ) : null}
++      {belowThreshold && !items.length ? (
++        <p className="text-xs text-muted-foreground">{resolvedMinQueryHintLabel}</p>
++      ) : null}
++      {!loading && !loadingProp && !items.length && !belowThreshold ? (
++        <p className="text-xs text-muted-foreground">{resolvedEmptyLabel}</p>
++      ) : null}
++      <div
++        id={listboxId}
++        role="listbox"
++        className="flex flex-col gap-1.5 max-h-80 overflow-y-auto -mx-0.5 px-0.5 py-0.5"
++      >
++        {items.map((item, index) => {
++          const isSelected = value === item.id
++          const isInteractive = isInteractiveItem(item)
++          const isActive = index === activeIndex
++          return (
++            <div
++              key={item.id}
++              id={optionDomId(index)}
++              className={cn(
++                'group flex items-center gap-4 rounded-xl border p-4 transition-all duration-150 focus-visible:outline-none focus-visible:shadow-focus',
++                isInteractive ? 'cursor-pointer' : 'cursor-not-allowed opacity-60',
++                isSelected
++                  ? 'border-brand-violet bg-brand-violet/5 shadow-sm'
++                  : 'border-input bg-card hover:border-foreground/20 hover:bg-muted/30 hover:shadow-sm',
++                isActive && !isSelected ? 'border-foreground/20 bg-muted/30 shadow-sm' : null
++              )}
++              role="option"
++              tabIndex={isInteractive ? 0 : -1}
++              onClick={() => {
++                if (!isInteractive) return
++                selectItem(item)
++              }}
++              onKeyDown={(event) => {
++                if (event.key === 'Enter' || event.key === ' ') {
++                  event.preventDefault()
++                  if (!isInteractive) return
++                  selectItem(item)
++                }
++              }}
++              aria-selected={isSelected}
++              aria-disabled={isInteractive ? undefined : true}
++              title={isSelected ? resolvedSelectedLabel : isInteractive ? resolvedSelectLabel : undefined}
+             >
+-              <X className="h-4 w-4" />
+-              {resolvedClearLabel}
+-            </Button>
+-          ) : null}
+-        </div>
+-      ) : collapsedSelectionLabel ? (
+-        /*
+-         * The visible input is the *search box*, not a value display: once the
+-         * list closes it shows its placeholder again, so a selection made and
+-         * then collapsed left the control looking empty even though the form
+-         * held the id. `selectedHintLabel` existed for exactly this and was
+-         * never rendered.
+-         */
+-        <div
+-          className="flex items-center justify-between gap-3 rounded-lg border border-input bg-muted/40 px-3 py-2"
+-          data-testid="lookup-select-selected"
++              {item.icon ? (
++                <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden [&>svg]:size-6 [&_svg]:text-muted-foreground">
++                  {item.icon}
++                </div>
++              ) : (
++                <div className={cn(
++                  'flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border transition-colors',
++                  isSelected
++                    ? 'border-brand-violet/40 bg-brand-violet/10 text-brand-violet'
++                    : 'border-input bg-muted text-muted-foreground group-hover:border-foreground/20'
++                )}>
++                  <span className="text-base font-semibold uppercase">{item.title.slice(0, 1)}</span>
++                </div>
++              )}
++              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
++                <div className="flex items-center justify-between gap-3">
++                  <div className="truncate text-sm font-semibold text-foreground">{item.title}</div>
++                  {item.rightLabel ? (
++                    <div className="shrink-0 text-overline font-medium uppercase tracking-wider text-muted-foreground">
++                      {item.rightLabel}
++                    </div>
++                  ) : null}
++                </div>
++                {item.subtitle ? (
++                  <div className="text-xs text-muted-foreground truncate">{item.subtitle}</div>
++                ) : null}
++                {item.description ? (
++                  <div className="text-xs text-muted-foreground/70 truncate">{item.description}</div>
++                ) : null}
++              </div>
++              <div className="flex shrink-0 items-center justify-center">
++                {isSelected ? (
++                  <Check className="size-5 text-brand-violet" aria-hidden="true" />
++                ) : (
++                  <div className="size-5" aria-hidden="true" />
++                )}
++              </div>
++            </div>
++          )
++        })}
++      </div>
++      {value && !disabled ? (
++        <Button
++          type="button"
++          variant="ghost"
++          size="sm"
++          className="w-fit gap-1 text-sm font-normal"
++          onClick={() => onChange(null)}
+         >
+-          <span className="truncate text-sm font-medium text-foreground">
+-            {collapsedSelectionLabel}
+-          </span>
+-          <Button
+-            type="button"
+-            variant="ghost"
+-            size="sm"
+-            className="shrink-0 gap-1 text-sm font-normal"
+-            disabled={disabled}
+-            onClick={() => onChange(null)}
+-          >
+-            <X className="h-4 w-4" />
+-            {resolvedClearLabel}
+-          </Button>
++          <X className="h-4 w-4" />
++          {resolvedClearLabel}
++        </Button>
++      ) : null}
++    </>
++  )
++
++  /*
++   * The visible input is the *search box*, not a value display: once no list is on
++   * screen it shows its placeholder again, so a selection made and then dismissed
++   * left the control looking empty even though the form held the id.
++   * `selectedHintLabel` existed for exactly this and was never rendered.
++   */
++  const summaryBlock = collapsedSelectionLabel ? (
++    <div
++      className="flex items-center justify-between gap-3 rounded-lg border border-input bg-muted/40 px-3 py-2"
++      data-testid="lookup-select-selected"
++    >
++      <span className="truncate text-sm font-medium text-foreground">
++        {collapsedSelectionLabel}
++      </span>
++      <Button
++        type="button"
++        variant="ghost"
++        size="sm"
++        className="shrink-0 gap-1 text-sm font-normal"
++        disabled={disabled}
++        onClick={() => onChange(null)}
++      >
++        <X className="h-4 w-4" />
++        {resolvedClearLabel}
++      </Button>
++    </div>
++  ) : null
++
++  return (
++    <div className="space-y-3">
++      <Popover
++        open={resolvedVariant === 'dropdown' && panelOpen}
++        onOpenChange={(next) => {
++          if (resolvedVariant === 'dropdown') setPanelOpen(next)
++        }}
++      >
++        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
++          <PopoverAnchor asChild>
++            <div className="relative flex-1">
++              <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
++              <input
++                className="w-full h-10 rounded-lg border border-input bg-background pl-10 pr-3 text-sm shadow-xs transition-colors outline-none placeholder:text-muted-foreground hover:border-foreground/20 focus-visible:shadow-focus focus-visible:border-brand-violet disabled:bg-bg-disabled disabled:border-border-disabled disabled:text-muted-foreground disabled:cursor-not-allowed"
++                value={query}
++                onChange={(event) => {
++                  setQuery(event.target.value)
++                  setHasTyped(true)
++                  setCollapsed(false)
++                  setPanelOpen(true)
++                }}
++                onFocus={() => {
++                  if (disabled) return
++                  setCollapsed(false)
++                  setPanelOpen(true)
++                }}
++                onClick={() => {
++                  if (disabled) return
++                  setCollapsed(false)
++                  setPanelOpen(true)
++                }}
++                onKeyDown={handleInputKeyDown}
++                placeholder={resolvedSearchPlaceholder}
++                disabled={disabled}
++                role="combobox"
++                aria-expanded={resolvedVariant === 'dropdown' ? panelVisible : listboxVisible}
++                aria-controls={listboxId}
++                aria-autocomplete="list"
++                aria-activedescendant={activeIndex >= 0 ? optionDomId(activeIndex) : undefined}
++              />
++            </div>
++          </PopoverAnchor>
++          {actionSlot && !disabled ? <div className="sm:self-start">{actionSlot}</div> : null}
+         </div>
++        {resolvedVariant === 'dropdown'
++          ? panelVisible ? (
++            /*
++             * A popover panel, not an inline list: the field keeps its height in a
++             * long form, and opening it is enough to see the first page of options
++             * (no need to know the record before typing). Unmounted while closed so a
++             * still-mounted layer can never swallow Escape.
++             */
++            <PopoverContent
++              align="start"
++              sideOffset={6}
++              className="w-[var(--radix-popover-trigger-width)] min-w-[280px] p-3"
++              onOpenAutoFocus={(event) => event.preventDefault()}
++              onCloseAutoFocus={(event) => event.preventDefault()}
++            >
++              <div className="space-y-2">{listBody}</div>
++            </PopoverContent>
++          ) : null
++          : null}
++      </Popover>
++      {resolvedVariant === 'dropdown' ? (
++        panelVisible ? null : collapsedSelectionLabel ? (
++          summaryBlock
++        ) : minQuery > 0 ? (
++          <p className="text-xs text-muted-foreground">
++            {hasTyped ? resolvedMinQueryHintLabel : resolvedStartTypingLabel}
++          </p>
++        ) : null
++      ) : shouldSearch && !collapsed && (items.length > 0 || query.trim().length > 0) ? (
++        <div className="space-y-2">{listBody}</div>
++      ) : collapsedSelectionLabel ? (
++        summaryBlock
+       ) : hasTyped ? (
+         <p className="text-xs text-muted-foreground">
+           {resolvedMinQueryHintLabel}
+diff --git a/packages/ui/src/backend/inputs/__tests__/LookupSelect.test.tsx b/packages/ui/src/backend/inputs/__tests__/LookupSelect.test.tsx
+--- a/packages/ui/src/backend/inputs/__tests__/LookupSelect.test.tsx
++++ b/packages/ui/src/backend/inputs/__tests__/LookupSelect.test.tsx
+@@ -5,7 +5,7 @@
+ }))
+ 
+ import * as React from 'react'
+-import { fireEvent, render, screen } from '@testing-library/react'
++import { act, fireEvent, render, screen } from '@testing-library/react'
+ import { LookupSelect } from '../LookupSelect'
+ 
+ function getInput(container: HTMLElement): HTMLInputElement {
+@@ -93,38 +93,51 @@
+     { id: 'plot-2', title: 'Fazenda Sul' },
+   ]
+ 
+-  function renderWithResults(onChange: (next: string | null) => void) {
+-    const utils = render(
+-      <LookupSelect
+-        value={null}
+-        onChange={onChange}
+-        fetchItems={async () => ITEMS}
+-        minQuery={2}
+-      />,
+-    )
+-    return utils
++  /*
++   * The dropdown renders its list inside the DS popover, and Radix Popper's jsdom
++   * layout loop only settles under controlled time — the same reason the
++   * ComboboxInput suite drives its own debounce with fake timers. Advancing the
++   * 220 ms debounce explicitly keeps these tests deterministic and fast.
++   */
++  beforeEach(() => {
++    jest.useFakeTimers()
++  })
++
++  afterEach(() => {
++    jest.useRealTimers()
++  })
++
++  async function settleDebounce() {
++    await act(async () => {
++      jest.advanceTimersByTime(250)
++    })
+   }
+ 
++  function renderPicker(props: Partial<React.ComponentProps<typeof LookupSelect>> = {}) {
++    return render(<LookupSelect value={null} onChange={() => {}} fetchItems={async () => ITEMS} {...props} />)
++  }
++
+   it('exposes combobox/listbox/option semantics once results render', async () => {
+-    const { container } = renderWithResults(() => {})
++    const { container } = renderPicker({ minQuery: 2 })
+     const input = getInput(container)
+     expect(input).toHaveAttribute('role', 'combobox')
+     expect(input).toHaveAttribute('aria-autocomplete', 'list')
+ 
+     fireEvent.change(input, { target: { value: 'Faz' } })
+-    const options = await screen.findAllByRole('option')
+-    expect(options).toHaveLength(2)
++    await settleDebounce()
++
++    expect(screen.getAllByRole('option')).toHaveLength(2)
+     expect(screen.getByRole('listbox')).toBeInTheDocument()
+     expect(input).toHaveAttribute('aria-expanded', 'true')
+   })
+ 
+   it('selects the highlighted result with ArrowDown + Enter', async () => {
+     const onChange = jest.fn()
+-    const { container } = renderWithResults(onChange)
++    const { container } = renderPicker({ onChange, minQuery: 2 })
+     const input = getInput(container)
+ 
+     fireEvent.change(input, { target: { value: 'Faz' } })
+-    await screen.findAllByRole('option')
++    await settleDebounce()
+ 
+     fireEvent.keyDown(input, { key: 'ArrowDown' })
+     expect(input).toHaveAttribute('aria-activedescendant')
+@@ -134,11 +147,11 @@
+ 
+   it('moves the highlight with repeated arrows and wraps', async () => {
+     const onChange = jest.fn()
+-    const { container } = renderWithResults(onChange)
++    const { container } = renderPicker({ onChange, minQuery: 2 })
+     const input = getInput(container)
+ 
+     fireEvent.change(input, { target: { value: 'Faz' } })
+-    await screen.findAllByRole('option')
++    await settleDebounce()
+ 
+     fireEvent.keyDown(input, { key: 'ArrowDown' })
+     fireEvent.keyDown(input, { key: 'ArrowDown' })
+@@ -155,69 +168,134 @@
+     )
+     const input = getInput(container)
+     fireEvent.change(input, { target: { value: 'Faz' } })
+-    await screen.findAllByRole('option')
++    await settleDebounce()
++    expect(screen.getAllByRole('option')).toHaveLength(2)
+ 
+     escapeSpy.mockClear()
+     fireEvent.keyDown(input, { key: 'Escape' })
+     expect(input.value).toBe('')
+     expect(escapeSpy).not.toHaveBeenCalled()
++    expect(screen.queryByRole('listbox')).toBeNull()
+   })
+ 
+-  // Issue #5456 item 3: a `minQuery` of 0 makes `shouldSearch` true for the empty
+-  // query, so the full option list renders before any interaction. Callers that
+-  // want the collapsed "start typing" affordance must keep minQuery >= 1.
+-  it('renders pre-expanded with minQuery=0 and collapsed with minQuery=1', async () => {
+-    const expanded = render(
+-      <LookupSelect value={null} onChange={() => {}} fetchItems={async () => ITEMS} minQuery={0} />,
+-    )
+-    expect(await expanded.findAllByRole('option')).toHaveLength(2)
+-    expanded.unmount()
++  // Requested behaviour: someone who does not know which record to pick must be
++  // able to open the field and choose from a first page, without typing.
++  it('opens the panel on focus and loads the first page without typing', async () => {
++    const fetchItems = jest.fn(async () => ITEMS)
++    const { container } = render(<LookupSelect value={null} onChange={() => {}} fetchItems={fetchItems} />)
++    const input = getInput(container)
+ 
+-    const collapsed = render(
+-      <LookupSelect value={null} onChange={() => {}} fetchItems={async () => ITEMS} minQuery={1} />,
+-    )
+-    expect(collapsed.queryByRole('listbox')).toBeNull()
+-    expect(collapsed.getByText('Start typing to search.')).toBeInTheDocument()
++    // Nothing is requested before the user engages the control: a form with ten of
++    // these fields must not fire ten requests on mount.
++    expect(fetchItems).not.toHaveBeenCalled()
+ 
+-    fireEvent.change(getInput(collapsed.container), { target: { value: 'F' } })
+-    expect(await collapsed.findAllByRole('option')).toHaveLength(2)
++    fireEvent.focus(input)
++    await settleDebounce()
++
++    expect(screen.getAllByRole('option')).toHaveLength(2)
++    expect(fetchItems).toHaveBeenCalledWith('')
++    expect(input).toHaveAttribute('aria-expanded', 'true')
+   })
+ 
+-  // A selection must never be invisible. Before this, `shouldSearch` only made an
+-  // exception for a set `value` when the caller ALSO passed `options`, so a
+-  // minQuery >= 1 lookup without that prop collapsed over its own selection: no
+-  // selected row, no checkmark and no clear control — the user could not see or
+-  // undo what was chosen (review of #5481, order-line Status field).
+-  it('keeps a made selection visible while collapsed, without an options prop', async () => {
+-    const onChange = jest.fn()
+-    const view = render(
+-      <LookupSelect
+-        value="plot-1"
+-        onChange={onChange}
+-        fetchItems={async () => ITEMS}
+-        minQuery={1}
+-      />,
++  it('opens the panel from the keyboard with ArrowDown', async () => {
++    const fetchItems = jest.fn(async () => ITEMS)
++    const { container } = render(<LookupSelect value={null} onChange={() => {}} fetchItems={fetchItems} />)
++
++    fireEvent.keyDown(getInput(container), { key: 'ArrowDown' })
++    await settleDebounce()
++
++    expect(screen.getAllByRole('option')).toHaveLength(2)
++  })
++
++  it('preloads with defaultOpen but still opens the panel on intent', async () => {
++    const fetchItems = jest.fn(async () => ITEMS)
++    const { container } = render(
++      <LookupSelect value={null} onChange={() => {}} fetchItems={fetchItems} defaultOpen />,
+     )
++    const input = getInput(container)
+ 
+-    const selected = await view.findByRole('option', { selected: true })
+-    expect(selected).toHaveTextContent(ITEMS[0].title)
++    // `defaultOpen` means "have the data ready", not "float a panel over the dialog".
++    await settleDebounce()
++    expect(fetchItems).toHaveBeenCalledWith('')
++    expect(screen.queryByRole('listbox')).toBeNull()
+ 
+-    const clear = view.getByRole('button', { name: 'Clear selection' })
+-    fireEvent.click(clear)
+-    expect(onChange).toHaveBeenCalledWith(null)
++    fireEvent.focus(input)
++    expect(screen.getAllByRole('option')).toHaveLength(2)
+   })
+ 
+-  it('stays collapsed at minQuery >= 1 once the selection is cleared', async () => {
+-    const view = render(
+-      <LookupSelect value={null} onChange={() => {}} fetchItems={async () => ITEMS} minQuery={1} />,
++  it('closes the panel after a selection and keeps the chosen value readable', async () => {
++    const onChange = jest.fn()
++    function Harness() {
++      const [value, setValue] = React.useState<string | null>(null)
++      return (
++        <LookupSelect
++          value={value}
++          onChange={(next) => {
++            setValue(next)
++            onChange(next)
++          }}
++          fetchItems={async () => ITEMS}
++          selectedHintLabel={(id) => (id === 'plot-1' ? ITEMS[0].title : id)}
++        />
++      )
++    }
++
++    const { container } = render(<Harness />)
++    fireEvent.focus(getInput(container))
++    await settleDebounce()
++
++    fireEvent.click(screen.getAllByRole('option')[0])
++
++    expect(onChange).toHaveBeenCalledWith('plot-1')
++    expect(screen.queryByRole('listbox')).toBeNull()
++    expect(screen.getByTestId('lookup-select-selected')).toHaveTextContent(ITEMS[0].title)
++  })
++
++  it('keeps an explicit threshold type-to-search inside the panel', async () => {
++    const fetchItems = jest.fn(async () => ITEMS)
++    const { container } = render(
++      <LookupSelect value={null} onChange={() => {}} fetchItems={fetchItems} minQuery={2} />,
+     )
+-    expect(view.queryByRole('listbox')).toBeNull()
+-    expect(view.getByText('Start typing to search.')).toBeInTheDocument()
++    const input = getInput(container)
++
++    fireEvent.focus(input)
++    await settleDebounce()
++    expect(fetchItems).not.toHaveBeenCalled()
++    expect(screen.getByText('Start typing to search.')).toBeInTheDocument()
++
++    fireEvent.change(input, { target: { value: 'F' } })
++    await settleDebounce()
++    expect(fetchItems).not.toHaveBeenCalled()
++    expect(screen.getByText(/at least/)).toBeInTheDocument()
++
++    fireEvent.change(input, { target: { value: 'Faz' } })
++    await settleDebounce()
++    expect(screen.getAllByRole('option')).toHaveLength(2)
+   })
+ })
+ 
++// The inline presentation stays available for hosts that lay the list out in normal
++// flow (chips + picker) — and it is the shape a `disabled` control always renders.
++describe('LookupSelect inline variant', () => {
++  const ITEMS = [
++    { id: 'plot-1', title: 'Fazenda Norte' },
++    { id: 'plot-2', title: 'Fazenda Sul' },
++  ]
++
++  it('renders pre-expanded with minQuery=0', async () => {
++    const expanded = render(
++      <LookupSelect value={null} onChange={() => {}} fetchItems={async () => ITEMS} minQuery={0} variant="inline" />,
++    )
++    expect(await expanded.findAllByRole('option')).toHaveLength(2)
++  })
++})
++
+ describe('LookupSelect selected value display', () => {
+   const RECORD_ID = 'd7f88312-f4b3-44b7-b03a-dc10e561cf8e'
++  const ITEMS = [
++    { id: 'plot-1', title: 'Fazenda Norte' },
++    { id: 'plot-2', title: 'Fazenda Sul' },
++  ]
+ 
+   it('shows the selected item once the list is collapsed', () => {
+     // The visible input is the search box and reverts to its placeholder, so
+@@ -276,15 +354,22 @@
+       )
+     }
+ 
+-    const { container } = render(<CustomerPickerHarness />)
+-    const input = getInput(container)
++    jest.useFakeTimers()
++    try {
++      const { container } = render(<CustomerPickerHarness />)
++      const input = getInput(container)
+ 
+-    fireEvent.change(input, { target: { value: 'Exc' } })
+-    fireEvent.click(await screen.findByRole('option'))
+-    fireEvent.keyDown(input, { key: 'Escape' })
++      fireEvent.change(input, { target: { value: 'Exc' } })
++      await act(async () => {
++        jest.advanceTimersByTime(250)
++      })
++      fireEvent.click(screen.getAllByRole('option')[0])
+ 
+-    expect(screen.getByTestId('lookup-select-selected')).toHaveTextContent('ExcelMed')
+-    expect(container.textContent ?? '').not.toContain(RECORD_ID)
++      expect(screen.getByTestId('lookup-select-selected')).toHaveTextContent('ExcelMed')
++      expect(container.textContent ?? '').not.toContain(RECORD_ID)
++    } finally {
++      jest.useRealTimers()
++    }
+   })
+ 
+   it('clears the selection from the collapsed summary', () => {
+@@ -306,13 +391,48 @@
+     render(<LookupSelect value={null} onChange={() => {}} fetchItems={async () => []} />)
+     expect(screen.queryByTestId('lookup-select-selected')).not.toBeInTheDocument()
+   })
++
++  // A selection must never be invisible. Before this, `shouldSearch` only made an
++  // exception for a set `value` when the caller ALSO passed `options`, so a
++  // minQuery >= 1 lookup without that prop collapsed over its own selection: no
++  // selected row, no checkmark and no clear control — the user could not see or
++  // undo what was chosen (review of #5481, order-line Status field). The dropdown
++  // closes its panel, so the same value now renders as the summary line — still
++  // never as a raw record id.
++  it('keeps a made selection visible after the list closes, without a hint label', async () => {
++    const onChange = jest.fn()
++    const view = render(
++      <LookupSelect
++        value="plot-1"
++        onChange={onChange}
++        fetchItems={async () => ITEMS}
++        minQuery={1}
++      />,
++    )
++
++    const selected = await view.findByTestId('lookup-select-selected')
++    expect(selected).toHaveTextContent(ITEMS[0].title)
++
++    const clear = view.getByRole('button', { name: 'Clear selection' })
++    fireEvent.click(clear)
++    expect(onChange).toHaveBeenCalledWith(null)
++  })
++
++  it('stays collapsed at minQuery >= 1 once the selection is cleared', async () => {
++    const view = render(
++      <LookupSelect value={null} onChange={() => {}} fetchItems={async () => ITEMS} minQuery={1} />,
++    )
++    expect(view.queryByRole('listbox')).toBeNull()
++    expect(view.getByText('Start typing to search.')).toBeInTheDocument()
++  })
+ })
+ 
+ // `disabled` used to gate only the search box, so a caller that locked the
+ // control still shipped a live option list: the selected card kept its click and
+ // Enter/Space handlers, "Clear selection" stayed reachable, and the action slot
+ // could still create a new record. Issue #5248 depended on `disabled` meaning
+-// "no interaction at all", so every one of those paths is pinned here.
++// "no interaction at all", so every one of those paths is pinned here. A locked
++// control renders the inline presentation, because it cannot open a panel.
+ describe('LookupSelect disabled', () => {
+   const SELECTED = [{ id: 'product-1', title: 'Product One' }]
+ 

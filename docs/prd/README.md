@@ -29,8 +29,7 @@
 
 ## 索引
 
-暂无。按上面的骨架新增后在这里加一行：
-
 | 文档 | 状态 |
 |---|---|
-| — | — |
+| [lookup-field-dropdown.md](./lookup-field-dropdown.md) | 待上游发版（补丁已产出并自验；已确认安装版 `@open-mercato/ui` 0.8.0 未含该改动） |
+| [cross-border-erp.md](./cross-border-erp.md) | 已实现：阶段一~四、六、七完成并验证；阶段五收尾进行中；平台传输层待业务答 Q4 |

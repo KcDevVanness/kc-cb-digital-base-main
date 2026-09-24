@@ -53,6 +53,14 @@ TODO: Fix that latter to have reference by the package names
   line-height: var(--font-size-overline--line-height, 1rem);
 }
 
+/* Dictionary library (app-owned page body, `src/modules/dictionaries/components/DictionariesLibrary.tsx`):
+   the left list pane is pinned below the sticky backend header and capped to the remaining viewport
+   height, so a long dictionary list scrolls inside the pane instead of stretching the page. 6rem =
+   header (~3.8rem) + the pane's 4rem sticky offset + breathing room. */
+@utility pane-below-header {
+  max-height: calc(100svh - 6rem);
+}
+
 @theme inline {
   --color-accent-orange: var(--accent-orange);
   --color-accent-orange-text: var(--accent-orange-text);

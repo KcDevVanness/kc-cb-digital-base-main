@@ -61,10 +61,13 @@ jobs:
           fi
 
           CHANGED="$(git diff --name-only "$BEFORE" "${GITHUB_SHA}")"
-          if [ -n "$CHANGED" ] && ! printf '%s\n' "$CHANGED" | grep -qvE "$DEPLOY_ONLY"; then
+          # An empty diff means the tree is identical to what is already
+          # deployed, so the image cannot have changed either. Only a non-empty
+          # diff made entirely of deploy-side paths reuses the tag as well.
+          if [ -z "$CHANGED" ] || ! printf '%s\n' "$CHANGED" | grep -qvE "$DEPLOY_ONLY"; then
             echo "app_changed=false" >> "$GITHUB_OUTPUT"
-            echo "only deploy-side files changed — reusing the existing image:"
-            printf '%s\n' "$CHANGED"
+            echo "no app-affecting changes — reusing the existing image:"
+            printf '%s\n' "${CHANGED:-(no files changed)}"
           else
             echo "app_changed=true" >> "$GITHUB_OUTPUT"
             echo "app sources changed — rebuilding"

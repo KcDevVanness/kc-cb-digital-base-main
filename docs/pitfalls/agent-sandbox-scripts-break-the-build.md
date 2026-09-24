@@ -63,6 +63,10 @@ function clamp01(value) { … }
 
 改完 `yarn typecheck` 与 `yarn build` 都通过。
 
+## 相关规则
+
+同一条规则的可执行版本：`.ai/lessons/agent-sandbox-sources-tsconfig.md`（agent 读的短规则，本文只留现场证据）。
+
 ## 如何避免
 
 - **不要**在那些文件里加 `export {}`、类型标注或 `@ts-nocheck` 来「修」错误：

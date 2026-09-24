@@ -1,0 +1,15 @@
+{
+  "dictionaries.library.actions.delete": "Delete dictionary",
+  "dictionaries.library.actions.edit": "Edit dictionary",
+  "dictionaries.library.badge.currentOrganization": "This organization",
+  "dictionaries.library.dialog.organization": "Organization: {{name}}",
+  "dictionaries.library.group.current": "Current organization",
+  "dictionaries.library.group.parent": "Parent organization",
+  "dictionaries.library.list.count": "{{count}} dictionaries",
+  "dictionaries.library.row.updatedAt": "Updated {{date}}",
+  "dictionaries.library.scope.allOrganizations": "All organizations are selected, so dictionaries are listed read-only. Pick a concrete organization in the top bar to create or change one — a dictionary always belongs to exactly one organization, and every write has to land in one.",
+  "dictionaries.library.scope.currentOrganization": "Current organization: {{name}}. Its dictionaries can be edited; dictionaries from a parent organization are read-only here.",
+  "dictionaries.library.scope.noOrganization": "No organization is selected, so dictionaries are read-only. Pick one in the top bar to create or change a dictionary.",
+  "dictionaries.library.scope.selectOrganizationRequired": "Select a concrete organization in the top bar first — a dictionary always belongs to exactly one organization.",
+  "dictionaries.library.search.placeholder": "Search name, key, or organization"
+}

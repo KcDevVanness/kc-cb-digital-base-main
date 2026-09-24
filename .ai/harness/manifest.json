@@ -411,6 +411,156 @@
       "userEditable": false
     },
     {
+      "path": ".ai/guides/modules/catalog/acl-features.md",
+      "sha256": "4ba20f3e06860954f061c6792b7056bec7c440678cb4fe1ee999d1fccee4ac62",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/active-extension-bindings.md",
+      "sha256": "42d382be34bd80009c53a351af696168a8aee2bc30737f6d7f19ca6d4bf3d3f7",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/ai-agents.md",
+      "sha256": "df9f0faab8cc4f388c46505064f6f9179b8d939527e5c3c26aaef9d7a1a4d7b5",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/ai-tools-mcp-capabilities.md",
+      "sha256": "80c6c51fdcb79388f568f230975042626891ebb524d89f73656b6d9b186a6880",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/backend-pages.md",
+      "sha256": "7a81f47df8f8bc83d5dd0e826fb9c9461ef796c21220b8c66cd5a57c5c69cc72",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/cli-commands.md",
+      "sha256": "b7f734db09e8f4519c54c804cad9468336320e2d5ef27bb519be29f50a3b521b",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/contribution-resolutions.md",
+      "sha256": "7fd0824a30c92fe4b730adef7caa6ad6cd48e57b58c95fb927df6b3eb19accc2",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/custom-entities.md",
+      "sha256": "b3ec3ed0614049fdd1637c6ccbb4acf32b20cfe9abea9cd8f62a8b27b4df62b2",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/di-registrations-rich.md",
+      "sha256": "ec5996ab15496e078e7a73aff8af0bd2eaa55e84569bc63b96caef52ac21972b",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/di-service-tokens.md",
+      "sha256": "b9df19e573966189dea8002e96f1180886eaee399500ce222cccbf439b4e7590",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/domain-commands.md",
+      "sha256": "8919f486fa4d5d397755de354da329b36a23c7f69a684a3f40e5ae1381bd1458",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/entities.md",
+      "sha256": "a3c7862901ccde6cd11ca0ffd986fa9645c09427e5c47d01e4994009a806dcc5",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/events.md",
+      "sha256": "d2f7984a349b2453a51bc9685b7dba5a8017debf20d96a896628b927a0ff6e39",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/exact-override-targets.md",
+      "sha256": "8072c2cca3847a67a12c08b27caec248abf4ca7974452f5c30d1579282fb9830",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/host-extension-points.md",
+      "sha256": "afaa320c444fa07feb83abcfbf2eb309cb83aa5e43f73ba9324697e098a51dc4",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/incoming-installed-contributions.md",
+      "sha256": "561f9bc333e63d3c5ecbc50852cf045897fc395789a31e7ddac3da259da1d8a2",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/index.md",
+      "sha256": "81aa74fa962de765c6562949312f6fa365320373bc8b63d3158c82c2833b4843",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/notifications.md",
+      "sha256": "fc990f9f87b1ef390053633e7776b81507648c42d36c2b55a9cefe5266d1bb1f",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/owned-contract-module-metadata.md",
+      "sha256": "a918827ff39706f039fe412a3f05a896490f45e88a8ccc45146fc0c8fe91e45d",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/search-entities.md",
+      "sha256": "12ce8a767fe8d25aa5def091ddcfaa1ad3713b783209fd8fa8b6d50ee931df20",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/setup.md",
+      "sha256": "5f831ed566f9e909e9d92915a75bf737edf620b14eb2a133c5811162ee3af46a",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/umes-contributions.md",
+      "sha256": "e4955309954ad6677c5b85448797c8da4cfd8fd2ba9dff68e1ef768fce7c0eb5",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/umes-diagnostics.md",
+      "sha256": "b32c395b00ed33e866092c19599f8455a6c461a25f425fad1a33b65a775da57a",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/umes-hosts.md",
+      "sha256": "806cb212385bf37150e4499acdbcafd81eeeca1baa5f12044a74ab4199b1d926",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/catalog/workers.md",
+      "sha256": "9ebd759a41a64203c23ba6c33192cb180abf18de1bc33bf34cec530d858644e3",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
       "path": ".ai/guides/modules/configs/acl-features.md",
       "sha256": "56d6da03a87ad7064f113ffdac8781a7ea9da0997ee09a778ff0582b283d86a1",
       "source": "generated",
@@ -479,6 +629,234 @@
     {
       "path": ".ai/guides/modules/configs/umes-hosts.md",
       "sha256": "90093b11d74db89ca76a104336ab67321beebbe4a1299ac0da0e570f99db915c",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/acl-features.md",
+      "sha256": "5822fbbb8cbf3239b30dc3480e89179018fdf97308babfdacff554378beb8d5c",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/backend-pages.md",
+      "sha256": "d2d10f42a9d4be73dae7e63de0029c8cec76ea600e0ffb6f653e9a0936a63110",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/cli-commands.md",
+      "sha256": "51321d25d4d7300ded5cc11ee2649b2abc4d2636ae680a6c6ee8714f2f4b482c",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/domain-commands.md",
+      "sha256": "362df3a1003df71d3fd1f0c331302115416b190d8916b4c5875611454e3b02cf",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/entities.md",
+      "sha256": "851d0620d5afd96771757ef8e0a8e7c744fcab5351dd9ab6e5ee5273a6169dbd",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/events.md",
+      "sha256": "97b815af9dac82d0841f0daaabaad5295d9cd1c0024eeef84022797f6c25180a",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/exact-override-targets.md",
+      "sha256": "445264fb0314ebcad952f83464f374afd066f0e4d652b9ca2d61df6c8df750da",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/host-extension-points.md",
+      "sha256": "d6fd4f0eb86bcd974852a99b749c6b7841916d57bd5ceb80aa2ea6cdcf0d55db",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/index.md",
+      "sha256": "5021685492224c461071322297ccb65fd5f2545eb0c565d54573330725aae3aa",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/owned-contract-module-metadata.md",
+      "sha256": "8924af1f52db2ed9743672f91c633454ec9424dad17bbd5933e7e17e3d1ee118",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/setup.md",
+      "sha256": "1fcafd6e479cf8da604dfff0fa59a7cf34a5bc96824794c995594cd7c2610a89",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/umes-diagnostics.md",
+      "sha256": "34e407d602ed451793564cd716da276d65c35cb13b82f3a3be43486bf4c771cf",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/currencies/umes-hosts.md",
+      "sha256": "e9b5f1cdf9f60ee1cfd4f73864da6704f2752e4172a934f1c9289a3cbe7ba035",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/acl-features.md",
+      "sha256": "7707c4988c88ab09da9d4f4a1504aa6e968156c9694ae7667bc694991832d292",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/active-extension-bindings.md",
+      "sha256": "fb8664a3bb178d8aa259f4191b6f8bb60fc14d393aeb06277518dbe1d038ea9d",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/ai-agents.md",
+      "sha256": "8689e9a8cf756c2c844f9697851ef49b75b68b07590d22a84dfb04c1caea2ecc",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/ai-tools-mcp-capabilities.md",
+      "sha256": "7eccbb2a24973fc5f02a6c9f7d3651dd27708ab68f123bf35d49f0adb148eda0",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/backend-pages.md",
+      "sha256": "60e2bc9d597fcdb515266caeee58fc00497744edcd08a64f7b8ccad8259a8400",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/cli-commands.md",
+      "sha256": "d0766d6e1a21b9f2d93247cb40e3ab63159cf0521ba2f50c4d2d95ffd04a5087",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/contribution-resolutions.md",
+      "sha256": "69092fdc15f9b07c964906d6dfc78c189c35144255776dbe0958438a76efd721",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/custom-entities.md",
+      "sha256": "46b6e5a637515debf04c51a7dfe9ad1662b61ece4ec63e41675b6ac31050de88",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/di-registrations-rich.md",
+      "sha256": "0234ac4d8c6a16e46663a004eb86ab734f24bb15a7d9f3293359912e8a2394b9",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/domain-commands.md",
+      "sha256": "0e1d5f0e41d2141cc177c823b49d7cc89d8d5a1d71ccec40f8d580a73be7a4b5",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/encryption.md",
+      "sha256": "11ad92c87e6ab4550130bb09714270860a1be92da71428886008014f18295341",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/entities.md",
+      "sha256": "4b8cf3880bc06252f9e2720e261b7baaef0a35b5eaed05ce56ad853de471b9e5",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/events.md",
+      "sha256": "f7934753fdb7fcfd1adbdc0278e7a0bbf6a3b53dfc54d918a0c71e7fa988f268",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/exact-override-targets.md",
+      "sha256": "96ed3834d53e00fa15eeed63a3488b4c6545e82c2457c87b1ecb1ee0a67681cd",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/host-extension-points.md",
+      "sha256": "a7b68af238d6706934ef829798e794d76b27542e5d2dcd903227d1b3c52a21bc",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/incoming-installed-contributions.md",
+      "sha256": "1ad1c075fbd8c3770b65197a8946c51d0a829380ce1a80805b18f79a70625f4c",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/index.md",
+      "sha256": "ee1f1a4ccec4cd0d00e35cc48d874b7e6ad58a1388604e74c016998e757ee08b",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/notifications.md",
+      "sha256": "a9db16f91e3a8da954cc527949322c4c5f142eb95b5303b4e7fb8ceac5182a39",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/owned-contract-module-metadata.md",
+      "sha256": "6baffaf61356654ea7c000bee986ebbeb0c3a12f29943d7ad74a5d0028f4bcff",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/search-entities.md",
+      "sha256": "335c3efec392fc97e2f5ee1ede8e15158e6b99936c0e340742932f5af80edf79",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/setup.md",
+      "sha256": "26e6f908f4e350d0acc4df715d6319bb5f3fb15ac62ae35d2b30847129113bd6",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/umes-contributions.md",
+      "sha256": "079176f4178f8544cc2dd9ff1ee5107a8f210103d44e9daef9e351c2157a558e",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/umes-diagnostics.md",
+      "sha256": "aa1c206d13697b9440c5edee5c51f123a240ab8463ffdd201c2061ab401c4e9a",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/umes-hosts.md",
+      "sha256": "21a92c82921438d5d49066bd715d0a16b0c3d6644bb980ff77f38251cd9f8beb",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/customers/workers.md",
+      "sha256": "224395793e0fbb6a91c021b0e21ee940f94486e606e4733a1b20300afd1dfcd5",
       "source": "generated",
       "userEditable": false
     },
@@ -563,6 +941,78 @@
     {
       "path": ".ai/guides/modules/dashboards/umes-hosts.md",
       "sha256": "5f30e415dad636d484d275067bfcd56836f24ac1ba7d6ecc03c90eafd694f621",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/dictionaries/acl-features.md",
+      "sha256": "f9ffe83dd8c5622b30ede70b78f06b4ee635a1b6eddacd8c3bba1ae99c5ffd55",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/dictionaries/active-extension-bindings.md",
+      "sha256": "05db854e7f3a24b64370ee002e45116f54d6e45c7e555c915646558bf59460b4",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/dictionaries/backend-pages.md",
+      "sha256": "e534755d1d4c09ec41a30e8dd23775435e4756b3f1797016b4a1ca8690ae5bc7",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/dictionaries/di-registrations-rich.md",
+      "sha256": "2b56acd401aa9c9e3e0e0e52facc7387494638826e3f88d36c3049b421cb2a56",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/dictionaries/domain-commands.md",
+      "sha256": "3d1594ed16f4606c94f67e20661a4d0082fc31f09f330d22f60687c67b1c93a0",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/dictionaries/entities.md",
+      "sha256": "5682e51cdf325467de938140e12de7475185d82f45dda60f122751b711dd93dd",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/dictionaries/events.md",
+      "sha256": "847286a6b2e813cce017e8b5da4ec8e9d8d52430bf11ea3631211c2f3f9e74a2",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/dictionaries/exact-override-targets.md",
+      "sha256": "85111b6e945ceb7bb0913d5f9a6668cde6fe3c243ddf7e2d618caf593b7d465f",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/dictionaries/index.md",
+      "sha256": "89d988d142464570a3b24830e9e8eeb3036823606da859deb1ea1a9d9ff5fc59",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/dictionaries/owned-contract-module-metadata.md",
+      "sha256": "c14d665153acde4b7ad239c7ea1b2662a24cc35ab8827e029c2fa6730438c646",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/dictionaries/setup.md",
+      "sha256": "73c4e9ea3801aeb479e6b4664295327fc0d2b485184e77fa299a4845ffe11dc3",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/dictionaries/umes-hosts.md",
+      "sha256": "e6f806b11817702cd032d822880027b815b3f4b05b7b0999a2571f9c504fc280",
       "source": "generated",
       "userEditable": false
     },
@@ -771,6 +1221,84 @@
       "userEditable": false
     },
     {
+      "path": ".ai/guides/modules/feature_toggles/acl-features.md",
+      "sha256": "54c6b3c683043d7e53fb9b8d632cce73f894670dd6cc527d7ff9b347031980bd",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/feature_toggles/active-extension-bindings.md",
+      "sha256": "e0a80eb7df4676ad36a401f8df4bbac5eca9c7d91b5e0fb9d7071dad08692158",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/feature_toggles/backend-pages.md",
+      "sha256": "424fa791f90be5cf9bd9566eb23e7e5d5b1d4b38dd9f49534e5f5736a3d15590",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/feature_toggles/cli-commands.md",
+      "sha256": "df95d7518640338ad8d7b46588336f750575a9a87775706d59b48bb83486f663",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/feature_toggles/di-registrations-rich.md",
+      "sha256": "1e2ce9266484c62c60492d37335ababa9635d8bb9004660224cb3b9153b9d4d0",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/feature_toggles/di-service-tokens.md",
+      "sha256": "d283580eb025d71ecac054870d71fef1776a0536b6d86774d2d379d7af1a7b56",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/feature_toggles/domain-commands.md",
+      "sha256": "ae9caa15aebc56ab335767c46b0e4e0517db7be6b5b95c252b19bcc22617d0c6",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/feature_toggles/entities.md",
+      "sha256": "9178d76261316e9e3cc3bb68ea4e220d795487a62c46bc68f8fb22eaf36aa0cb",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/feature_toggles/exact-override-targets.md",
+      "sha256": "1b45683dfbd7ee6d293db9c3fde9f33d8ba44e8279c1ad36116d0018f4be0fea",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/feature_toggles/index.md",
+      "sha256": "8ac75ff4abc9c1e18574a5786b3dca84bea5805c1252c76f94adb6d4e1d2cb6b",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/feature_toggles/owned-contract-module-metadata.md",
+      "sha256": "fdb3e2435ba0c38619e9427bc7449abc4138c365dc40bb252bb392a2d5c12b77",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/feature_toggles/setup.md",
+      "sha256": "3e8858c5e303bfb077b99b37a4bf8bb054c12fcbd987f85267f41e3b326876a0",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/feature_toggles/umes-hosts.md",
+      "sha256": "713e06b7fa636e75c8af5e6b2ddeab3a4432805c68939a1b6afa238abd11cebe",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
       "path": ".ai/guides/modules/notifications/acl-features.md",
       "sha256": "50061e9a4675af9323101948b24a275f1c2299d92e31eb6d9ff4df78951ee1f5",
       "source": "generated",
@@ -957,6 +1485,150 @@
       "userEditable": false
     },
     {
+      "path": ".ai/guides/modules/sales/acl-features.md",
+      "sha256": "6f763d1f8b243a01bd2a2d145e7bb652417beaa070bfc543cfd1d4dd1a2775ca",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/active-extension-bindings.md",
+      "sha256": "ae2f95a369f6b46b38762c24474a9856d0125cf1f348bd9f128d014bb1cd21cd",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/backend-pages.md",
+      "sha256": "ed3cb9223e30a6ea8c6f0d7aa34098572908da06350a712490a9f2de5749274f",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/cli-commands.md",
+      "sha256": "c1542ea048e031c6019f328e94ae30251d58e673dfb8b1b47c7bb4f41af87184",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/contribution-resolutions.md",
+      "sha256": "6f039b12969d9a7632d6084de5eb585e61bf273257d7e91b6fdd888be4342db9",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/custom-entities.md",
+      "sha256": "838b4b85fabce5f3c254d7a0119d51963e8882b706602083c4fe10d0d05b3bb2",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/di-registrations-rich.md",
+      "sha256": "e5a227c2dd5d43d774b4667cc60c529c403cd16a6c88cff5bd713284cc9bc66b",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/di-service-tokens.md",
+      "sha256": "6c6e8833cef64e99ae747e12939d416a808d11a09b1356096b5ea5a7a453b277",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/domain-commands.md",
+      "sha256": "f45ef4d78384ebbc9fb87655ae41f87e7d457e90bf71a4a038986753b55d8bcd",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/encryption.md",
+      "sha256": "dba84cc0880957ac0e412c0c1d118906fcf36c83b0fa4efdaa59b385d7470d03",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/entities.md",
+      "sha256": "52e9a6850310149f1a2fb13d2e37f77a40ad00f2b559b516c65db193449ee6aa",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/events.md",
+      "sha256": "b44da05a8bc83768eb26237e3b01b5a03948f221962dc03e712a583cb4a20e44",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/exact-override-targets.md",
+      "sha256": "c686b9e5e1e4e6485e45edea4fcb6033c9a8affb6364c3e0827afca44f914211",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/frontend-pages.md",
+      "sha256": "6c792fd3e263e327a3e27a17e7459599467b9d002e6e13ce7a1f278360457ee1",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/host-extension-points.md",
+      "sha256": "4789dd2a879da5bfbb8274f258e2129c6f02414117d50e1448f34cc98240e54b",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/incoming-installed-contributions.md",
+      "sha256": "2cd400425900d0b9391bd34b79b3f4be8e0f1627b18b695c23354ec6882f0b2a",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/index.md",
+      "sha256": "98234dcaf00fee25703b3c7e5d436ba75146d12fb4ea95c98e6016bbb8b6f3dd",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/notifications.md",
+      "sha256": "1efeb4cda0ac00f1723895a5897b94024c3a432c0e831848f9be78184e1a65ab",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/owned-contract-module-metadata.md",
+      "sha256": "7e810e368b33fe85ed30f3fa6fcfe313cbde27c2fdf9336d817dbc8854472e1f",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/search-entities.md",
+      "sha256": "ed247fcceb3a00a9ae4daf632148f69ab73fa8a24c32ae41a62a472d793d3bc9",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/setup.md",
+      "sha256": "55397785f5e9f285344942665925f4a63a8bb6e53e1188abae7a0b46c5247664",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/umes-contributions.md",
+      "sha256": "8b56575820d884d0077d400b377cab9c1f9d875fb1f696c5f424670f92420624",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/umes-diagnostics.md",
+      "sha256": "3278969d5c3409ece3ae99411fec1b1d2bf3ba5f0e4f2e79d3e756d7b35fa006",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/sales/umes-hosts.md",
+      "sha256": "bf01a4089fa9b9d3e3cbf64d9caece3c48dc2f1bf708ce44d297021e240d0def",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
       "path": ".ai/guides/modules/search/acl-features.md",
       "sha256": "f9ac8187f247935956a2493464aeac2f1681e4b02ca60484ac510a1518ee182c",
       "source": "generated",
@@ -1043,6 +1715,126 @@
     {
       "path": ".ai/guides/modules/search/workers.md",
       "sha256": "91aee85290478ff1048a2a32550e8001e4328c615fb996984c5657a20e233a44",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/acl-features.md",
+      "sha256": "ef63bd7a1340a44fc0aec7014060ddb243a019b4837ad0f59b12090927696baf",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/active-extension-bindings.md",
+      "sha256": "b0dee6b26ec53c19689c92bd987641d4524ef54f21bacf426dcdae7fe4c14167",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/backend-pages.md",
+      "sha256": "fd9286dd8ea18a2599c3113a1bd56384fd8e514b7043b7a148b8933c38ad09e9",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/cli-commands.md",
+      "sha256": "5b9c0f94903c6c30ff7c5937c283dc6cd9857d8961687650a18c5cdd6528bee6",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/contribution-resolutions.md",
+      "sha256": "cadf921527d1662ca40d386e62ae4af0a79c261d0ae57ad6e2f80178e60704b0",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/custom-entities.md",
+      "sha256": "b9267d2238ed5d2742a32cd238d4a7ee4ad0784a8ba6639c436f4a3780de4e91",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/di-registrations-rich.md",
+      "sha256": "e1ebfdd27a7430f6946c7b71993da9777aab9e8990db5de3ca5b3d695a5c3a48",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/domain-commands.md",
+      "sha256": "f4c29a5638e9105637927e1dd01ad1b30e462801e530b64c62d53c33c8e924a5",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/entities.md",
+      "sha256": "dd175d044a58d8306f1fd14e0f07ebcb884f904d189fb963387640aff33539f7",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/events.md",
+      "sha256": "165b9ef45936a978d87d0c51fe0d2253e218b257a52dacc0d2a08f6f3728b682",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/exact-override-targets.md",
+      "sha256": "5c5bf46172f687f922b5916e47b96436be67deb8381abc6929204ecaeefa3d0f",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/host-extension-points.md",
+      "sha256": "e8cc033178120f463a03ba98fe610acfe48202a1e11f902bfc0589340c158135",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/index.md",
+      "sha256": "a60a5de84ee5f511c6c4d879723cc2e9ccef101f35f1a1a5e1ae8e6c65aa82c5",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/notifications.md",
+      "sha256": "949c82b0ee139b64c2847b071f596600684982cbb445c51bb68b5016b7708769",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/owned-contract-module-metadata.md",
+      "sha256": "630e05755670899ad6c72797ebaf9884385823786f098b1534290ff81c091eb2",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/search-entities.md",
+      "sha256": "307cf38dbbebdedea744a3ffd13430bd0697d2181b48ab8c50df474e6bcd713e",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/setup.md",
+      "sha256": "e64b21491eb1cf8739f16ac6f37d91387eb0a3bd7303982b43ae71d5d514efb3",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/umes-contributions.md",
+      "sha256": "06eb8667d666039a2a5464ce5f79edc9afd31b59235dc7e29cc3d1f5a95a228a",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/umes-diagnostics.md",
+      "sha256": "422de12107c6d3a1e93ded9a71ed5b125fb23ab2968607f8dc7a56afc5cf989e",
+      "source": "generated",
+      "userEditable": false
+    },
+    {
+      "path": ".ai/guides/modules/wms/umes-hosts.md",
+      "sha256": "3df10fc6d76b9db0e3627787083a2b3b909981dbbc211a3edfad321f05ed121a",
       "source": "generated",
       "userEditable": false
     },
@@ -1252,7 +2044,7 @@
     },
     {
       "path": ".ai/guides/upstream/manifest.json",
-      "sha256": "82acbc6dbc5f19de7a2d8ea83b6d653796fb3c701410614dc58ca59f1b17b3c2",
+      "sha256": "1252585be5b030cb866c29b467387192b81cd8f81f1efe1c1f1ecf48db366635",
       "source": "generated",
       "userEditable": false
     },
@@ -1984,7 +2776,7 @@
     },
     {
       "path": "AGENTS.md",
-      "sha256": "214ca02bd7609df5bc202839a02b86d61cfe3a6a2238c42f9a359f78f7d470d7",
+      "sha256": "30ea772ab3f68bf87337acedae564559f75132d440eb810f22372db16fa74f9b",
       "source": "generated",
       "userEditable": true
     },

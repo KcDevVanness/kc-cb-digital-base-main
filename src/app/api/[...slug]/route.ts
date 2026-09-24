@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { findApiRouteManifestMatch, getApiRouteManifests, registerApiRouteManifests, type HttpMethod } from '@open-mercato/shared/modules/registry'
 import { isCrudHttpError } from '@open-mercato/shared/lib/crud/errors'
+import { getCommandInterceptorHttpRejection } from '@open-mercato/shared/lib/commands/errors'
 import { getTelemetryRuntime } from '@open-mercato/shared/lib/telemetry/runtime'
 import { apiRouteFacades } from '@/.mercato/generated/api-route-shards.generated'
 import { resolveAuthFromRequestDetailed } from '@open-mercato/shared/lib/auth/server'
@@ -461,6 +462,14 @@ async function handleRequest(
     getTelemetryRuntime()?.recordHttpDuration(method, match.route.path, finalResponse.status, startedAt)
     return finalResponse
   } catch (error) {
+    // A command interceptor may reject a mutation with a deliberate status/body. Routes that
+    // call the command bus directly (outside makeCrudRoute) have no catch for that rejection,
+    // so map it here before the generic 5xx funnel. See src/modules/scope_guards.
+    const interceptorRejection = getCommandInterceptorHttpRejection(error)
+    if (interceptorRejection) {
+      getTelemetryRuntime()?.recordHttpDuration(method, match.route.path, interceptorRejection.status, startedAt)
+      return NextResponse.json(interceptorRejection.body, { status: interceptorRejection.status })
+    }
     // Unhandled throws become 500s (Next renders the error). This is the 5xx
     // error funnel: record the exception (correlated to the active trace) and
     // the request-duration metric, then re-throw unchanged.

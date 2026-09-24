@@ -65,6 +65,27 @@ runner 镜像里没有 `.env`，缺配置的表现是启动失败或功能静默
 | `JWT_SECRET` | 会话签名 | **生产启动硬校验**，见下 |
 | `APP_URL` | 对外基址，用于邮件、onboarding 回跳 | 必须与实际访问地址一致 |
 | `TENANT_DATA_ENCRYPTION` 等 | 租户字段级加密 | fullapp compose 里默认 `true`；生产用真实密钥，勿用示例值 |
+| `OM_PASSWORD_*`（4 个） | 账号密码规则：创建用户 / 修改密码 / 重置密码 / `auth set-password` 共用 | 本仓库设为 **≥8 位 + 至少一个数字**，见下 |
+
+### 密码策略：`OM_PASSWORD_*`
+
+`OM_PASSWORD_MIN_LENGTH`、`OM_PASSWORD_REQUIRE_DIGIT`、`OM_PASSWORD_REQUIRE_UPPERCASE`、
+`OM_PASSWORD_REQUIRE_SPECIAL` 是**唯一**的策略来源（`@open-mercato/shared/lib/auth/passwordPolicy`）：
+服务端（API 路由、命令、CLI）与浏览器（创建用户 / 修改密码 / 重置密码表单的提示与预校验）读同一组值。
+
+- 本仓库（`.env`、模板 `.env.example`）：`MIN_LENGTH=8`、`REQUIRE_DIGIT=true`、
+  `REQUIRE_UPPERCASE=false`、`REQUIRE_SPECIAL=false` —— **8 位以上且含数字即通过**，大小写与特殊字符不限。
+- 另一个要记住的边界：安装版策略**没有"必须含字母"这个开关**，所以纯数字的 8 位密码也会通过；
+  要强制含字母得再加一层校验（目前没做）。
+- 浏览器侧：根 layout 读取这 4 个键 → 交给 `AppProviders` → 由 `src/lib/password-policy-env.ts` 写进浏览器的
+  `process.env`。**必须绕这一手**：Next 只在客户端包里内联**静态** `process.env.KEY` 读取，而安装版表单是
+  动态取键（`env[rawKey]`）——`NEXT_PUBLIC_*` 和 `next.config.ts` 的 `env:` 块都到不了那里。漏掉这一步时表单会
+  退回框架默认规则（6 位 + 数字 + 大写 + 特殊字符），把服务端本来会接受的密码拦在浏览器里。
+- 值是按请求从服务端下发的，不是构建期内联的：改 `.env` 后**重启 dev server 或应用进程即可，无需重新构建**。
+  容器镜像在没有 `.env` 的情况下构建也不影响——浏览器拿到的仍是运行时那份策略。
+- 演示账号的密码值（`secret`）本身不满足当前策略，写库时需临时放开策略，见
+  [`docs/dev/setup.md`](../dev/setup.md) 与
+  [demo-credentials-must-survive-smoke-tests.md](../../.ai/lessons/demo-credentials-must-survive-smoke-tests.md)。
 
 ### 启动守卫：`JWT_SECRET`
 

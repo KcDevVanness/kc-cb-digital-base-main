@@ -28,3 +28,4 @@
 | [dev-runtime-stale-incident.md](./dev-runtime-stale-incident.md) | dev 面板显示「运行时已降级」，但错误早已修复——incident 只在进程代次变更时回收 | — |
 | [dictionary-delete-is-not-locale-removal.md](./dictionary-delete-is-not-locale-removal.md) | 删掉语言字典 ≠ 去掉一门语言，切换器仍会列出它 | `.ai/lessons/locale-served-set-seams.md` |
 | [agent-sandbox-scripts-break-the-build.md](./agent-sandbox-scripts-break-the-build.md) | 沙箱脚本被 tsc 当全局脚本，`yarn build` 报 TS2393 | `.ai/lessons/agent-sandbox-sources-tsconfig.md` |
+| [radix-popover-spins-jsdom-event-loop.md](./radix-popover-spins-jsdom-event-loop.md) | jsdom 下挂载 Radix 浮层会自旋饿死定时器，用例极慢或 findBy 超时 | — |

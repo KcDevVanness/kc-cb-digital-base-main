@@ -13,4 +13,7 @@
 | [setup.md](./setup.md) | 依赖服务、首次初始化、日常命令、验证命令清单 |
 | [architecture.md](./architecture.md) | 目录职责、启用模块、请求链路、生成物边界 |
 | [i18n.md](./i18n.md) | 语言集、字典位置、三个收窄入口、扩展步骤 |
+| [currency-policy.md](./currency-policy.md) | 启用哪些币种、币种字典与汇率主数据的分工、收敛与重跑命令 |
+| [multi-company-org-model.md](./multi-company-org-model.md) | 一租户 + 组织树的多公司建模、角色矩阵、配置步骤与自查 |
+| [business-architecture.md](./business-architecture.md) | 公司实际业务链路、模块归属（复用/自建/待启用）、数据主源约定、新增流程对齐规则 |
 | [parallel-development.md](./parallel-development.md) | 多路并行开发：并行单元、worktree、共享脊柱文件清单、数据库与端口分配、PR 与合并规则 |
