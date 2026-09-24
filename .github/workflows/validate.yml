@@ -47,8 +47,10 @@ jobs:
             RANGE='${{ github.event.before }}..${{ github.sha }}'
           fi
 
+          # `''*` would concatenate to a bare `*` and match everything, so the
+          # empty-before case is spelled as a leading `..` instead.
           case "${RANGE}" in
-            ''*|'0000000000000000000000000000000000000000'*)
+            '0000000000000000000000000000000000000000'*|'..'*)
               echo "needed=true" >> "$GITHUB_OUTPUT"
               echo "no usable base commit — running the gate"
               exit 0
