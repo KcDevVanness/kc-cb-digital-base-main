@@ -30,6 +30,7 @@ import {
   ensureScope,
   findSupplierProductBySku,
   loadSupplierProduct,
+  loadSupplierBrand,
   loadSupplierName,
   supplierProductCrudEvents,
   supplierProductCrudIndexer,
@@ -60,6 +61,10 @@ const createSupplierProductCommand: CommandHandler<Record<string, unknown>, Purc
 
     const supplierName = await loadSupplierName(em, scope, parsed.supplierId)
     if (!supplierName) throw badRequest(`Supplier not found in this organization: ${parsed.supplierId}`)
+    // The row carries the brand it will generate codes with, so the effective value is resolved once,
+    // here: an empty row-level brand inherits the supplier's default instead of staying blank and
+    // making the 生成 button depend on which page the operator came from.
+    const brandValue = parsed.brandValue ?? (await loadSupplierBrand(em, scope, parsed.supplierId))
 
     const duplicate = await findSupplierProductBySku(em, scope, parsed.supplierId, parsed.supplierSku)
     if (duplicate) {
@@ -78,6 +83,7 @@ const createSupplierProductCommand: CommandHandler<Record<string, unknown>, Purc
         supplierNameSnapshot: supplierName,
         supplierSku: parsed.supplierSku,
         itemNo: parsed.itemNo ?? null,
+        brandValue,
         name: parsed.name,
         nameZh: parsed.nameZh ?? null,
         nameEn: parsed.nameEn ?? null,
@@ -135,6 +141,7 @@ const updateSupplierProductCommand: CommandHandler<Record<string, unknown>, Purc
         // supplier, the second because the row's provenance is history, not a form field.
         entity.supplierSku = parsed.supplierSku
         if (parsed.itemNo !== undefined) entity.itemNo = parsed.itemNo ?? null
+        if (parsed.brandValue !== undefined) entity.brandValue = parsed.brandValue ?? null
         entity.name = parsed.name
         if (parsed.nameZh !== undefined) entity.nameZh = parsed.nameZh ?? null
         if (parsed.nameEn !== undefined) entity.nameEn = parsed.nameEn ?? null

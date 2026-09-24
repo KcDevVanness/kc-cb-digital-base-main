@@ -8,6 +8,8 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { loadCodeListOptions } from '../lib/codeListOptions'
+import { PRODUCT_BRAND_DICTIONARY_KEY } from '../../product_codes/lib/dictionaryValues'
 
 const API_PATH = 'purchasing/suppliers'
 const LIST_HREF = '/backend/purchasing/suppliers'
@@ -189,6 +191,17 @@ function useSupplierFields(t: TranslateFn, mode: 'create' | 'edit'): CrudField[]
       type: 'select',
       required: true,
       loadOptions: () => loadCurrencyOptions(t('purchasing.suppliers.form.currencyLoadFailed')),
+    },
+    {
+      id: 'brandValue',
+      label: t('purchasing.suppliers.form.field.brandValue'),
+      description: t('purchasing.suppliers.form.help.brandValue'),
+      type: 'combobox',
+      allowCustomValues: false,
+      // The list is the `product_brand` code list; a value the dictionary no longer carries still
+      // renders as itself, so opening a supplier can never blank its brand.
+      loadOptions: () => loadCodeListOptions(PRODUCT_BRAND_DICTIONARY_KEY),
+      resolveLabel: (value) => value,
     },
     {
       id: 'isActive',

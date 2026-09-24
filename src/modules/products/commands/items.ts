@@ -23,6 +23,7 @@ import { ProductsCategory, ProductsProduct, ProductsType, ProductsVariant } from
 import {
   productCreateSchema,
   productUpdateSchema,
+  SKU_PATTERN,
   type ProductCreateInput,
   type ProductVariantInput,
 } from '../data/validators'
@@ -663,7 +664,13 @@ const updateProductCommand: CommandHandler<Record<string, unknown>, ProductsProd
       request: ctx.request ?? null,
     })
 
+    // The schema no longer carries the charset rule (a legacy SKU must stay editable), so it is
+    // enforced here — but only for a value that actually changes. An unchanged SKU is not
+    // re-validated at all: it is already stored, and refusing it would make the whole row uneditable.
     if (parsed.sku !== undefined && parsed.sku !== current.sku) {
+      if (!SKU_PATTERN.test(parsed.sku)) {
+        throw badRequest('sku must be letters, digits, dot, dash, slash or underscore')
+      }
       await assertSkuAvailable(em, scope, parsed.sku, String(current.id))
     }
     await assertReferencesVisible(em, scope, {

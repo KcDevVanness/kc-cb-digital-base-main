@@ -32,6 +32,7 @@ type SerializedSupplier = {
   email: string | null
   address: string | null
   defaultCurrencyCode: string
+  brandValue: string | null
   isActive: boolean
   notes: string | null
   tenantId: string
@@ -48,6 +49,7 @@ function serializeSupplier(entity: PurchasingSupplier): SerializedSupplier {
     email: entity.email ?? null,
     address: entity.address ?? null,
     defaultCurrencyCode: entity.defaultCurrencyCode,
+    brandValue: entity.brandValue ?? null,
     isActive: entity.isActive,
     notes: entity.notes ?? null,
     tenantId: String(entity.tenantId),
@@ -306,6 +308,11 @@ const updateSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
     if (parsed.defaultCurrencyCode !== undefined && parsed.defaultCurrencyCode !== current.defaultCurrencyCode) {
       await assertCurrencyInDictionary(em, scope, parsed.defaultCurrencyCode)
     }
+    // Only a *new* brand is checked: clearing it stays allowed (the field is optional) and a value
+    // that predates the dictionary is left alone until the operator picks a listed one.
+    if (parsed.brandValue && parsed.brandValue !== current.brandValue) {
+      await assertDictionaryValue(em, scope, PRODUCT_BRAND_DICTIONARY_KEY, parsed.brandValue)
+    }
 
     const updated = await de.updateOrmEntity({
       entity: PurchasingSupplier,
@@ -318,6 +325,7 @@ const updateSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
         if (parsed.email !== undefined) entity.email = parsed.email
         if (parsed.address !== undefined) entity.address = parsed.address
         if (parsed.defaultCurrencyCode !== undefined) entity.defaultCurrencyCode = parsed.defaultCurrencyCode
+        if (parsed.brandValue !== undefined) entity.brandValue = parsed.brandValue ?? null
         if (parsed.isActive !== undefined) entity.isActive = parsed.isActive
         if (parsed.notes !== undefined) entity.notes = parsed.notes
       },
@@ -344,7 +352,7 @@ const updateSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
     const changes = buildChanges(
       (before ?? null) as unknown as Record<string, unknown> | null,
       after as unknown as Record<string, unknown>,
-      ['name', 'code', 'contactName', 'phone', 'email', 'address', 'defaultCurrencyCode', 'isActive', 'notes'],
+      ['name', 'code', 'contactName', 'phone', 'email', 'address', 'defaultCurrencyCode', 'brandValue', 'isActive', 'notes'],
     )
     return {
       actionLabel: translate('purchasing.audit.suppliers.update', 'Update supplier'),
@@ -374,6 +382,7 @@ const updateSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
         entity.email = before.email
         entity.address = before.address
         entity.defaultCurrencyCode = before.defaultCurrencyCode
+        entity.brandValue = before.brandValue
         entity.isActive = before.isActive
         entity.notes = before.notes
       },

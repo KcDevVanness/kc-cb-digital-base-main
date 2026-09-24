@@ -45,6 +45,17 @@ export class PurchasingSupplier {
   @Property({ name: 'default_currency_code', type: 'text', default: 'CNY' })
   defaultCurrencyCode: string = 'CNY'
 
+  /**
+   * The brand this supplier's goods are sold under — a `product_brand` dictionary value (`PK`), and
+   * the **prefix of every generated product code** for this supplier's rows.
+   *
+   * It is a brand rather than the supplier's own code on purpose: the same item sourced from a second
+   * factory must keep one code, and the supplier's code is what the library is moving away from. A
+   * library row may override it; when neither carries a value the form simply cannot generate yet.
+   */
+  @Property({ name: 'brand_value', type: 'text', nullable: true })
+  brandValue?: string | null
+
   @Property({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean = true
 
@@ -421,6 +432,15 @@ export class PurchasingSupplierProduct {
   /** The supplier's original item number, kept for display next to the derived code. */
   @Property({ name: 'item_no', type: 'text', nullable: true })
   itemNo?: string | null
+
+  /**
+   * Row-level brand override for code generation; falls back to the supplier's `brand_value`.
+   *
+   * Kept per row because one supplier can make goods for two brands, and because a row imported from a
+   * quotation may belong to a different line than its supplier's default.
+   */
+  @Property({ name: 'brand_value', type: 'text', nullable: true })
+  brandValue?: string | null
 
   /** The supplier's own product name, as printed on their sheet. */
   @Property({ type: 'text' })

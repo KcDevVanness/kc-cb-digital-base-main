@@ -120,6 +120,7 @@ export const supplierUpdateSchema = z.object({
   email: z.string().max(200).nullable().optional(),
   address: z.string().max(1000).nullable().optional(),
   defaultCurrencyCode: currencyCodeSchema.optional(),
+  brandValue: z.string().trim().max(64).nullable().optional(),
   isActive: z.boolean().optional(),
   notes: z.string().max(2000).nullable().optional(),
 })
@@ -215,6 +216,8 @@ export const supplierProductCreateSchema = z.object({
   supplierId: z.string().uuid(),
   supplierSku: z.string().trim().min(1).max(120),
   itemNo: nullableText(120),
+  /** Code-generation brand override; blank falls back to the supplier's `brandValue`. */
+  brandValue: z.string().trim().max(64).nullable().optional(),
   name: z.string().trim().min(1).max(300),
   nameZh: nullableText(300),
   nameEn: nullableText(300),

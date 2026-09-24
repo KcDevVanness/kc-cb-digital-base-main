@@ -1640,6 +1640,23 @@
       "name": "purchasing_supplier_products",
       "schema": "public",
       "columns": {
+        "brand_value": {
+          "name": "brand_value",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
         "carton_quantity": {
           "name": "carton_quantity",
           "type": "int",
@@ -2225,6 +2242,23 @@
       "columns": {
         "address": {
           "name": "address",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "brand_value": {
+          "name": "brand_value",
           "type": "text",
           "unsigned": false,
           "autoincrement": false,

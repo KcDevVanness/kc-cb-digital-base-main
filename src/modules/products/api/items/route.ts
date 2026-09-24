@@ -1,6 +1,8 @@
 import { z } from 'zod'
+import type { EntityManager } from '@mikro-orm/postgresql'
 import { makeCrudRoute } from '@open-mercato/shared/lib/crud/factory'
 import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern'
+import { findAliasTargetIds } from '../../../product_codes/lib/aliasLookup'
 import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
 import { ProductsProduct } from '../../data/entities'
 import {
@@ -119,7 +121,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       updated_at: 'updated_at',
       updatedAt: 'updated_at',
     },
-    buildFilters: async (query: ProductListQuery) => {
+    buildFilters: async (query: ProductListQuery, ctx) => {
       const filters: Record<string, unknown> = {}
       if (query.id) filters.id = query.id
       if (query.organizationId) filters.organization_id = query.organizationId
@@ -132,10 +134,19 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       if (query.search && query.search.trim().length > 0) {
         // Escaped LIKE on plaintext columns; the escape keeps a typed `%` from widening the filter.
         const term = `%${escapeLikePattern(query.search.trim())}%`
+        // A retired SKU still finds its product: `product_codes` keeps the old → new mapping, and a
+        // document printed before a re-code is exactly where somebody reads the old characters from.
+        const aliasIds = await findAliasTargetIds(
+          ctx.container.resolve('em') as EntityManager,
+          { tenantId: ctx.auth?.tenantId ?? '', organizationId: query.organizationId ?? ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? '' },
+          'product',
+          term,
+        )
         filters.$or = [
           { sku: { $ilike: term } },
           { name: { $ilike: term } },
           { manufacturer_model: { $ilike: term } },
+          ...(aliasIds.length > 0 ? [{ id: { $in: aliasIds } }] : []),
         ]
       }
       return filters

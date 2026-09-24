@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { EntityManager } from '@mikro-orm/postgresql'
 import { makeCrudRoute } from '@open-mercato/shared/lib/crud/factory'
 import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern'
+import { findAliasTargetIds } from '../../../product_codes/lib/aliasLookup'
 import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
 import { PurchasingSupplierProduct } from '../../data/entities'
 import {
@@ -42,6 +43,7 @@ const supplierProductListItemSchema = z
     supplierName: z.string().nullable().optional(),
     supplierSku: z.string(),
     itemNo: z.string().nullable().optional(),
+    brandValue: z.string().nullable().optional(),
     name: z.string(),
     nameZh: z.string().nullable().optional(),
     nameEn: z.string().nullable().optional(),
@@ -134,6 +136,7 @@ const listFields = [
   'supplier_name_snapshot',
   'supplier_sku',
   'item_no',
+  'brand_value',
   'name',
   'name_zh',
   'name_en',
@@ -192,7 +195,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
     // served from the CRUD list cache: a product renamed in the master would otherwise keep
     // showing its old name here until the cache expired.
     disableListCache: true,
-    buildFilters: async (query: SupplierProductListQuery) => {
+    buildFilters: async (query: SupplierProductListQuery, ctx) => {
       const filters: Record<string, unknown> = {}
       if (query.id) filters.id = query.id
       if (query.ids) {
@@ -213,12 +216,22 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         const term = `%${escapeLikePattern(query.search.trim())}%`
         // Our own names are searchable because they are what the list leads with; the supplier's
         // raw name and the two codes stay searchable so an old spreadsheet column still finds a row.
+        // A retired code (`改用规范编码` recorded it as an alias) resolves to its row here, which is
+        // the whole point of keeping the mapping: the operator still searches what is on the paper.
+        const aliasIds = await findAliasTargetIds(
+          ctx.container.resolve('em') as EntityManager,
+          // The factory hands the trusted scope to `buildFilters`; nothing here reads the request body.
+          { tenantId: ctx.auth?.tenantId ?? '', organizationId: ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? '' },
+          'supplier_product',
+          term,
+        )
         filters.$or = [
           { supplier_sku: { $ilike: term } },
           { name: { $ilike: term } },
           { name_zh: { $ilike: term } },
           { name_en: { $ilike: term } },
           { item_no: { $ilike: term } },
+          ...(aliasIds.length > 0 ? [{ id: { $in: aliasIds } }] : []),
         ]
       }
       return filters
@@ -267,6 +280,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       supplierName: asNullableString(item.supplier_name_snapshot),
       supplierSku: String(item.supplier_sku ?? ''),
       itemNo: asNullableString(item.item_no),
+      brandValue: asNullableString(item.brand_value),
       name: String(item.name ?? ''),
       nameZh: asNullableString(item.name_zh),
       nameEn: asNullableString(item.name_en),

@@ -30,6 +30,9 @@ import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 // The unit vocabulary is seeded by this module and read through the app's one client loader; the
 // currency picker is this module's own loader (the same one the supplier and order forms use).
 import { loadUnitOptions } from '../../products/lib/unitOptions'
+import { loadCodeListOptions } from '../lib/codeListOptions'
+import { PRODUCT_BRAND_DICTIONARY_KEY } from '../../product_codes/lib/dictionaryValues'
+import SupplierProductCodePanel from './SupplierProductCodePanel'
 import { loadCurrencyOptions } from './PurchaseOrderForm'
 import { formatCurrency } from '@open-mercato/ui/utils/format'
 import { netUnitPrice, type SupplierProductPriceKind } from '../lib/priceKinds'
@@ -597,7 +600,10 @@ function PackingEditor({
   )
 }
 
-function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: boolean }): CrudField[] {
+function useSupplierProductFields(
+  t: TranslateFn,
+  opts: { supplierEditable: boolean; productId: string | null; masterProductId: string | null },
+): CrudField[] {
   return React.useMemo<CrudField[]>(() => {
     const supplierFields: CrudField[] = opts.supplierEditable
       ? [
@@ -622,14 +628,37 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
       ...supplierFields,
       {
         id: 'supplierSku',
-        label: t('purchasing.supplierProducts.form.field.supplierSku', 'Supplier code'),
+        label: t('purchasing.supplierProducts.form.field.supplierSku', 'Product SKU (ours)'),
         description: t(
           'purchasing.supplierProducts.form.help.supplierSku',
-          'Unique within this supplier; a code is never reused, including by a deleted row.',
+          'Our code for this item: unique within the supplier, written into the product master\u2019s SKU on 建商品档案, and never reused \u2014 including by a deleted row.',
         ),
-        type: 'text',
+        // The generator, the category picker and the breakdown of the stored characters belong to this
+        // field, not to a block beside it: one task, one place (owner 2026-09-24).
+        type: 'custom',
         required: true,
-        maxLength: 120,
+        component: (props) => (
+          <SupplierProductCodePanel
+            {...props}
+            t={t}
+            rowId={opts.productId}
+            masterProductId={opts.masterProductId}
+          />
+        ),
+      },
+      {
+        id: 'brandValue',
+        label: t('purchasing.supplierProducts.form.field.brandValue', 'Brand (code prefix)'),
+        description: t(
+          'purchasing.supplierProducts.form.help.brandValue',
+          'The brand this row\u2019s codes are generated under; blank falls back to the supplier\u2019s default brand.',
+        ),
+        type: 'combobox',
+        allowCustomValues: false,
+        // The list is the `product_brand` code list; a value the dictionary no longer carries still
+        // renders as itself, so opening a row can never blank its brand.
+        loadOptions: () => loadCodeListOptions(PRODUCT_BRAND_DICTIONARY_KEY),
+        resolveLabel: (value) => value,
       },
       {
         id: 'name',
@@ -750,7 +779,7 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
         label: t('purchasing.supplierProducts.form.field.itemNo', 'Item no. (supplier’s own)'),
         description: t(
           'purchasing.supplierProducts.form.help.itemNo',
-          'The item number on the supplier’s own sheet; both codes stay visible when they differ.',
+          'Record the code the supplier prints, when they have one. Reference only — it never matches or generates a code.',
         ),
         type: 'text',
         maxLength: 120,
@@ -784,7 +813,7 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
         maxLength: 2000,
       },
     ]
-  }, [opts.supplierEditable, t])
+  }, [opts.masterProductId, opts.productId, opts.supplierEditable, t])
 }
 
 /**
@@ -798,18 +827,31 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
  * shipment allocations). The row itself is container-responsive, so it also survives the single
  * column the form falls back to below `lg`.
  *
- * ERP-generic fields live in 商品标识 / 报关信息 / 价格 / 包装与单重; the fields that are transcriptions
- * of the supplier's own workbook live in 供应商原始资料. Keeping that split explicit is what lets a
- * buyer who never saw the workbook find a field by meaning instead of by column order.
+ * ERP-generic fields live in 商品标识 / 报关信息 / 价格 / 装箱、重量与体积; the fields that are
+ * transcriptions of the supplier's own workbook live in 供应商原始资料. Keeping that split explicit is
+ * what lets a buyer who never saw the workbook find a field by meaning instead of by column order.
  */
-function useSupplierProductGroups(t: TranslateFn, opts: { productId: string | null }): CrudFormGroup[] {
+function useSupplierProductGroups(
+  t: TranslateFn,
+  opts: { productId: string | null },
+): CrudFormGroup[] {
   return React.useMemo<CrudFormGroup[]>(
     () => [
       {
         id: 'goods',
         column: 1,
         title: t('purchasing.supplierProducts.form.group.goods', 'Goods identity'),
-        fields: ['supplierId', 'supplierName', 'supplierSku', 'name', 'nameZh', 'nameEn'],
+        fields: ['supplierId', 'supplierName', 'name', 'nameZh', 'nameEn'],
+      },
+      {
+        // The three that work together get their own card: 品牌（编码前缀）→ 类别 → 生成 → 商品 SKU.
+        // Beside the identity fields they read as unrelated, and the generated value looked like it
+        // belonged to another form (owner 2026-09-24: 「这三个功能模块，用一个卡片放置一起…让人清楚
+        // 他们是一起联动」). The SKU field itself carries the generator inside it.
+        id: 'code',
+        column: 1,
+        title: t('purchasing.supplierProducts.form.group.code', 'Product SKU and brand'),
+        fields: ['brandValue', 'supplierSku'],
       },
       {
         id: 'images',
@@ -892,7 +934,7 @@ function SupplierProductCreateForm() {
   const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const fields = useSupplierProductFields(t, { supplierEditable: true })
+  const fields = useSupplierProductFields(t, { supplierEditable: true, productId: null, masterProductId: null })
   // No id yet: the photo group stages the picks and this form uploads them once the row exists.
   const groups = useSupplierProductGroups(t, { productId: null })
   // The library list links here with `?supplierId=` when the operator came from a supplier row,
@@ -1028,7 +1070,8 @@ function SupplierProductCreateForm() {
 
 function SupplierProductEditForm({ productId }: { productId: string }) {
   const t = useT()
-  const fields = useSupplierProductFields(t, { supplierEditable: false })
+  const [masterProductId, setMasterProductId] = React.useState<string | null>(null)
+  const fields = useSupplierProductFields(t, { supplierEditable: false, productId, masterProductId })
   const groups = useSupplierProductGroups(t, { productId })
   const [initial, setInitial] = React.useState<SupplierProductFormValues | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -1054,6 +1097,12 @@ function SupplierProductEditForm({ productId }: { productId: string }) {
           return
         }
         const values = toSupplierProductFormValues(item)
+        // The master link decides whether the code may still be retired: once promoted, the master's
+        // SKU must not diverge from the library row's.
+        if (!cancelled) {
+          const link = item.productId ?? item.product_id
+          setMasterProductId(typeof link === 'string' && link.length > 0 ? link : null)
+        }
         // The price list is a separate read: losing it must not hide the item itself, so a failure
         // degrades to "no rows loaded" plus a message the operator can act on.
         let prices: SupplierProductPriceRowValues[] = []

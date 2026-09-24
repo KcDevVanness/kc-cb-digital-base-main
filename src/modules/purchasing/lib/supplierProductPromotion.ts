@@ -1,4 +1,4 @@
-import type { EntityManager } from '@mikro-orm/postgresql'
+import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import type { CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import { emitCrudSideEffects } from '@open-mercato/shared/lib/commands/helpers'
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
@@ -225,6 +225,27 @@ export async function promoteSupplierProduct(input: {
       error: `SKU ${product.supplierSku} belongs to a deleted product; restore it or change the supplier code to sync this item`,
       code: 'sku_belongs_to_deleted_product',
     })
+  }
+  if (existing) {
+    // One master SKU, one supplier row. When another live row already owns this product, writing
+    // this row's values onto it would replace that supplier's data (name, spec, packaging) with a
+    // different purchase source's — silently, and in the direction the operator did not intend. The
+    // intent behind a second row for the same item is 关联已有商品 (a link, no master write), so the
+    // refusal names it and nothing is written.
+    const owner = await input.em.fork().findOne(PurchasingSupplierProduct, {
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+      productId: existing.id,
+      id: { $ne: product.id },
+      deletedAt: null,
+    } as FilterQuery<PurchasingSupplierProduct>)
+    if (owner) {
+      const ownerLabel = owner.supplierNameSnapshot ? `${owner.supplierSku} (${owner.supplierNameSnapshot})` : owner.supplierSku
+      throw new CrudHttpError(422, {
+        error: `SKU ${product.supplierSku} is already the master product of supplier code ${ownerLabel}; use 关联已有商品 to point this row at the same product instead of overwriting it`,
+        code: 'sku_owned_by_another_supplier_product',
+      })
+    }
   }
 
   let productId: string
