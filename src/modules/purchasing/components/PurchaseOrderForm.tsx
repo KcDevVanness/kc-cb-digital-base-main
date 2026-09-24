@@ -183,19 +183,6 @@ export function trimDecimalZeros(value: string): string {
   return stripped
 }
 
-/** Renders a stored decimal (or a value derived from stored decimals) as a currency amount. */
-export function formatMoney(value: string | number, currencyCode: string, locale?: string): string {
-  const numeric = typeof value === 'number' ? value : Number(value)
-  const code = currencyCode.trim().toUpperCase()
-  if (!Number.isFinite(numeric)) return String(value)
-  if (code.length !== 3) return numeric.toFixed(2)
-  try {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency: code }).format(numeric)
-  } catch {
-    return `${code} ${numeric.toFixed(2)}`
-  }
-}
-
 /**
  * Date-only columns (`expected_ship_at`, `paid_at`) are written from a date input and stored as
  * UTC midnight, so their day must be read back in the frame it was written in — reading the

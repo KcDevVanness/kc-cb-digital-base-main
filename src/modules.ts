@@ -187,13 +187,9 @@ export const enabledModules: ModuleEntry[] = [
     overrides: {
       routes: {
         pages: {
-          '/backend/config/currency-fetching': { metadata: { navHidden: true } },
           '/backend/currencies': { metadata: { navHidden: true } },
-          '/backend/exchange-rates': { metadata: { navHidden: true } },
           '/backend/currencies/[id]': { metadata: { navHidden: true } },
           '/backend/currencies/create': { metadata: { navHidden: true } },
-          '/backend/exchange-rates/[id]': { metadata: { navHidden: true } },
-          '/backend/exchange-rates/create': { metadata: { navHidden: true } },
         },
       },
     },

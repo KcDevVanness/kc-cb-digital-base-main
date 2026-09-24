@@ -139,18 +139,6 @@ export function toSettlementLineRecord(item: Record<string, unknown>): Settlemen
 }
 
 /** Renders a stored decimal as a currency amount, falling back to a plain code + number. */
-export function formatSettlementMoney(value: string | number, currencyCode: string, locale?: string): string {
-  const numeric = typeof value === 'number' ? value : Number(value)
-  const code = currencyCode.trim().toUpperCase()
-  if (!Number.isFinite(numeric)) return String(value)
-  if (code.length !== 3) return numeric.toFixed(2)
-  try {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency: code }).format(numeric)
-  } catch {
-    return `${code} ${numeric.toFixed(2)}`
-  }
-}
-
 /**
  * The statement period as one string (`2026-08-01 – 2026-08-31`), or whichever single end was
  * reported, or `null` when the platform sent neither.

@@ -79,6 +79,34 @@ yarn mercato currency_policy apply
 yarn mercato currency_policy apply --org <organizationId>
 ```
 
+## 汇率供给与 CNY 换算显示（2026-09-24）
+
+本模块同时是**汇率供给**与**CNY 换算显示**的 owner，规格见
+[`.ai/specs/2026-09-24-cny-equivalent-amounts.md`](../../.ai/specs/2026-09-24-cny-equivalent-amounts.md)：
+
+| 件 | 位置 | 说明 |
+|---|---|---|
+| 抓取 provider | `lib/providers/openErApi.ts` + `di.ts` | source `OPEN_ER_API`，以 **CNY 为基准**（`https://open.er-api.com/v6/latest/CNY`，免密钥），一次调用覆盖清单里全部 15 个外币；产出 `X→CNY` 与 `CNY→X` 两个方向。安装层自带的两个 provider 是波兰的（NBP / Raiffeisen，只出 PLN 对，且 `RateFetchingService` 不做三角换算），在本部署产不出 `USD→CNY`——这是加这个 provider 的唯一理由 |
+| 抓取配置行 | `lib/rateFetchConfig.ts`（`setup.ts` 调用） | 每个组织播一行 `OPEN_ER_API`（`is_enabled=true`、`sync_time=09:00`，insert-only）。安装层的抓取路由只给**已有配置行**的 provider 记 `last_sync_*`，没有这行它抓到了也看不见 |
+| 显示汇率路由 | `api/rates/route.ts` + `lib/rateLookup.ts` | `GET /api/currency_policy/rates?symbols=USD,HKD`（缺省=本组织全部币种，门禁 `currencies.view`）：**只读库里已存的汇率**（≤ 今天），每对取最新一条，方向优先 `X→CNY`、缺失时用 `CNY→X` 取倒数；没有汇率的一对就不返回（前端不显示换算，绝不编数） |
+| 显示组件 | `src/lib/money/{format.ts,useCnyRates.ts,MoneyAmount.tsx}` | 一处实现：金额格式、`≈ ¥…` 换算行、`1 USD = 6.7226 CNY · 日期` 说明行；每页一次请求（react-query 缓存）。原先三处各自手写的 `Intl` 金额格式化器已全部收敛到这里 |
+| 汇率页 | `src/modules.ts` | `/backend/exchange-rates`（+ create/detail）与 `/backend/config/currency-fetching` 不再 `navHidden`——能力一直在，只是被菜单藏了 |
+
+**触发抓取**：安装层 `currencies` 没有 worker/scheduler，所以 `is_enabled`/`sync_time` 只是意图记录。
+可用入口：
+
+```bash
+# app 自有命令（推荐给 cron 用）：解析容器里的 rateFetchingService，因此带上注册表里的 OPEN_ER_API
+yarn mercato currency_policy fetch-rates [--tenant <id>] [--org <id>] [--date YYYY-MM-DD] [--provider OPEN_ER_API]
+# 页面按钮 / API（门禁 currencies.fetch.manage）
+#   /backend/config/currency-fetching  →  抓取
+#   POST /api/currencies/fetch-rates   {"providers":["OPEN_ER_API"]}
+# 安装层 CLI：只注册它内置的两个波兰 provider，本部署里 PLN 已停用 → 抓不到任何东西（别用它抓 CNY）
+yarn mercato currencies fetch-rates --tenant <id> --org <id>
+```
+
+抓取是幂等的：同一 `(from,to,date,source)` 重跑只更新，不新增（实测连跑两次仍是 30 行）。
+
 ## 已知边界
 
 - 币种**标签**由清单决定：运营在 `/backend/config/dictionaries?key=currency` 改过的 label，

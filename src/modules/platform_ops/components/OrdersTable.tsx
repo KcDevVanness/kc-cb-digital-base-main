@@ -7,9 +7,10 @@ import { DataTable } from '@open-mercato/ui/backend/DataTable'
 import type { FilterValues } from '@open-mercato/ui/backend/FilterBar'
 import { ListEmptyState } from '@open-mercato/ui/backend/filters/ListEmptyState'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
-import { formatCurrency, formatDate } from '@open-mercato/ui/utils/format'
+import { formatDate } from '@open-mercato/ui/utils/format'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { CHANNELS_API_PATH, toChannelFormValues } from './ChannelForm'
 
 /**
@@ -71,15 +72,21 @@ export function toOrderMirrorRecord(item: Record<string, unknown>): OrderMirrorR
 /** Sentinel cell for values the platform did not send (a pending order may carry no status). */
 const EMPTY_CELL = <span className="text-xs text-muted-foreground">—</span>
 
+/**
+ * The order's amounts are stated in the currency the platform reported with them, so each one
+ * carries its `≈ ¥…` line; an order the platform did not price keeps the em dash.
+ */
+function moneyCell(value: string, currencyCode: string): React.ReactNode {
+  const text = value.trim()
+  if (!text) return EMPTY_CELL
+  return <MoneyAmount currencyCode={currencyCode} amount={text} />
+}
+
 function buildColumns(
   t: TranslateFn,
   locale: string,
   channelNameById: Map<string, string>,
 ): ColumnDef<OrderMirrorRecord>[] {
-  const money = (value: string, currencyCode: string) => {
-    const formatted = formatCurrency(value, currencyCode, locale)
-    return formatted ?? EMPTY_CELL
-  }
   return [
     {
       accessorKey: 'externalOrderId',
@@ -108,21 +115,21 @@ function buildColumns(
       header: t('platform_ops.orders.list.columns.gross'),
       enableSorting: false,
       meta: { priority: 4 },
-      cell: ({ row }) => money(row.original.grossAmount, row.original.currencyCode),
+      cell: ({ row }) => moneyCell(row.original.grossAmount, row.original.currencyCode),
     },
     {
       accessorKey: 'feeAmount',
       header: t('platform_ops.orders.list.columns.fee'),
       enableSorting: false,
       meta: { priority: 5 },
-      cell: ({ row }) => money(row.original.feeAmount, row.original.currencyCode),
+      cell: ({ row }) => moneyCell(row.original.feeAmount, row.original.currencyCode),
     },
     {
       accessorKey: 'netAmount',
       header: t('platform_ops.orders.list.columns.net'),
       enableSorting: false,
       meta: { priority: 6 },
-      cell: ({ row }) => money(row.original.netAmount, row.original.currencyCode),
+      cell: ({ row }) => moneyCell(row.original.netAmount, row.original.currencyCode),
     },
     {
       accessorKey: 'placedAt',

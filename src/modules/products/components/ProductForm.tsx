@@ -40,6 +40,7 @@ import {
   type ProductFormStep,
 } from '../lib/formLayout'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { useSelectedOrganizationId } from './useSelectedOrganizationId'
 import { PRODUCT_PRICE_TIERS, type ProductPriceTier } from '../lib/tiers'
 import { loadUnitOptions } from '../lib/unitOptions'
@@ -901,6 +902,20 @@ function ProductPriceRowsEditor({ values, setValue, errors, t }: CrudFormGroupCo
                   value={row.unitPrice}
                   onChange={(event) => updateRow(index, { unitPrice: event.target.value })}
                 />
+                {/*
+                  The row's CNY equivalent, recomputed as the operator types: a price entered in USD or
+                  HKD is unreadable without the yuan figure beside it, and this is where a reader
+                  questions the number, so the rate and its date are printed rather than hidden in a
+                  tooltip (`.ai/specs/2026-09-24-cny-equivalent-amounts.md`, Phase 3).
+                */}
+                {row.unitPrice.trim().length > 0 ? (
+                  <MoneyAmount
+                    currencyCode={row.currencyCode || 'CNY'}
+                    amount={row.unitPrice}
+                    showRate
+                    className="pt-1"
+                  />
+                ) : null}
               </div>
               <div className="space-y-1.5 md:col-span-4">
                 <FieldLabel htmlFor={startsAtId}>{t('products.items.form.priceStartsAt')}</FieldLabel>

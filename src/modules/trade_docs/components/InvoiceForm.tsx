@@ -26,9 +26,9 @@ import { IconButton } from '@open-mercato/ui/primitives/icon-button'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { FieldLabel } from '@open-mercato/ui/primitives/label'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
-import { formatCurrency } from '@open-mercato/ui/utils/format'
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
-import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { directionLabel, invoiceStatusLabel, INVOICE_DIRECTIONS, type InvoiceStatus } from './contractLabels'
 import {
   loadContractLineOptions,
@@ -574,7 +574,6 @@ export default function InvoiceForm({ mode, invoiceId }: { mode: 'create' | 'edi
 
 function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
   const t = useT()
-  const locale = useLocale()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const fields = useInvoiceFields(t)
   const groups = useInvoiceGroups(t)
@@ -742,9 +741,14 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               {t('trade_docs.invoices.list.columns.total')}
             </p>
-            <p className="text-lg font-semibold tabular-nums">
-              {formatCurrency(head.total, head.currencyCode, locale) ?? head.total}
-            </p>
+            {/*
+              The invoice total is computed by the sales engine, not typed here, so the reader has only
+              this figure to trust: the CNY pair and the rate behind it are printed beside it rather
+              than hidden in the tooltip a dense table cell would use.
+            */}
+            <div className="text-lg font-semibold">
+              <MoneyAmount currencyCode={head.currencyCode} amount={head.total} showRate />
+            </div>
           </div>
           <div className="space-y-0.5">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -811,9 +815,7 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
                 id: 'amount',
                 header: t('trade_docs.invoices.form.lines.amount'),
                 cell: ({ row }) => (
-                  <span className="tabular-nums">
-                    {formatCurrency(row.original.amount, head.currencyCode, locale) ?? row.original.amount}
-                  </span>
+                  <MoneyAmount currencyCode={head.currencyCode} amount={row.original.amount} />
                 ),
               },
             ]}

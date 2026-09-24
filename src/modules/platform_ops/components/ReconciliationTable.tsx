@@ -27,9 +27,9 @@ import {
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
-import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import {
-  formatSettlementMoney,
   settlementErrorMessage,
   useChannelNameMap,
 } from './SettlementImportDialog'
@@ -161,7 +161,6 @@ function ReconciliationStatusBadge({ status }: { status: string }) {
 
 function buildColumns(
   t: TranslateFn,
-  locale: string,
   channelNames: Map<string, string>,
 ): ColumnDef<ReconciliationRecord>[] {
   return [
@@ -200,7 +199,7 @@ function buildColumns(
       cell: ({ row }) => (
         row.original.expectedAmount === null
           ? <span className="text-xs text-muted-foreground">—</span>
-          : formatSettlementMoney(row.original.expectedAmount, row.original.currencyCode ?? '', locale)
+          : <MoneyAmount currencyCode={row.original.currencyCode ?? ''} amount={row.original.expectedAmount} />
       ),
     },
     {
@@ -211,7 +210,7 @@ function buildColumns(
       cell: ({ row }) => (
         row.original.actualAmount === null
           ? <span className="text-xs text-muted-foreground">—</span>
-          : formatSettlementMoney(row.original.actualAmount, row.original.currencyCode ?? '', locale)
+          : <MoneyAmount currencyCode={row.original.currencyCode ?? ''} amount={row.original.actualAmount} />
       ),
     },
     {
@@ -333,7 +332,6 @@ function ReconciliationNoteDialog({
 
 export default function ReconciliationTable() {
   const t = useT()
-  const locale = useLocale()
   const scopeVersion = useOrganizationScopeVersion()
   const channelNames = useChannelNameMap()
   const [kind, setKind] = React.useState('')
@@ -358,7 +356,7 @@ export default function ReconciliationTable() {
     [queryParams, scopeVersion],
   )
 
-  const columns = React.useMemo(() => buildColumns(t, locale, channelNames), [channelNames, locale, t])
+  const columns = React.useMemo(() => buildColumns(t, channelNames), [channelNames, t])
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey,

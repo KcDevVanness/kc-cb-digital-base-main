@@ -10,9 +10,10 @@ import { ListEmptyState } from '@open-mercato/ui/backend/filters/ListEmptyState'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { RowActions } from '@open-mercato/ui/backend/RowActions'
 import { Button } from '@open-mercato/ui/primitives/button'
-import { formatCurrency, formatDate } from '@open-mercato/ui/utils/format'
+import { formatDate } from '@open-mercato/ui/utils/format'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import type { InternalSalesKind } from './InternalSalesForm'
 
 /**
@@ -80,9 +81,7 @@ function buildColumns(t: TranslateFn, locale: string, kind: InternalSalesKind): 
       header: t('internal_sales.list.columns.total'),
       enableSorting: false,
       cell: ({ row }) => (
-        <span className="tabular-nums">
-          {formatCurrency(row.original.total, row.original.currencyCode, locale) ?? row.original.total}
-        </span>
+        <MoneyAmount currencyCode={row.original.currencyCode} amount={row.original.total} />
       ),
     },
     {
