@@ -190,6 +190,39 @@ sudo find /var/lib/docker/volumes/kc-cb-digital-base_attachments_storage/_data \
 **孤儿文件会被判为不一致**：`storage_ops audit` 的 C-7 要求磁盘与表严格对应，
 `._*` 这类文件必须在搬完后删除。
 
+**恢复后大概率要重设管理员密码。** 源环境 `.env` 里的 `OM_INIT_SUPERADMIN_PASSWORD`
+常常已不是当前密码（本地跑久了会被改过），拿它登录会得到 401：
+
+```bash
+ssh ubuntu@<host> "cd /opt/kc-cb-digital-base && \
+  docker compose -f docker-compose.deploy.yml exec -T app \
+  sh -lc \"yarn mercato auth set-password --email superadmin@acme.com --password '<新值>'\""
+```
+
+这条命令本身就是**对齐是否成功的判据**：它按 email 解析账号，只有
+`email_hash` 命中才会成功。而 `email_hash` 的命中取决于 pepper——
+`resolveLookupPepper()` 依次读 `LOOKUP_HASH_PEPPER` →
+`TENANT_DATA_ENCRYPTION_FALLBACK_KEY` → `TENANT_DATA_ENCRYPTION_KEY`，
+取第一个非空值；查找时会同时尝试「带 pepper 的 v2 哈希」和「无 pepper 的 legacy 哈希」
+两个候选。要确认对齐结果，可以比对应用算出的哈希与库里的值：
+
+```bash
+docker compose exec -T app node -e \
+  "import('@open-mercato/core/modules/auth/lib/emailHash').then(m=>console.log(m.emailHashLookupValues('superadmin@acme.com')))"
+docker compose exec -T postgres psql -U postgres -d open-mercato -tAc "select email_hash from users"
+```
+
+密码策略要求**同时含大写字母、数字与特殊字符**（长度取 `OM_PASSWORD_MIN_LENGTH`），
+纯字母数字会被拒绝。
+
+**恢复后索引要重建**：Meilisearch 的索引在它自己的卷里，不随数据库一起搬，
+不重建则搜索为空（Postgres 侧的 query index 是随库恢复的，列表页正常）。
+
+```bash
+docker compose exec -T app sh -lc "yarn mercato query_index reindex"
+docker compose exec -T app sh -lc "yarn mercato search reindex"
+```
+
 **安全边界**：本地库的 `TENANT_DATA_ENCRYPTION_FALLBACK_KEY` 常常就是 `.env.example` 里那个
 **公开占位值**。对齐密钥等于让 review 环境也用这个公开值——**该环境因此不能承载真实敏感数据**。
 review 结束后应换回独立密钥并重新初始化。
