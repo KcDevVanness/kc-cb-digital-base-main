@@ -23,6 +23,7 @@ import { ProductsCategory, ProductsProduct, ProductsType, ProductsVariant } from
 import {
   productCreateSchema,
   productUpdateSchema,
+  SKU_PATTERN,
   type ProductCreateInput,
   type ProductVariantInput,
 } from '../data/validators'
@@ -51,6 +52,7 @@ export type SerializedProduct = {
   countryOfOriginCode: string | null
   netWeight: string | null
   grossWeight: string | null
+  volume: string | null
   dimensions: Record<string, unknown> | null
   cartonQuantity: number | null
   batteryCapacityMah: number | null
@@ -84,6 +86,7 @@ export function serializeProduct(entity: ProductsProduct): SerializedProduct {
     countryOfOriginCode: entity.countryOfOriginCode ?? null,
     netWeight: entity.netWeight ?? null,
     grossWeight: entity.grossWeight ?? null,
+    volume: entity.volume ?? null,
     dimensions: entity.dimensions ?? null,
     cartonQuantity: entity.cartonQuantity ?? null,
     batteryCapacityMah: entity.batteryCapacityMah ?? null,
@@ -197,6 +200,7 @@ const PRODUCT_COLUMNS = [
   'countryOfOriginCode',
   'netWeight',
   'grossWeight',
+  'volume',
   'dimensions',
   'cartonQuantity',
   'batteryCapacityMah',
@@ -229,6 +233,7 @@ function applyProductInput(entity: ProductsProduct, parsed: Partial<ProductCreat
   if (parsed.countryOfOriginCode !== undefined) entity.countryOfOriginCode = parsed.countryOfOriginCode
   if (parsed.netWeight !== undefined) entity.netWeight = parsed.netWeight
   if (parsed.grossWeight !== undefined) entity.grossWeight = parsed.grossWeight
+  if (parsed.volume !== undefined) entity.volume = parsed.volume
   if (parsed.dimensions !== undefined) entity.dimensions = parsed.dimensions
   if (parsed.cartonQuantity !== undefined) entity.cartonQuantity = parsed.cartonQuantity
   if (parsed.batteryCapacityMah !== undefined) entity.batteryCapacityMah = parsed.batteryCapacityMah
@@ -546,6 +551,7 @@ const createProductCommand: CommandHandler<Record<string, unknown>, ProductsProd
                 countryOfOriginCode: parsed.countryOfOriginCode ?? null,
                 netWeight: parsed.netWeight,
                 grossWeight: parsed.grossWeight,
+                volume: parsed.volume,
                 dimensions: parsed.dimensions ?? null,
                 cartonQuantity: parsed.cartonQuantity,
                 batteryCapacityMah: parsed.batteryCapacityMah,
@@ -658,7 +664,13 @@ const updateProductCommand: CommandHandler<Record<string, unknown>, ProductsProd
       request: ctx.request ?? null,
     })
 
+    // The schema no longer carries the charset rule (a legacy SKU must stay editable), so it is
+    // enforced here — but only for a value that actually changes. An unchanged SKU is not
+    // re-validated at all: it is already stored, and refusing it would make the whole row uneditable.
     if (parsed.sku !== undefined && parsed.sku !== current.sku) {
+      if (!SKU_PATTERN.test(parsed.sku)) {
+        throw badRequest('sku must be letters, digits, dot, dash, slash or underscore')
+      }
       await assertSkuAvailable(em, scope, parsed.sku, String(current.id))
     }
     await assertReferencesVisible(em, scope, {
@@ -787,6 +799,7 @@ const updateProductCommand: CommandHandler<Record<string, unknown>, ProductsProd
         entity.countryOfOriginCode = before.countryOfOriginCode
         entity.netWeight = before.netWeight
         entity.grossWeight = before.grossWeight
+        entity.volume = before.volume
         entity.dimensions = before.dimensions
         entity.cartonQuantity = before.cartonQuantity
         entity.batteryCapacityMah = before.batteryCapacityMah

@@ -137,3 +137,23 @@ export async function loadSupplierName(
   } as FilterQuery<PurchasingSupplier>)
   return supplier?.name ?? null
 }
+
+/**
+ * The supplier's default brand, used to fill a library row's `brand_value` at creation.
+ *
+ * Read here rather than trusted from the payload: the row must end up with the brand its codes will be
+ * generated from, and a client that simply omits the field should not produce a row that cannot
+ * generate.
+ */
+export async function loadSupplierBrand(
+  em: EntityManager,
+  scope: PurchasingScope,
+  supplierId: string,
+): Promise<string | null> {
+  const supplier = await em.fork().findOne(PurchasingSupplier, {
+    id: supplierId,
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+  } as FilterQuery<PurchasingSupplier>)
+  return supplier?.brandValue ?? null
+}

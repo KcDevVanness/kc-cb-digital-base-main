@@ -66,6 +66,8 @@ type LibraryItem = {
   moqQuantity: number | null
   cartonQuantity: number | null
   unitNetWeight: string | null
+  unitGrossWeight: string | null
+  unitVolume: string | null
   innerPacking: Record<string, unknown> | null
   imageAttachmentIds: string[]
   productId: string | null
@@ -207,6 +209,8 @@ test.describe.serial('purchasing — supplier product library', () => {
       moqQuantity: 10,
       cartonQuantity: 8,
       unitNetWeight: '1.28',
+      unitGrossWeight: '1.84',
+      unitVolume: '88642',
       innerPacking: { length: 21.9, width: 21.9, height: 18.5, unit: 'cm' },
     })
     const createdBody = await readJsonSafe<{ id?: string; error?: string; code?: string }>(created)
@@ -232,10 +236,14 @@ test.describe.serial('purchasing — supplier product library', () => {
     expect(page?.items?.[0]?.supplierSku).toBe(supplierCode)
     expect(page?.items?.[0]?.supplierId).toBe(supplierId)
     expect(page?.items?.[0]?.status).toBe('active')
-    // Single-unit packing is what purchasing reads: Qty/Box, the piece's net weight and its size
-    // all survive the round trip, while the whole-carton figures are no longer part of the row.
+    // Single-unit packing is what purchasing reads: Qty/Box, the piece's weights, its volume and
+    // its size all survive the round trip, while the whole-carton figures are no longer part of the
+    // row. The weight pair and the volume are optional, so each is stored only when the sheet
+    // prints it.
     expect(page?.items?.[0]?.cartonQuantity).toBe(8)
     expect(Number(page?.items?.[0]?.unitNetWeight)).toBe(1.28)
+    expect(Number(page?.items?.[0]?.unitGrossWeight)).toBe(1.84)
+    expect(Number(page?.items?.[0]?.unitVolume)).toBe(88642)
     expect(page?.items?.[0]?.innerPacking).toEqual({ length: 21.9, width: 21.9, height: 18.5, unit: 'cm' })
   })
 
@@ -450,6 +458,10 @@ test.describe.serial('purchasing — supplier product library', () => {
       declarationElements: '品名:饮水机;品牌:Petkit;型号:W5C;材质:ABS',
       unit: 'SET',
       hsCode: '8471.30.0000',
+      cartonQuantity: 8,
+      unitNetWeight: '1.28',
+      unitGrossWeight: '1.84',
+      unitVolume: '88642',
       imageAttachmentIds: [attachmentId],
     })
     expect(updated.status(), `PUT /api/purchasing/supplier-products answered ${await updated.text()}`).toBe(200)
@@ -462,6 +474,11 @@ test.describe.serial('purchasing — supplier product library', () => {
     expect(row?.declarationElements).toBe('品名:饮水机;品牌:Petkit;型号:W5C;材质:ABS')
     expect(row?.unit).toBe('SET')
     expect(row?.hsCode).toBe('8471.30.0000')
+    // The optional weight pair and the volume are stored as typed; the create above left them blank
+    // and this update is what fills them.
+    expect(Number(row?.unitNetWeight)).toBe(1.28)
+    expect(Number(row?.unitGrossWeight)).toBe(1.84)
+    expect(Number(row?.unitVolume)).toBe(88642)
     expect(row?.imageAttachmentIds).toEqual([attachmentId])
 
     const pricesUrl = `${LIBRARY_URL}/prices`
@@ -530,9 +547,25 @@ test.describe.serial('purchasing — supplier product library', () => {
     expect(promotedProductId).toBeTruthy()
 
     const itemRead = await staffRequest('GET', `/api/products/items?ids=${encodeURIComponent(promotedProductId)}`)
-    const item = (await readJsonSafe<ListResponse<{ id: string; name: string; nameEn: string | null }>>(itemRead))?.items?.[0]
+    const item = (
+      await readJsonSafe<
+        ListResponse<{
+          id: string
+          name: string
+          nameEn: string | null
+          netWeight: string | null
+          grossWeight: string | null
+          volume: string | null
+        }>
+      >(itemRead)
+    )?.items?.[0]
     expect(item?.name, 'our Chinese name is what the master displays').toBe('智能饮水机 3 代')
     expect(item?.nameEn).toBe('Eversweet 3 Pro')
+    // The library's whole physical set crosses over: the weight pair and the volume (cm³) become the
+    // master's own columns.
+    expect(Number(item?.netWeight), 'the library net weight reaches the master').toBe(1.28)
+    expect(Number(item?.grossWeight), 'the library gross weight reaches the master').toBe(1.84)
+    expect(Number(item?.volume), 'the library volume reaches the master').toBe(88642)
 
     const masterPrices = await staffRequest(
       'GET',
@@ -989,5 +1022,98 @@ test.describe.serial('purchasing — supplier product library', () => {
 
     const empty = await staffRequest('POST', `${LIBRARY_URL}/promote-batch`, { ids: [] })
     expect(empty.status(), 'a payload with no ids is refused').toBe(400)
+  })
+
+  test('Phase 9 — the item discount nets the supply price into the cost tier, and our offer comes from the product (TEST-SPL-013)', async () => {
+    const discountSku = `${supplierCode}-DISC`
+    const rowBody = {
+      supplierId,
+      supplierSku: discountSku,
+      name: 'Discounted item (supplier wording)',
+      unit: 'PCS',
+    }
+    const created = await staffRequest('POST', LIBRARY_URL, { ...rowBody, discountPercent: '5' })
+    const createdBody = await readJsonSafe<{ id?: string }>(created)
+    expect(created.status(), `POST ${LIBRARY_URL} answered ${JSON.stringify(createdBody)}`).toBe(201)
+    const rowId = String(createdBody?.id ?? '')
+    expect(rowId, 'the discounted row exists').toBeTruthy()
+
+    const priced = await staffRequest('PUT', `${LIBRARY_URL}/prices`, {
+      supplierProductId: rowId,
+      rows: [{ priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '100.000000' }],
+    })
+    expect(priced.status(), `PUT …/prices answered ${await priced.text()}`).toBe(200)
+
+    type PricedRow = LibraryItem & {
+      discountPercent?: string | null
+      supplierCostPrice?: { currencyCode: string; unitPrice: string; netUnitPrice?: string | null } | null
+      companyOfferPrice?: { currencyCode: string; unitPrice: string } | null
+      companyOfferSource?: string | null
+    }
+    const readRow = async (): Promise<PricedRow | undefined> => {
+      const listed = await staffRequest('GET', `${LIBRARY_URL}?id=${encodeURIComponent(rowId)}`)
+      expect(listed.status(), 'the list answers').toBe(200)
+      return (await readJsonSafe<ListResponse<PricedRow>>(listed))?.items?.[0]
+    }
+
+    // The row stores the discount as a whole `numeric(3,0)` percentage (owner 2026-09-24) and the list
+    // derives the 折后价 — the number the column leads with and the promotion is expected to write.
+    const discounted = await readRow()
+    expect(Number(discounted?.discountPercent), 'the discount round-trips').toBe(5)
+    expect(discounted?.discountPercent, 'a whole percent reads back without a padded fraction').toBe('5')
+    expect(Number(discounted?.supplierCostPrice?.unitPrice), 'the printed supply price is kept').toBe(100)
+    expect(discounted?.supplierCostPrice?.netUnitPrice, 'the net amount is derived, not stored').toBe('95.000000')
+
+    const promote = await staffRequest('POST', `${LIBRARY_URL}/promote`, { id: rowId })
+    const promoted = await readJsonSafe<{ productId?: string; action?: string }>(promote)
+    expect(promote.status(), `POST …/promote answered ${JSON.stringify(promoted)}`).toBe(200)
+    const productId = String(promoted?.productId ?? '')
+    expect(productId, 'the promotion names the product it created').toBeTruthy()
+
+    const masterPrices = async () => {
+      const listed = await staffRequest(
+        'GET',
+        `/api/products/prices?productId=${encodeURIComponent(productId)}&isActive=true`,
+      )
+      expect(listed.status(), 'the product price list answers').toBe(200)
+      return (
+        (await readJsonSafe<ListResponse<{ priceTier: string; currencyCode: string; unitPrice: string }>>(listed))
+          ?.items ?? []
+      )
+    }
+    const purchase = (await masterPrices()).find((entry) => entry.priceTier === 'purchase')
+    expect(purchase, 'the promotion wrote a purchase price').toBeTruthy()
+    expect(
+      Number(purchase?.unitPrice),
+      'the cost tier receives the discounted price, not the supplier’s list price',
+    ).toBe(95)
+
+    // 本公司报价 left the library on 2026-09-24: the column reads the product's 内部结算价 tier.
+    const internal = await staffRequest('PUT', '/api/products/prices', {
+      productId,
+      rows: [
+        { priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 1, unitPrice: '95.000000' },
+        { priceTier: 'internal', currencyCode: 'USD', minQuantity: 1, unitPrice: '21.500000' },
+      ],
+    })
+    expect(internal.status(), `PUT /api/products/prices answered ${await internal.text()}`).toBe(200)
+    const relisted = await readRow()
+    expect(relisted?.companyOfferSource, 'the offer is read from the product, not from the row').toBe('product')
+    expect(relisted?.companyOfferPrice?.currencyCode).toBe('USD')
+    expect(Number(relisted?.companyOfferPrice?.unitPrice)).toBe(21.5)
+
+    // The discount is bounded and whole-numbered, and clearing it puts the printed price back in
+    // charge of the net.
+    for (const discountPercent of ['101', '-1', '5.12345', '3.75']) {
+      const refused = await staffRequest('PUT', LIBRARY_URL, { id: rowId, ...rowBody, discountPercent })
+      expect(refused.status(), `discountPercent ${discountPercent} is refused`).toBe(400)
+    }
+    const cleared = await staffRequest('PUT', LIBRARY_URL, { id: rowId, ...rowBody, discountPercent: null })
+    expect(cleared.status(), `clearing the discount answered ${await cleared.text()}`).toBe(200)
+    const afterClear = await readRow()
+    expect(afterClear?.discountPercent, 'a cleared discount reads back as none').toBeNull()
+    expect(afterClear?.supplierCostPrice?.netUnitPrice, 'with no discount the net is the list price').toBe(
+      '100.000000',
+    )
   })
 })

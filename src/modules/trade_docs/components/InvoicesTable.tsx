@@ -18,9 +18,10 @@ import { deleteCrud, fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
-import { formatCurrency, formatDate } from '@open-mercato/ui/utils/format'
+import { formatDate } from '@open-mercato/ui/utils/format'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { INVOICE_DIRECTIONS, INVOICE_STATUSES, directionLabel, invoiceStatusLabel, type InvoiceStatus } from './contractLabels'
 
 const API_PATH = 'trade_docs/invoices'
@@ -120,9 +121,7 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<InvoiceRecord>[
       header: t('trade_docs.invoices.list.columns.total'),
       meta: { priority: 6 },
       cell: ({ row }) => (
-        <span className="tabular-nums">
-          {formatCurrency(row.original.total, row.original.currencyCode, locale) ?? row.original.total}
-        </span>
+        <MoneyAmount currencyCode={row.original.currencyCode} amount={row.original.total} />
       ),
     },
     {

@@ -15,6 +15,8 @@ describe('sourcing productMapping', () => {
     hsCode: null,
     unit: null,
     netWeight: null,
+    grossWeight: null,
+    volume: null,
     dimensions: null,
     cartonQuantity: null,
   }
@@ -31,6 +33,10 @@ describe('sourcing productMapping', () => {
     } as never)
     expect(fields.specSummary).toBe('Material: ABS, SUS304 / Capacity: 1.8L / Power: 5V 1A')
     expect(fields.netWeight).toBe('1.2800')
+    // a line has no G.W. column of its own, so it never proposes a gross weight for the master
+    expect(fields.grossWeight).toBeNull()
+    // nor a volume: the per-unit cm³ is a library-row column
+    expect(fields.volume).toBeNull()
     expect(fields.dimensions).toEqual({ length: 21.9, width: 21.9, height: 18.5, unit: 'cm' })
     expect(fields.cartonQuantity).toBe(8)
     // the master is single-unit data only: a line carries no carton size and no carton weights at

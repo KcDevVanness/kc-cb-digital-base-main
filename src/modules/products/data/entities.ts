@@ -213,6 +213,16 @@ export class ProductsProduct {
   @Property({ name: 'gross_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
   grossWeight?: string | null
 
+  /**
+   * Volume of one unit in cm³ — the supplier library's `unit_volume`, carried over on sync. Whole
+   * cm³ (`scale: 0`), so the form shows the sheet's own figure (`88642`) instead of a padded
+   * `88642.000000`. Recorded, not derived: the size card next door holds the three sides, and a
+   * figure the supplier prints must not be silently recomputed from them. Nothing reads it yet
+   * (freight quotes are the intended consumer, and they work in m³/CBM).
+   */
+  @Property({ name: 'volume', type: 'numeric', precision: 16, scale: 0, nullable: true })
+  volume?: string | null
+
   /** `{ length, width, height, unit }` for one unit. */
   @Property({ type: 'jsonb', nullable: true })
   dimensions?: Record<string, unknown> | null

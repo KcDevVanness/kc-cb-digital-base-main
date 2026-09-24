@@ -4,6 +4,7 @@ import {
   productPriceRowSchema,
   productPricesReplaceSchema,
   productTypeCreateSchema,
+  productUpdateSchema,
 } from '../validators'
 
 describe('product price row validation', () => {
@@ -75,7 +76,9 @@ describe('product validation', () => {
     expect(parsed.unit).toBe('PCS')
     expect(parsed.status).toBe('active')
     expect(parsed.containsLithiumBattery).toBe(false)
-    expect(parsed.netWeight).toBeNull()
+    // Absent stays absent rather than becoming `null`: the create command turns it into the column's
+    // null either way, while a *partial* update must not erase a decimal column it never mentioned.
+    expect(parsed.netWeight).toBeUndefined()
   })
 
   it('normalizes weights to four decimals and keeps an empty value as null', () => {
@@ -87,6 +90,25 @@ describe('product validation', () => {
   it('rejects a weight with more decimals than the column holds', () => {
     const result = productCreateSchema.safeParse({ ...baseProduct, netWeight: '1.00001' })
     expect(result.success).toBe(false)
+  })
+
+  it('keeps a decimal absent on a partial update so it is not erased', () => {
+    // The supplier sync and `sync-fields` send **only the changed fields**; the update command writes
+    // a field only when it is `!== undefined`. A helper that folded "not sent" into `null` therefore
+    // wiped every decimal column the payload did not mention (measured on the dev database:
+    // `net_weight`/`gross_weight` cleared by a volume-only sync and the reverse).
+    const partial = productUpdateSchema.parse({ id: '00000000-0000-4000-8000-000000000001', volume: '88642' })
+    expect(partial.volume).toBe('88642')
+    expect(partial.netWeight).toBeUndefined()
+    expect(partial.grossWeight).toBeUndefined()
+    // An explicit `null` still means "clear it".
+    expect(productUpdateSchema.parse({ id: '00000000-0000-4000-8000-000000000001', volume: null }).volume).toBeNull()
+  })
+
+  it('rejects a volume that is not a whole cm³', () => {
+    // `volume` is numeric(16,0): a fractional cm³ is an input error, not a value to round away.
+    expect(productCreateSchema.safeParse({ ...baseProduct, volume: '88642.5' }).success).toBe(false)
+    expect(productCreateSchema.parse({ ...baseProduct, volume: '88642' }).volume).toBe('88642')
   })
 
   it('rejects a SKU with characters an operator cannot search for later', () => {

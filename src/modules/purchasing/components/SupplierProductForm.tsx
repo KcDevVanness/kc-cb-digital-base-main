@@ -3,7 +3,7 @@
 import * as React from 'react'
 import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Trash2, Upload, Plus } from 'lucide-react'
+import { Trash2, Upload } from 'lucide-react'
 import {
   CrudForm,
   type CrudField,
@@ -17,7 +17,6 @@ import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { createCrud, deleteCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { Button } from '@open-mercato/ui/primitives/button'
-import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
 import { FieldLabel } from '@open-mercato/ui/primitives/label'
 import { Input } from '@open-mercato/ui/primitives/input'
 import {
@@ -31,8 +30,12 @@ import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 // The unit vocabulary is seeded by this module and read through the app's one client loader; the
 // currency picker is this module's own loader (the same one the supplier and order forms use).
 import { loadUnitOptions } from '../../products/lib/unitOptions'
+import { loadCodeListOptions } from '../lib/codeListOptions'
+import { PRODUCT_BRAND_DICTIONARY_KEY } from '../../product_codes/lib/dictionaryValues'
+import SupplierProductCodePanel from './SupplierProductCodePanel'
 import { loadCurrencyOptions } from './PurchaseOrderForm'
-import { SUPPLIER_PRODUCT_PRICE_KIND_ORDER, type SupplierProductPriceKind } from '../lib/priceKinds'
+import { formatCurrency } from '@open-mercato/ui/utils/format'
+import { netUnitPrice, type SupplierProductPriceKind } from '../lib/priceKinds'
 
 const API_PATH = 'purchasing/supplier-products'
 const PRICES_API_PATH = 'purchasing/supplier-products/prices'
@@ -49,9 +52,9 @@ import {
   buildSupplierProductPriceRowsPayload,
   createEmptyPriceRow,
   EMPTY_VALUES,
-  isPriceKind,
   readImageIds,
   readPacking,
+  splitSupplierProductPriceRows,
   toProductPriceRowValues,
   toSupplierProductFormValues,
   type PackingValues,
@@ -94,8 +97,8 @@ async function loadSupplierOptions(errorMessage: string): Promise<CrudFieldOptio
 
 function priceKindLabel(t: TranslateFn, kind: SupplierProductPriceKind): string {
   return kind === 'supplier_cost'
-    ? t('purchasing.supplierProducts.price.kind.supplierCost', 'Supplier cost (legacy PK price)')
-    : t('purchasing.supplierProducts.price.kind.companyOffer', 'Our offer (legacy KC price)')
+    ? t('purchasing.supplierProducts.price.kind.supplierCost', 'Supplier supply price')
+    : t('purchasing.supplierProducts.price.kind.companyOffer', 'Our offer')
 }
 
 /**
@@ -122,17 +125,22 @@ function useCurrencyOptions(t: TranslateFn): CrudFieldOption[] {
 }
 
 /**
- * The item's whole price list: one row per kind × currency × minimum quantity.
+ * The item's 供货价 — one price, one currency — plus the rows the form no longer maintains.
  *
- * Rows are the form's `prices` value, so a rejected save keeps whatever the operator typed and a
- * retry only has to press save again. A row is never deleted here — switching it off submits it as
- * `isActive: false`, which is what keeps a historical price explainable instead of gone.
+ * The stored set keeps the table's generality (`kind × currency × minimum quantity`, REQ-SPL-013):
+ * another currency, a ladder step or a withdrawn price can exist as a row. The business quotes one
+ * price per supplier item, so the form edits exactly the **base** row the list column and the
+ * promotion resolve (`lib/priceKinds.ts` `pickBasePriceRow`, REQ-SPL-025) and shows everything else
+ * read-only, submitted back untouched so a save never rewrites history. Clearing the amount
+ * withdraws the price: the row is deactivated, never deleted, and comes back below as a withdrawn
+ * row.
  */
-function SupplierProductPriceRows({ values, setValue, errors, t }: CrudFormGroupComponentProps & { t: TranslateFn }) {
+function SupplierProductPriceGroup({ values, setValue, errors, t }: CrudFormGroupComponentProps & { t: TranslateFn }) {
   const rows = React.useMemo(
     () => (Array.isArray(values.prices) ? (values.prices as SupplierProductPriceRowValues[]) : []),
     [values.prices],
   )
+  const { primary, extras } = React.useMemo(() => splitSupplierProductPriceRows(rows), [rows])
   const dictionaryOptions = useCurrencyOptions(t)
   const priceError = Object.keys(errors).find((key) => key === 'prices' || key.startsWith('prices.') || key.startsWith('rows.'))
 
@@ -149,37 +157,56 @@ function SupplierProductPriceRows({ values, setValue, errors, t }: CrudFormGroup
     return [...merged.values()].sort((left, right) => left.value.localeCompare(right.value))
   }, [dictionaryOptions, rows])
 
-  const kindOptions = React.useMemo<CrudFieldOption[]>(
-    () => SUPPLIER_PRODUCT_PRICE_KIND_ORDER.map((kind) => ({ value: kind, label: priceKindLabel(t, kind) })),
-    [t],
+  const currencyCode = (primary?.currencyCode ?? 'CNY').trim().toUpperCase()
+  const unitPrice = primary?.unitPrice ?? ''
+  /**
+   * The trigger renders this label itself rather than letting the select mirror the chosen item:
+   * the dictionary arrives after the field is on screen, and a value that mounts before its item
+   * would otherwise leave the box looking unset on a brand-new record.
+   */
+  const currencyLabel =
+    currencyOptions.find((option) => option.value === currencyCode)?.label ?? (currencyCode || 'CNY')
+
+  // The field writes the primary row, or starts one on the base identity when the item has none yet:
+  // a row with no amount is dropped from the payload, so typing a currency alone creates nothing.
+  const patchPrimary = React.useCallback(
+    (patch: Partial<SupplierProductPriceRowValues>) => {
+      if (primary) {
+        setValue(
+          'prices',
+          rows.map((row) => (row === primary ? { ...row, ...patch } : row)),
+        )
+        return
+      }
+      setValue('prices', [...rows, { ...createEmptyPriceRow(), ...patch }])
+    },
+    [primary, rows, setValue],
   )
 
-  const updateRow = React.useCallback(
-    (index: number, patch: Partial<SupplierProductPriceRowValues>) => {
-      setValue(
-        'prices',
-        rows.map((row, position) => (position === index ? { ...row, ...patch } : row)),
-      )
-    },
-    [rows, setValue],
-  )
+  // The group component's `values` is loosely typed, and CrudForm's number field yields a number once
+  // edited — the same tolerance the other numeric fields here apply.
+  const rawDiscount = values.discountPercent
+  const discountText = typeof rawDiscount === 'number' ? String(rawDiscount) : typeof rawDiscount === 'string' ? rawDiscount : ''
+  const discountError = errors.discountPercent
+  const discountId = 'supplier-product-price-discount'
+  const discountHelpId = `${discountId}-help`
+  const discountValue = Number.parseFloat(discountText.trim())
+  const hasDiscount = Number.isFinite(discountValue) && discountValue > 0
+
+  const currencyId = 'supplier-product-price-currency'
+  const unitPriceId = 'supplier-product-price-unit-price'
+  const unitPriceHelpId = `${unitPriceId}-help`
 
   return (
     <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-medium">{t('purchasing.supplierProducts.price.title', 'Prices')}</h3>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'purchasing.supplierProducts.price.hint',
-              'One row per kind × currency × minimum quantity. The legacy “PK price” column is the supplier cost, “KC price” is our own offer. A removed row is deactivated, never deleted.',
-            )}
-          </p>
-        </div>
-        <Button type="button" variant="outline" disabled={rows.length >= 24} onClick={() => setValue('prices', [...rows, createEmptyPriceRow()])}>
-          <Plus className="size-4" aria-hidden="true" />
-          {t('purchasing.supplierProducts.price.add', 'Add price')}
-        </Button>
+      <div>
+        <h3 className="text-sm font-medium">{t('purchasing.supplierProducts.price.title', 'Prices')}</h3>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            'purchasing.supplierProducts.price.hint',
+            'One supply price per item: what the supplier charges us, in its own currency. The discount below is the supplier’s rate for this item and the net amount is derived. Our own offer is maintained on the product record (internal settlement price). Clearing the amount withdraws the price — it is deactivated, never deleted.',
+          )}
+        </p>
       </div>
 
       {priceError ? (
@@ -188,115 +215,139 @@ function SupplierProductPriceRows({ values, setValue, errors, t }: CrudFormGroup
         </p>
       ) : null}
 
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {t('purchasing.supplierProducts.price.empty', 'No price yet — add the supplier’s cost or our offer.')}
-        </p>
-      ) : null}
-
-      {rows.map((row, index) => {
-        const fieldId = (suffix: string) => `supplier-product-price-${row.key}-${suffix}`
-        const kindId = fieldId('kind')
-        const currencyId = fieldId('currency')
-        const minQuantityId = fieldId('minQuantity')
-        const unitPriceId = fieldId('unitPrice')
-        const activeId = fieldId('active')
-        return (
-          <div key={row.key} className="rounded-md border bg-background p-3">
-            {/*
-              The row follows the card it is drawn in, not the viewport: the form drops to one column
-              below `lg`, and a 12-column split at ~500px squeezes the pickers back to the width this
-              section was fixed from. `@md` puts the two pickers, then the two numbers, side by side;
-              `@3xl` restores the single-line 12-column row once the container can carry five
-              controls.
-            */}
-            <div className="@container">
-              <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-12">
-                <div className="col-span-2 space-y-1.5 @md:col-span-1 @3xl:col-span-3">
-                  <FieldLabel htmlFor={kindId} required>
-                    {t('purchasing.supplierProducts.price.field.kind', 'Price kind')}
-                  </FieldLabel>
-                  <Select
-                    value={row.priceKind}
-                    onValueChange={(next) => updateRow(index, { priceKind: isPriceKind(next) ? next : 'supplier_cost' })}
-                  >
-                    <SelectTrigger id={kindId} className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {kindOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="col-span-2 space-y-1.5 @md:col-span-1 @3xl:col-span-3">
-                  <FieldLabel htmlFor={currencyId} required>
-                    {t('purchasing.supplierProducts.price.field.currency', 'Currency')}
-                  </FieldLabel>
-                  <Select
-                    value={row.currencyCode.trim().toUpperCase() || undefined}
-                    onValueChange={(next) => updateRow(index, { currencyCode: next })}
-                  >
-                    <SelectTrigger id={currencyId} className="w-full">
-                      <SelectValue placeholder={t('purchasing.supplierProducts.price.field.currency', 'Currency')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {currencyOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5 @3xl:col-span-2">
-                  <FieldLabel htmlFor={minQuantityId}>
-                    {t('purchasing.supplierProducts.price.field.minQuantity', 'Min qty')}
-                  </FieldLabel>
-                  <Input
-                    id={minQuantityId}
-                    value={row.minQuantity}
-                    inputMode="numeric"
-                    onChange={(event) => updateRow(index, { minQuantity: event.target.value })}
-                  />
-                </div>
-                <div className="space-y-1.5 @3xl:col-span-2">
-                  <FieldLabel htmlFor={unitPriceId} required>
-                    {t('purchasing.supplierProducts.price.field.unitPrice', 'Unit price')}
-                  </FieldLabel>
-                  <Input
-                    id={unitPriceId}
-                    value={row.unitPrice}
-                    inputMode="decimal"
-                    onChange={(event) => updateRow(index, { unitPrice: event.target.value })}
-                  />
-                </div>
-                <div className="col-span-2 flex items-end justify-between gap-2 @3xl:col-span-2">
-                  <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
-                    <Checkbox
-                      id={activeId}
-                      checked={row.isActive}
-                      onCheckedChange={(next) => updateRow(index, { isActive: next === true })}
-                    />
-                    {t('purchasing.supplierProducts.price.field.active', 'Active')}
-                  </label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    aria-label={t('purchasing.supplierProducts.price.remove', 'Remove this price row')}
-                    onClick={() => setValue('prices', rows.filter((_, position) => position !== index))}
-                  >
-                    <Trash2 className="size-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              </div>
-            </div>
+      <div className="@container">
+        <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-12">
+          <div className="col-span-2 space-y-1.5 @md:col-span-1 @3xl:col-span-3">
+            <FieldLabel htmlFor={currencyId}>{t('purchasing.supplierProducts.price.field.currency', 'Currency')}</FieldLabel>
+            <Select
+              value={currencyCode || undefined}
+              onValueChange={(next) => patchPrimary({ currencyCode: next })}
+            >
+              <SelectTrigger id={currencyId} className="w-full">
+                <SelectValue placeholder={t('purchasing.supplierProducts.price.field.currency', 'Currency')}>
+                  {currencyLabel}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {currencyOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        )
-      })}
+          <div className="col-span-2 space-y-1.5 @md:col-span-1 @3xl:col-span-3">
+            <FieldLabel htmlFor={unitPriceId}>{t('purchasing.supplierProducts.price.field.unitPrice', 'Unit price')}</FieldLabel>
+            <Input
+              id={unitPriceId}
+              value={unitPrice}
+              inputMode="decimal"
+              aria-describedby={unitPriceHelpId}
+              onChange={(event) => patchPrimary({ unitPrice: event.target.value })}
+            />
+            <p id={unitPriceHelpId} className="text-xs text-muted-foreground">
+              {t(
+                'purchasing.supplierProducts.price.help.unitPrice',
+                'The supplier’s price for one unit, before the discount.',
+              )}
+            </p>
+          </div>
+          <div className="space-y-1.5 @3xl:col-span-3">
+            <FieldLabel htmlFor={discountId}>
+              {t('purchasing.supplierProducts.price.field.discount', 'Discount (%)')}
+            </FieldLabel>
+            <div className="flex items-center gap-2">
+              <Input
+                id={discountId}
+                value={discountText}
+                inputMode="numeric"
+                className="w-24"
+                aria-describedby={discountHelpId}
+                onChange={(event) => setValue('discountPercent', event.target.value)}
+              />
+              <span className="text-sm text-muted-foreground" aria-hidden="true">
+                %
+              </span>
+            </div>
+            {discountError ? (
+              <p className="text-xs text-status-error-text" role="alert">
+                {discountError}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <p id={discountHelpId} className="mt-2 max-w-prose text-xs text-muted-foreground">
+          {t(
+            'purchasing.supplierProducts.price.help.discount',
+            'The supplier’s discount off this item’s supply price — a whole number of percent (0–100; blank = none). The net amount is derived — it is what the product record receives as its cost price.',
+          )}
+        </p>
+
+        {/*
+          The item's 折后价, recomputed as the operator types: the same helper computes the number the
+          promotion writes into the product record, so the preview cannot disagree with the write.
+        */}
+        {hasDiscount ? (
+          <p className="mt-2 text-xs text-muted-foreground tabular-nums">
+            {(() => {
+              const net = netUnitPrice(unitPrice, discountText)
+              if (!net) {
+                return t(
+                  'purchasing.supplierProducts.price.netNeedsAmount',
+                  'Enter the unit price to see the net amount.',
+                )
+              }
+              return t('purchasing.supplierProducts.price.net', 'Net after discount: {amount}', {
+                amount: formatCurrency(net, currencyCode || 'CNY') ?? net,
+              })
+            })()}
+          </p>
+        ) : null}
+      </div>
+
+      {primary ? null : (
+        <p className="text-sm text-muted-foreground">
+          {t(
+            'purchasing.supplierProducts.price.empty',
+            'No supply price yet — type the amount the supplier quoted.',
+          )}
+        </p>
+      )}
+
+      {extras.length > 0 ? (
+        <div className="space-y-1.5 rounded-md border bg-background p-3">
+          <p className="text-xs font-medium">{t('purchasing.supplierProducts.price.others.title', 'Other price rows (read-only)')}</p>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'purchasing.supplierProducts.price.others.hint',
+              'Another currency or ladder step, a withdrawn price, or a legacy offer row. Kept for traceability and submitted back unchanged.',
+            )}
+          </p>
+          <ul className="space-y-1 text-xs text-muted-foreground tabular-nums">
+            {extras.map((row) => (
+              <li key={row.key} className="flex flex-wrap items-baseline gap-x-3">
+                <span>{priceKindLabel(t, row.priceKind)}</span>
+                <span>{row.currencyCode.trim().toUpperCase()}</span>
+                <span>
+                  {t('purchasing.supplierProducts.price.others.minQuantity', 'Min qty {count}', {
+                    count: row.minQuantity,
+                  })}
+                </span>
+                <span className="text-foreground">
+                  {formatCurrency(row.unitPrice, row.currencyCode.trim().toUpperCase() || 'CNY') ?? row.unitPrice}
+                </span>
+                <span>
+                  {row.isActive
+                    ? t('purchasing.supplierProducts.price.others.active', 'Active')
+                    : t('purchasing.supplierProducts.price.others.inactive', 'Withdrawn')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -549,7 +600,10 @@ function PackingEditor({
   )
 }
 
-function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: boolean }): CrudField[] {
+function useSupplierProductFields(
+  t: TranslateFn,
+  opts: { supplierEditable: boolean; productId: string | null; masterProductId: string | null },
+): CrudField[] {
   return React.useMemo<CrudField[]>(() => {
     const supplierFields: CrudField[] = opts.supplierEditable
       ? [
@@ -574,14 +628,37 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
       ...supplierFields,
       {
         id: 'supplierSku',
-        label: t('purchasing.supplierProducts.form.field.supplierSku', 'Supplier code'),
+        label: t('purchasing.supplierProducts.form.field.supplierSku', 'Product SKU (ours)'),
         description: t(
           'purchasing.supplierProducts.form.help.supplierSku',
-          'Unique within this supplier; a code is never reused, including by a deleted row.',
+          'Our code for this item: unique within the supplier, written into the product master\u2019s SKU on 建商品档案, and never reused \u2014 including by a deleted row.',
         ),
-        type: 'text',
+        // The generator, the category picker and the breakdown of the stored characters belong to this
+        // field, not to a block beside it: one task, one place (owner 2026-09-24).
+        type: 'custom',
         required: true,
-        maxLength: 120,
+        component: (props) => (
+          <SupplierProductCodePanel
+            {...props}
+            t={t}
+            rowId={opts.productId}
+            masterProductId={opts.masterProductId}
+          />
+        ),
+      },
+      {
+        id: 'brandValue',
+        label: t('purchasing.supplierProducts.form.field.brandValue', 'Brand (code prefix)'),
+        description: t(
+          'purchasing.supplierProducts.form.help.brandValue',
+          'The brand this row\u2019s codes are generated under; blank falls back to the supplier\u2019s default brand.',
+        ),
+        type: 'combobox',
+        allowCustomValues: false,
+        // The list is the `product_brand` code list; a value the dictionary no longer carries still
+        // renders as itself, so opening a row can never blank its brand.
+        loadOptions: () => loadCodeListOptions(PRODUCT_BRAND_DICTIONARY_KEY),
+        resolveLabel: (value) => value,
       },
       {
         id: 'name',
@@ -671,9 +748,30 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
         type: 'number',
       },
       {
+        id: 'unitGrossWeight',
+        label: t('purchasing.supplierProducts.form.field.unitGrossWeight', 'Unit gross weight (kg)'),
+        description: t(
+          'purchasing.supplierProducts.form.help.unitGrossWeight',
+          'Gross weight of one unit including its packaging — the G.W. column on the supplier’s sheet, in kg. Optional.',
+        ),
+        type: 'number',
+      },
+      {
         id: 'unitNetWeight',
         label: t('purchasing.supplierProducts.form.field.unitNetWeight', 'Unit net weight (kg)'),
-        description: t('purchasing.supplierProducts.form.help.unitNetWeight', 'Net weight of one unit, in kg.'),
+        description: t(
+          'purchasing.supplierProducts.form.help.unitNetWeight',
+          'Net weight of one unit, packaging excluded — the N.W. column on the supplier’s sheet, in kg. Optional.',
+        ),
+        type: 'number',
+      },
+      {
+        id: 'unitVolume',
+        label: t('purchasing.supplierProducts.form.field.unitVolume', 'Unit volume (cm³)'),
+        description: t(
+          'purchasing.supplierProducts.form.help.unitVolume',
+          'Volume of one unit in cm³, as the supplier prints it. Optional; not derived from the product size.',
+        ),
         type: 'number',
       },
       {
@@ -681,7 +779,7 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
         label: t('purchasing.supplierProducts.form.field.itemNo', 'Item no. (supplier’s own)'),
         description: t(
           'purchasing.supplierProducts.form.help.itemNo',
-          'The item number on the supplier’s own sheet; both codes stay visible when they differ.',
+          'Record the code the supplier prints, when they have one. Reference only — it never matches or generates a code.',
         ),
         type: 'text',
         maxLength: 120,
@@ -715,7 +813,7 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
         maxLength: 2000,
       },
     ]
-  }, [opts.supplierEditable, t])
+  }, [opts.masterProductId, opts.productId, opts.supplierEditable, t])
 }
 
 /**
@@ -729,18 +827,31 @@ function useSupplierProductFields(t: TranslateFn, opts: { supplierEditable: bool
  * shipment allocations). The row itself is container-responsive, so it also survives the single
  * column the form falls back to below `lg`.
  *
- * ERP-generic fields live in 商品标识 / 报关信息 / 价格 / 包装与单重; the fields that are transcriptions
- * of the supplier's own workbook live in 供应商原始资料. Keeping that split explicit is what lets a
- * buyer who never saw the workbook find a field by meaning instead of by column order.
+ * ERP-generic fields live in 商品标识 / 报关信息 / 价格 / 装箱、重量与体积; the fields that are
+ * transcriptions of the supplier's own workbook live in 供应商原始资料. Keeping that split explicit is
+ * what lets a buyer who never saw the workbook find a field by meaning instead of by column order.
  */
-function useSupplierProductGroups(t: TranslateFn, opts: { productId: string | null }): CrudFormGroup[] {
+function useSupplierProductGroups(
+  t: TranslateFn,
+  opts: { productId: string | null },
+): CrudFormGroup[] {
   return React.useMemo<CrudFormGroup[]>(
     () => [
       {
         id: 'goods',
         column: 1,
         title: t('purchasing.supplierProducts.form.group.goods', 'Goods identity'),
-        fields: ['supplierId', 'supplierName', 'supplierSku', 'name', 'nameZh', 'nameEn'],
+        fields: ['supplierId', 'supplierName', 'name', 'nameZh', 'nameEn'],
+      },
+      {
+        // The three that work together get their own card: 品牌（编码前缀）→ 类别 → 生成 → 商品 SKU.
+        // Beside the identity fields they read as unrelated, and the generated value looked like it
+        // belonged to another form (owner 2026-09-24: 「这三个功能模块，用一个卡片放置一起…让人清楚
+        // 他们是一起联动」). The SKU field itself carries the generator inside it.
+        id: 'code',
+        column: 1,
+        title: t('purchasing.supplierProducts.form.group.code', 'Product SKU and brand'),
+        fields: ['brandValue', 'supplierSku'],
       },
       {
         id: 'images',
@@ -758,13 +869,13 @@ function useSupplierProductGroups(t: TranslateFn, opts: { productId: string | nu
         id: 'prices',
         column: 1,
         bare: true,
-        component: (context) => <SupplierProductPriceRows {...context} t={t} />,
+        component: (context) => <SupplierProductPriceGroup {...context} t={t} />,
       },
       {
         id: 'packing',
         column: 2,
-        title: t('purchasing.supplierProducts.form.group.packing', 'Packing & unit weight'),
-        fields: ['cartonQuantity', 'unitNetWeight', 'moqQuantity'],
+        title: t('purchasing.supplierProducts.form.group.packing', 'Packing, weights & volume'),
+        fields: ['cartonQuantity', 'unitGrossWeight', 'unitNetWeight', 'unitVolume', 'moqQuantity'],
       },
       {
         id: 'innerPacking',
@@ -823,7 +934,7 @@ function SupplierProductCreateForm() {
   const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const fields = useSupplierProductFields(t, { supplierEditable: true })
+  const fields = useSupplierProductFields(t, { supplierEditable: true, productId: null, masterProductId: null })
   // No id yet: the photo group stages the picks and this form uploads them once the row exists.
   const groups = useSupplierProductGroups(t, { productId: null })
   // The library list links here with `?supplierId=` when the operator came from a supplier row,
@@ -959,7 +1070,8 @@ function SupplierProductCreateForm() {
 
 function SupplierProductEditForm({ productId }: { productId: string }) {
   const t = useT()
-  const fields = useSupplierProductFields(t, { supplierEditable: false })
+  const [masterProductId, setMasterProductId] = React.useState<string | null>(null)
+  const fields = useSupplierProductFields(t, { supplierEditable: false, productId, masterProductId })
   const groups = useSupplierProductGroups(t, { productId })
   const [initial, setInitial] = React.useState<SupplierProductFormValues | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -985,6 +1097,12 @@ function SupplierProductEditForm({ productId }: { productId: string }) {
           return
         }
         const values = toSupplierProductFormValues(item)
+        // The master link decides whether the code may still be retired: once promoted, the master's
+        // SKU must not diverge from the library row's.
+        if (!cancelled) {
+          const link = item.productId ?? item.product_id
+          setMasterProductId(typeof link === 'string' && link.length > 0 ? link : null)
+        }
         // The price list is a separate read: losing it must not hide the item itself, so a failure
         // degrades to "no rows loaded" plus a message the operator can act on.
         let prices: SupplierProductPriceRowValues[] = []

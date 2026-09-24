@@ -21,6 +21,8 @@ export type ProductRow = {
   hsCode: string | null
   unit: string | null
   netWeight: string | null
+  grossWeight: string | null
+  volume: string | null
   dimensions: Record<string, unknown> | null
   cartonQuantity: number | null
   categoryId: string | null
@@ -55,6 +57,8 @@ const PRODUCT_COLUMNS = [
   'hs_code',
   'unit',
   'net_weight',
+  'gross_weight',
+  'volume',
   'dimensions',
   'carton_quantity',
   'category_id',
@@ -70,6 +74,8 @@ type RawProductRow = {
   hs_code: string | null
   unit: string | null
   net_weight: string | null
+  gross_weight: string | null
+  volume: string | null
   dimensions: Record<string, unknown> | null
   carton_quantity: number | null
   category_id: string | null
@@ -86,6 +92,8 @@ function toProductRow(row: RawProductRow): ProductRow {
     hsCode: row.hs_code ?? null,
     unit: row.unit ?? null,
     netWeight: row.net_weight === null || row.net_weight === undefined ? null : String(row.net_weight),
+    grossWeight: row.gross_weight === null || row.gross_weight === undefined ? null : String(row.gross_weight),
+    volume: row.volume === null || row.volume === undefined ? null : String(row.volume),
     dimensions: row.dimensions ?? null,
     cartonQuantity: row.carton_quantity === null || row.carton_quantity === undefined ? null : Number(row.carton_quantity),
     categoryId: row.category_id ?? null,
@@ -183,6 +191,70 @@ export async function loadProductPrices(
     endsAt: toDateOnly(row.ends_at),
     isActive: row.is_active === true,
   }))
+}
+
+/** One product-master price cell, as the library list renders it. The tier is the query, not a field. */
+export type ProductTierPriceCell = {
+  currencyCode: string
+  unitPrice: string
+  minQuantity: number
+}
+
+/**
+ * The base price of one tier for many products, keyed by product id.
+ *
+ * The library list's 本公司报价 column reads the **master's** `internal`（内部结算价）tier since
+ * 2026-09-24: our own offer is a fact about the product, so the library shows it instead of keeping a
+ * second editable copy. Resolved for a whole page in one scoped query, exactly like the product
+ * labels, and "base" is the same rule the library's own price cells use — the lowest minimum quantity,
+ * with the currency code breaking ties (`lib/supplierProductPrices.ts`), so both columns read alike.
+ * Only active rows count: a withdrawn price must not be shown as current.
+ */
+export async function loadBaseTierPricesByProduct(
+  em: EntityManager,
+  scope: { tenantId: string; organizationId: string },
+  productIds: readonly string[],
+  priceTier: string,
+): Promise<Record<string, ProductTierPriceCell>> {
+  const byProduct: Record<string, ProductTierPriceCell> = {}
+  if (productIds.length === 0) return byProduct
+
+  const rows = (await (em.fork().getKysely<any>())
+    .selectFrom('products_prices')
+    .select(['product_id', 'currency_code', 'min_quantity', 'unit_price'])
+    .where('product_id', 'in', [...productIds])
+    .where('price_tier', '=', priceTier)
+    .where('is_active', '=', true)
+    .where('tenant_id', '=', scope.tenantId)
+    .where('organization_id', '=', scope.organizationId)
+    .orderBy('min_quantity')
+    .orderBy('currency_code')
+    .execute()) as Array<{
+    product_id: string
+    currency_code: string
+    min_quantity: number
+    unit_price: string
+  }>
+
+  for (const row of rows) {
+    const productId = String(row.product_id)
+    const candidate: ProductTierPriceCell = {
+      currencyCode: String(row.currency_code),
+      unitPrice: String(row.unit_price),
+      minQuantity: Number(row.min_quantity),
+    }
+    const current = byProduct[productId]
+    if (
+      !current ||
+      candidate.minQuantity < current.minQuantity ||
+      (candidate.minQuantity === current.minQuantity &&
+        candidate.currencyCode.localeCompare(current.currencyCode) < 0)
+    ) {
+      byProduct[productId] = candidate
+    }
+  }
+
+  return byProduct
 }
 
 export async function findCategoryByCode(

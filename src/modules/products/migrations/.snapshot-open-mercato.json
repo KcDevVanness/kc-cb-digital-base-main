@@ -1184,6 +1184,23 @@
           "collation": null,
           "enumItems": [],
           "mappedType": "datetime"
+        },
+        "volume": {
+          "name": "volume",
+          "type": "numeric(16,0)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": 16,
+          "scale": 0,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "decimal"
         }
       },
       "indexes": [

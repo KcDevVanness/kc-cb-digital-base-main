@@ -24,6 +24,8 @@ export type ProductFieldValues = {
   hsCode: string | null
   unit: string | null
   netWeight: string | null
+  grossWeight: string | null
+  volume: string | null
   dimensions: Record<string, unknown> | null
   cartonQuantity: number | null
 }
@@ -74,6 +76,8 @@ export function changedProductFields(
     hsCode: string | null
     unit: string | null
     netWeight: string | null
+    grossWeight: string | null
+    volume: string | null
     dimensions: Record<string, unknown> | null
     cartonQuantity: number | null
   },
@@ -86,6 +90,8 @@ export function changedProductFields(
   if (values.hsCode && values.hsCode !== current.hsCode) payload.hsCode = values.hsCode
   if (values.unit && values.unit !== current.unit) payload.unit = values.unit
   if (values.netWeight && Number(values.netWeight) !== Number(current.netWeight ?? Number.NaN)) payload.netWeight = values.netWeight
+  if (values.grossWeight && Number(values.grossWeight) !== Number(current.grossWeight ?? Number.NaN)) payload.grossWeight = values.grossWeight
+  if (values.volume && Number(values.volume) !== Number(current.volume ?? Number.NaN)) payload.volume = values.volume
   if (values.dimensions && JSON.stringify(values.dimensions) !== JSON.stringify(current.dimensions ?? null)) {
     payload.dimensions = values.dimensions
   }

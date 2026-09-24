@@ -63,6 +63,7 @@
   "products.items.form.field.countryOfOriginCode": "Country of origin",
   "products.items.form.field.netWeight": "Net weight",
   "products.items.form.field.grossWeight": "Gross weight",
+  "products.items.form.field.volume": "Volume (cm³)",
   "products.items.form.field.dimensions": "Product size",
   "products.items.form.field.length": "Length",
   "products.items.form.field.width": "Width",

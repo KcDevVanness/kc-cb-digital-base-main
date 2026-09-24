@@ -44,6 +44,7 @@ import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primiti
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { useCurrencyOptions, withCurrentCurrency } from '../../currency_policy/lib/clientOptions'
 import type {
   CollectionDocType,
@@ -209,14 +210,16 @@ function TextValue({ value }: { value: string | null | undefined }) {
   return value ? <>{value}</> : <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>
 }
 
-/** Amounts arrive already quantized to the currency scale — they are rendered, never re-rounded. */
+/**
+ * Amounts arrive already quantized to the currency scale — they are rendered, never re-rounded.
+ * A call site that knows the amount's own currency states it here and the amount then carries its
+ * `≈ ¥…` line; the ones that do not stay exactly as they rendered before, because naming a currency
+ * the record does not carry would be inventing one.
+ */
 function AmountValue({ value, currency }: { value: string | null; currency?: string | null }) {
   if (value === null) return <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>
-  return (
-    <span className="tabular-nums">
-      {currency ? `${value} ${currency}` : value}
-    </span>
-  )
+  if (!currency) return <span className="tabular-nums">{value}</span>
+  return <MoneyAmount currencyCode={currency} amount={value} />
 }
 
 /** Date-only columns are written as UTC midnight, so their day is read in the frame it was written in. */

@@ -24,6 +24,9 @@ import { hasFeature } from '@open-mercato/shared/security/features'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import SupplierProductLinkDialog from './SupplierProductLinkDialog'
+import { trimDecimalText } from '../lib/priceKinds'
+import { formatCurrency } from '@open-mercato/ui/utils/format'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import type { SupplierProductListRow, SupplierProductPriceCell, SupplierProductStatus } from '../types'
 
 const API_PATH = 'purchasing/supplier-products'
@@ -49,23 +52,6 @@ const STATUS_MAP: StatusMap<SupplierProductStatus> = {
 }
 
 type FilterValues = { supplierId?: string; status?: string; linked?: string }
-
-/** `CNY 12.50 (≥10)` — an unknown currency code falls back to `CODE amount` instead of throwing. */
-function formatPriceCell(cell: SupplierProductPriceCell | null): string {
-  if (!cell) return ''
-  const numeric = Number(cell.unitPrice)
-  const code = cell.currencyCode.trim().toUpperCase()
-  const amount = Number.isFinite(numeric)
-    ? (() => {
-        try {
-          return new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(numeric)
-        } catch {
-          return `${code} ${numeric.toFixed(2)}`
-        }
-      })()
-    : cell.unitPrice
-  return cell.minQuantity > 1 ? `${amount} (≥${cell.minQuantity})` : amount
-}
 
 const EMPTY_CELL = <span className="text-xs text-muted-foreground">—</span>
 
@@ -136,13 +122,32 @@ function buildColumns(
     },
     {
       id: 'supplierCostPrice',
-      accessorFn: (row) => row.supplierCostPrice?.unitPrice ?? '',
+      accessorFn: (row) => row.supplierCostPrice?.netUnitPrice ?? row.supplierCostPrice?.unitPrice ?? '',
       header: t('purchasing.supplierProducts.list.columns.supplierCostPrice', 'Supplier cost'),
       enableSorting: false,
       meta: { priority: 5, align: 'right' },
       cell: ({ row }) => {
-        const text = formatPriceCell(row.original.supplierCostPrice)
-        return text ? <span className="tabular-nums">{text}</span> : EMPTY_CELL
+        const cell = row.original.supplierCostPrice
+        if (!cell) return EMPTY_CELL
+        const net = cell.netUnitPrice ?? cell.unitPrice
+        const discount = row.original.discountPercent
+        // The list price is only worth a second line when a discount actually moved the number —
+        // otherwise the two figures are identical and the cell would read as a duplicate.
+        const discounted = Boolean(discount && cell.netUnitPrice && cell.netUnitPrice !== cell.unitPrice)
+        const ladder = cell.minQuantity > 1 ? `(≥${cell.minQuantity})` : undefined
+        return (
+          <div className="flex flex-col items-end">
+            <MoneyAmount currencyCode={cell.currencyCode} amount={net} suffix={ladder} className="items-end" />
+            {discounted ? (
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {t('purchasing.supplierProducts.list.costBreakdown', 'list {list} − {discount}%', {
+                  list: formatCurrency(cell.unitPrice, cell.currencyCode) ?? cell.unitPrice,
+                  discount: trimDecimalText(String(discount)),
+                })}
+              </span>
+            ) : null}
+          </div>
+        )
       },
     },
     {
@@ -150,10 +155,37 @@ function buildColumns(
       accessorFn: (row) => row.companyOfferPrice?.unitPrice ?? '',
       header: t('purchasing.supplierProducts.list.columns.companyOfferPrice', 'Our offer'),
       enableSorting: false,
-      meta: { priority: 6, align: 'right' },
+      // The amount, its `≈ ¥…` line and a fixed legend («取自商品档案（内部结算价）», 156px) stack in one
+      // right-aligned cell. `DataTable` truncates every column at 150px unless told otherwise, and its
+      // overflow tooltip never fires for this shape — the truncation wrapper itself does not scroll, the
+      // child does — so the legend silently lost its head. Truncation is off here and the cell below is
+      // unbreakable, which lets the column size to its widest line.
+      meta: { priority: 6, align: 'right', truncate: false },
       cell: ({ row }) => {
-        const text = formatPriceCell(row.original.companyOfferPrice)
-        return text ? <span className="tabular-nums">{text}</span> : EMPTY_CELL
+        const cell = row.original.companyOfferPrice
+        if (!cell) return EMPTY_CELL
+        // Since 2026-09-24 this column reads the linked product's 内部结算价; a library `company_offer`
+        // stored before that change still shows, labelled so the two origins are never confused — and
+        // the product-sourced case says where the number is edited, because the entry point moved off
+        // this page.
+        const legacy = row.original.companyOfferSource === 'library'
+        return (
+          // One line per figure and one for the legend: nothing in this cell may wrap, so the column
+          // sizes to its widest line instead of squeezing a figure or a label into two.
+          <div className="flex flex-col items-end whitespace-nowrap">
+            <MoneyAmount
+              currencyCode={cell.currencyCode}
+              amount={cell.unitPrice}
+              suffix={cell.minQuantity > 1 ? `(≥${cell.minQuantity})` : undefined}
+              className="items-end"
+            />
+            <span className="text-xs text-muted-foreground">
+              {legacy
+                ? t('purchasing.supplierProducts.list.offerLegacy', 'legacy library value')
+                : t('purchasing.supplierProducts.list.offerFromProduct', 'from the product record')}
+            </span>
+          </div>
+        )
       },
     },
     {

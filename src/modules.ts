@@ -187,13 +187,9 @@ export const enabledModules: ModuleEntry[] = [
     overrides: {
       routes: {
         pages: {
-          '/backend/config/currency-fetching': { metadata: { navHidden: true } },
           '/backend/currencies': { metadata: { navHidden: true } },
-          '/backend/exchange-rates': { metadata: { navHidden: true } },
           '/backend/currencies/[id]': { metadata: { navHidden: true } },
           '/backend/currencies/create': { metadata: { navHidden: true } },
-          '/backend/exchange-rates/[id]': { metadata: { navHidden: true } },
-          '/backend/exchange-rates/create': { metadata: { navHidden: true } },
         },
       },
     },
@@ -245,8 +241,9 @@ enabledModules.push({
   id: 'purchasing',
   from: '@app',
   // Sidebar group order is a single app-wide decision: the six business-role groups come first,
-  // every installed group keeps its existing position after them.
-  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group', 'export_finance.nav.group', 'products.nav.group', 'parties.nav.group', 'platform_ops.nav.group'] } },
+  // then the 基础数据 vocabulary group (the dictionary library's main-menu entry), and every
+  // installed group keeps its existing position after them.
+  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group', 'export_finance.nav.group', 'products.nav.group', 'parties.nav.group', 'platform_ops.nav.group', 'master_data.nav.group'] } },
 })
 
 // App-owned cross-border module — consignments (shipments) that combine purchase orders, their
@@ -266,6 +263,10 @@ enabledModules.push({ id: 'platform_ops', from: '@app' })
 // App-owned products module — the business product master (types, category tree, products and
 // the three price tiers). See .ai/specs/2026-09-22-products-and-trade-docs.md
 enabledModules.push({ id: 'products', from: '@app' })
+
+// App-owned product-codes module — the code rules, the issuance ledger and the parser behind the
+// supplier library's 生成 button. See .ai/specs/2026-09-24-supplier-product-code-rules.md
+enabledModules.push({ id: 'product_codes', from: '@app' })
 
 // App-owned sourcing module — supplier quotations (imported from supplier workbooks or typed by
 // hand), reusable column-mapping profiles, and the promotion of selected lines into the product

@@ -62,6 +62,27 @@ describe('purchasing supplier product validators', () => {
     ).toBe(false)
   })
 
+  it('takes the piece volume as whole cm³ and keeps the weight pair at four decimals', () => {
+    const base = {
+      supplierId: '11111111-1111-4111-8111-111111111111',
+      supplierSku: 'P4108',
+      name: 'Eversweet 3 Pro',
+    }
+    const parsed = supplierProductCreateSchema.parse({
+      ...base,
+      unitNetWeight: '1.28',
+      unitGrossWeight: '1.84',
+      unitVolume: '88642',
+    })
+    expect(parsed.unitNetWeight).toBe('1.28')
+    expect(parsed.unitGrossWeight).toBe('1.84')
+    expect(parsed.unitVolume).toBe('88642')
+    // All three are optional, and a fractional cm³ is an input error rather than a value to round.
+    expect(supplierProductCreateSchema.parse(base).unitVolume).toBeUndefined()
+    expect(supplierProductCreateSchema.safeParse({ ...base, unitVolume: '88642.5' }).success).toBe(false)
+    expect(supplierProductCreateSchema.safeParse({ ...base, unitVolume: '-1' }).success).toBe(false)
+  })
+
   it('never lets the owning supplier travel in an update', () => {
     const parsed = supplierProductUpdateSchema.parse({
       id: '11111111-1111-4111-8111-111111111111',
@@ -95,6 +116,44 @@ describe('purchasing supplier product validators', () => {
       supplierProductImportSchema.safeParse({
         quoteId,
         lineIds: Array.from({ length: 201 }, () => quoteId),
+      }).success,
+    ).toBe(false)
+  })
+
+  it('bounds the item-level discount to a whole 0–100 percentage', () => {
+    const base = {
+      supplierId: '11111111-1111-4111-8111-111111111111',
+      supplierSku: 'P4108',
+      name: 'Eversweet 3 Pro',
+    }
+    expect(supplierProductCreateSchema.parse({ ...base, discountPercent: '5' }).discountPercent).toBe('5')
+    // 100 % is a (strange but legal) contract; the boundaries themselves are accepted.
+    expect(supplierProductCreateSchema.parse({ ...base, discountPercent: '100' }).discountPercent).toBe('100')
+    expect(supplierProductCreateSchema.parse({ ...base, discountPercent: '0' }).discountPercent).toBe('0')
+    // Blank and null both mean "no discount": a blank field arrives as `null` (the form's
+    // `nullableDecimalText`), and a field that was **not sent at all** stays absent so a partial
+    // update cannot clear the columns it did not mention — the update command writes only
+    // `!== undefined` values.
+    expect(supplierProductCreateSchema.parse(base).discountPercent).toBeUndefined()
+    expect(supplierProductCreateSchema.parse({ ...base, discountPercent: null }).discountPercent).toBeNull()
+    // An empty string is not a number: the form's payload builder maps a blank field to `null`
+    // (`nullableDecimalText`), which is the shape the wire contract accepts for "cleared".
+    expect(supplierProductCreateSchema.safeParse({ ...base, discountPercent: '' }).success).toBe(false)
+
+    // The rate is a whole percent (owner rule 2026-09-24): a fraction is a typo, not a term, so it is
+    // refused instead of being rounded into a discount nobody agreed to.
+    expect(supplierProductCreateSchema.safeParse({ ...base, discountPercent: '3.75' }).success).toBe(false)
+    expect(supplierProductCreateSchema.safeParse({ ...base, discountPercent: '0.5' }).success).toBe(false)
+    expect(supplierProductCreateSchema.safeParse({ ...base, discountPercent: '100.0001' }).success).toBe(false)
+    expect(supplierProductCreateSchema.safeParse({ ...base, discountPercent: '101' }).success).toBe(false)
+    expect(supplierProductCreateSchema.safeParse({ ...base, discountPercent: '-1' }).success).toBe(false)
+    expect(supplierProductCreateSchema.safeParse({ ...base, discountPercent: '5.12345' }).success).toBe(false)
+    expect(
+      supplierProductUpdateSchema.safeParse({
+        id: '22222222-2222-4222-8222-222222222222',
+        supplierSku: 'P4108',
+        name: 'Eversweet 3 Pro',
+        discountPercent: '101',
       }).success,
     ).toBe(false)
   })

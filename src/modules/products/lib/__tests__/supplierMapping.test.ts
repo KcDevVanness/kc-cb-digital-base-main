@@ -15,6 +15,8 @@ describe('supplierMapping', () => {
     hsCode: null,
     unit: null,
     netWeight: null,
+    grossWeight: null,
+    volume: null,
     dimensions: null,
     cartonQuantity: null,
   }
@@ -33,11 +35,11 @@ describe('supplierMapping', () => {
   it('never sends an empty value over an existing product field', () => {
     expect(changedProductFields(EMPTY_PRODUCT, {
       name: null, nameEn: null, specSummary: null, hsCode: null, unit: null, netWeight: null,
-      dimensions: null, cartonQuantity: null,
+      grossWeight: null, volume: null, dimensions: null, cartonQuantity: null,
     })).toEqual({})
     const values = {
       name: 'New name', nameEn: null, specSummary: null, hsCode: null, unit: null, netWeight: null,
-      dimensions: null, cartonQuantity: null,
+      grossWeight: null, volume: null, dimensions: null, cartonQuantity: null,
     }
     expect(changedProductFields({ ...EMPTY_PRODUCT, name: 'Old name' }, values)).toEqual({ name: 'New name' })
     expect(changedProductFields({ ...EMPTY_PRODUCT, name: 'New name' }, values)).toEqual({})
@@ -46,16 +48,22 @@ describe('supplierMapping', () => {
   it('compares decimal strings numerically instead of textually', () => {
     const values = {
       name: null, nameEn: null, specSummary: null, hsCode: null, unit: null, netWeight: '1.28',
-      dimensions: null, cartonQuantity: null,
+      grossWeight: '1.8400', volume: '88642', dimensions: null, cartonQuantity: null,
     }
-    expect(changedProductFields({ ...EMPTY_PRODUCT, netWeight: '1.2800' }, values)).toEqual({})
-    expect(changedProductFields({ ...EMPTY_PRODUCT, netWeight: '0.9000' }, values)).toEqual({ netWeight: '1.28' })
+    expect(changedProductFields({
+      ...EMPTY_PRODUCT, netWeight: '1.2800', grossWeight: '1.8400', volume: '88642',
+    }, values)).toEqual({})
+    expect(changedProductFields({ ...EMPTY_PRODUCT, netWeight: '0.9000', grossWeight: null }, values)).toEqual({
+      netWeight: '1.28',
+      grossWeight: '1.8400',
+      volume: '88642',
+    })
   })
 
   it('sends a carton quantity only when it differs from the stored one', () => {
     const values = {
       name: null, nameEn: null, specSummary: null, hsCode: null, unit: null, netWeight: null,
-      dimensions: null, cartonQuantity: 12,
+      grossWeight: null, volume: null, dimensions: null, cartonQuantity: 12,
     }
     expect(changedProductFields({ ...EMPTY_PRODUCT, cartonQuantity: 12 }, values)).toEqual({})
     expect(changedProductFields({ ...EMPTY_PRODUCT, cartonQuantity: 6 }, values)).toEqual({ cartonQuantity: 12 })

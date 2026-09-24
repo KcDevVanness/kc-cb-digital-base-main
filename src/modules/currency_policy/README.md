@@ -16,6 +16,12 @@ app 自有模块，**无实体、无 UI、无迁移，但有一个只读路由**
 | `setup.ts` | `seedDefaults`：由框架在模块启用时调用 |
 | `cli.ts` | 手工重跑入口（不依赖重新播种），子命令 `apply` |
 | `api/currencies/route.ts` | `GET /api/currency_policy/currencies`：选币器数据源，门禁 `currencies.view` |
+| `api/rates/route.ts` + `lib/rateLookup.ts` | `GET /api/currency_policy/rates`：**CNY 换算显示**的只读汇率（库内最新一条，方向优先 `X→CNY`，缺失时倒数 `CNY→X`；无汇率即不返回），门禁 `currencies.view` |
+| `lib/providers/openErApi.ts` + `di.ts` | app 自有汇率 provider（source `OPEN_ER_API`，CNY 基准，覆盖全部 15 个外币），注册进安装层 provider 注册表；`lib/rateFetchConfig.ts` 为每个组织播一行抓取配置 |
+| `cli.ts` | `apply`（既有）+ **`fetch-rates`**：解析容器里的 `rateFetchingService`（因此带上注册表里的 `OPEN_ER_API`），供 cron 调用；安装层 CLI 不读注册表 |
+| `data/enrichers.ts` | `sales:sales_order` 的 `_currency_policy.cnyEquivalent`，供安装层销售订单表读 |
+| `widgets/injection/sales-order-cny/` + `widgets/injection-table.ts` | 注入安装层销售订单表的「折合人民币」列（`data-table:sales.orders:columns`） |
+| `i18n/{zh,en}.json` | 注入列的表头 key（zh 折合人民币 / en In CNY） |
 | `index.ts` | 模块元数据（`requires: currencies, dictionaries, customers`） |
 
 ## 唯一的路由

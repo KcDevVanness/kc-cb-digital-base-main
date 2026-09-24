@@ -69,6 +69,8 @@
   "dictionaries.config.list.inherited": "继承",
   "dictionaries.config.list.loading": "正在加载字典…",
   "dictionaries.config.list.title": "字典",
+  "master_data.nav.group": "基础数据",
+  "dictionaries.masterData.nav.title": "字典维护",
   "dictionaries.config.nav.title": "字典",
   "dictionaries.config.sortModes.createdAtAsc": "最早优先",
   "dictionaries.config.sortModes.createdAtDesc": "最新优先",
