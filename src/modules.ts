@@ -241,8 +241,9 @@ enabledModules.push({
   id: 'purchasing',
   from: '@app',
   // Sidebar group order is a single app-wide decision: the six business-role groups come first,
-  // every installed group keeps its existing position after them.
-  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group', 'export_finance.nav.group', 'products.nav.group', 'parties.nav.group', 'platform_ops.nav.group'] } },
+  // then the 基础数据 vocabulary group (the dictionary library's main-menu entry), and every
+  // installed group keeps its existing position after them.
+  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group', 'export_finance.nav.group', 'products.nav.group', 'parties.nav.group', 'platform_ops.nav.group', 'master_data.nav.group'] } },
 })
 
 // App-owned cross-border module — consignments (shipments) that combine purchase orders, their
