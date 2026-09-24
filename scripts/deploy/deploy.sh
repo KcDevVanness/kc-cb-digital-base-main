@@ -51,8 +51,18 @@ echo "now at $(git log --oneline -1)"
 # preference to any value in .env — that is what makes the tag immutable.
 export APP_IMAGE
 
+# The app image is ~8.6 GB against a 28 GB root volume, so superseded images
+# have to go *before* the pull or the pull fills the disk. The image backing the
+# running container is referenced and therefore untouched — a failed pull still
+# leaves a rollback target in place.
+log "reclaim disk before pull"
+docker image prune -af | tail -1
+df -h / | tail -1
+
 log "pull ${APP_IMAGE}"
-compose pull --quiet app
+# Not --quiet: an 8.6 GB pull is minutes of silence, and a silent SSH session is
+# what a NAT or load balancer drops. Progress lines double as keepalive traffic.
+compose pull app
 
 log "up -d"
 compose up -d --remove-orphans
@@ -77,9 +87,8 @@ while :; do
 done
 
 log "reclaim disk"
-# The running image is still referenced by its container, so this only drops
-# superseded tags. The host has a 28 GB root volume shared with Postgres data.
-docker image prune -af --filter "until=24h" >/dev/null 2>&1 || true
+# The image the replaced container used is unreferenced now.
+docker image prune -af | tail -1
 df -h / | tail -1
 
 # Informational, not a gate: on a first deploy the certificate may still be

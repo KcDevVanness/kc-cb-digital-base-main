@@ -97,22 +97,20 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           TARGET_SHA: ${{ github.sha }}
           APP_IMAGE: ${{ needs.build.outputs.image }}
-          GHCR_ACTOR: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # GHCR packages default to private, and `deploy.sh` pulls on the host.
-          # GITHUB_TOKEN is scoped to this repository and this run, so the login
-          # is piped straight into `--password-stdin` — it never lands in argv,
-          # a file, or the shell history of the host. A login failure is only a
-          # warning: `compose pull` is the real gate and reports loudly if the
-          # package genuinely needs credentials.
-          printf '%s' "$GHCR_TOKEN" \
-            | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
-                "${DEPLOY_USER}@${DEPLOY_HOST}" \
-                "docker login ghcr.io -u '${GHCR_ACTOR}' --password-stdin" \
-            || echo "::warning::ghcr login failed; continuing (package may be public)"
-
+          # ServerAliveInterval matters: an 8.6 GB image pull is minutes of
+          # near-idle traffic, and the first version of this job died at
+          # `client_loop: send disconnect: Broken pipe` because the session had
+          # nothing to carry.
+          #
+          # No `docker login` step: the GHCR package is publicly pullable (the
+          # initial deploy pulled it with no credentials at all), and logging in
+          # left a GITHUB_TOKEN in the host's ~/.docker/config.json that expired
+          # with the run and then *broke* later pulls with `denied`. If the
+          # package is ever made private, the host needs a long-lived
+          # credential instead — not this job's token.
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+              -o ServerAliveInterval=15 -o ServerAliveCountMax=20 \
               "${DEPLOY_USER}@${DEPLOY_HOST}" \
               "TARGET_SHA='${TARGET_SHA}' APP_IMAGE='${APP_IMAGE}' APP_DIR='${APP_DIR}' bash -s" \
               < scripts/deploy/deploy.sh
