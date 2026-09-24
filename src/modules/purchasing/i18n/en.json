@@ -314,5 +314,6 @@
   "purchasing.supplierProducts.list.costBreakdown": "list {list} − {discount}%",
   "purchasing.supplierProducts.list.offerLegacy": "legacy library value",
   "purchasing.supplierProducts.list.offerFromProduct": "from the product record (internal price)",
-  "purchasing.errors.loadFailed": "Loading failed"
+  "purchasing.errors.loadFailed": "Loading failed",
+  "purchasing.suppliers.form.help.code": "Issued automatically when the supplier is created."
 }

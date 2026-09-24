@@ -314,5 +314,6 @@
   "purchasing.supplierProducts.list.costBreakdown": "报价 {list} − {discount}%",
   "purchasing.supplierProducts.list.offerLegacy": "产品库历史值",
   "purchasing.supplierProducts.list.offerFromProduct": "取自商品档案（内部结算价）",
-  "purchasing.errors.loadFailed": "加载失败"
+  "purchasing.errors.loadFailed": "加载失败",
+  "purchasing.suppliers.form.help.code": "系统自动发号，无需填写。"
 }

@@ -263,6 +263,10 @@ enabledModules.push({ id: 'platform_ops', from: '@app' })
 // the three price tiers). See .ai/specs/2026-09-22-products-and-trade-docs.md
 enabledModules.push({ id: 'products', from: '@app' })
 
+// App-owned product-codes module — the code rules, the issuance ledger and the parser behind the
+// supplier library's 生成 button. See .ai/specs/2026-09-24-supplier-product-code-rules.md
+enabledModules.push({ id: 'product_codes', from: '@app' })
+
 // App-owned sourcing module — supplier quotations (imported from supplier workbooks or typed by
 // hand), reusable column-mapping profiles, and the promotion of selected lines into the product
 // master; the promotion also feeds the supplier library through `purchasing`'s commands. See

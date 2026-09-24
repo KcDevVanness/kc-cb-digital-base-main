@@ -94,12 +94,19 @@ const pageSizeSchema = z.coerce.number().min(1).max(200).default(50)
  */
 export const supplierCreateSchema = z.object({
   name: z.string().min(1).max(200),
-  code: z.string().min(1).max(64),
+  /**
+   * Our own supplier number. Omitted or blank → `purchasing.suppliers.create` issues the next
+   * `SUP-####` for the organization (see `.ai/specs/2026-09-24-supplier-code-issuance.md`); an
+   * explicit value is stored as typed, which keeps imports and integrations on the old contract.
+   */
+  code: z.string().trim().max(64).optional(),
   contactName: z.string().max(200).nullable().optional(),
   phone: z.string().max(64).nullable().optional(),
   email: z.string().max(200).nullable().optional(),
   address: z.string().max(1000).nullable().optional(),
   defaultCurrencyCode: currencyCodeSchema.default('CNY'),
+  /** Default brand for this supplier's library rows; see `PurchasingSupplier.brandValue`. */
+  brandValue: z.string().trim().max(64).nullable().optional(),
   isActive: z.boolean().default(true),
   notes: z.string().max(2000).nullable().optional(),
 })
