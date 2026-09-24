@@ -2,8 +2,9 @@
 
 ## 适用范围
 
-本仓的镜像构建、启动入口、Railway / Docker Compose 两种部署形态、以及生产启动守卫。
-具体云账号、域名、密钥值不在本文范围。
+本仓的镜像构建、启动入口、Railway / Docker Compose / AWS 三种部署形态、以及生产启动守卫。
+具体云账号、域名、密钥值不在本文范围；`production` 分支的发布流水线与主机契约见
+[cicd.md](./cicd.md)。
 
 ## 镜像构建（`Dockerfile`）
 
@@ -14,6 +15,15 @@
 | `builder` | `yarn install` → `yarn generate` → `NODE_ENV=production yarn build` | `.mercato/next`（Next 构建产物） |
 | `dev` | 只装依赖，`CMD` 走 `docker/scripts/dev-entrypoint.sh` | 容器内跑 dev（`EXPOSE 3000 4101`） |
 | `runner` | `yarn workspaces focus --all --production`，从 builder 拷 `.mercato/next`、`src`、`scripts`、`public`、`types`、配置 | 生产镜像，`CMD ["yarn","start"]` |
+
+runner 阶段的**层纪律**（改动前请先读这段，否则镜像会膨胀到 8.6 GB）：
+
+- `omuser` 在装依赖**之前**创建，`chown` 与 `yarn cache clean` 与 `yarn workspaces focus`
+  写在**同一条 RUN** 里。拆成后面的独立 RUN 会各留下一整份副本：实测
+  `RUN adduser ... && chown -R omuser:omuser /app` 单独成层时占 **2.51 GB**
+  （写时复制把整个 node_modules 又抄了一遍），残留的 Yarn 全局缓存占 **1.3 GB**
+- 后续 `COPY --from=builder` 一律带 `--chown=omuser:omuser`，不要再补 `chown -R`
+- 净效果：`/app` 实际内容 2.3 GB，镜像 8.6 GB → 约 4.8 GB
 
 要点：
 
@@ -33,6 +43,7 @@
 | Railway（Web） | `sh ./scripts/railway-start.sh` | 设 `CACHE_STRATEGY=redis`、`QUEUE_STRATEGY=async` → 跑 `docker/scripts/init-or-migrate.sh` → `.mercato/generated` 缺失则 `yarn generate` → `yarn start` |
 | Railway（Worker） | `sh ./scripts/railway-worker.sh` | 同上，但 `AUTO_SPAWN_WORKERS=false`，最后 `yarn mercato queue worker --all` |
 | Docker Compose（全栈） | `docker-compose.fullapp.yml` 的 app 服务 | `init-or-migrate.sh` → `yarn start` |
+| AWS（`production` 分支） | `docker-compose.deploy.yml` 的 app 服务 | 同上，但 `image:` 来自 GHCR，主机不构建 |
 
 Web 与 Worker 用**同一个镜像**，只有启动命令不同。Worker 必须显式关掉自动拉起（两个
 环境变量都要设，框架里两份都读），否则会与独立 Worker 抢队列。
