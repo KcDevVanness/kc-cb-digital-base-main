@@ -117,17 +117,6 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
 }
 
-/** `CNY 12.500000` for the CSV/XLSX export, where a nested object would print as `[object Object]`. */
-function formatPriceCell(cell: unknown, amountField: 'unitPrice' | 'netUnitPrice' = 'unitPrice'): string {
-  if (!cell || typeof cell !== 'object') return ''
-  const record = cell as Partial<SupplierProductPriceCell>
-  const currencyCode = record.currencyCode
-  const amount = record[amountField]
-  if (!currencyCode || amount === undefined || amount === null) return ''
-  const ladder = record.minQuantity && record.minQuantity > 1 ? ` (≥${record.minQuantity})` : ''
-  return `${currencyCode} ${amount}${ladder}`
-}
-
 // `updated_at` is part of the projection because the optimistic-lock round trip needs it:
 // `CrudForm` derives the expected-version header from `initialValues.updatedAt`.
 const listFields = [
@@ -240,6 +229,11 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
      * CSV/JSON export columns. The factory takes a static `header` string — there is no per-request
      * locale on this seam — so the export stays in one language (English, like most of its columns)
      * instead of mixing Chinese and English in the same header row.
+     *
+     * Only columns the row itself carries: the export body is serialized **before** `afterList` runs,
+     * so the price cells this route attaches for the page (one scoped query per list) are not available
+     * here — a `supplierCostPrice` column printed an empty cell on every row. Prices stay on the list
+     * and on `GET /api/purchasing/supplier-products/prices`.
      */
     export: {
       columns: [
@@ -255,21 +249,6 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         { field: 'hsCode', header: 'HS code' },
         { field: 'declarationElements', header: 'Declaration elements' },
         { field: 'discountPercent', header: 'Discount %' },
-        {
-          field: 'supplierCostPrice',
-          header: 'Supplier cost (net)',
-          resolve: (item: Record<string, unknown>) => formatPriceCell(item.supplierCostPrice, 'netUnitPrice'),
-        },
-        {
-          field: 'supplierCostListPrice',
-          header: 'Supplier list price',
-          resolve: (item: Record<string, unknown>) => formatPriceCell(item.supplierCostPrice),
-        },
-        {
-          field: 'companyOfferPrice',
-          header: 'Our offer (internal)',
-          resolve: (item: Record<string, unknown>) => formatPriceCell(item.companyOfferPrice),
-        },
         { field: 'status' },
         { field: 'updatedAt', header: 'Updated At' },
       ],
