@@ -28,6 +28,11 @@ env:
 jobs:
   build:
     name: build
+    # `workflow_dispatch` can be aimed at any ref. The push trigger is already
+    # branch-scoped; this makes the manual path match it, so dispatching from
+    # main cannot spend ten minutes building an image nobody deploys. The deploy
+    # job needs this one, so it is skipped along with it.
+    if: github.ref == 'refs/heads/production'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
