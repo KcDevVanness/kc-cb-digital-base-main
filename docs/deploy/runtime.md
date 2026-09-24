@@ -16,6 +16,15 @@
 | `dev` | 只装依赖，`CMD` 走 `docker/scripts/dev-entrypoint.sh` | 容器内跑 dev（`EXPOSE 3000 4101`） |
 | `runner` | `yarn workspaces focus --all --production`，从 builder 拷 `.mercato/next`、`src`、`scripts`、`public`、`types`、配置 | 生产镜像，`CMD ["yarn","start"]` |
 
+runner 阶段的**层纪律**（改动前请先读这段，否则镜像会膨胀到 8.6 GB）：
+
+- `omuser` 在装依赖**之前**创建，`chown` 与 `yarn cache clean` 与 `yarn workspaces focus`
+  写在**同一条 RUN** 里。拆成后面的独立 RUN 会各留下一整份副本：实测
+  `RUN adduser ... && chown -R omuser:omuser /app` 单独成层时占 **2.51 GB**
+  （写时复制把整个 node_modules 又抄了一遍），残留的 Yarn 全局缓存占 **1.3 GB**
+- 后续 `COPY --from=builder` 一律带 `--chown=omuser:omuser`，不要再补 `chown -R`
+- 净效果：`/app` 实际内容 2.3 GB，镜像 8.6 GB → 约 4.8 GB
+
 要点：
 
 - runner 以非 root 用户 `omuser`（uid `1001`）运行

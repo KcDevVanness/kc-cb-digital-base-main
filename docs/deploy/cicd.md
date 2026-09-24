@@ -42,6 +42,11 @@ push production ─┬─ build  ── docker build --target runner ──▶ g
 - `concurrency: deploy-production` 且 `cancel-in-progress: false`：正在跑的部署必须跑完，
   否则会停在 `up -d` 中间
 - 构建缓存走 GitHub Actions cache（`type=gha`），首次构建后重复构建显著变快
+- **只改部署侧文件时跳过构建**：`build` 阶段先 `git diff` 本次推送范围，若改动全部落在
+  `.github/`、`docs/`、`*.md`、`docker-compose.deploy.yml`、`docker/caddy/`、`scripts/deploy/`
+  之内，就复用已有的 `:production` 镜像，省掉约 11 分钟。判定是**白名单**（不在名单里就重建），
+  所以新增源码目录只会多花时间，不会上线过期镜像。跳过构建时 `deploy` 仍会跑，
+  因为 compose 与 Caddyfile 的改动需要被应用
 
 ## 主机契约
 
@@ -115,6 +120,32 @@ ssh -i <key> ubuntu@<host> 'bash -s' < set-domain.sh app.example.com
 
 `set-domain.sh` 只改公网相关的三行，**不重新生成密钥**——数据库已经用当前的
 `POSTGRES_PASSWORD` 初始化过了，整体重生成会把应用锁在自己的数据外面。
+
+## 磁盘机制（28 GB 根卷）
+
+镜像本身就是最大的一块，所以机制分两层：**让镜像小**，和**不让旧镜像堆积**。
+
+**1. 镜像大小** —— 见 [runtime.md](./runtime.md) 的「runner 阶段的层纪律」，当前约 4.8 GB。
+改 runner 阶段时不要把 `yarn cache clean` 和 `chown` 拆成独立的 RUN，否则立刻涨回 8.6 GB。
+
+**2. 部署脚本的磁盘动作**（`scripts/deploy/deploy.sh`，顺序即机制）：
+
+| 时机 | 动作 | 为什么 |
+|---|---|---|
+| 拉取前 | `docker image prune -af` | 清掉被取代的旧镜像。运行中容器的镜像被引用、**不会被删**，所以拉取失败仍留有回滚目标 |
+| 拉取前 | 空间预检 | 以当前镜像大小 ×1.15 估算需求，不够就直接失败。填满根卷会连带把 Postgres 拖死，比部署失败更糟 |
+| 启动后 | `docker image prune -af` | 此时被替换的镜像已无容器引用，回收它 |
+| 结束 | 打印 `df -h /` | 每次部署都留下磁盘证据 |
+
+**刻意不保留上一版镜像做回滚**：28 GB 装不下「两份镜像 + 一份正在拉取的新镜像」。
+回滚靠重新拉取对应 SHA 的镜像，而不是靠本地缓存。
+
+**3. 容器日志上限** —— `docker-compose.deploy.yml` 里所有服务都设了
+`json-file` + `max-size=10m` + `max-file=3`（每容器上限 30 MB）。默认驱动**没有上限**，
+而这个应用日志量不小，长期运行会慢慢吃满卷。
+
+**4. 数据面** —— Postgres / Redis / Meilisearch 都在命名卷里。`docker image prune` 和
+不带 `--volumes` 的 `docker system prune` 都不会碰它们。**永远不要加 `--volumes`。**
 
 ## 回滚
 
