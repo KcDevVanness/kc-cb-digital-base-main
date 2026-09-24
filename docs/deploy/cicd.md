@@ -147,6 +147,53 @@ ssh -i <key> ubuntu@<host> 'bash -s' < set-domain.sh app.example.com
 **4. 数据面** —— Postgres / Redis / Meilisearch 都在命名卷里。`docker image prune` 和
 不带 `--volumes` 的 `docker system prune` 都不会碰它们。**永远不要加 `--volumes`。**
 
+## 用另一个环境的数据替换线上库（review 用）
+
+**前提：线上部署的必须是数据来源的那条分支。** dump 里带着源应用所有模块的表，部署一个更小的
+应用，那些数据就没有界面可达——实测 `main` 只有 48 张框架表 / 9 个模块，
+`feat/cross-border-erp` 有 195 张表 / 27 个模块。
+
+**必须对齐加密密钥。** 加密列与带 pepper 的查找哈希只有在
+`TENANT_DATA_ENCRYPTION_FALLBACK_KEY` / `LOOKUP_HASH_PEPPER` 与源环境一致时才读得出来。
+
+```bash
+# 1. 源环境导出
+docker exec <postgres容器> pg_dump -U postgres -Fc <db> > local-db.dump
+
+# 2. 传到主机
+scp local-db.dump ubuntu@<host>:/tmp/local-db.dump
+
+# 3. 对齐密钥（走文件传递，值不进 argv、不进 shell history）
+scp align-secrets.txt ubuntu@<host>:/tmp/ && \
+ssh ubuntu@<host> 'bash scripts/deploy/align-secrets.sh /tmp/align-secrets.txt'
+
+# 4. 替换数据库：自动做安全备份 → 停 app → DROP/CREATE 库 → 还原 → 起 app
+ssh ubuntu@<host> 'bash scripts/deploy/restore-db-from-dump.sh /tmp/local-db.dump'
+```
+
+附件字节不在库里，要单独搬：
+
+```bash
+# macOS 的 bsdtar 会把扩展属性写成 ._* 实体文件，必须关掉，否则会多出成百个孤儿文件
+COPYFILE_DISABLE=1 tar cf - -C <源>/storage attachments \
+  | ssh <host> 'docker run --rm -i -v kc-cb-digital-base_attachments_storage:/dest redis:7-alpine tar xf - -C /dest'
+```
+
+搬完核对：文件数与路径清单 md5 应与源一致。
+
+```bash
+find attachments -type f ! -name '._*' | sort | md5sum     # 源
+sudo find /var/lib/docker/volumes/kc-cb-digital-base_attachments_storage/_data \
+  -type f ! -name '._*' | sed 's|.*/_data/||' | sort | md5sum   # 主机，应相同
+```
+
+**孤儿文件会被判为不一致**：`storage_ops audit` 的 C-7 要求磁盘与表严格对应，
+`._*` 这类文件必须在搬完后删除。
+
+**安全边界**：本地库的 `TENANT_DATA_ENCRYPTION_FALLBACK_KEY` 常常就是 `.env.example` 里那个
+**公开占位值**。对齐密钥等于让 review 环境也用这个公开值——**该环境因此不能承载真实敏感数据**。
+review 结束后应换回独立密钥并重新初始化。
+
 ## 回滚
 
 镜像按 SHA 打标签，回滚 = 把 `production` 指回上一个好提交：
