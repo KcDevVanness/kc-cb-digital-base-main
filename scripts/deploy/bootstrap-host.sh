@@ -110,11 +110,11 @@ ADMIN_EMAIL=${ADMIN_EMAIL}
 OM_INIT_SUPERADMIN_EMAIL=${ADMIN_EMAIL}
 OM_INIT_SUPERADMIN_PASSWORD=${ADMIN_PASSWORD}
 
-# Small instance: keep V8, the pg pool and redis proportional to real RAM.
-# Raise these together with the instance size.
-NODE_OPTIONS=--max-old-space-size=1024
-DB_POOL_MAX=5
-REDIS_MAXMEMORY=128mb
+# Sized for a t3.large (2 vCPU / 8 GB). Raise these together with the instance
+# size, otherwise V8 hits its heap ceiling while RAM is still free.
+NODE_OPTIONS=--max-old-space-size=3072
+DB_POOL_MAX=20
+REDIS_MAXMEMORY=512mb
 EOF
   chmod 600 .env
 
