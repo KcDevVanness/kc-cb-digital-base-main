@@ -392,7 +392,7 @@ export class PurchasingPurchaseOrderDocument {
   properties: ['tenantId', 'organizationId', 'supplierId', 'supplierSku'],
 })
 export class PurchasingSupplierProduct {
-  [OptionalProps]?: 'createdAt' | 'updatedAt' | 'deletedAt' | 'unit' | 'status' | 'source' | 'imageAttachmentIds'
+  [OptionalProps]?: 'createdAt' | 'updatedAt' | 'deletedAt' | 'unit' | 'status' | 'source' | 'imageAttachmentIds' | 'discountPercent'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -459,11 +459,46 @@ export class PurchasingSupplierProduct {
   cartonQuantity?: number | null
 
   /**
-   * Net weight of one piece, in kg. Per-carton weights are deliberately absent: purchasing reads
-   * single-unit data only, and Qty/Box is the one carton figure this library keeps.
+   * The weight pair of one piece, in kg — the supplier sheet's N.W. and G.W. columns. Per-carton
+   * weights are deliberately absent: purchasing reads single-unit data only, and Qty/Box is the one
+   * carton figure this library keeps. Both are optional; a sheet that prints only one of them stays
+   * saveable.
    */
   @Property({ name: 'unit_net_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
   unitNetWeight?: string | null
+
+  /** Gross weight of one piece including its packaging, in kg — the sheet's G.W. column. */
+  @Property({ name: 'unit_gross_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
+  unitGrossWeight?: string | null
+
+  /**
+   * Volume of one piece in cm³ — the sheet's 体积 column, kept per unit like the weights, so a
+   * shipment's freight volume is `quantity × unit_volume`. Recorded as the supplier prints it, not
+   * derived from `inner_packing`: a rounded sheet figure must not be silently recomputed. The unit
+   * is cm³, not the m³ (CBM) a freight quote prints, and the column holds whole cm³ (`scale: 0`) so
+   * the form shows `88642` rather than a padded `88642.000000`.
+   */
+  @Property({ name: 'unit_volume', type: 'numeric', precision: 16, scale: 0, nullable: true })
+  unitVolume?: string | null
+
+  /**
+   * The supplier's discount off this item's supply price, in percent (0–100, whole numbers only;
+   * null/blank = no discount).
+   *
+   * **Product-level on purpose** (owner rule 2026-09-24): the same supplier gives different discounts
+   * on different items, so one number per library row is the granularity the business keeps — not one
+   * per supplier (that would force every item to share a rate) and not one per price row (the rate
+   * does not vary by currency or ladder step). It is a term of the *supply* price: `unit_price` stays
+   * the price the supplier prints and 折后价 = `unit_price × (1 − discount_percent/100)` is what we
+   * actually pay. That net figure is derived, never stored here — the product master's `purchase`
+   * tier is where it becomes a number (`lib/supplierProductPromotion.ts`).
+   *
+   * `scale: 0` (owner rule 2026-09-24, same narrowing as `unit_volume`): the rate is a whole percent,
+   * and a padded `5.0000` in the form was the complaint. A fraction is refused by the contract
+   * (`data/validators.ts`), so no reader has to trim one.
+   */
+  @Property({ name: 'discount_percent', type: 'numeric', precision: 3, scale: 0, nullable: true })
+  discountPercent?: string | null
 
   /**
    * `{ length, width, height, unit: 'cm' }` of one piece — the item's own size, labelled 产品尺寸 /

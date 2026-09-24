@@ -9,6 +9,7 @@ import { supplierProductCrudEvents, supplierProductCrudIndexer, type PurchasingS
 import { supplierProductToProductFields } from './productMapping'
 import { findProductById, findProductBySku, loadProductPrices } from './productsReads'
 import { findLatestQuotedPrice } from './quoteLineReads'
+import { netUnitPrice } from './priceKinds'
 import { findBasePriceOfItem } from './supplierProductPrices'
 
 /**
@@ -71,6 +72,11 @@ function productWriteContext(ctx: CommandRuntimeContext): CommandRuntimeContext 
  * line — the buyer maintains it on the library row, it is the price they last confirmed, and the
  * quotation remains the document that negotiated it. Falling back to the newest matching line keeps
  * rows that never quoted a price behaving exactly as before.
+ *
+ * Both branches are the **折后价** (`netUnitPrice`, `lib/priceKinds.ts`): the row's discount is a term
+ * of the supply price, so whatever supply price the master receives, it receives it after the
+ * discount. The `purchase` tier means "what we pay", and writing the undiscounted list price there
+ * would overstate every downstream cost figure by the discount.
  */
 async function resolveDesiredPurchasePrice(
   em: EntityManager,
@@ -79,13 +85,16 @@ async function resolveDesiredPurchasePrice(
 ): Promise<DesiredPriceRow | null> {
   const libraryPrice = await findBasePriceOfItem(em, scope, String(product.id), 'supplier_cost')
   const quoted = libraryPrice ? null : await findLatestQuotedPrice(em, scope, product.supplierId, product.supplierSku)
+  const discountPercent = product.discountPercent ?? null
 
   if (libraryPrice) {
     return {
       priceTier: 'purchase',
       currencyCode: libraryPrice.currencyCode,
       minQuantity: libraryPrice.minQuantity >= 1 ? libraryPrice.minQuantity : 1,
-      unitPrice: libraryPrice.unitPrice,
+      // `?? libraryPrice.unitPrice` only guards an unparseable amount: the master must still receive
+      // the number the buyer stored rather than nothing at all.
+      unitPrice: netUnitPrice(libraryPrice.unitPrice, discountPercent) ?? libraryPrice.unitPrice,
       startsAt: null,
       endsAt: null,
       isActive: true,
@@ -100,7 +109,7 @@ async function resolveDesiredPurchasePrice(
     priceTier: 'purchase',
     currencyCode: quoted.currencyCode,
     minQuantity,
-    unitPrice: quoted.unitPrice,
+    unitPrice: netUnitPrice(quoted.unitPrice, discountPercent) ?? quoted.unitPrice,
     startsAt: null,
     endsAt: null,
     isActive: true,
@@ -231,6 +240,8 @@ export async function promoteSupplierProduct(input: {
         hsCode: fields.hsCode,
         unit: fields.unit ?? 'PCS',
         netWeight: fields.netWeight,
+        grossWeight: fields.grossWeight,
+        volume: fields.volume,
         dimensions: fields.dimensions,
         cartonQuantity: fields.cartonQuantity,
         status: 'active',

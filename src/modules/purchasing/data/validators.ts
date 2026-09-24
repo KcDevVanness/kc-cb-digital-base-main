@@ -19,7 +19,7 @@ export const currencyCodeSchema = z
 
 const DECIMAL_PATTERN = /^-?\d+(?:\.\d+)?$/
 
-function decimalSchema(scale: number, options: { min?: string } = {}) {
+function decimalSchema(scale: number, options: { min?: string; max?: string } = {}) {
   return z
     .string()
     .trim()
@@ -29,14 +29,25 @@ function decimalSchema(scale: number, options: { min?: string } = {}) {
       return fraction.length <= scale
     }, `value must have at most ${scale} decimal places`)
     .refine((value) => (options.min === undefined ? true : Number(value) >= Number(options.min)), `value must be >= ${options.min}`)
+    .refine((value) => (options.max === undefined ? true : Number(value) <= Number(options.max)), `value must be <= ${options.max}`)
 }
 
-const nullableDecimalSchema = (scale: number, options: { min?: string } = {}) =>
+/**
+ * A nullable decimal: an explicit value is normalized to the column's scale, `null` clears it, and an
+ * **absent** key stays `undefined`.
+ *
+ * The absent case is load-bearing, exactly as in `products/data/validators.ts`: the update schema is
+ * `.partial()` and the update command writes a field only when it is `!== undefined`, while the
+ * quotation import submits only the columns it actually changed. A helper that folded `undefined`
+ * into `null` therefore erased the decimal columns a partial write did not mention (measured
+ * 2026-09-24 on the master's weights; the same shape lived here for `unit_net_weight`).
+ */
+const nullableDecimalSchema = (scale: number, options: { min?: string; max?: string } = {}) =>
   z
     .union([z.string(), z.number(), z.null()])
     .optional()
-    .transform((value) => (value === null || value === undefined ? null : value))
-    .pipe(z.union([decimalSchema(scale, options), z.null()]))
+    .transform((value) => (value === undefined ? undefined : value === null ? null : value))
+    .pipe(z.union([decimalSchema(scale, options), z.null(), z.undefined()]))
 
 const nullableNonNegativeIntegerSchema = z
   .union([z.string(), z.number(), z.null()])
@@ -187,9 +198,9 @@ export const supplierProductSources = ['manual', 'quote'] as const
 /**
  * The supplier library's write contract.
  *
- * The unit net weight is a decimal string and MOQ/packing counts are integers, exactly like the
- * quotation line columns they are fed from, so an import can copy a value across without a
- * conversion step. `supplierId` is part of the create contract only: a code is unique *per
+ * The unit weights and the unit volume are decimal strings and MOQ/packing counts are integers,
+ * exactly like the quotation line columns they are fed from, so an import can copy a value across
+ * without a conversion step. `supplierId` is part of the create contract only: a code is unique *per
  * supplier*, so moving a row to another supplier would silently collide — the update schema omits
  * it and the form renders it read-only.
  */
@@ -207,6 +218,18 @@ export const supplierProductCreateSchema = z.object({
   moqQuantity: nullableNonNegativeIntegerSchema,
   cartonQuantity: nullableNonNegativeIntegerSchema,
   unitNetWeight: nullableDecimalSchema(4, { min: '0' }),
+  unitGrossWeight: nullableDecimalSchema(4, { min: '0' }),
+  unitVolume: nullableDecimalSchema(0, { min: '0' }),
+  /**
+   * The supplier's discount off this item's supply price, as a whole-number percentage — a
+   * **product-level** term (the same supplier discounts different items differently), never a
+   * per-row or per-currency one. `scale: 0` (owner rule 2026-09-24): the rate a supplier quotes is a
+   * whole percent, so a fraction is a typo rather than a term, and the field must not carry one in.
+   * Blank means no discount; `100` means the goods are free, which is a legitimate (if odd) contract
+   * value, so only the range is enforced. The 折后价 is derived, never stored: `netUnitPrice()` in
+   * `lib/priceKinds.ts` is the single implementation the form, the list and the promotion share.
+   */
+  discountPercent: nullableDecimalSchema(0, { min: '0', max: '100' }),
   innerPacking: dimensionsSchema,
   /**
    * The product photos, as `attachments` ids. Replace-set semantics: the submitted array is the

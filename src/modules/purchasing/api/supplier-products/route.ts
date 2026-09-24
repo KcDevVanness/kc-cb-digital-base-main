@@ -9,8 +9,9 @@ import {
   supplierProductListSchema,
   supplierProductUpdateSchema,
 } from '../../data/validators'
-import { loadProductLabels } from '../../lib/productsReads'
+import { loadProductLabels, loadBaseTierPricesByProduct } from '../../lib/productsReads'
 import { loadBasePricesByItem, type SupplierProductPriceCell } from '../../lib/supplierProductPrices'
+import { netUnitPrice } from '../../lib/priceKinds'
 import { createPurchasingCrudOpenApi, purchasingCreatedSchema, purchasingOkSchema } from '../openapi'
 
 const ENTITY_ID = 'purchasing:purchasing_supplier_product' as const
@@ -21,10 +22,16 @@ const ENTITY_ID = 'purchasing:purchasing_supplier_product' as const
  * Both prices travel as a cell rather than a formatted string: the amount and the currency are
  * separate facts, and only the client knows the reader's locale. `minQuantity` rides along so the
  * column can mark a price that only applies from a carton up.
+ *
+ * `netUnitPrice` is the 折后价 (`unit_price × (1 − discount/100)`, six decimals, computed by
+ * `lib/priceKinds.ts`) — the number the business actually pays, and the one the promotion writes into
+ * the product master. `unitPrice` stays on the cell as the supplier's printed 供货价 so the column can
+ * show both.
  */
 const supplierProductPriceCellSchema = z.object({
   currencyCode: z.string(),
   unitPrice: z.string(),
+  netUnitPrice: z.string().nullable().optional(),
   minQuantity: z.number(),
 })
 
@@ -44,10 +51,19 @@ const supplierProductListItemSchema = z
     hsCode: z.string().nullable().optional(),
     supplierCostPrice: supplierProductPriceCellSchema.nullable().optional(),
     companyOfferPrice: supplierProductPriceCellSchema.nullable().optional(),
+    /**
+     * Where the 本公司报价 column's value came from: the linked product's `internal`（内部结算价）tier
+     * (the only entry point since 2026-09-24) or a library `company_offer` row stored before that
+     * change. Presentation only — the row itself no longer owns an editable offer.
+     */
+    companyOfferSource: z.enum(['product', 'library']).nullable().optional(),
+    discountPercent: z.string().nullable().optional(),
     imageAttachmentIds: z.array(z.string()).optional(),
     moqQuantity: z.number().nullable().optional(),
     cartonQuantity: z.number().nullable().optional(),
     unitNetWeight: z.string().nullable().optional(),
+    unitGrossWeight: z.string().nullable().optional(),
+    unitVolume: z.string().nullable().optional(),
     innerPacking: z.record(z.string(), z.unknown()).nullable().optional(),
     productId: z.string().uuid().nullable().optional(),
     productSku: z.string().nullable().optional(),
@@ -100,12 +116,14 @@ function asStringArray(value: unknown): string[] {
 }
 
 /** `CNY 12.500000` for the CSV/XLSX export, where a nested object would print as `[object Object]`. */
-function formatPriceCell(cell: unknown): string {
+function formatPriceCell(cell: unknown, amountField: 'unitPrice' | 'netUnitPrice' = 'unitPrice'): string {
   if (!cell || typeof cell !== 'object') return ''
-  const { currencyCode, unitPrice, minQuantity } = cell as Partial<SupplierProductPriceCell>
-  if (!currencyCode || unitPrice === undefined) return ''
-  const ladder = minQuantity && minQuantity > 1 ? ` (≥${minQuantity})` : ''
-  return `${currencyCode} ${unitPrice}${ladder}`
+  const record = cell as Partial<SupplierProductPriceCell>
+  const currencyCode = record.currencyCode
+  const amount = record[amountField]
+  if (!currencyCode || amount === undefined || amount === null) return ''
+  const ladder = record.minQuantity && record.minQuantity > 1 ? ` (≥${record.minQuantity})` : ''
+  return `${currencyCode} ${amount}${ladder}`
 }
 
 // `updated_at` is part of the projection because the optimistic-lock round trip needs it:
@@ -126,6 +144,9 @@ const listFields = [
   'moq_quantity',
   'carton_quantity',
   'unit_net_weight',
+  'unit_gross_weight',
+  'unit_volume',
+  'discount_percent',
   'inner_packing',
   'image_attachment_ids',
   'product_id',
@@ -220,14 +241,20 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         { field: 'cartonQuantity', header: 'Qty/Box' },
         { field: 'hsCode', header: 'HS code' },
         { field: 'declarationElements', header: 'Declaration elements' },
+        { field: 'discountPercent', header: 'Discount %' },
         {
           field: 'supplierCostPrice',
-          header: 'Supplier cost',
+          header: 'Supplier cost (net)',
+          resolve: (item: Record<string, unknown>) => formatPriceCell(item.supplierCostPrice, 'netUnitPrice'),
+        },
+        {
+          field: 'supplierCostListPrice',
+          header: 'Supplier list price',
           resolve: (item: Record<string, unknown>) => formatPriceCell(item.supplierCostPrice),
         },
         {
           field: 'companyOfferPrice',
-          header: 'Our offer',
+          header: 'Our offer (internal)',
           resolve: (item: Record<string, unknown>) => formatPriceCell(item.companyOfferPrice),
         },
         { field: 'status' },
@@ -251,6 +278,9 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       moqQuantity: asNullableNumber(item.moq_quantity),
       cartonQuantity: asNullableNumber(item.carton_quantity),
       unitNetWeight: asNullableString(item.unit_net_weight),
+      unitGrossWeight: asNullableString(item.unit_gross_weight),
+      unitVolume: asNullableString(item.unit_volume),
+      discountPercent: asNullableString(item.discount_percent),
       innerPacking: asNullableRecord(item.inner_packing),
       productId: asNullableString(item.product_id),
       status: String(item.status ?? 'active'),
@@ -300,17 +330,43 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         }
       }
 
-      // Price columns: the page's base prices in one scoped query. The read is deliberately not
+      // Price columns: the page's base prices in one scoped query, plus the linked products'
+      // 内部结算价 for the 本公司报价 column. The read is deliberately not
       // cached with the list (`disableListCache`), so a price edited in the form shows up here
       // immediately instead of after the cache expires.
       const itemIds = payload.items
         .map((item) => (typeof item.id === 'string' ? item.id : null))
         .filter((id): id is string => id !== null)
       const prices = await loadBasePricesByItem(em, { tenantId, organizationId }, itemIds)
+      const internalPrices = await loadBaseTierPricesByProduct(
+        em,
+        { tenantId, organizationId },
+        productIds,
+        'internal',
+      )
       for (const item of payload.items) {
         const entry = typeof item.id === 'string' ? prices.get(item.id) : undefined
-        item.supplierCostPrice = entry?.supplierCost ?? null
-        item.companyOfferPrice = entry?.companyOffer ?? null
+        const listCost = entry?.supplierCost ?? null
+        // 供应商供货价 leads with the 折后价 — the supplier's printed price after this row's discount,
+        // which is what we pay and what the promotion writes into the master. The list price stays on
+        // the cell so the column can show the arithmetic behind the number.
+        item.supplierCostPrice = listCost
+          ? {
+              ...listCost,
+              netUnitPrice: netUnitPrice(
+                listCost.unitPrice,
+                typeof item.discountPercent === 'string' ? item.discountPercent : null,
+              ),
+            }
+          : null
+        // 本公司报价 is no longer entered on the library row (2026-09-24): the column reads the linked
+        // product's 内部结算价. A `company_offer` row stored before that change is still shown when the
+        // product quotes no such price, so historical data does not vanish from the page.
+        const productId = typeof item.productId === 'string' ? item.productId : null
+        const internal = productId ? internalPrices[productId] ?? null : null
+        const legacyOffer = entry?.companyOffer ?? null
+        item.companyOfferPrice = internal ?? legacyOffer
+        item.companyOfferSource = internal ? 'product' : legacyOffer ? 'library' : null
       }
     },
   },

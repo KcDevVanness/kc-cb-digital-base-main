@@ -1,4 +1,4 @@
-import type { SupplierProductPriceKind } from './priceKinds'
+import { pickBasePriceRow, type SupplierProductPriceKind } from './priceKinds'
 
 /**
  * The supplier library form's values and payload builders.
@@ -13,8 +13,12 @@ import type { SupplierProductPriceKind } from './priceKinds'
 export type PackingValues = { length: string; width: string; height: string }
 
 /**
- * One price row in the form. `key` keeps React anchored to a row while rows are added and removed;
- * it is never submitted, because the endpoint upserts on `(kind, currency, min quantity)`.
+ * One price row of the item's stored set, as the form carries it. `key` keeps React anchored to a
+ * row while the set is rewritten; it is never submitted, because the endpoint upserts on
+ * `(kind, currency, min quantity)`.
+ *
+ * The form **edits** one of these — the base `supplier_cost` row the single 供货价 field shows — and
+ * submits the rest back untouched (`splitSupplierProductPriceRows` below).
  */
 export type SupplierProductPriceRowValues = {
   key: string
@@ -25,12 +29,26 @@ export type SupplierProductPriceRowValues = {
   isActive: boolean
 }
 
+/** The stored set, split into the row the form edits and the rows it only shows. */
+export type SupplierProductPriceRowSplit = {
+  /**
+   * The active `supplier_cost` base row — the one `lib/supplierProductPrices.ts` resolves for the
+   * list column and the promotion, so the number the operator edits is the number the list shows.
+   * `null` when the item has no live supply price (a withdrawn row is never the primary: putting it
+   * back in the field would revive it on the next save without the operator asking).
+   */
+  primary: SupplierProductPriceRowValues | null
+  /** Every other stored row: another currency or ladder step, a withdrawn price, a legacy offer. */
+  extras: SupplierProductPriceRowValues[]
+}
+
 export type SupplierProductFormValues = {
   id?: string
   supplierId: string
   supplierName: string
   supplierSku: string
   itemNo: string
+  brandValue: string
   name: string
   nameZh: string
   nameEn: string
@@ -46,6 +64,13 @@ export type SupplierProductFormValues = {
   moqQuantity: number | string
   cartonQuantity: number | string
   unitNetWeight: number | string
+  unitGrossWeight: number | string
+  unitVolume: number | string
+  /**
+   * The supplier's discount off the supply price, in percent — a product-level term (REQ-SPL-022).
+   * Blank means no discount; the 折后价 is derived for display and for the promotion, never stored.
+   */
+  discountPercent: number | string
   innerPacking: PackingValues
   /** Ordered attachment ids of the product photos (REQ-SPL-014). */
   imageAttachmentIds: string[]
@@ -67,6 +92,7 @@ export const EMPTY_VALUES: SupplierProductFormValues = {
   supplierName: '',
   supplierSku: '',
   itemNo: '',
+  brandValue: '',
   name: '',
   nameZh: '',
   nameEn: '',
@@ -77,6 +103,9 @@ export const EMPTY_VALUES: SupplierProductFormValues = {
   moqQuantity: '',
   cartonQuantity: '',
   unitNetWeight: '',
+  unitGrossWeight: '',
+  unitVolume: '',
+  discountPercent: '',
   innerPacking: EMPTY_PACKING,
   imageAttachmentIds: [],
   prices: [],
@@ -86,16 +115,42 @@ export const EMPTY_VALUES: SupplierProductFormValues = {
 
 let priceRowSequence = 0
 
-export function createEmptyPriceRow(priceKind: SupplierProductPriceKind = 'supplier_cost'): SupplierProductPriceRowValues {
+/**
+ * The row an item without a stored supply price starts from: 供货价 in CNY at the lowest ladder step.
+ * Only the currency is ever picked before the amount is typed, and the amount decides whether the
+ * row is submitted at all (`buildSupplierProductPriceRowsPayload`).
+ */
+export function createEmptyPriceRow(): SupplierProductPriceRowValues {
   priceRowSequence += 1
   return {
     key: `price-${priceRowSequence}`,
-    priceKind,
-    currencyCode: priceKind === 'supplier_cost' ? 'CNY' : 'USD',
+    priceKind: 'supplier_cost',
+    currencyCode: 'CNY',
     minQuantity: '1',
     unitPrice: '',
     isActive: true,
   }
+}
+
+/**
+ * Splits the stored set into the row the form's single 供货价 field edits and the rows it keeps for
+ * traceability — the comparison is `lib/priceKinds.ts` `pickBasePriceRow`, the same rule the list
+ * column and the promotion resolve the base row with.
+ *
+ * An unparseable or blank ladder step reads as 1, the API's own default, so a malformed legacy value
+ * can never make the row uneditable.
+ */
+export function splitSupplierProductPriceRows(rows: SupplierProductPriceRowValues[]): SupplierProductPriceRowSplit {
+  const candidates = rows
+    .filter((row) => row.priceKind === 'supplier_cost' && row.isActive)
+    .map((row) => ({
+      row,
+      minQuantity: Number.parseInt(row.minQuantity.trim() || '1', 10) || 1,
+      currencyCode: row.currencyCode.trim().toUpperCase(),
+    }))
+  const base = pickBasePriceRow(candidates)
+  const primary = base ? base.row : null
+  return { primary, extras: primary ? rows.filter((row) => row !== primary) : [...rows] }
 }
 
 export function readText(source: Record<string, unknown>, ...keys: string[]): string {
@@ -127,7 +182,7 @@ export function readImageIds(raw: unknown): string[] {
   return Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === 'string') : []
 }
 
-export function isPriceKind(value: unknown): value is SupplierProductPriceKind {
+function isPriceKind(value: unknown): value is SupplierProductPriceKind {
   return value === 'supplier_cost' || value === 'company_offer'
 }
 
@@ -149,12 +204,15 @@ export function toProductPriceRowValues(item: Record<string, unknown>): Supplier
 }
 
 /**
- * The price payload: the whole set, with the row's own currency and ladder step as its identity.
+ * The price payload: the whole stored set, with each row's own kind, currency and ladder step as
+ * its identity.
  *
- * A row without an amount is **dropped**, never submitted as `0`: an empty row is either a row the
- * operator started and abandoned, or a price they blanked — and a stored `0` would read as "free"
- * in every later negotiation. Withdrawing a price is the 启用 toggle (the row keeps its amount and
- * comes back `isActive: false`), which is what makes the set explainable afterwards.
+ * A row without an amount is **dropped**, never submitted as `0`: an empty row is either the single
+ * price field left blank or a price the operator cleared — and a stored `0` would read as "free" in
+ * every later negotiation. Dropping the base row is how a price is withdrawn: the row keeps its
+ * amount and comes back `isActive: false`, which is what makes the set explainable afterwards.
+ * Rows the form only shows (other currencies/steps, withdrawn ones) are submitted back unchanged,
+ * so a save never rewrites history.
  */
 export function buildSupplierProductPriceRowsPayload(rows: SupplierProductPriceRowValues[]): Array<Record<string, unknown>> {
   return rows
@@ -182,6 +240,7 @@ export function toSupplierProductFormValues(item: Record<string, unknown>): Supp
     supplierName: readText(item, 'supplierName', 'supplier_name_snapshot'),
     supplierSku: readText(item, 'supplierSku', 'supplier_sku'),
     itemNo: readText(item, 'itemNo', 'item_no'),
+    brandValue: readText(item, 'brandValue', 'brand_value'),
     name: readText(item, 'name'),
     nameZh: readText(item, 'nameZh', 'name_zh'),
     nameEn: readText(item, 'nameEn', 'name_en'),
@@ -192,6 +251,9 @@ export function toSupplierProductFormValues(item: Record<string, unknown>): Supp
     moqQuantity: readNumberText(item, 'moqQuantity') || readNumberText(item, 'moq_quantity'),
     cartonQuantity: readNumberText(item, 'cartonQuantity') || readNumberText(item, 'carton_quantity'),
     unitNetWeight: readNumberText(item, 'unitNetWeight') || readNumberText(item, 'unit_net_weight'),
+    unitGrossWeight: readNumberText(item, 'unitGrossWeight') || readNumberText(item, 'unit_gross_weight'),
+    unitVolume: readNumberText(item, 'unitVolume') || readNumberText(item, 'unit_volume'),
+    discountPercent: readNumberText(item, 'discountPercent') || readNumberText(item, 'discount_percent'),
     innerPacking: readPacking(item.innerPacking ?? item.inner_packing),
     imageAttachmentIds: readImageIds(item.imageAttachmentIds ?? item.image_attachment_ids),
     prices: Array.isArray(item.prices)
@@ -235,6 +297,7 @@ export function buildSupplierProductPayload(values: SupplierProductFormValues): 
   return {
     supplierSku: values.supplierSku.trim(),
     itemNo: values.itemNo.trim() || null,
+    brandValue: values.brandValue.trim() || null,
     name: values.name.trim(),
     nameZh: values.nameZh.trim() || null,
     nameEn: values.nameEn.trim() || null,
@@ -245,6 +308,9 @@ export function buildSupplierProductPayload(values: SupplierProductFormValues): 
     moqQuantity: nullableNumberText(values.moqQuantity),
     cartonQuantity: nullableNumberText(values.cartonQuantity),
     unitNetWeight: nullableDecimalText(values.unitNetWeight),
+    unitGrossWeight: nullableDecimalText(values.unitGrossWeight),
+    unitVolume: nullableDecimalText(values.unitVolume),
+    discountPercent: nullableDecimalText(values.discountPercent),
     innerPacking: packingPayload(values.innerPacking),
     // Replace-set: the submitted list is the new photo list, so removing a thumbnail here removes
     // the binding on save (the uploaded file itself stays in the attachments module).

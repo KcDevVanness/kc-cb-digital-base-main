@@ -74,6 +74,7 @@ const listFields = [
   'country_of_origin_code',
   'net_weight',
   'gross_weight',
+  'volume',
   'dimensions',
   'carton_quantity',
   'battery_capacity_mah',
@@ -173,6 +174,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       countryOfOriginCode: asNullableString(item.country_of_origin_code),
       netWeight: asNullableString(item.net_weight),
       grossWeight: asNullableString(item.gross_weight),
+      volume: asNullableString(item.volume),
       dimensions: item.dimensions ?? null,
       cartonQuantity: item.carton_quantity === null || item.carton_quantity === undefined ? null : Number(item.carton_quantity),
       batteryCapacityMah:

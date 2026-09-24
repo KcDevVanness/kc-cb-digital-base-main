@@ -79,6 +79,11 @@ app 自有模块。业务商品主数据的**唯一来源**：产品线 → 产�
 因此只剩「装箱」一张单字段卡。`lib/supplierMapping.ts` 的字段契约（`sourcing` 报价提升与 `purchasing`
 同步共用）同步去掉这三个键，两边只停止供给与读取。
 
+**体积（`volume`，2026-09-24）**：产品库的单件体积（`unit_volume`，cm³）在同步时写到商品主数据的 `volume`
+（`numeric(16,0)`，界面名「体积（cm³）」，落在「出口与包装」卡；整数 cm³，所以显示 `88642` 而不是 `88642.000000`，小数进不来——validator 按列 scale 拒绝）。它是**记录**字段：不由 `dimensions` 推算
+（供应商印的数不能被静默重算），目前也没有读取方——运费询价是预期消费方，那套按 m³/CBM 计费，读取时再换算。
+`lib/supplierMapping.ts` 的契约新增 `volume` 键，报价行侧声明为 `null`（报价层没有体积列）。
+
 步骤层的形状（2026-09-23 重排，只动 UI）：
 
 - **步骤条**是 DS 的 `StepIndicator`（编号、逐步可点、出错步标红），放在 `CrudForm` 的 `contentHeader`，

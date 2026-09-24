@@ -29,7 +29,9 @@ validators, create command, API request schema / `select` list / response projec
 grid's column, i18n and the downloadable template. What a line still carries is the Qty/Box
 (`cartonQuantity`, 装箱数), the per-unit weight (`unitNetWeight`, 单重) and the item's own size
 (`innerPacking`, 产品尺寸) — nothing else carton-shaped, and `lib/productMapping.ts` therefore offers
-the product master only those three.
+the product master only those three (it declares `grossWeight: null` and `volume: null` explicitly: a
+line has no G.W. and no 体积 column to propose, and the library row — which has both since 2026-09-24 —
+is the only supplier-side source of those values).
 
 Nothing is lost for re-mapping: every raw cell of a data row is still kept in the line's `raw` under
 its original header text (`lib/quoteLines.ts`), so an unmapped or mis-mapped column can be re-mapped

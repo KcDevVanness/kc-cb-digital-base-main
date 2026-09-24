@@ -40,12 +40,23 @@ function decimalSchema(scale: number, options: { min?: string } = {}) {
     })
 }
 
+/**
+ * A nullable decimal: an explicit value is normalized to the column's scale, `null` clears it, and
+ * an **absent** key stays `undefined`.
+ *
+ * That last part is load-bearing. `productUpdateSchema` is `.partial()`, and the update command
+ * writes a field only when it is `!== undefined`; a helper that turned `undefined` into `null` made
+ * every partial update (the supplier sync sends changed fields only) silently erase the decimal
+ * columns it did not mention — measured 2026-09-24: a `sync-fields` payload carrying only `volume`
+ * wiped `net_weight` and `gross_weight`, and the reverse. `z.undefined()` inside the pipeline is what
+ * keeps "not sent" distinguishable from "cleared".
+ */
 const nullableDecimalSchema = (scale: number, options: { min?: string } = {}) =>
   z
     .union([z.string(), z.number(), z.null()])
     .optional()
-    .transform((value) => (value === null || value === undefined ? null : value))
-    .pipe(z.union([decimalSchema(scale, options), z.null()]))
+    .transform((value) => (value === undefined ? undefined : value === null ? null : value))
+    .pipe(z.union([decimalSchema(scale, options), z.null(), z.undefined()]))
 
 const nullableNonNegativeIntegerSchema = z
   .union([z.string(), z.number(), z.null()])
@@ -227,6 +238,7 @@ export const productCreateSchema = z.object({
     .optional(),
   netWeight: nullableDecimalSchema(4, { min: '0' }),
   grossWeight: nullableDecimalSchema(4, { min: '0' }),
+  volume: nullableDecimalSchema(0, { min: '0' }),
   dimensions: dimensionsSchema,
   cartonQuantity: nullableNonNegativeIntegerSchema,
   batteryCapacityMah: nullableNonNegativeIntegerSchema,

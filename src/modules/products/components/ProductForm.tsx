@@ -145,6 +145,7 @@ export type ProductFormValues = {
   countryOfOriginCode: string
   netWeight: string
   grossWeight: string
+  volume: string
   dimensions: ProductDimensions | null
   /** CrudForm's number field yields a number once edited, the raw string while untouched. */
   cartonQuantity: number | string
@@ -200,6 +201,7 @@ const EMPTY_PRODUCT_VALUES: ProductFormValues = {
   countryOfOriginCode: '',
   netWeight: '',
   grossWeight: '',
+  volume: '',
   dimensions: null,
   cartonQuantity: '',
   containsLithiumBattery: false,
@@ -351,6 +353,7 @@ export function toProductFormValues(item: Record<string, unknown>): ProductRecor
     countryOfOriginCode: readText(item, 'countryOfOriginCode', 'country_of_origin_code'),
     netWeight: readNumberText(item, 'netWeight', 'net_weight'),
     grossWeight: readNumberText(item, 'grossWeight', 'gross_weight'),
+    volume: readNumberText(item, 'volume'),
     dimensions: readDimensions(item.dimensions),
     cartonQuantity: readNumberText(item, 'cartonQuantity', 'carton_quantity'),
     batteryCapacityMah: readNumberText(item, 'batteryCapacityMah', 'battery_capacity_mah'),
@@ -388,6 +391,7 @@ export function buildProductPayload(values: ProductFormValues): Record<string, u
     countryOfOriginCode: toOptionalText(values.countryOfOriginCode),
     netWeight: toOptionalText(values.netWeight),
     grossWeight: toOptionalText(values.grossWeight),
+    volume: toOptionalText(values.volume),
     dimensions: buildProductDimensionsPayload(values.dimensions),
     cartonQuantity: toOptionalInteger(values.cartonQuantity),
     batteryCapacityMah: toOptionalInteger(values.batteryCapacityMah),
@@ -986,7 +990,7 @@ function useProductGroups(t: TranslateFn): CrudFormGroup[] {
     {
       id: 'packaging',
       title: 'products.items.form.group.packaging',
-      fields: ['hsCode', 'cnCode', 'countryOfOriginCode', 'netWeight', 'grossWeight'],
+      fields: ['hsCode', 'cnCode', 'countryOfOriginCode', 'netWeight', 'grossWeight', 'volume'],
     },
     {
       id: 'dimensions',
@@ -1266,6 +1270,14 @@ function useProductsFields(t: TranslateFn, currentUnit = ''): CrudField[] {
     {
       id: 'grossWeight',
       label: t('products.items.form.field.grossWeight'),
+      type: 'text',
+      layout: 'half',
+    },
+    {
+      id: 'volume',
+      // The unit is in the label because cm³ is a different number by three orders of magnitude
+      // from the m³ a freight quote prints — the one field where a bare 「体积」 would mislead.
+      label: t('products.items.form.field.volume'),
       type: 'text',
       layout: 'half',
     },

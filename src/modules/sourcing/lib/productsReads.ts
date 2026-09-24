@@ -21,6 +21,8 @@ export type ProductRow = {
   hsCode: string | null
   unit: string | null
   netWeight: string | null
+  grossWeight: string | null
+  volume: string | null
   dimensions: Record<string, unknown> | null
   cartonQuantity: number | null
   categoryId: string | null
@@ -64,6 +66,8 @@ export async function findProductBySku(
       'hs_code',
       'unit',
       'net_weight',
+      'gross_weight',
+      'volume',
       'dimensions',
       'carton_quantity',
       'category_id',
@@ -82,6 +86,8 @@ export async function findProductBySku(
     hs_code: string | null
     unit: string | null
     net_weight: string | null
+    gross_weight: string | null
+    volume: string | null
     dimensions: Record<string, unknown> | null
     carton_quantity: number | null
     category_id: string | null
@@ -98,6 +104,8 @@ export async function findProductBySku(
     hsCode: row.hs_code ?? null,
     unit: row.unit ?? null,
     netWeight: row.net_weight === null || row.net_weight === undefined ? null : String(row.net_weight),
+    grossWeight: row.gross_weight === null || row.gross_weight === undefined ? null : String(row.gross_weight),
+    volume: row.volume === null || row.volume === undefined ? null : String(row.volume),
     dimensions: row.dimensions ?? null,
     cartonQuantity: row.carton_quantity === null || row.carton_quantity === undefined ? null : Number(row.carton_quantity),
     categoryId: row.category_id ?? null,

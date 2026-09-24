@@ -35,6 +35,12 @@ export function quoteLineToProductFields(line: SourcingQuoteLine): ProductFieldV
     hsCode: line.hsCode && line.hsCode.trim().length > 0 ? line.hsCode.trim() : null,
     unit: line.unit && line.unit.trim().length > 0 ? line.unit.trim() : null,
     netWeight: line.unitNetWeight ?? null,
+    // A quotation line carries no G.W. column (the carton figures left the quotation layer on
+    // 2026-09-23), so it never proposes one: `changedProductFields` drops the null.
+    grossWeight: null,
+    // The line carries no volume column either (the carton 体积 left the quotation layer on
+    // 2026-09-23); only the library row proposes one.
+    volume: null,
     dimensions: asRecord(line.innerPacking ?? null),
     cartonQuantity: line.cartonQuantity ?? null,
   }

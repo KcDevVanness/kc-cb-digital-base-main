@@ -88,6 +88,9 @@ const createSupplierProductCommand: CommandHandler<Record<string, unknown>, Purc
         moqQuantity: parsed.moqQuantity ?? null,
         cartonQuantity: parsed.cartonQuantity ?? null,
         unitNetWeight: parsed.unitNetWeight ?? null,
+        unitGrossWeight: parsed.unitGrossWeight ?? null,
+        unitVolume: parsed.unitVolume ?? null,
+        discountPercent: parsed.discountPercent ?? null,
         innerPacking: parsed.innerPacking,
         imageAttachmentIds: parsed.imageAttachmentIds ?? [],
         status: parsed.status,
@@ -142,6 +145,10 @@ const updateSupplierProductCommand: CommandHandler<Record<string, unknown>, Purc
         if (parsed.moqQuantity !== undefined) entity.moqQuantity = parsed.moqQuantity ?? null
         if (parsed.cartonQuantity !== undefined) entity.cartonQuantity = parsed.cartonQuantity ?? null
         if (parsed.unitNetWeight !== undefined) entity.unitNetWeight = parsed.unitNetWeight ?? null
+        if (parsed.unitGrossWeight !== undefined) entity.unitGrossWeight = parsed.unitGrossWeight ?? null
+        if (parsed.unitVolume !== undefined) entity.unitVolume = parsed.unitVolume ?? null
+        // Clearable: the form submits `null` to drop the discount, and an omitted key leaves it alone.
+        if (parsed.discountPercent !== undefined) entity.discountPercent = parsed.discountPercent ?? null
         if (parsed.innerPacking !== undefined) entity.innerPacking = parsed.innerPacking
         // Replace-set: the submitted list is the new photo list, `[]` clears it, and an omitted key
         // leaves it alone — binding a photo is a row write, so the list sits behind the same lock.

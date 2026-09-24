@@ -1,7 +1,7 @@
 # Supplier Product Library + Role-Grouped Backend Menu
 
 **Date**: 2026-09-22
-**Status**: Implemented and verified (Phases 1–6 on 2026-09-22; Phase 7 on 2026-09-23; **Phase 8 — 关联商品：直觉化 + 手动关联 — on 2026-09-23**) — the library then moved to `purchasing` (D4); the Changelog rows are the live record
+**Status**: Implemented and verified (Phases 1–6 on 2026-09-22; Phase 7 on 2026-09-23; Phase 8 — 关联商品：直觉化 + 手动关联 — on 2026-09-23; **Phase 9 — 供应商折扣 + 本公司报价归位 — on 2026-09-24**; **Phase 10 — 价格组：一条供货价 — on 2026-09-24**) — the library then moved to `purchasing` (D4); the Changelog rows are the live record
 
 > **As-shipped deltas (2026-09-23).** Phases 1–6 shipped in `feat(sourcing): import supplier quotations and own
 > the supplier product library` (2026-09-22) and were verified end to end; the Status line was stale.
@@ -101,7 +101,8 @@ was bought), and the finance operator (reads order/container files).
 - **REQ-SPL-001** — A supplier product library row is a first-class, organization-private,
   soft-deleted, optimistic-locked record: supplier (`supplier_id` + name snapshot), supplier code
   (`supplier_sku`, unique per supplier **including soft-deleted rows**), original item no., name,
-  description, unit, HS code, MOQ, carton quantity (Qty/Box), unit net weight, inner packing
+  description, unit, HS code, MOQ, carton quantity (Qty/Box), the unit weight pair (unit net weight
+  N.W. + unit gross weight G.W., both optional), unit volume (cm³, optional), inner packing
   (L×W×H), optional link to the product master (`product_id`), status, source, last quotation
   reference, notes. The whole-carton figures — carton G.W / N.W and the outer carton size — were
   removed on 2026-09-23 (D5: a buyer maintains unit data only).
@@ -146,7 +147,9 @@ was bought), and the finance operator (reads order/container files).
 - **REQ-SPL-011** — The library row carries the full 产品明细表 field set the business maintains and
   prints: the supplier's raw name (`name`), **our** Chinese name (`name_zh`) and English name
   (`name_en`), the supplier's item no. (`item_no`), HS code, 申报要素 (`declaration_elements`), unit,
-  MOQ, carton quantity (Qty/Box), unit net weight, the item's own size (`inner_packing`, L×W×H — the
+  MOQ, carton quantity (Qty/Box), the unit weight pair (`unit_net_weight` N.W. / `unit_gross_weight`
+  G.W., both optional since 2026-09-24), unit volume (`unit_volume`, cm³, optional), the item's own
+  size (`inner_packing`, L×W×H — the
   form labels it 产品尺寸 / "Product size"), product photos and notes.
   Carton G.W / N.W and the outer carton size left the field set on 2026-09-23 (D5). HS code stays **text**: a HS code is an identifier with leading
   zeros and dotted groups (`8471.30.0000`), not an arithmetic value, so a numeric column would
@@ -158,9 +161,9 @@ was bought), and the finance operator (reads order/container files).
   carry one the dictionary does not list yet, and opening such a row must never blank it).
 - **REQ-SPL-013** — A library row carries a **price list**, not price columns:
   `purchasing_supplier_product_prices` holds one row per `price_kind` × currency × minimum quantity.
-  The two prices the business prints side by side are `supplier_cost` (the legacy 「PK 单价」, the
-  supplier's own price) and `company_offer` (the legacy 「KC 单价」, ours) — the party is a code and
-  the currency is a separate column, so a second supplier, currency or quantity ladder is a row
+  The two kinds are `supplier_cost` (**供应商供货价** — what the supplier charges us) and
+  `company_offer` (**本公司报价** — ours; read-only since Phase 9, REQ-SPL-024) — the party is a code
+  and the currency is a separate column, so a second supplier, currency or quantity ladder is a row
   rather than a schema change. The whole set is submitted in one
   `purchasing.supplier-products.replace-prices` command; rows missing from the payload are
   **deactivated**, never deleted; the currency must exist in the currency dictionary.
@@ -179,6 +182,7 @@ was bought), and the finance operator (reads order/container files).
   active `supplier_cost` price row (minimum quantity 1, in its own currency) over the newest matching
   quotation line, falling back to the quotation when the row quotes no price — one source of truth
   for the price that lands in the master, without ever pre-filling an order line (Q-P-004 stands).
+  Since Phase 9 the figure written is the **折后价** (REQ-SPL-023), not the raw 供货价.
 - **REQ-SPL-017** — The library list states each row's link state where the work happens: the
   关联商品 column renders the linked **product's name and SKU** as a link to the product's edit page;
   an unlinked row shows a 未建档 badge with an inline 建商品档案 action (not hidden in the `⋯` menu)
@@ -219,6 +223,44 @@ was bought), and the finance operator (reads order/container files).
 - **REQ-SPL-021** — The order form's merged line picker labels every library suggestion with its link
   state (已建档 / 未建档：建过档才能发运、收货), so an unlinked row stays orderable without the buyer
   having to know which of two similar suggestions can actually ship.
+- **REQ-SPL-022** — The supplier's discount is a **product-level** number on the library row
+  (`purchasing_supplier_products.discount_percent`, `numeric(3,0)`, nullable, **0–100 whole
+  numbers**; blank = no discount), because the same supplier gives different discounts on different
+  items (owner rule 2026-09-24, D10). It is a whole percent (owner rule 2026-09-24, same day): a
+  fraction is a typo rather than a term, so the form's field takes digits only and the contract
+  refuses a decimal point instead of rounding one away. It is a term of the *supply* price: 供货价
+  stays the price the supplier prints and 折后价 = 供货价 × (1 − 折扣/100), rounded to the 6 decimals
+  `unit_price` carries by **one** implementation (`lib/priceKinds.ts` `netUnitPrice`), so the form's
+  live preview, the list column and the promotion cannot disagree. A discount is accepted on the row
+  only — never on a price row, never on the supplier master.
+- **REQ-SPL-023** — 折后价 is the only cost figure downstream: `promote` and `sync-fields` write the
+  item's `supplier_cost` price **after** the discount into the product master's `purchase`（成本价）
+  tier (and the newest matching quotation line, the fallback, is discounted by the same term). The
+  library list's 供应商供货价 column leads with the net amount and shows 供货价 × 折扣 underneath, the
+  CSV/JSON export carries both, and every document that reads the product's tiers (contracts,
+  invoices, internal sales) therefore sees the net cost with no change of its own. A purchase order
+  line keeps its negotiated `unitPrice` and is still never pre-filled (Q-P-004 stands).
+- **REQ-SPL-024** — 本公司报价 is **not entered in the library** any more: the form has no kind picker at
+  all, an already-stored `company_offer` row keeps rendering (read-only, in the 其它价格行 list) and is
+  submitted back unchanged (so the whole-set replace can never silently deactivate it), and the list's
+  本公司报价 column becomes a **read-only** projection of the linked product's `internal`
+  （内部结算价）base price — a row with no master product shows nothing there, and the cell names
+  where the number is edited (取自商品档案（内部结算价）; a `company_offer` row stored before the
+  move reads 产品库历史值 instead). The `company_offer`
+  kind, its rows and its API surface stay readable (additive-only compatibility); the entry point
+  moves to the product form's price group, which already owns all three tiers.
+- **REQ-SPL-025** — The form edits **one** supply price, not a list (owner feedback 2026-09-24:
+  「现在只有一种类型，供应商供货价，那么新增多条好像意义不大了」). The 价格 group is 币种 + 单价 + 折扣 with
+  the live 折后价; there is no kind picker, no minimum-quantity field, no add/remove row button. The
+  row it edits is the **base** `supplier_cost` row — the same comparison the list column and the
+  promotion resolve (`lib/priceKinds.ts` `comparePriceBaseRows` / `pickBasePriceRow`) — so the number
+  in the field is the number the list shows; a **withdrawn** price is never put back in the field
+  (that would revive it on the next save), and rows the form does not edit (another currency or ladder
+  step, a withdrawn price, a legacy offer) render read-only under 其它价格行 and are submitted back
+  unchanged. Clearing the amount withdraws the price (deactivated, never deleted). The stored set,
+  its `(kind, currency, minQuantity)` key and the `replace-prices` contract keep their generality
+  (REQ-SPL-013): this narrows the **entry point**, not the data model, so a future ladder or second
+  currency is a row, not a migration.
 
 ## Non-goals
 
@@ -285,6 +327,8 @@ The menu regroup is metadata + i18n only: pages move to their role's `pageGroupK
 | **D7 — `sync-fields` exists for already-linked rows** (owner decision 2026-09-23) | After the first link `promote` is idempotent (`skipped`), so a name, spec or price corrected in the library never reached the master again — the gap the owner hit while using the page. One action re-runs the same non-destructive mapping (`changedProductFields` + `mergePriceRows`) and reports what it wrote. | Re-write the master on every library save | Every library save would rewrite the master and its price set with no review, and two writers would fight over one record; an explicit action keeps one writer per edit. |
 | **D8 — 解除关联 is allowed, not only 换绑** (owner decision 2026-09-23) | A wrong link must be fully reversible, and a row can legitimately stop being something we ship. Already-placed orders keep the bridge they froze on their own line; a draft re-resolves on its next save — the rule that already exists. | 换绑 only | Refusing to unlink leaves a mis-linked row with no way back to 未建档 short of deleting and re-creating the row (and its code is unique including soft-deleted rows, so even that collides). |
 | **D9 — The order picker keeps offering unlinked rows, labelled** (owner decision 2026-09-23) | Ordering before archiving is a legitimate early step (prices get negotiated first) and this spec already accepts it; what was missing was the *consequence*, not the freedom. | Refuse unlinked rows in the picker | Hides a legal step behind a forced extra click and reverses an accepted risk for no data-safety gain. |
+| **D10 — The discount is a property of the library row, and 本公司报价 moves to the product master's 内部结算价** (owner decision 2026-09-24) | The owner's rule: 「同个供应商，不同产品的折扣力度也不一样」 — the supplier's discount varies per item, so it is **product-level** (one number per supplier item), not supplier-level and not per currency/ladder step. And 本公司报价 is *our* selling price: every mainstream ERP keeps the purchase price on the supplier-item record (Odoo `product.supplierinfo.price` + `.discount`, SAP 采购信息记录) and the selling price on the item/price list (Odoo `list_price` + pricelists, SAP sales conditions, NetSuite item base price), because changing supplier must not change what we quote. This deployment already owns that home — `products_prices` tier `internal` (内部结算价, charged to the overseas subsidiary) — and the library's `company_offer` had **no downstream reader at all**, i.e. a second source of truth waiting to drift. | (a) discount per price row; (b) supplier-level default discount + row override; (c) supplier-level single discount; (d) keep 本公司报价 editable in the library as the only entry point; (e) keep it as a staging value written into the master on promotion | (a) and (c) are the wrong granularity per the owner's rule (the discount does not vary by currency or ladder step, and it does vary by item). (d) and (e) leave two editable copies of one selling price and make the same product quoted from two suppliers carry two offers. `company_offer` stays readable in the API and on rows that already hold it (removing a response field or narrowing an enum is a breaking change — `BACKWARD_COMPATIBILITY.md` §7), but it is no longer entered here. |
+| **D11 — The form edits one supply price; the stored set keeps its generality** (owner decision 2026-09-24) | Owner feedback on the create page: 「现在只有一种类型，供应商供货价，那么新增多条好像意义不大了」 — with 本公司报价 moved out (D10), the only creatable kind is `supplier_cost`, so a row editor whose every row is the same kind invites duplicates the API rejects on `(kind, currency, minQuantity)`. The dev data agrees: every live price row is `supplier_cost`/`CNY`/`min_quantity 1` (9 of 9 at the time of the change), and no row is a ladder step or a second currency. The form therefore edits the **base** row — the one the list column and the promotion already resolve — and shows the rest read-only. | Rebuild the group as 币种 + 单价 + 折扣, drop the kind picker and the minimum-quantity field, keep withdrawn/extra rows visible (`其它价格行`, read-only, submitted back unchanged) | (a) Keep the row editor and only hide the single-option kind picker — leaves the add-row button advertising rows the business never uses; (b) drop the price list from the schema and keep one price column — a breaking change to the API contract and to `replace-prices`, for a need nobody has expressed; both rejected, (b) additionally against `BACKWARD_COMPATIBILITY.md` §7 |
 | Menu order via `overrides.nav.groupOrder` | The domain exists, prepends, and leaves unnamed groups untouched; declared once, on the app's `purchasing` entry | Per-page `pageOrder` alone | Page order cannot interleave groups contributed by other modules; the group order is a single app-wide decision |
 
 ## Domain Vocabulary and Business Rules
@@ -292,7 +336,8 @@ The menu regroup is metadata + i18n only: pages move to their role's `pageGroupK
 | Term / invariant | Precise meaning or rule | Source of truth | Failure behavior |
 |---|---|---|---|
 | Supplier product | One item a named supplier offers: identified inside the organization by `(supplier_id, supplier_sku)`; carries its current price list as `purchasing_supplier_product_prices` rows | `purchasing_supplier_products` | Duplicate code → 409 `supplier_product_sku_taken` |
-| Price row | One quoted price of a library item, keyed by `(price_kind, currency_code, min_quantity)`; `supplier_cost` is what the supplier charges us, `company_offer` is what we quote out. Deactivated, never deleted, when it leaves the submitted set | `purchasing_supplier_product_prices` | Duplicate key in one payload → 400; unknown currency → 400 naming the code |
+| Price row | One quoted price of a library item, keyed by `(price_kind, currency_code, min_quantity)`; `supplier_cost` is what the supplier charges us, `company_offer` is what we quote out (read-only since Phase 9 — our offer lives on the product master's `internal` tier). Deactivated, never deleted, when it leaves the submitted set. Since Phase 10 the form edits **one** row — the active base `supplier_cost` row the list column resolves — and the rest are read-only history | `purchasing_supplier_product_prices` | Duplicate key in one payload → 400; unknown currency → 400 naming the code |
+| 折后价 (net price) | The supply price after this item's discount: `unit_price × (1 − discount_percent/100)`, 6 decimals, one implementation | library row's `discount_percent` + the price row's `unit_price` | Blank discount reads as 0; a blank price has no net (the row is dropped from the payload, not stored as 0) |
 | Unit of measure | A code (`PCS`, `SET`, `CTN`…) the organization maintains in the `supplier_product_unit` dictionary. The API accepts any code, so an imported row is never rejected or blanked by a dictionary gap | dictionary `supplier_product_unit` (seeded by `purchasing/setup.ts`) + `purchasing_supplier_products.unit` | Missing dictionary → the form falls back to free text and reports it; an unlisted stored code is shown as-is |
 | Product photo | An `attachments` id bound to the row through `image_attachment_ids`; the file lives in the attachments module, the order in this column | `purchasing_supplier_products.image_attachment_ids` + `attachments` | Upload failure leaves the row untouched; unlinking removes the id only |
 | `supplier_sku` | The library key: `derived_sku ?? item_no` of the quotation line, or the operator's own code for a hand-created row. 1–120 chars, unique per supplier **including soft-deleted rows** | `purchasing_supplier_products.supplier_sku` | Duplicate → 409; taken by a deleted row → per-line failure naming the row |
@@ -509,13 +554,16 @@ sourcing quotation pages for page metadata. Guides read: `.ai/guides/backend-ui.
 - **Form layout (REQ-SPL-015):** six groups, so an operator who only ever read the supplier's
   workbook can still find a field. Column 1 — 「商品标识」 (`supplierId`/`supplierSku`/`name`/`nameZh`/
   `nameEn`/`imageAttachmentIds`), 「报关信息」 (`hsCode`/`declarationElements`/`unit`) and 「价格」 (the
-  price-rows editor); column 2 — 「包装与单重」 (`cartonQuantity`/`unitNetWeight`/`moqQuantity`),
+  price-rows editor); column 2 — 「装箱、重量与体积」 (`cartonQuantity`/`unitGrossWeight`/`unitNetWeight`/
+  `unitVolume`/`moqQuantity`),
   「产品尺寸」 (`innerPacking`, its own self-titled card — the id and column name are inherited from the
   supplier sheet's 内箱尺寸 column, and the label was renamed on 2026-09-23 because 「内盒尺寸」 read as
   an inner box when the field is the item's own size), 「供应商原始资料」
   (`itemNo`/`description`/`notes`) and 「状态」 (`status`). ERP-generic fields live in 商品标识 /
-  报关信息 / 价格 / 包装与单重; the supplier-sheet原文 lives in 供应商原始资料. The group titles changed
-  with the 2026-09-23 pruning: 「包装与重量」 promised carton weights the form no longer has.
+  报关信息 / 价格 / 装箱、重量与体积; the supplier-sheet原文 lives in 供应商原始资料. The group titles changed
+  with the 2026-09-23 pruning (「包装与重量」 promised carton weights the form no longer has) and again on
+  2026-09-24, when the group gained the G.W./N.W. pair and the volume: 「包装与单重」 named neither the
+  Qty/Box it holds nor the volume, and 「单重」 was not the word the supplier's sheet uses.
 - **Price rows are a column-1 group (2026-09-23).** `CrudForm` has no full-width group: a `column: 2`
   group is drawn into a `3fr` sidebar — measured 389px at a 1440px viewport — which left the row's
   five controls 73px/73px/45px/45px/45px wide with 「供应商供货价（PK 单价）」 truncated to 「供应」. The
@@ -554,7 +602,10 @@ sourcing quotation pages for page metadata. Guides read: `.ai/guides/backend-ui.
 | `hs_code` | text, nullable | — | no | ≤ 32 chars; **text on purpose** — leading zeros and dotted groups (`8471.30.0000`) survive, which a numeric column would corrupt |
 | `image_attachment_ids` | jsonb, required, default `[]` | — | no | ≤ 12 attachment ids in display order; replace-set semantics (`[]` clears, omitted leaves alone) |
 | `moq_quantity` / `carton_quantity` | integer, nullable | — | no | ≥ 0; `carton_quantity` is 装箱数 Qty/Box and stays |
-| `unit_net_weight` | numeric(16,4), nullable | — | no | ≥ 0, decimal string |
+| `unit_net_weight` | numeric(16,4), nullable | — | no | ≥ 0, decimal string; the supplier sheet's N.W., per piece |
+| `unit_gross_weight` | numeric(16,4), nullable | — | no | ≥ 0, decimal string; the sheet's G.W., per piece (added 2026-09-24 by `Migration20260924024748_sourcing` — filed in `sourcing` because that chain creates and renames the table); becomes the master's `gross_weight` on sync |
+| `unit_volume` | numeric(16,0), nullable | — | no | ≥ 0, **whole cm³**, per piece, recorded as printed (not derived from `inner_packing`); written to the master's `volume` on sync (added there 2026-09-24 by `Migration20260924031334_products`; this column added as numeric(16,6) by `Migration20260924024748_sourcing` and narrowed by `Migration20260924035458_sourcing`, both filed in `sourcing` for the chain order) |
+| `discount_percent` | numeric(3,0), nullable | — | no | **0–100 as a whole percent** (Phase 9, REQ-SPL-022; narrowed to `scale: 0` on 2026-09-24 by `Migration20260924054410_sourcing`, filed in the `sourcing` chain for the module-order reason); blank = no discount; the supplier's discount off this item's 供货价, applied to every `supplier_cost` row of the item (`折后价 = unit_price × (1 − discount_percent/100)`, 6 decimals, `lib/priceKinds.ts` `netUnitPrice`) |
 | `inner_packing` | jsonb, nullable | — | no | `{ length, width, height, unit: 'cm' }` |
 | ~~`carton_gross_weight` / `carton_net_weight` / `outer_packing`~~ | dropped 2026-09-23 (D5) | — | — | whole-carton data is not maintained by a buyer; the columns are dropped by `Migration20260923065528_sourcing` (`up`: `drop column "carton_gross_weight", drop column "carton_net_weight", drop column "outer_packing"`, with the matching `down`) — filed in `sourcing` because module chains are applied in module-id order, so anything touching this table must ride the chain that creates and renames it |
 | `product_id` | uuid, nullable | — | no | backfilled by sync → `products_products.id`; no reverse column on the master |
@@ -624,7 +675,7 @@ depends on it, and no value was written to a tracked file.
 
 | Method / command | Path / ID | Auth and feature gate | Input | Success response / event | Errors and concurrency | Requirement IDs |
 |---|---|---|---|---|---|---|
-| `GET` | `/api/purchasing/supplier-products` | auth + `purchasing.supplier-products.view` | `supplierProductListSchema` (`supplierId`, `status`, `search`, `linked`, `page`, `pageSize`, `sortField`, `sortDir`); `linked` is `all \| linked \| unlinked` (default `all`, Phase 8) and filters the stored `product_id` server-side | `{ items, total, page, pageSize }` with `supplierSku`, `productSku`, `productName`, `productDeleted` (Phase 8: `productId` set but no live product resolves — present only on pages that hold at least one linked row, because the label read that produces it is skipped for a page of unlinked rows), `updatedAt` | 400 invalid query, 401, 403 | REQ-SPL-002, REQ-SPL-017 |
+| `GET` | `/api/purchasing/supplier-products` | auth + `purchasing.supplier-products.view` | `supplierProductListSchema` (`supplierId`, `status`, `search`, `linked`, `page`, `pageSize`, `sortField`, `sortDir`); `linked` is `all \| linked \| unlinked` (default `all`, Phase 8) and filters the stored `product_id` server-side | `{ items, total, page, pageSize }` with `supplierSku`, `productSku`, `productName`, `productDeleted` (Phase 8: `productId` set but no live product resolves — present only on pages that hold at least one linked row, because the label read that produces it is skipped for a page of unlinked rows), `updatedAt`; Phase 9 adds `discountPercent` and `supplierCostPrice.netUnitPrice`, and `companyOfferPrice` becomes the linked product's `internal`-tier base price (falling back to a legacy library `company_offer` row when the product has none) | 400 invalid query, 401, 403 | REQ-SPL-002, REQ-SPL-017, REQ-SPL-022, REQ-SPL-023, REQ-SPL-024 |
 | `POST` | `/api/purchasing/supplier-products` | auth + `purchasing.supplier-products.manage` | `supplierProductCreateSchema` | 201 `{ id }` + `sourcing.supplier_product.created` | 400 `supplier_not_found`, 409 `supplier_product_sku_taken`, 403 | REQ-SPL-001 |
 | `PUT` | `/api/purchasing/supplier-products` | auth + `purchasing.supplier-products.manage` | `supplierProductUpdateSchema` (+ `x-expected-version`) | 200 `{ ok: true }` + `…updated` | 404, 409 `optimistic_lock_conflict`, 409 duplicate code | REQ-SPL-001 |
 | `DELETE` | `/api/purchasing/supplier-products` | auth + `purchasing.supplier-products.manage` | `{ id }` | 200 `{ ok: true }` + `…deleted` | 404 | REQ-SPL-001 |
@@ -712,6 +763,9 @@ No scheduled job, queue or notification type is added. `promote` is a synchronou
 | TEST-SPL-010 | integration | a linked row whose name/spec/price were edited afterwards; its product carries `internal` + `export` price rows, a catalog link and one variant | `POST …/sync-fields` twice; then `GET /api/products/items/{id}` | 1st call 200 with `fieldsChanged` naming the fields and `priceChanged: true`; the product's name/spec match the row, the `purchase` tier follows the row's `supplier_cost` row, `internal`/`export`, `catalog_product_id` and the variant set are untouched; 2nd call reports no field change; an unlinked row → 422 `supplier_product_not_linked` | REQ-SPL-020 |
 | TEST-SPL-011 | integration | three unlinked rows: one new SKU, one SKU that already exists, one whose SKU belongs to a soft-deleted product | `POST …/promote-batch` with all three ids, then again with the same ids, then with a payload that repeats one id, then with an empty list | 1st call `{ created: 1, updated: 1, skipped: 0, failed: [{ code: 'sku_belongs_to_deleted_product' }] }`; the two successful rows carry `productId`, the failed row is untouched; 2nd call reports the two as `skipped` and the failure again, and creates nothing new; the repeated-id payload counts the row once; the empty payload is 400 | REQ-SPL-018 |
 | TEST-SPL-012 | UI (manual smoke, dev server) | a supplier with linked, unlinked, code-mismatched and deleted-link rows; one role with `manage` only and one with `view` only | walk the list: 未建档 filter → bulk 建商品档案 → inline 建商品档案 on a single row → 关联已有商品 → 换绑 → 解除关联 → 同步字段到商品; then the order form's line picker; then the two limited roles | each action lands on the expected badge/label and the single-row flash leads to the product's 官方目录链接; the picker labels an unlinked suggestion with its consequence; the `manage`-only role sees no 建商品档案 / 批量建商品档案 / 同步字段到商品, the `view`-only role no write action and no selection column; light and dark mode, and the list at narrow width (table scrolls, filters wrap) | REQ-SPL-017, REQ-SPL-018, REQ-SPL-019, REQ-SPL-020, REQ-SPL-021 |
+| TEST-SPL-013 | integration | one library row (discount 5%) with a `supplier_cost`/CNY row of `100` and no product yet; one row with no discount and a price of `12.5`; a product whose `internal` tier carries a USD price | `PUT /api/purchasing/supplier-products` with `discountPercent: 5`, then `GET /api/purchasing/supplier-products?search=…`; `POST …/promote`; `GET /api/products/items?ids=`; then `PUT` with `discountPercent: null` and `101` / `-1` / `12.34567` / `3.75`; then link the second row to the product and re-read the list | the row stores `discountPercent: '5'` (no padded fraction) and the list returns `supplierCostPrice.netUnitPrice = '95.000000'`; the promotion writes `95.000000` into the product's `purchase` tier (not `100`); the linked row's `companyOfferPrice` is the product's `internal` price and its 供货价 column keeps the library's own value; `null` clears the discount and the net equals the list price; `101`, `-1`, a 5-decimal value and a plain `3.75` are 400s | REQ-SPL-022, REQ-SPL-023, REQ-SPL-024 |
+| TEST-SPL-014 | UI (manual smoke, dev server) | a library row with a base `supplier_cost` row, a withdrawn row and a legacy `company_offer` row, plus a linked product with an `internal` price | open `/backend/purchasing/supplier-products/create` and an edit page: read the 价格 group, type a price and a whole discount on the create page and watch the 折后价 line; then change the amount on the edit page, save and re-read; type a fraction (`3.75`) in the discount and watch it be refused; then the list's two price columns | the group is 币种 + 单价 + 折扣 and nothing else — no 价格类型 / 起订量 / 启用 / 新增价格 / 移除 control, and no legacy PK/KC wording in either locale; the create page derives 折后价 live and drops its 还没有供货价 line once an amount is typed; the edit page prefills the **base** row's amount and currency, lists the withdrawn and legacy rows read-only under 其它价格行, and a save that does not touch the price leaves every stored row unchanged; the 折扣 field is digit-only (`inputMode="numeric"`, help says 整数) and a saved whole percent reads back as `5`, not `5.0000`; a fraction is refused with the field-level error and nothing is saved | REQ-SPL-022, REQ-SPL-023, REQ-SPL-024, REQ-SPL-025 |
+| TEST-SPL-015 | unit | in-memory price-row values | `comparePriceBaseRows` / `pickBasePriceRow` over a ladder and two currencies; `splitSupplierProductPriceRows` over a live base row, a ladder step, a second-currency row, a withdrawn row and a legacy `company_offer` row | the base row is the lowest `minQuantity` with ties broken by currency code and `null` for an empty set; the split's `primary` is the live base row, a withdrawn or `company_offer` row is never `primary`, and every other row lands in `extras` untouched (`lib/__tests__/priceKinds.test.ts`, `lib/__tests__/supplierProductFormValues.test.ts`) | REQ-SPL-025 |
 
 ## Implementation Status
 
@@ -721,6 +775,7 @@ Source doc: `.ai/specs/2026-09-22-supplier-product-library.md`
 |---|---|---|---|---|---|
 | Phases 1–7 | verified | — | AC-SPL-001…016 | see the Changelog rows (gates + integration suite + browser smoke, 2026-09-22/23) | shipped in `sourcing` → moved to `purchasing` (D4) |
 | Phase 8 — 关联商品：直觉化 + 手动关联 | **verified** | Phase 7 exit gate | AC-SPL-017…021 | `yarn typecheck` ✓, `yarn lint` ✓, `yarn test` ✓ (214), `yarn build` ✓, `yarn test:integration:ephemeral` ✓ for this file (TEST-SPL-009/010/011), browser smoke ✓ | every exit-gate line below observed on the dev server and covered by TEST-SPL-009/010/011 |
+| Phase 9 — 供应商折扣 + 本公司报价归位 | **verified** | Phase 7 exit gate | AC-SPL-022…024 | `yarn test src/modules/purchasing` ✓ (24), `yarn test src/lib/i18n` ✓ (7), `yarn ds:check` ✓ (667 files), eslint on the changed files ✓, live API chain on dev :3000 ✓ (20/20: discount → net → promotion writes 95 into `purchase` → list reads the product's `internal`), browser smoke ✓ (form: discount field + live 折后价, new-row kinds = 供应商供货价 only, no PK/KC anywhere; list: ¥95.00 with 「报价 ¥100.00 − 5%」 underneath and US$21.50 from the product's `internal` tier; 390px narrow width scrolls without breaking; dark mode verified at the DOM level — `<html class="dark">`, body `lab(2.75)`, amount `lab(98.26)`, secondary line on the muted token; the harness screenshot itself still renders light, a capture-side artifact) | `yarn test:integration:ephemeral` ✓ for TEST-SPL-013 (results.json: “Phase 9 — the item discount nets the supply price into the cost tier, and our offer comes from the product (TEST-SPL-013)” → passed; the file’s ten pre-existing tests still pass). The run reports 31 passed / 5 failed / 6 skipped, and no failure belongs to this phase: four `storage_ops` specs gated on the unset `STORAGE_OPS_TEST_S3_CONFIG` (the known environment gate) and one `product_codes` spec from a parallel session’s in-flight module. TEST-SPL-014’s walk was done by hand (list columns, 390px narrow width, dark mode at the DOM level) |
 
 ### Phase 8 progress
 
@@ -729,6 +784,28 @@ Source doc: `.ai/specs/2026-09-22-supplier-product-library.md`
 - [x] Slice 3 — `sync-fields`: `lib/supplierProductPromotion.ts` refactored into `applySupplierProductToMaster` (shared field + price legs, `fieldsChanged`/`priceChanged`), `lib/productsReads.ts` (`findProductById` with `includeDeleted`/`forUpdate`, shared projection), `commands/supplierProducts.ts` (`purchasing.supplier-products.sync-fields`), `api/supplier-products/sync-fields/route.ts`, row action — `yarn typecheck` passed; browser smoke: 同步字段到商品 → `POST …/sync-fields 200` and the list refreshed
 - [x] Slice 4 — say the rule where the work happens: `SupplierProductForm` 供应商货号 help (zh/en), `orderFormOptions.ts` (`SupplierProductOption.linked`, `loadOwnedProductOptions` moved here from `PurchaseOrderForm.tsx` so both pickers share one source), `PurchaseOrderForm.tsx` line-picker option description carries 未建档：建过档才能发运、收货 — `yarn typecheck` passed, eslint clean; browser smoke: the order form's line picker showed `SMOKE-LINK-MUDUTOBP — Smoke supplier naming / 本供应商产品库 · 未建档：建过档才能发运、收货` next to the master suggestion's `商品库`
 - [x] Slice 5 — evidence: TEST-SPL-009/010/011 live in `__integration__/supplier-products.spec.ts` (lines 591–992) and **pass** in `yarn test:integration:ephemeral` (results.json: "Phase 8 — links, re-points and clears a library row…", "Phase 8 — sync-fields pushes the row's values…", "Phase 8 — promote-batch isolates one row's failure…" all `passed`; the pre-existing library tests still pass; the run's only failures are the four `storage_ops` S3 specs, which are gated on the unset `STORAGE_OPS_TEST_S3_CONFIG` environment variable and unrelated to this change). Full gates: `yarn generate`, `yarn typecheck`, `yarn lint`, `yarn ds:check`, `yarn test` (26 suites / 214 tests) all pass; `yarn build` re-run after the integration runner released the `.next` lock. IN FLIGHT: the `om-code-review` report — the phase is marked `verified` only once its findings are resolved
+
+### Phase 9 progress
+
+- [x] Slice 1 — the discount: `data/entities.ts` (`discount_percent` numeric(7,4), `OptionalProps`), `data/validators.ts` (`decimalSchema` gained a `max`; `discountPercent` 0–100/4 decimals on the create+update contract), `commands/supplierProducts.ts` (create + clearable update), `api/supplier-products/route.ts` (list field, projection, export column), `lib/supplierProductFormValues.ts` (form value, read-back, payload) — `Migration20260924031334_sourcing` (`add "discount_percent" numeric(7,4) null`, filed in the `sourcing` chain for the module-order reason) is **applied**; `yarn test src/modules/purchasing` green (24)
+- [x] Slice 2 — the price chain: `lib/priceKinds.ts` (`netUnitPrice`, `formatPriceAmount`, `trimDecimalText`, `SUPPLIER_PRODUCT_NEW_ROW_PRICE_KINDS`), `lib/supplierProductPromotion.ts` (both branches write the net figure into `purchase`), `lib/productsReads.ts` (`loadBaseTierPricesByProduct`), the list route's `afterList` (net on the cost cell, `companyOfferPrice` from the product's `internal` tier + `companyOfferSource`), `types.ts` — live dev :3000 API chain green (20/20)
+- [x] Slice 3 — the UI and the label sweep: `components/SupplierProductForm.tsx` (discount field + live 折后价 per supply row, new-row kinds restricted to 供应商供货价, kind labels without PK/KC), `components/SupplierProductsTable.tsx` (net leading, 报价 X − Y% underneath, legacy library offer labelled), zh/en catalogs, `purchasing/README.md` — browser smoke green: the create page renders the discount field with 「折后价：¥95.00」 under a 100/5% row and offers only 供应商供货价 for a new row; the list renders 「¥95.00 / 报价 ¥100.00 − 5%」 and 「US$21.50」 from the linked product; 390px narrow width holds; dark mode verified at the DOM level (the capture itself stays light — a harness artifact); `yarn test src/lib/i18n` green (7)
+- [x] Slice 4 — evidence: TEST-SPL-013 lives in `__integration__/supplier-products.spec.ts` and **passes** in `yarn test:integration:ephemeral` (results.json: “Phase 9 — the item discount nets the supply price into the cost tier, and our offer comes from the product (TEST-SPL-013)” `passed`; the file’s ten pre-existing tests still pass). The run reports 31 passed / 5 failed / 6 skipped and none of the failures is this phase: four are the `storage_ops` specs gated on the unset `STORAGE_OPS_TEST_S3_CONFIG` (the same environment gate the earlier phases record) and one is a `product_codes` spec from a parallel session’s in-flight module. Two earlier attempts could not build the tree at all for that same module (first `next build`’s TypeScript phase, then the ephemeral app init at `relation "product_codes_rules" does not exist`), which is why this phase sat at “gate pending” for a while. TEST-SPL-014’s walk was done by hand against dev :3000 — the form, a row saved through it, the list columns, 390px narrow width, and dark mode at the DOM level
+
+- [x] Slice 5 — follow-up defect on the same page (owner report 2026-09-24, 「本公司报价 显示不完整」): the column's legend `取自商品档案（内部结算价）` is 156px and `DataTable` caps every cell at its 150px default, but the overflow came from a right-aligned child — the truncation wrapper itself does not scroll, so `TruncatedCell` neither rendered an ellipsis nor fired its tooltip and the legend lost its head silently. Fix in `components/SupplierProductsTable.tsx`: `meta.truncate: false` + `whitespace-nowrap` on the cell (without the nowrap the auto layout squeezes the column to 102px and breaks the 13-character legend across four lines). Verified on the dev server's DOM: legend one line 156px inside a 188px column, zero overflowing descendants in the table, `yarn typecheck` ✓, eslint ✓; rule recorded in `.ai/lessons/datatable-cell-truncates-at-150px.md` + `purchasing/README.md`
+### Phase 10 progress
+
+- [x] Slice 1 — the shared base-row rule: `lib/priceKinds.ts` gained `comparePriceBaseRows` /
+  `pickBasePriceRow` and dropped the two now-dead constants; `lib/supplierProductPrices.ts` compares
+  with the same function instead of its own copy. Covered by `lib/__tests__/priceKinds.test.ts`.
+- [x] Slice 2 — the split: `lib/supplierProductFormValues.ts` `splitSupplierProductPriceRows` (live base
+  row = the one edited; everything else round-trips) + `createEmptyPriceRow` reduced to the base
+  identity; covered by `lib/__tests__/supplierProductFormValues.test.ts`.
+- [x] Slice 3 — the group: `SupplierProductPriceGroup` renders 币种 + 单价 + 折扣 (+ live 折后价) and the
+  read-only 其它价格行 list; the kind picker, minimum-quantity field, 启用 / 移除 / 新增价格 controls and
+  their catalog keys are gone; the currency trigger renders its own label so a value that mounts before
+  its dictionary item can never look unset.
+- [x] Slice 4 — evidence: `yarn typecheck` ✓, `yarn lint` ✓ (0 errors), `yarn ds:check` ✓ (697 files), `yarn test` ✓ (32 suites / 261 tests, incl. the five new cases in `priceKinds.test.ts` and `supplierProductFormValues.test.ts`); browser smoke on the dev server (`localhost:3000`) browser smoke on the dev server (`localhost:3000`, Playwright with an admin session): the create page renders 币种 + 单价 + 折扣 and hides every removed control (`kindSelect`/`minQtyField`/`addRowButton`/`removeRowButton`/`activeCheckbox` all absent), and typing `100` with a `5` % discount turns the empty state into the live net `Net after discount: CN¥95.00`; the edit page prefills the base row (`12.500000`, `CNY — 人民币`), and saving `12.6` moved `supplier_cost/CNY/1` to `12.600000` while the item's withdrawn `company_offer/USD/1` row came back untouched (`3.200000`, `active=false`); the fixture was restored to `12.500000` afterwards. The earlier attempts in this session hit a poisoned Turbopack cache (ChunkLoadError / turbo-tasks panic, the dev server's own recovery deleted the cache) — no page code was implicated.; the create page's rendered group was also read through an accessibility snapshot: 币种 combobox (value CNY), 单价 textbox with its help paragraph, 折扣（%）with the % suffix, the group hint, and the 还没有供货价 empty state — and none of 价格类型 / 起订量 / 启用 / 新增价格 / 移除 is present.
 
 ## Implementation Phases
 
@@ -931,6 +1008,64 @@ Source doc: `.ai/specs/2026-09-22-supplier-product-library.md`
   the failing row named and untouched; and the order form labels an unlinked suggestion with its
   consequence.
 
+### Phase 9 — 供应商折扣 + 本公司报价归位
+
+- **Depends on:** Phase 7 exit gate (the price list it extends); independent of Phase 8.
+- **Outcome:** a library row carries the supplier's **discount** (product level) with a live 折后价,
+  the promotion writes that net cost into the product master's 成本价 tier, and 本公司报价 stops being
+  typed in the library — the list reads the linked product's 内部结算价 instead.
+- **Why this order / value delivered:** the discount is what the business actually pays, so without it
+  every downstream cost figure (contract, invoice, internal settlement) is overstated by the discount;
+  and moving our offer out removes the second editable copy of one selling price. Owner-reported on
+  `/backend/purchasing/supplier-products/create` on 2026-09-24 (the two option labels still carried the
+  PetKit-era 「PK 单价」/「KC 单价」 wording, and the discount had nowhere to go).
+- **Deliverables:** `discount_percent` on `PurchasingSupplierProduct` (entity, validator, command, API
+  projection, export); `netUnitPrice` in `lib/priceKinds.ts`; the promotion's net write
+  (`lib/supplierProductPromotion.ts`); `loadBaseTierPricesByProduct` in `lib/productsReads.ts` plus the
+  list route's `companyOfferPrice` re-point; the 价格 group's discount field and per-row 折后价 preview
+  in `components/SupplierProductForm.tsx`; the new-row kind restriction; `SupplierProductsTable`
+  columns; zh/en catalogs; `purchasing/README.md`; one generated migration.
+- **Independent slices / estimated commits:** (a) column + validators + command + migration; (b) net
+  price helper + promotion + list projection; (c) form/list UI + the label sweep.
+- **Requirements closed:** REQ-SPL-022, REQ-SPL-023, REQ-SPL-024
+- **Tests:** TEST-SPL-013 (integration), TEST-SPL-014 (browser smoke)
+- **Validation:** `yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test` plus
+  `yarn test:integration:ephemeral`; the browser smoke covers light/dark and narrow width.
+- **Exit gate:** the create/edit form takes a discount and shows the net per `supplier_cost` row; a
+  5 % discount on a `100` price promotes to `95.000000` in the product's `purchase` tier; the list
+  shows the net cost with 供货价 × 折扣 underneath and the linked product's 内部结算价 in the
+  本公司报价 column; no user-facing string in either locale, the form, the list or the README calls our
+  code 供应商货号 or carries PK/KC; an existing `company_offer` row still round-trips.
+
+### Phase 10 — 价格组：一条供货价
+
+- **Depends on:** Phase 9 exit gate (the price group it simplifies); independent of Phase 8.
+- **Outcome:** the library form asks for **one** supply price — 币种 + 单价 + 折扣 with the live 折后价 —
+  instead of a row editor. Rows the form does not edit (another currency or ladder step, a withdrawn
+  price, a legacy `company_offer`) stay visible read-only under 其它价格行 and are submitted back
+  unchanged, so saving an item never rewrites history.
+- **Why this order / value delivered:** once 本公司报价 left the form (D10) the only creatable kind was
+  `supplier_cost`, so every "新增价格" row was the same kind × currency × minimum quantity — an entry
+  point that could only produce the duplicate key the API rejects. The business quotes one price per
+  supplier item (every live row on the dev data is `supplier_cost`/`CNY`/1), so the page now states that
+  instead of describing a matrix nobody fills. Owner-reported on
+  `/backend/purchasing/supplier-products/create` on 2026-09-24 (D11).
+- **Deliverables:** `lib/priceKinds.ts` (`comparePriceBaseRows`, `pickBasePriceRow`; the now-dead
+  `SUPPLIER_PRODUCT_NEW_ROW_PRICE_KINDS` / `SUPPLIER_PRODUCT_PRICE_KIND_ORDER` removed);
+  `lib/supplierProductPrices.ts` reusing the one comparison rule; `lib/supplierProductFormValues.ts`
+  (`splitSupplierProductPriceRows`, simplified `createEmptyPriceRow`); `SupplierProductPriceGroup` in
+  `components/SupplierProductForm.tsx`; zh/en catalogs; unit tests; `purchasing/README.md`.
+- **Independent slices / estimated commits:** (a) the shared base-row rule + tests; (b) the split
+  helper + tests; (c) the group UI + catalogues + docs.
+- **Requirements closed:** REQ-SPL-025 (and the entry-point half of REQ-SPL-024)
+- **Tests:** TEST-SPL-015 (unit), TEST-SPL-014 (browser smoke)
+- **Validation:** `yarn typecheck && yarn lint && yarn ds:check && yarn test`, plus the browser smoke on
+  the dev server for the create and edit pages.
+- **Exit gate:** the create page renders 币种 / 单价 / 折扣 with no kind picker, no minimum-quantity
+  field and no add/remove row control, and derives 折后价 while typing; an edit page prefills the base
+  `supplier_cost` row, lists withdrawn/extra rows read-only, and a save leaves every stored row exactly
+  as it was; the payload and the `replace-prices` contract are untouched.
+
 ## Requirement Traceability
 
 | Requirement | Journey / surface | Data/API/event contracts | Phase | Tests | Acceptance criterion |
@@ -956,6 +1091,10 @@ Source doc: `.ai/specs/2026-09-22-supplier-product-library.md`
 | REQ-SPL-019 | library list (关联已有商品 / 换绑 / 解除关联) | `POST /api/purchasing/supplier-products/link`, `purchasing.supplier-products.link`, `purchasing_supplier_products.product_id` | Phase 8 | TEST-SPL-009, TEST-SPL-012 | AC-SPL-019 |
 | REQ-SPL-020 | library list (同步字段到商品) | `POST /api/purchasing/supplier-products/sync-fields`, `purchasing.supplier-products.sync-fields`, `applySupplierProductToMaster` → `products.items.update` + `products.prices.replace` | Phase 8 | TEST-SPL-010, TEST-SPL-012 | AC-SPL-020 |
 | REQ-SPL-021 | order form line picker (option labels) | `orderFormOptions.loadSupplierProductOptions` + `PurchaseOrderForm` option description | Phase 8 | TEST-SPL-012 | AC-SPL-021 |
+| REQ-SPL-022 | library form 价格 group | `purchasing_supplier_products.discount_percent`, `supplierProductCreateSchema/UpdateSchema.discountPercent`, `lib/priceKinds.ts` `netUnitPrice` | Phase 9 | TEST-SPL-013, TEST-SPL-014 | AC-SPL-022 |
+| REQ-SPL-023 | J-SPL-003 (promote / sync-fields), library list price column, CSV/JSON export | `supplierProductPromotion.resolveDesiredPurchasePrice` → `products.prices.replace`; `GET /api/purchasing/supplier-products` (`supplierCostPrice.netUnitPrice`) | Phase 9 | TEST-SPL-013 | AC-SPL-023 |
+| REQ-SPL-024 | library form 价格 group (no kind picker), library list 本公司报价 column | `lib/productsReads.loadBaseTierPricesByProduct` (`products_prices` tier `internal`), `SupplierProductForm` kind options, `SupplierProductsTable` column | Phase 9 | TEST-SPL-013, TEST-SPL-014 | AC-SPL-024 |
+| REQ-SPL-025 | library form 价格 group (single supply price), library edit page (其它价格行) | `lib/priceKinds.ts` `comparePriceBaseRows`/`pickBasePriceRow`, `lib/supplierProductFormValues.ts` `splitSupplierProductPriceRows`, `SupplierProductForm.tsx` `SupplierProductPriceGroup`; the `replace-prices` contract is unchanged | Phase 10 | TEST-SPL-015, TEST-SPL-014 | AC-SPL-025 |
 
 ### Extension-surface traceability
 
@@ -1060,17 +1199,19 @@ Source doc: `.ai/specs/2026-09-22-supplier-product-library.md`
   (seeded per organization, idempotently) through the app's shared unit loader; a code the dictionary
   does not list still round-trips unchanged, and a dictionary the loader cannot read degrades to no
   suggestions (free text), so the picker never blocks a save the API would accept.
-- [x] **AC-SPL-013** — The item's prices are rows: both kinds (供应商供货价 / 本公司报价) can be quoted in
+- [x] **AC-SPL-013** — The item's prices are rows: a kind (供应商供货价 / 本公司报价) can be quoted in
   any currency the currency dictionary knows, at any minimum quantity; a price removed from the
   submitted set is deactivated (still readable, not deleted); a duplicate `(kind, currency,
-  minQuantity)` key is a 400 and an unknown currency a 400 naming the code.
+  minQuantity)` key is a 400 and an unknown currency a 400 naming the code. *(Phase 9 narrows the
+  **entry** to 供应商供货价 — REQ-SPL-024 — without narrowing the API.)*
 - [x] **AC-SPL-014** — Product photos upload against the saved row through the installed attachments
   route, render as thumbnails in the form, and can be unlinked; a failed upload leaves the row and
   its other fields untouched; the image list is saved with the row, so a stale form conflicts with
   409 instead of dropping a photo.
 - [x] **AC-SPL-015** — The form separates ERP-generic fields from supplier-sheet fields into named
-  groups and spells out every abbreviation (L/W/H, Qty/Box, MOQ, HS, PK/KC) in a label or
-  inline help, in both zh and en.
+  groups and spells out every abbreviation (L/W/H, Qty/Box, MOQ, HS, CBM) in a label or
+  inline help, in both zh and en. *(Phase 9 removed PK/KC: they were one supplier's column names,
+  not a vocabulary.)*
 - [x] **AC-SPL-016** — 同步为商品 maps `name_zh ?? name` to the master's `name`, `name_en` to
   `name_en`, and prefers the library's active `supplier_cost` row (minimum quantity 1) as the
   `purchase` price, falling back to the newest matching quotation line when the row has no price —
@@ -1098,6 +1239,26 @@ Source doc: `.ai/specs/2026-09-22-supplier-product-library.md`
   refused with 422.
 - [ ] **AC-SPL-021** — The order form's line picker labels each library suggestion as 已建档 or
   未建档：建过档才能发运、收货, and an unlinked row remains selectable.
+- [ ] **AC-SPL-022** — A library row stores the supplier's discount as a product-level **whole
+  percent** (`discountPercent`, 0–100, no decimal point, blank = none); a value above 100, below 0 or
+  carrying a fraction is refused with 400, and the stored value round-trips through the list and the
+  form as `5` (never a padded `5.0000`).
+- [ ] **AC-SPL-023** — 折后价 = 供货价 × (1 − 折扣/100) to 6 decimals, computed by one implementation and
+  visible in the form (per `supplier_cost` row), in the list (net amount leading, 供货价 × 折扣
+  underneath) and in the export; `promote` and `sync-fields` write that net figure into the product's
+  `purchase` tier, and the fallback (newest matching quotation line) is discounted by the same term.
+- [ ] **AC-SPL-024** — The 价格 group has no kind picker (a new item's price is a 供货价, full stop); an
+  existing `company_offer` row still renders read-only and is submitted back unchanged (never silently
+  deactivated by the whole-set replace); the list's 本公司报价 column shows the linked product's
+  `internal`（内部结算价）base price and nothing for an unlinked row; no PK/KC wording remains in
+  either locale, the form, the list, the README or the code comments that name a user-facing option.
+- [ ] **AC-SPL-025** — The 价格 group takes one supply price: 币种 + 单价 + 折扣, with 折后价 derived live
+  and the empty state reading 还没有供货价 when the item has none. The field is prefilled from the
+  item's **base** `supplier_cost` row (the row the list column shows), a withdrawn row never reappears
+  in it, and clearing the amount withdraws the price. A second currency or ladder step, a withdrawn
+  price and a legacy `company_offer` row render read-only under 其它价格行 and are submitted back
+  unchanged — saving an item whose price was not touched leaves every stored row exactly as it was.
+  No 新增价格 / 移除 / 价格类型 / 起订量 / 启用 control remains in the group.
 - [ ] Every listed backend surface matches its recorded reference and uses the canonical shell/components,
   shared API helpers, semantic tokens, and complete loading, empty, error, conflict, keyboard,
   accessibility, responsive, light-mode, and dark-mode states.
@@ -1116,7 +1277,7 @@ Source doc: `.ai/specs/2026-09-22-supplier-product-library.md`
 | UI contracts identify references, canonical components, and theme/state coverage | pass | UI and Interaction Contracts |
 | Every phase has dependencies, bounded slices, tests, value, and an observable exit gate | pass | Implementation Phases |
 
-Verdict: `Phases 1–7 implemented and verified (2026-09-22/23); Phase 8 implemented and verified on 2026-09-23 (integration file green, browser smoke walked every exit-gate line, full gate green; the only failing integration specs in that run are the S3-gated storage_ops ones, an environment gate)`.
+Verdict: `Phases 1–7 implemented and verified (2026-09-22/23); Phase 9 implemented and verified on 2026-09-24 (unit + live API + browser smoke + TEST-SPL-013 green; that run’s other failures are the S3-gated `storage_ops` specs and a parallel session’s in-flight `product_codes` spec); Phase 8 implemented and verified on 2026-09-23 (integration file green, browser smoke walked every exit-gate line, full gate green; the only failing integration specs in that run are the S3-gated storage_ops ones, an environment gate); **Phase 10 implemented and verified on 2026-09-24** (unit tests for the shared base-row rule and the split, a browser smoke on the create and edit pages — the group's three controls, the live 折后价, and a save that left a withdrawn row untouched; no migration and no API change)`.
 
 ## Open Questions
 
@@ -1132,11 +1293,18 @@ is unblocked and marked Ready for implementation.
 | Q-SPL-004 | After a row is linked, an edit to the library (name, spec, price) never reaches the product master again — the 建商品档案 action disappears and `promote` is idempotent. Do you want a way to push the row's current field values onto the linked product, or is the master the record to edit from then on? | owner | **yes** | **answered 2026-09-23 — (a): add 同步字段到商品 on linked rows** (non-empty/changed values only, never the catalog link, never the other two price tiers; decision D7) |
 | Q-SPL-005 | Should 解除关联 exist at all, or only 换绑? Unlinking puts a row back to 未建档, which costs it the catalog bridge on any draft order that still resolves through it. | owner | **yes** | **answered 2026-09-23 — (a): 换绑 + 解除** (a wrong link is fully reversible; drafts re-resolve on their next save; decision D8) |
 | Q-SPL-006 | An unlinked library row can be ordered today but never shipped or received. Should the order line picker refuse it, or keep offering it with a visible 未建档 warning? | owner | **yes** | **answered 2026-09-23 — (a): keep it pickable, labelled 未建档：建过档才能发运、收货** (decision D9) |
+| Q-SPL-007 | At what granularity does the supplier's discount live — per price row, per supplier, or per item? | owner | **yes** | **answered 2026-09-24 — per item (product level): 「同个供应商，不同产品的折扣力度也不一样」** (decision D10, REQ-SPL-022) |
+| Q-SPL-008 | Should 本公司报价 keep being typed in the library, or move to the product master's price tiers? | owner | **yes** | **answered 2026-09-24 — move out; the library shows the linked product's 内部结算价 read-only** (decision D10, REQ-SPL-024) |
+| Q-SPL-009 | Which tier holds our offer once it moves? | owner | **yes** | **answered 2026-09-24 — `internal`（内部结算价，报给海外子公司）** (decision D10, REQ-SPL-024) |
 
 ## Changelog
 
 | Date | Change |
 |---|---|
+| 2026-09-24 | **Phase 10 — 价格组收成一条供货价（owner 在新建页反馈「现在只有一种类型，供应商供货价，那么新增多条好像意义不大了」）.** ① UI：价格组只剩 **币种 + 单价 + 折扣（+ 实时折后价）**，删掉「价格类型」选择器、「起订量」、「启用」勾选、「新增价格」与「移除」按钮（连带 zh/en 的 `price.add` / `price.remove` / `price.field.kind` / `price.field.minQuantity` / `price.field.active` 五个 key 一起清掉）。② 唯一实现：新增 `lib/priceKinds.ts` 的 `comparePriceBaseRows` / `pickBasePriceRow`（最低起订量档优先、同档按币种码排序——列表列与建档路径本来就是这个规则，现在两边共用一份），`lib/supplierProductPrices.ts` 改用它；表单新增 `splitSupplierProductPriceRows`：**primary = 该货号在售的基准 `supplier_cost` 行**（列表显示的那一行），其余行（其它币种/起订量档、已停用旧价、历史 `company_offer`）进「其它价格行（只读）」并**原样提交回去**，所以保存永远不改写历史；已停用的价绝不回填进输入框（那会在下次保存时把它悄悄复活）。③ 数据模型与契约**没收窄**：`purchasing_supplier_product_prices`、`(kind, currency, minQuantity)` 唯一键、`replace-prices` 的整组替换语义都不变，币种仍必须来自币种字典——将来真要阶梯价或第二币种，还是加一行，不是加迁移。④ 清空单价 = 停用该价（deactivate，不删除）。 |
+| 2026-09-24 | **折扣收成整数（owner 在新建页反馈「价格-折扣，只有使用整数，不需要保留小数点」）.** ① 契约：`discountPercent` 由「0–100、最多 4 位小数」改为**0–100 的整数**——`data/validators.ts` 用 `nullableDecimalSchema(0, { min: '0', max: '100' })`（模块里 `unit_volume` 已有的写法），带小数点的值一律 400，**四舍五入掉小数**被明确拒绝（`3.75` 是笔误，不是条款）。② 列：`Migration20260924054410_sourcing` 把 `discount_percent` 从 numeric(7,4) 收成 `numeric(3,0)`（`using ("discount_percent"::numeric(3,0))`，无 drop），文件按模块顺序规则放 `sourcing` 链；快照留在 `purchasing`（实体所在模块），`yarn db:generate` 复核为 no changes。收窄前实测 dev 库 7 行、2 行有折扣、**0 行带小数**，转换无损；迁移**已应用**（`sourcing: 1 migration applied`，ledger 记于 `mikro_orm_migrations_sourcing`；应用后 `discount_percent` = `numeric(3,0)`、4 行折扣值全为整数）。③ UI：表单折扣输入改 `inputMode="numeric"`（和同页「起订量」一致，不做输入侧清洗——粘贴 `3.5` 被静默改成 `35` 是更坏的失败），zh/en 提示句改为「0–100 的整数」；回读值因此是 `5` 而不是 `5.0000`。④ 证据：`yarn test src/modules/purchasing` ✓（25，含 `3.75`/`0.5` 拒绝与 0/100 边界）、`yarn test` ✓（32 suites / 257）、`yarn typecheck` ✓、改动文件 eslint 0、`yarn ds:check` ✓ 697 files、`yarn db:generate` 两侧 no changes；真机（dev :3000，admin 会话）：`GET /backend/purchasing/supplier-products/create` 200，SSR DOM 里折扣输入为 `inputMode="numeric"`、zh 提示句为「0–100 的整数」（en 同步）；`PUT /api/purchasing/supplier-products` 传 `discountPercent: '3.75'` → **400** `path: ["discountPercent"]`（`value must have at most 0 decimal places`——正是表单把错误挂到该字段的那条路径），传 `5` → 200 且 `GET` 回读 `'5'`（不是 `5.0000`），传 `null` → 200 清空；DB 实测列已是 `numeric(3,0)`。**未覆盖**：TEST-SPL-014 的浏览器内可视走查——并行会话把机器负载压到 ~300，CDP 导航超过工具 30s 上限（页面本身 HTTP 200），故该轮以「SSR DOM + 真机 API」取证，交互点选留待下次补 |
+| 2026-09-24 | **Phase 9 — 供应商折扣 + 本公司报价归位（owner 在新建页反馈）.** ① 新增 `purchasing_supplier_products.discount_percent` numeric(7,4) 可空（0–100，最多 4 位小数，空 = 无折扣）：折扣是**产品级**的（owner 口径「同个供应商，不同产品的折扣力度也不一样」），不是供应商级、也不是每条价格行级。② 折后价 = 供货价 × (1 − 折扣/100)，六位小数，**单一实现** `lib/priceKinds.ts` 的 `netUnitPrice`，被表单实时预览、列表列与建档路径共用；`promote` / `sync-fields` 写进商品 `purchase`（成本价）档的是**折后价**，报价行回退路径同样打折。③ 两个选项名去 PetKit 化：`供应商供货价（PK 单价）`/`本公司报价（KC 单价）` → **供应商供货价 / 本公司报价**（zh/en 字典、表单兜底串、提示句、README 一并清掉 PK/KC）。④ 本公司报价**不再在产品库录入**（D10）：新建价格行只提供 供应商供货价，已存在的 `company_offer` 行照常渲染并原样提交（整组替换不会把它误停用）；列表的 本公司报价 列改为只读投影**已建档商品**的 `internal`（内部结算价）档基准价，未建档行留空；`company_offer` 的枚举/字段/行保持可读（删响应字段或收窄枚举是破坏性变更）。⑤ 改动面：实体/validator/命令/API schema+投影+导出、`lib/priceKinds.ts`、`lib/supplierProductPromotion.ts`、`lib/productsReads.ts`（`loadBaseTierPricesByProduct`）、`lib/supplierProductFormValues.ts`、`components/SupplierProductForm.tsx`、`components/SupplierProductsTable.tsx`、zh/en 字典、`purchasing/README.md`、一个 additive 迁移。证据：TEST-SPL-013（集成，`yarn test:integration:ephemeral` 通过：results.json “Phase 9 — the item discount nets the supply price into the cost tier…” `passed`，产品库 spec 既有 10 例仍全绿；本轮 31 passed / 5 failed / 6 skipped，5 个失败全为无关项：4 个 `STORAGE_OPS_TEST_S3_CONFIG` 未设的 `storage_ops` spec + 1 个并行会话在飞的 `product_codes` spec）、TEST-SPL-014（浏览器冒烟：表单折扣与实时折后价、列表折后价与商品内部结算价、390px 窄屏、暗色 DOM 级核对）。 |
+| 2026-09-24 | **单件重量成对 + 体积，分组改名（owner 在编辑页反馈）.** | ① 分组「包装与单重」→「**装箱、重量与体积**」：旧名字既没提它装的 Qty/Box，也没提新加的体积，「单重」也不是供应商表上的说法。② 新增两个可空列 `unit_gross_weight` numeric(16,4)（单件毛重，供应商表的 G.W.）与 `unit_volume`（单件体积，**整数 cm³**，`numeric(16,0)`——业主 2026-09-24 明确单位，并要求不显示小数：先按 scale 6 建列、同日 `Migration20260924035458_sourcing` 收窄，表单显示 `88642`），与既有 `unit_net_weight`（N.W.）一起构成重量对 + 体积；三者都可留空，单位固定 kg / cm³，都是**单件**口径（整箱口径 2026-09-23 已删）。③ 同步路径带上毛重：`ProductFieldValues` 加 `grossWeight`（`products/lib/supplierMapping.ts`），产品库映射 `unitGrossWeight → grossWeight`、报价行映射声明 `grossWeight: null`（报价层没有 G.W. 列），两条 promote 路径的 create 载荷都补上；商品主数据新增 `volume` numeric(16,6)（cm³，`Migration20260924031334_products`），`unit_volume → volume` 一并同步（读取方暂无，运费询价按 m³ 计费时换算）。⑤ 同一次改动里发现并修掉一个**数据丢失缺陷**：`nullableDecimalSchema` 把「没传」折叠成 `null`，而更新命令按 `!== undefined` 才写 → 任何局部写入（`sync-fields`、报价导入的 `changedLibraryFields`）都会清掉载荷没提到的十进制列；两个模块的助手改为保留 `undefined`，并补契约测试。见 products spec 的同日 Changelog 与 `.ai/lessons/partial-update-must-not-clear-absent-fields.md`。④ 原始货号（`item_no`）的说明改写：它是**记录**供应商自己印的货号、方便对照，不参与匹配也不参与生成货号（与 `2026-09-24-supplier-product-code-rules.md` 的 REQ-PC-012 口径一致；该 spec 的改名不在此切片）。改动面：实体/validator/命令/API schema+select+投影、表单字段与分组、`supplierProductFormValues`、zh/en 字典、`purchasing` 与 `sourcing` 两侧 `productsReads`（`gross_weight` 进 select 与映射）、集成测试与单测。迁移 `Migration20260924024748_sourcing`（`add "unit_gross_weight" numeric(16,4) null, add "unit_volume" numeric(16,6) null` + 对称 `down`；**物理步骤必须落在 `sourcing` 链**——各模块迁移按 module-id 顺序执行，`purchasing` 先于 `sourcing`，而这表是 `sourcing` 链建好并改名的，第一版放在 `purchasing` 下在全新库上直接报 `relation "purchasing_supplier_products" does not exist`；实体/snapshot/读写仍在 `purchasing`）。验证：`yarn generate` + `yarn typecheck` + `yarn ds:check`（645 files）+ 99 个单测（purchasing/products/sourcing + i18n 纯度）绿，改动文件 `eslint` 零告警；浏览器实测编辑页 0835caad…：分组与三个字段渲染正确（zh/en 双语言核对）、填 1.9 / 0.09 保存后回读 1.9000 / 0.090000 且未动的净重仍是 1.2800；`sync-fields` 把毛重推到商品主数据（`fieldsChanged: ["netWeight","grossWeight","cartonQuantity"]`，主数据 `net_weight 1.2800 / gross_weight 1.9000`），体积只留产品库行；API 建行（毛重 0.525 / 体积 0.0846）回读一致；`yarn test:integration:ephemeral` 27 passed（产品库 12 例全绿，含本次新断言），仅 4 个 S3-gated `storage_ops` spec 因环境变量缺失失败（既有门）。**注**：dev 服务器需重启才认新实体属性（MikroORM 元数据在启动时构建），实测用面板的 restart action 后写入才落库 |
 | 2026-09-23 | **Phase 8 implemented and verified.** Four slices landed: (1) the 商品 column (product name + SKU, linking to the product's edit page), the 未建档 badge with inline 建商品档案 / 关联已有商品, the server-side 建档状态 filter (`linked`, on the stored `product_id`), the `productDeleted` flag and the bulk 批量建商品档案 route; (2) `purchasing.supplier-products.link` (关联已有商品 / 换绑 / 解除关联) writing only `product_id` with the target's scope and liveness re-checked inside the writing transaction (`select … for update`; raw Kysely row write, side effects emitted from a fresh read); (3) `purchasing.supplier-products.sync-fields`, sharing one `applySupplierProductToMaster` with `promote` and reporting `fieldsChanged[]`/`priceChanged`; (4) the matching rule in the 供应商货号 help and the order picker's 已建档 / 未建档：建过档才能发运、收货 labels. `loadOwnedProductOptions` moved from `PurchaseOrderForm.tsx` into `orderFormOptions.ts` so the order form and the library's link picker share one product source. Evidence: `yarn generate`, `yarn typecheck`, `yarn lint`, `yarn ds:check`, `yarn test` (26 suites/214 tests) green; `yarn test:integration:ephemeral` green for this file (TEST-SPL-009/010/011 pass; the run's 4 failures are the S3-gated `storage_ops` specs, environment, not this change); browser smoke on the dev server walked filter → inline 建档 → the 官方目录链接 next step → 批量建商品档案 → 关联已有商品 → 换绑 → 解除关联 → 同步字段到商品, and the order picker's unlinked notice. **Two defects the smoke caught and this change fixes:** the DataTable row click swallowed the new inline controls (every control in the cell now stops propagation — recorded as a lesson) and the column header still read 关联商品 (now 商品). Deviations from the design as written: the single-row next step renders as a dismissible alert above the table (`flash(message, kind)` carries no link), `sync-fields` emits no row event because the row itself is unchanged, and `productDeleted` is present only on pages that hold at least one linked row. |
 | 2026-09-23 | **Phase 8 review fixes (fresh-context review, `CHANGES REQUIRED` → all seven findings applied).** (1) The 建档状态 filter gets a real contract: `supplierProductListSchema` gains `linked: all \| linked \| unlinked` and the list route filters the **stored** `product_id` server-side, so `total` and paging stay correct — no client-side slice of one page. (2) The linked-product-deleted state is defined end to end: `afterList` sets `productDeleted`, the 商品 cell reads 已关联的商品已删除 with 换绑 / 解除关联 as the way out, the row stays in the 已建档 bucket, a risk row explains why nothing auto-repairs it, and TEST-SPL-009 now deletes the product after linking. (3) The role story is reconciled: 建商品档案 / 批量建商品档案 / 同步字段到商品 need `purchasing.supplier-products.promote`, 关联已有商品 / 换绑 / 解除关联 need `manage`, the client hides what the caller lacks (`useBackendChrome()` + `hasFeature`, the platform's existing gate), and the server stays authoritative — TEST-SPL-012 walks both limited roles. (4) One canonical action label: 建商品档案 (row action and single-row flash), 批量建商品档案 (bulk), 未建档/已建档 as state words only; J-SPL-003/004 keep their historical 同步为商品 wording. (5) `promote-batch` collapses duplicate ids to their first occurrence and rejects a list that is empty after that. (6) `link` re-checks the target's scope and liveness **inside the transaction that writes `product_id`** — no foreign key to lean on — so a product deleted between the picker's read and the write is a 422 with nothing written. (7) The bulk result never offers the single-product 官方目录链接 link; it points back at the list filtered 已建档. |
 | 2026-09-23 | **Phase 8 filled in and marked `Ready for implementation`.** The skeleton's three blocking questions were answered by the owner the same day, all three choosing the reversible option: 同步字段到商品 exists for already-linked rows (D7), 换绑 **and** 解除关联 are both allowed (D8), and unlinked rows stay pickable in the order form with their consequence on the label (D9). Scope: the 关联商品 column becomes 商品 and prints the product's name + SKU as a link to its edit page, the 未建档 badge owns inline 建档 / 关联已有商品 entry points, a 建档状态 filter plus a bulk 建商品档案 action clears the backlog (`promote-batch` with `created/updated/skipped/failed[]` and per-row isolation), and a new `link` command — writing `product_id` and nothing else, `null` clearing it — serves the row the SKU match cannot (our SKU ≠ the supplier's code). Added: REQ-SPL-017…021, journeys J-SPL-006/007, four UI-contract rows, three routes + three commands, TEST-SPL-009…012, five risk rows, AC-SPL-017…021, and the matching rule (`供应商货号` **is** the product's SKU; a differing code is linked, never duplicated) written into the form help and the order picker's labels. Nothing is implemented yet. |
