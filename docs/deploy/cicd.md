@@ -56,6 +56,7 @@ push production ─┬─ build  ── docker build --target runner ──▶ g
 | 目录 | `/opt/kc-cb-digital-base`（`APP_DIR`） |
 | compose 文件 | `docker-compose.deploy.yml`（与 `fullapp` 的区别：`image:` 取代 `build:`，多一个 `caddy`） |
 | `.env` | `/opt/kc-cb-digital-base/.env`，**不在 git 里**，首次部署前必须手工创建 |
+| 公网地址 | **Elastic IP `18.163.244.11`，不要释放**——自动分配的公网 IPv4 每次 stop/start 都会换，域名与 `DEPLOY_HOST` 会同时失效。见 [host-access.md](./host-access.md) |
 | 对外端口 | `80` / `443` 由 `caddy` 容器占用并终结 TLS |
 | app 端口 | `APP_PORT`（`3000`），只绑 `127.0.0.1`——给部署健康探针和排障用，不对公网 |
 | 部署脚本 | `scripts/deploy/deploy.sh`，由 CI 通过 `ssh ... bash -s` 用 stdin 灌入 |
