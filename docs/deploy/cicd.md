@@ -30,7 +30,8 @@ push production ─┬─ build  ── docker build --target runner ──▶ g
 ```
 
 **构建为什么在 CI 而不在主机上**：`yarn build` 用 `--max-old-space-size=8192`，
-而部署主机是 2 GB 内存的实例。在主机上构建会 OOM，所以主机只做三件事——
+而部署主机是 2 vCPU 的实例。在主机上构建会长时间占满 CPU 并需要数 GB 堆内存，
+所以主机只做三件事——
 拉代码、拉镜像、起容器。
 
 **GHCR 鉴权**：GHCR 的 package 默认私有，主机 `pull` 需要凭据。用当次运行自带的
@@ -105,7 +106,8 @@ runner 镜像的 `NODE_ENV=production` 烤死在 `Dockerfile` 里，没有 env �
 
 主机上（一次性，之后由流水线接管）：
 
-1. 2 GB 实例没有 swap，先加 4 GB `/swapfile` 并 `vm.swappiness=10`
+1. 加 4 GB `/swapfile` 并 `vm.swappiness=10`。EC2 默认无 swap；t3.small 那档内存
+   （2 GB）在稳态下就会把 1.5 GB 压在 swap 里，索引重建时更会顶到 2 GB
 2. 装 Docker：Ubuntu 26.04（`resolute`）官方源里**没有** `docker.io`，用 Docker 官方 apt 源
 3. `git clone` 仓库到 `/opt/kc-cb-digital-base`
 4. 按上面的清单创建 `.env`（`APP_DOMAIN` 的 A 记录必须先指向本机）
@@ -248,9 +250,11 @@ git push --force origin <good-sha>:production
 - `INSTALL_CHROMIUM=0`：镜像不含 Chromium，Documents 的 PDF 导出返回 503。
   需要时给 `docker/build-push-action` 加 `build-args: INSTALL_CHROMIUM=1`，镜像增大约 400 MB。
 - `NEXT_PUBLIC_DOCUMENTS_COLLAB_URL` 未设置：文档退化为单人编辑，不跑 `documents-collab` sidecar。
-- 内存调优写在 `docker-compose.deploy.yml` 里（`--max-old-space-size=1024`、`DB_POOL_MAX=5`、
-  `shared_buffers=192MB`、redis `maxmemory=128mb`）。**换更大的实例要同步调这些值**，
-  否则 V8 会在还有余量时先撞上堆上限。
+- 内存调优写在 `docker-compose.deploy.yml` 里，当前按 **t3.large（2 vCPU / 8 GB）** 取值：
+  `--max-old-space-size=3072`、`DB_POOL_MAX=20`、`shared_buffers=1GB`、redis `maxmemory=512mb`。
+  **换实例规格必须同步调这些值**：调小了 V8 会在内存还有余量时先撞堆上限，
+  调大了则会让 app 和 Postgres 互相抢内存。`.env` 里的同名变量会覆盖 compose 默认值，
+  所以两处都要改
 - 邮件、AI、向量检索都需要额外凭据（`RESEND_API_KEY` / `OPENAI_API_KEY` 等），当前未配，
   相关功能静默关闭。
 
