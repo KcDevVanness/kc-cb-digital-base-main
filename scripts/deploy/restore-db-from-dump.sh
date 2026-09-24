@@ -55,8 +55,11 @@ echo "=== recreating ${DB_NAME} ==="
 # Dropping rather than pg_restore --clean: --clean only drops objects present in
 # the archive, so anything the target has and the archive does not would survive
 # and collide.
-psql_admin -c "DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)"
-psql_admin -c "CREATE DATABASE ${DB_NAME}"
+#
+# The name is quoted as an identifier: deployment database names contain a
+# hyphen (`open-mercato`), which is not valid in an unquoted identifier.
+psql_admin -c "DROP DATABASE IF EXISTS \"${DB_NAME}\" WITH (FORCE)"
+psql_admin -c "CREATE DATABASE \"${DB_NAME}\""
 
 echo
 echo "=== restoring ==="
