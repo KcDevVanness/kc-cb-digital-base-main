@@ -128,6 +128,17 @@ aws cloudtrail lookup-events $P \
 **`cloudtrail lookup-events` 是还原「什么时候重启过、地址怎么变的」最直接的证据来源**，
 排查这类「昨天还好今天打不开」的问题应当第一步就用它。
 
+### Agent Toolkit
+
+本机已按 AWS 官方说明配好 Agent Toolkit（`aws configure agent-toolkit`）：AWS skills 装在
+`~/.claude/skills` 与 `~/.agents/skills`，`aws-mcp` 服务写进 Claude Code / Codex / OpenCode 的
+MCP 配置。**MCP 条目必须带 `AWS_MCP_PROXY_PROFILES=kc-cb-digital`**（Claude/Codex 用 `env`，
+OpenCode 用 `environment`）——生成的默认条目会回退到 `default` profile，而凭据不在那里，
+表现为 MCP 启动即报 `-32602: Invalid request parameters("")`。
+
+要接第二个账号：`aws login --profile <name>`，再把该 profile 追加到各配置文件里
+`AWS_MCP_PROXY_PROFILES` 的空格分隔列表中，然后重启 AI 工具。
+
 ## 验证方式
 
 ```bash
