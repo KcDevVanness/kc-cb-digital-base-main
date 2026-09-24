@@ -36,6 +36,9 @@ fi
 APP_PORT="$(sed -n 's/^APP_PORT=//p' .env | tail -1 | tr -d '"'"'"' ')"
 APP_PORT="${APP_PORT:-3000}"
 
+# Only used by the informational public probe at the end.
+APP_DOMAIN="$(sed -n 's/^APP_DOMAIN=//p' .env | tail -1 | tr -d '"'"'"' ')"
+
 log "checkout ${TARGET_SHA}"
 git fetch --prune --quiet origin
 # Force-create the branch at the deployed commit: the working tree must match the
@@ -78,6 +81,16 @@ log "reclaim disk"
 # superseded tags. The host has a 28 GB root volume shared with Postgres data.
 docker image prune -af --filter "until=24h" >/dev/null 2>&1 || true
 df -h / | tail -1
+
+# Informational, not a gate: on a first deploy the certificate may still be
+# mid-issuance, and DNS may legitimately not resolve from inside the host. The
+# app-level probe above is what decides success.
+if [ -n "${APP_DOMAIN:-}" ]; then
+  log "public probe https://${APP_DOMAIN}${HEALTH_PATH} (informational)"
+  curl -sS -o /dev/null -w 'public http=%{http_code}\n' --max-time 20 \
+    "https://${APP_DOMAIN}${HEALTH_PATH}" \
+    || echo "public probe failed (certificate issuance or DNS propagation still pending?)"
+fi
 
 log "deployed"
 compose ps

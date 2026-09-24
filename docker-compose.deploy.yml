@@ -10,7 +10,9 @@
 #   docker compose -f docker-compose.deploy.yml up -d
 #
 # `.env` is loaded automatically from this directory; it is not in git and must
-# exist before the first `up`. Required: POSTGRES_*, JWT_SECRET, APP_URL.
+# exist before the first `up`. Required: POSTGRES_*, JWT_SECRET, APP_DOMAIN,
+# APP_URL (must be https://<APP_DOMAIN> — the framework sets Secure cookies in
+# production, so plain HTTP cannot hold a session in a browser).
 
 name: kc-cb-digital-base
 
@@ -36,7 +38,9 @@ services:
       - init_marker:/tmp/init-marker
       - attachments_storage:/app/storage
     ports:
-      - "${APP_PORT:-3000}:${CONTAINER_PORT:-3000}"
+      # Loopback only: Caddy is the public entrypoint and terminates TLS. This
+      # bind exists for the deploy health probe and for host-side debugging.
+      - "127.0.0.1:${APP_PORT:-3000}:${CONTAINER_PORT:-3000}"
     environment:
       NODE_ENV: production
       DEPLOY_ENV: ${DEPLOY_ENV:-production}
@@ -167,12 +171,39 @@ services:
     networks:
       - mercato-network
 
+  # Public entrypoint. Terminates TLS so the app's Secure cookies (hard-coded to
+  # NODE_ENV === "production" in the framework) are actually stored by browsers.
+  caddy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      # Both are read by the Caddyfile's {$...} placeholders, not by the app.
+      APP_DOMAIN: "${APP_DOMAIN:?set APP_DOMAIN in the .env file next to this compose file, e.g. app.example.com}"
+      APP_UPSTREAM: "app:${CONTAINER_PORT:-3000}"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - mercato-network
+
 volumes:
   postgres_data:
   redis_data:
   meilisearch_data:
   init_marker:
   attachments_storage:
+  # Issued certificates and the ACME account key. Losing caddy_data re-issues on
+  # next boot, which burns Let's Encrypt rate limit — keep it.
+  caddy_data:
+  caddy_config:
 
 networks:
   mercato-network:

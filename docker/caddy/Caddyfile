@@ -1,0 +1,21 @@
+# TLS terminator for the AWS deployment host.
+#
+# The app container is no longer published to the internet; it binds loopback
+# only and this is the single public entrypoint. Caddy obtains and renews the
+# Let's Encrypt certificate on its own (TLS-ALPN-01 on :443, HTTP-01 fallback on
+# :80) and redirects plain HTTP to HTTPS.
+#
+# The hostname is interpolated from the container environment, so it lives in
+# .env beside the other deployment values rather than in git. If DNS for
+# $APP_DOMAIN does not point at this host, the ACME challenge fails and the
+# deploy health gate fails with it — which is the point: a green deploy then
+# means the domain really resolves here.
+#
+# `encode` is deliberately absent. Its response writer wraps the proxied stream
+# and breaks Server-Sent Events (caddyserver/caddy#6293), which this app uses for
+# streaming assistant responses. `reverse_proxy` alone flushes text/event-stream
+# correctly. Add compression on the upstream, not here, if it is ever needed.
+
+{$APP_DOMAIN} {
+	reverse_proxy {$APP_UPSTREAM}
+}
