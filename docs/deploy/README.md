@@ -12,3 +12,4 @@
 |---|---|
 | [runtime.md](./runtime.md) | 镜像构建、启动入口、Railway/compose 差异、环境变量与启动守卫 |
 | [cicd.md](./cicd.md) | production 分支流水线、AWS 主机契约、`.env` 清单、回滚 |
+| [host-access.md](./host-access.md) | 公网地址契约（必须用 Elastic IP）、四层可达性诊断、SSH 与 AWS 侧访问 |
