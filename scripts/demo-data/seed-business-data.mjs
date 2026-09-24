@@ -431,6 +431,14 @@ async function phaseCatalogLinks() {
       if (catalogId) record('catalogProducts', name, catalogId)
     }
     if (!catalogId) continue
+    // Stock is received at variant level, so the catalog row needs one default variant.
+    await step(`variant ${name}`, () => api('POST', 'catalog/variants', {
+      productId: catalogId,
+      name: `${name} 默认规格`,
+      sku,
+      isDefault: true,
+      isActive: true,
+    }))
     await step(`link ${name}`, () => api('PUT', 'products/items', { id: productId, catalogProductId: catalogId }))
   }
 }
