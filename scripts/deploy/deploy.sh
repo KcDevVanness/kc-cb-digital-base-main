@@ -57,7 +57,29 @@ export APP_IMAGE
 # leaves a rollback target in place.
 log "reclaim disk before pull"
 docker image prune -af | tail -1
-df -h / | tail -1
+
+# The incoming image is the same application as the one already running, so its
+# on-disk size is the best estimate available before the pull starts. Refusing
+# here is deliberate: filling the root volume takes Postgres down with it, which
+# is a worse outcome than a failed deploy.
+RUNNING_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$(compose ps -q app 2>/dev/null | head -1)" 2>/dev/null || true)"
+NEED_BYTES="$(docker image inspect "${RUNNING_IMAGE:-absent}" --format '{{.Size}}' 2>/dev/null || echo 0)"
+case "${NEED_BYTES}" in ''|*[!0-9]*) NEED_BYTES=0 ;; esac
+if [ "${NEED_BYTES}" -le 0 ]; then
+  # First deploy, or the image is no longer on disk. Conservative constant.
+  NEED_BYTES=$(( 9 * 1024 * 1024 * 1024 ))
+fi
+# Layer unpacking needs temporary room beyond the final on-disk size.
+NEED_KB=$(( NEED_BYTES / 1024 * 115 / 100 ))
+AVAIL_KB="$(df -Pk / | awk 'NR==2 { print $4 }')"
+printf 'need ~%s GB, have %s GB free\n' "$(( NEED_KB / 1048576 ))" "$(( AVAIL_KB / 1048576 ))"
+if [ "${AVAIL_KB}" -lt "${NEED_KB}" ]; then
+  echo "ERROR: not enough free space for ${APP_IMAGE}." >&2
+  echo "Free space or grow the volume; a full root disk breaks Postgres too." >&2
+  docker system df >&2
+  df -h / >&2
+  exit 1
+fi
 
 log "pull ${APP_IMAGE}"
 # Not --quiet: an 8.6 GB pull is minutes of silence, and a silent SSH session is
@@ -66,6 +88,14 @@ compose pull app
 
 log "up -d"
 compose up -d --remove-orphans
+
+# `up -d` recreates a service only when its compose definition changed, so a
+# Caddyfile edit on its own would sit unread in the bind mount. A reload is
+# Caddy's own zero-downtime path for config changes, and it fails loudly on a
+# malformed file — which is the point.
+if [ -n "$(compose ps -q caddy 2>/dev/null)" ]; then
+  compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+fi
 
 log "wait for ${HEALTH_PATH} on port ${APP_PORT} (timeout ${HEALTH_TIMEOUT}s)"
 DEADLINE=$(( $(date +%s) + HEALTH_TIMEOUT ))
