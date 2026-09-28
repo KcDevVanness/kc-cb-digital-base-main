@@ -179,19 +179,6 @@ function toOptionalText(value: unknown): string | null {
 }
 
 /**
- * CrudForm's number fields hand back a number once edited and the raw string while untouched,
- * and a cleared field hands back `undefined`; every decimal the form produces goes through here.
- */
-export function toShipmentNumber(value: unknown): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  if (!trimmed.length) return null
-  const numeric = Number(trimmed)
-  return Number.isFinite(numeric) ? numeric : null
-}
-
-/**
  * Drops the trailing zeros a fixed-scale decimal column adds (`10.0000` → `10`) without
  * re-reading the digits through a float, so a quantity of `12.3456` keeps all four.
  */
@@ -502,9 +489,10 @@ export function readAllocations(value: unknown): ShipmentAllocationValues[] {
 }
 
 /**
- * Builds the create/update payload: only the contract's keys, decimals as numbers (the command
- * coerces them onto their fixed-scale columns) and blank optional fields as `null` so "not set"
- * cannot be read as the previous value.
+ * Builds the create/update payload: only the contract's keys, every decimal as a string (the
+ * command's validators normalize them onto their fixed-scale columns, so no digit is lost to a
+ * float round trip) and blank optional fields as `null` so "not set" cannot be read as the
+ * previous value.
  */
 export function buildShipmentPayload(values: ShipmentFormValues): Record<string, unknown> {
   return {
@@ -522,7 +510,9 @@ export function buildShipmentPayload(values: ShipmentFormValues): Record<string,
     notes: toOptionalText(values.notes),
     allocations: readAllocations(values.allocations).map((row) => ({
       purchaseOrderLineId: row.purchaseOrderLineId.trim(),
-      quantity: toShipmentNumber(row.allocatedQuantity) ?? 0,
+      // The validator normalizes the quantity onto the column's scale and rejects an over-precise
+      // value, so a float round trip here could only lose a digit the operator typed.
+      quantity: row.allocatedQuantity.trim() ? row.allocatedQuantity.trim() : '0',
     })),
   }
 }
