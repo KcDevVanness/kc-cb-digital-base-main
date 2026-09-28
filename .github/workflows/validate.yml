@@ -6,8 +6,10 @@ name: validate
 # The job always runs so the required check always reports. The heavy steps are
 # skipped when the diff touches nothing the gate can fail on — see the scope step.
 on:
+  # Every PR target, not only `main`: unit PRs land on integration branches first, and a gate that
+  # skipped them merged a unit with `no checks reported` (2026-09-28). The docs/deploy scope step
+  # below keeps doc-only PRs cheap, so widening the trigger costs minutes, not correctness.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
@@ -38,7 +40,10 @@ jobs:
           # This lives inside the job rather than in `paths-ignore` on purpose:
           # main requires the `validate` check, and a check that is filtered out
           # never reports, leaving the PR stuck on "Expected — Waiting".
-          DOCS_ONLY='^(\.github/|docs/|[^/]*\.md$|\.gitignore$|docker-compose\.deploy\.yml$|docker/caddy/|scripts/deploy/)'
+          #
+          # Run plans and analysis notes are pure metadata, so they join the allow-list.
+          # A lesson edit is NOT listed: the lessons step must run for it.
+          DOCS_ONLY='^(\.github/|docs/|[^/]*\.md$|\.gitignore$|docker-compose\.deploy\.yml$|docker/caddy/|scripts/deploy/|\.ai/runs/|\.ai/analysis/)'
 
           if [ '${{ github.event_name }}' = 'pull_request' ]; then
             # Three-dot: what the PR introduces, relative to the merge base.
@@ -116,6 +121,12 @@ jobs:
       - name: lint
         if: steps.scope.outputs.needed == 'true'
         run: yarn lint
+
+      # The lessons catalog is the durable-rule store every session routes through; it fails closed
+      # on a malformed record, a missing index row, or prose that belongs in `.ai/lessons/`.
+      - name: lessons
+        if: steps.scope.outputs.needed == 'true'
+        run: node scripts/check-lessons.mjs
 
       - name: ds:check
         if: steps.scope.outputs.needed == 'true'

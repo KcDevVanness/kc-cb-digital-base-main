@@ -2,7 +2,7 @@
 title: "Reads expand to descendant organizations; writes act in the selected one"
 modules: ["products", "trade_docs", "purchasing"]
 areas: ["module-data", "architecture", "backend-ui"]
-topics: ["data-scoping", "organization-tree", "pickers", "option-sources", "write-scope", "crud-factory", "maintenance-list", "first-paint"]
+topics: ["data-scoping", "organization-tree", "pickers", "write-scope", "crud-factory", "first-paint"]
 ---
 
 # Reads expand to descendant organizations; writes act in the selected one
