@@ -25,7 +25,8 @@ import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/u
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import SupplierProductLinkDialog from './SupplierProductLinkDialog'
 import { trimDecimalText } from '../lib/priceKinds'
-import { formatCurrency } from '@open-mercato/ui/utils/format'
+import { formatMoneyAmount } from '@/lib/money/format'
+import { PRICE_SCALE } from '../../trade_docs/lib/money'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import type { SupplierProductListRow, SupplierProductPriceCell, SupplierProductStatus } from '../types'
 
@@ -137,11 +138,11 @@ function buildColumns(
         const ladder = cell.minQuantity > 1 ? `(≥${cell.minQuantity})` : undefined
         return (
           <div className="flex flex-col items-end">
-            <MoneyAmount currencyCode={cell.currencyCode} amount={net} suffix={ladder} className="items-end" />
+            <MoneyAmount currencyCode={cell.currencyCode} amount={net} kind="price" suffix={ladder} className="items-end" />
             {discounted ? (
               <span className="text-xs text-muted-foreground tabular-nums">
                 {t('purchasing.supplierProducts.list.costBreakdown', 'list {list} − {discount}%', {
-                  list: formatCurrency(cell.unitPrice, cell.currencyCode) ?? cell.unitPrice,
+                  list: formatMoneyAmount(cell.unitPrice, cell.currencyCode, undefined, PRICE_SCALE) ?? cell.unitPrice,
                   discount: trimDecimalText(String(discount)),
                 })}
               </span>
@@ -176,6 +177,7 @@ function buildColumns(
             <MoneyAmount
               currencyCode={cell.currencyCode}
               amount={cell.unitPrice}
+              kind="price"
               suffix={cell.minQuantity > 1 ? `(≥${cell.minQuantity})` : undefined}
               className="items-end"
             />

@@ -42,5 +42,6 @@
   "internal_sales.list.columns.total": "Amount (net)",
   "internal_sales.list.columns.lines": "Lines",
   "internal_sales.list.columns.createdAt": "Created",
-  "internal_sales.list.actions.edit": "Edit"
+  "internal_sales.list.actions.edit": "Edit",
+  "internal_sales.form.linePrecision": "Line {line}: quantity and unit price accept at most 4 decimal places."
 }

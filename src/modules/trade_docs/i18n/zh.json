@@ -243,6 +243,5 @@
   "trade_docs.common.loading": "加载中…",
   "trade_docs.common.retry": "重试",
   "trade_docs.common.notAuthorized": "你没有访问该功能的权限，请联系管理员开通。",
-  "trade_docs.audit.contracts.generateDocument": "生成合同文件",
-  "trade_docs.contracts.hints.currencyScaleFallback": "该组织的币种小数位未配置，财务金额按 2 位小数计算。"
+  "trade_docs.audit.contracts.generateDocument": "生成合同文件"
 }

@@ -916,6 +916,7 @@ function ProductPriceRowsEditor({ values, setValue, errors, t }: CrudFormGroupCo
                   <MoneyAmount
                     currencyCode={row.currencyCode || 'CNY'}
                     amount={row.unitPrice}
+                    kind="price"
                     showRate
                     className="pt-1"
                   />

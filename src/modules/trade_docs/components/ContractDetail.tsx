@@ -26,6 +26,7 @@ import { Input } from '@open-mercato/ui/primitives/input'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { AMOUNT_SCALE, toScaledUnits } from '../lib/money'
 import { contractStatusLabel, directionLabel, invoiceStatusLabel, type ContractStatus } from './contractLabels'
 import { downloadApiFile } from './downloadFile'
 
@@ -78,7 +79,6 @@ type ContractHead = {
   generatedAttachmentId: string | null
   attachmentId: string | null
   updatedAt: string | null
-  currencyScaleFallback: boolean
   counterpartySnapshot: Record<string, unknown> | null
   ourPartySnapshot: Record<string, unknown> | null
 }
@@ -152,7 +152,6 @@ function toHead(item: Record<string, unknown>): ContractHead {
     generatedAttachmentId: (item.generatedAttachmentId ?? null) as string | null,
     attachmentId: (item.attachmentId ?? null) as string | null,
     updatedAt: (item.updatedAt ?? null) as string | null,
-    currencyScaleFallback: item.currencyScaleFallback === true,
     counterpartySnapshot: (item.counterpartySnapshot ?? null) as Record<string, unknown> | null,
     ourPartySnapshot: (item.ourPartySnapshot ?? null) as Record<string, unknown> | null,
   }
@@ -568,7 +567,8 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
   if (!head) return <RecordNotFoundState label={t('trade_docs.contracts.form.notFound')} backHref={LIST_HREF} />
 
   const actions = ALLOWED_ACTIONS[head.status]
-  const difference = Number(head.differenceTotal)
+  // Scaled units, not a float: the difference is an amount, so "is there a difference?" is exact.
+  const hasDifference = toScaledUnits(head.differenceTotal, AMOUNT_SCALE) !== 0n
 
   return (
     <div className="space-y-6">
@@ -607,11 +607,6 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
       <section className="space-y-3">
         <SectionHeader title={t('trade_docs.contracts.detail.amounts.title')} />
         <p className="text-xs text-muted-foreground">{t('trade_docs.contracts.detail.amounts.hint')}</p>
-        {head.currencyScaleFallback ? (
-          <p className="text-xs text-status-warning-text" role="status">
-            {t('trade_docs.contracts.hints.currencyScaleFallback')}
-          </p>
-        ) : null}
         <div className="grid gap-4 sm:grid-cols-3">
           <SummaryField label={t('trade_docs.contracts.detail.amounts.contractTotal')}>
             <MoneyAmount
@@ -632,7 +627,7 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
               currencyCode={head.currencyCode}
               amount={head.differenceTotal}
               className={
-                Number.isFinite(difference) && difference !== 0
+                hasDifference
                   ? 'text-lg font-semibold text-status-error-text'
                   : 'text-lg font-semibold'
               }

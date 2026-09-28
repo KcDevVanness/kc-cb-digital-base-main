@@ -231,6 +231,26 @@ function usableLines(values: InternalSalesFormValues): InternalSalesLineValues[]
   return values.lines.filter((line) => line.productId.trim().length > 0 || line.name.trim().length > 0)
 }
 
+/** Quantity and unit price live in `numeric(18,4)` columns; a finer value is refused, not rounded. */
+const LINE_DECIMAL_PATTERN = /^\d+(?:\.\d{1,4})?$/
+
+/**
+ * The first submitted line whose quantity or unit price is not a plain decimal with at most four
+ * decimals — `null` when every line is within the caliber. The installed sales engine coerces an
+ * unvalidated number and the column rounds it silently, so the app's entry point refuses instead:
+ * the operator sees the offending line rather than discovering a changed figure later.
+ */
+export function lineScaleViolation(
+  lines: readonly InternalSalesLineValues[],
+): { line: number; field: 'quantity' | 'unitPriceNet' } | null {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!
+    if (!LINE_DECIMAL_PATTERN.test(line.quantity.trim() || '0')) return { line: index + 1, field: 'quantity' }
+    if (!LINE_DECIMAL_PATTERN.test(line.unitPriceNet.trim() || '0')) return { line: index + 1, field: 'unitPriceNet' }
+  }
+  return null
+}
+
 function toHeadPayload(values: InternalSalesFormValues): Record<string, unknown> {
   const customerName = values.customerName.trim()
   return {
@@ -587,6 +607,16 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       flash(t('internal_sales.form.linesRequired'), 'error')
       throw new Error(t('internal_sales.form.linesRequired'))
     }
+    const violation = lineScaleViolation(usableLines(values))
+    if (violation) {
+      const message = t(
+        'internal_sales.form.linePrecision',
+        'Line {line}: quantity and unit price accept at most 4 decimal places',
+        { line: violation.line },
+      )
+      flash(message, 'error')
+      throw new Error(message)
+    }
     if (!payload.customerEntityId && !payload.customerSnapshot) {
       flash(t('internal_sales.form.customerRequired'), 'error')
       throw new Error(t('internal_sales.form.customerRequired'))
@@ -691,6 +721,16 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
     if (usableLines(values).length === 0) {
       flash(t('internal_sales.form.linesRequired'), 'error')
       throw new Error(t('internal_sales.form.linesRequired'))
+    }
+    const violation = lineScaleViolation(usableLines(values))
+    if (violation) {
+      const message = t(
+        'internal_sales.form.linePrecision',
+        'Line {line}: quantity and unit price accept at most 4 decimal places',
+        { line: violation.line },
+      )
+      flash(message, 'error')
+      throw new Error(message)
     }
     try {
       await saveInternalSalesDocument(kind, initial?.id || documentId, values, loadedLineIds)

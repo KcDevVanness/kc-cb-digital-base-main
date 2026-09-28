@@ -3,8 +3,8 @@
 import * as React from 'react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
-import { formatCurrency } from '@open-mercato/ui/utils/format'
-import { formatCnyEquivalent, formatRateLine } from './format'
+import { AMOUNT_SCALE, PRICE_SCALE } from '../../modules/trade_docs/lib/money'
+import { formatCnyEquivalent, formatMoneyAmount, formatRateLine } from './format'
 import { useCnyRates } from './useCnyRates'
 
 /**
@@ -25,6 +25,7 @@ export function MoneyAmount({
   className,
   amountClassName,
   showRate = false,
+  kind = 'amount',
   suffix,
 }: {
   currencyCode: string
@@ -32,13 +33,16 @@ export function MoneyAmount({
   className?: string
   amountClassName?: string
   showRate?: boolean
+  /** `amount` prints 2 decimals; `price` prints the 4-decimal unit-price caliber. */
+  kind?: 'amount' | 'price'
   /** Appended to the native amount, e.g. a price ladder step (`(≥10)`). */
   suffix?: string
 }) {
   const t = useT()
   const { rates } = useCnyRates()
   const code = currencyCode.trim().toUpperCase()
-  const native = formatCurrency(amount, code) ?? String(amount)
+  const native =
+    formatMoneyAmount(amount, code, undefined, kind === 'price' ? PRICE_SCALE : AMOUNT_SCALE) ?? String(amount)
   const entry = rates[code]
 
   if (!entry) {
