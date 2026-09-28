@@ -58,6 +58,7 @@ test.describe.serial('parties — counterparty master', () => {
   let viewerUserId: string | null = null
   let partyId: string | null = null
   let branchPartyId: string | null = null
+  let bankPartyId: string | null = null
 
   const stamp = Date.now().toString(36)
   const uniqueCode = `E2E-${stamp.toUpperCase()}`
@@ -109,7 +110,7 @@ test.describe.serial('parties — counterparty master', () => {
   })
 
   test.afterAll(async () => {
-    for (const id of [partyId, branchPartyId]) {
+    for (const id of [partyId, branchPartyId, bankPartyId]) {
       if (!id) continue
       await apiRequestWithSelectedOrg(api, 'DELETE', `/api/parties?id=${encodeURIComponent(id)}`, {
         token: rootToken,
@@ -246,6 +247,39 @@ test.describe.serial('parties — counterparty master', () => {
       selectedOrgId: branchOrgId as string,
     })
     expect(crossScope.status()).toBe(404)
+  })
+
+  test('filters the option source by role and rejects an unknown role', async () => {
+    // A buyer-eligible party (the shared fixture, roles buyer+branch) next to a service provider
+    // that must never be offered to a buyer picker.
+    const bank = await partyRequest('POST', '/api/parties', {
+      code: `${uniqueCode}-BANK`,
+      name: 'E2E Bank',
+      roles: ['bank'],
+    })
+    expect(bank.status(), 'POST /api/parties should return 201').toBe(201)
+    bankPartyId = (await readJsonSafe<{ id?: string }>(bank))?.id ?? null
+    expect(bankPartyId).toBeTruthy()
+
+    const buyerOptions = await partyRequest(
+      'GET',
+      `/api/parties/options?roles=buyer&search=${encodeURIComponent(uniqueCode)}`,
+    )
+    expect(buyerOptions.status()).toBe(200)
+    const filtered = await readJsonSafe<{ items?: Array<{ value?: string }> }>(buyerOptions)
+    const ids = (filtered?.items ?? []).map((item) => item.value)
+    expect(ids).toContain(partyId)
+    expect(ids, 'a bank-only party is not a buyer option').not.toContain(bankPartyId)
+
+    // Without the parameter the source is unchanged: the bank party is still listed.
+    const unfiltered = await partyRequest('GET', `/api/parties/options?search=${encodeURIComponent(uniqueCode)}`)
+    const allIds = ((await readJsonSafe<{ items?: Array<{ value?: string }> }>(unfiltered))?.items ?? []).map(
+      (item) => item.value,
+    )
+    expect(allIds).toContain(bankPartyId)
+
+    const unknownRole = await partyRequest('GET', '/api/parties/options?roles=wizard')
+    expect(unknownRole.status(), 'an unknown role name is a 400, not a silent widening').toBe(400)
   })
 
   test('denies a caller without the feature and allows one with it', async () => {
