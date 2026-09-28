@@ -8,6 +8,8 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { loadCodeListOptions } from '../lib/codeListOptions'
+import { PRODUCT_BRAND_DICTIONARY_KEY } from '../../product_codes/lib/dictionaryValues'
 
 const API_PATH = 'purchasing/suppliers'
 const LIST_HREF = '/backend/purchasing/suppliers'
@@ -45,10 +47,29 @@ const EMPTY_SUPPLIER_VALUES: SupplierFormValues = {
   notes: '',
 }
 
-const SUPPLIER_GROUPS: CrudFormGroup[] = [
-  { id: 'details', column: 1, fields: ['name', 'code', 'contactName', 'phone', 'email', 'address'] },
-  { id: 'settings', column: 2, fields: ['defaultCurrencyCode', 'isActive', 'notes'] },
-]
+const SUPPLIER_GROUPS_SETTINGS: CrudFormGroup = {
+  id: 'settings',
+  column: 2,
+  fields: ['defaultCurrencyCode', 'brandValue', 'isActive', 'notes'],
+}
+
+/**
+ * The create form has no code field: `purchasing.suppliers.create` issues the next `SUP-####`
+ * (see `.ai/specs/2026-09-24-supplier-code-issuance.md`). The edit form shows it read-only —
+ * the number is an identity that already sits in purchase-order snapshots, so nobody edits it.
+ */
+function supplierGroups(mode: 'create' | 'edit'): CrudFormGroup[] {
+  return [
+    {
+      id: 'details',
+      column: 1,
+      fields: mode === 'create'
+        ? ['name', 'contactName', 'phone', 'email', 'address']
+        : ['name', 'code', 'contactName', 'phone', 'email', 'address'],
+    },
+    SUPPLIER_GROUPS_SETTINGS,
+  ]
+}
 
 function readText(source: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
@@ -85,9 +106,12 @@ export function toSupplierFormValues(item: Record<string, unknown>): SupplierRec
 
 /** Builds the create/update payload; keys are dropped to the contract field set. */
 export function buildSupplierPayload(values: SupplierFormValues): Record<string, unknown> {
+  const code = values.code.trim()
   return {
     name: values.name.trim(),
-    code: values.code.trim(),
+    // A blank code means "let the command issue one" (the create form has no code field); the edit
+    // form sends its read-only value back unchanged, which the update command accepts as a no-op.
+    ...(code.length > 0 ? { code } : {}),
     contactName: values.contactName.trim(),
     phone: values.phone.trim(),
     email: values.email.trim(),
@@ -122,7 +146,7 @@ async function loadCurrencyOptions(errorMessage: string): Promise<CrudFieldOptio
     .sort((left, right) => left.value.localeCompare(right.value))
 }
 
-function useSupplierFields(t: TranslateFn): CrudField[] {
+function useSupplierFields(t: TranslateFn, mode: 'create' | 'edit'): CrudField[] {
   return React.useMemo<CrudField[]>(() => [
     {
       id: 'name',
@@ -130,12 +154,17 @@ function useSupplierFields(t: TranslateFn): CrudField[] {
       type: 'text',
       required: true,
     },
-    {
-      id: 'code',
-      label: t('purchasing.suppliers.form.field.code'),
-      type: 'text',
-      required: true,
-    },
+    // Only the edit form renders the code, and only as a read-only value: the command issues it on
+    // create, and it is already frozen into purchase-order snapshots by the time anyone sees it.
+    ...(mode === 'edit'
+      ? [{
+          id: 'code',
+          label: t('purchasing.suppliers.form.field.code'),
+          type: 'text' as const,
+          readOnly: true,
+          description: t('purchasing.suppliers.form.help.code'),
+        }]
+      : []),
     {
       id: 'contactName',
       label: t('purchasing.suppliers.form.field.contactName'),
@@ -164,6 +193,17 @@ function useSupplierFields(t: TranslateFn): CrudField[] {
       loadOptions: () => loadCurrencyOptions(t('purchasing.suppliers.form.currencyLoadFailed')),
     },
     {
+      id: 'brandValue',
+      label: t('purchasing.suppliers.form.field.brandValue'),
+      description: t('purchasing.suppliers.form.help.brandValue'),
+      type: 'combobox',
+      allowCustomValues: false,
+      // The list is the `product_brand` code list; a value the dictionary no longer carries still
+      // renders as itself, so opening a supplier can never blank its brand.
+      loadOptions: () => loadCodeListOptions(PRODUCT_BRAND_DICTIONARY_KEY),
+      resolveLabel: (value) => value,
+    },
+    {
       id: 'isActive',
       label: t('purchasing.suppliers.form.field.isActive'),
       type: 'checkbox',
@@ -173,12 +213,13 @@ function useSupplierFields(t: TranslateFn): CrudField[] {
       label: t('purchasing.suppliers.form.field.notes'),
       type: 'textarea',
     },
-  ], [t])
+  ], [t, mode])
 }
 
 function SupplierCreateForm() {
   const t = useT()
-  const fields = useSupplierFields(t)
+  const fields = useSupplierFields(t, 'create')
+  const groups = React.useMemo(() => supplierGroups('create'), [])
   const successRedirect = React.useMemo(
     () => withFlash(LIST_HREF, t('purchasing.suppliers.form.saved'), 'success'),
     [t],
@@ -199,7 +240,7 @@ function SupplierCreateForm() {
       titleHeadingLevel={1}
       backHref={LIST_HREF}
       fields={fields}
-      groups={SUPPLIER_GROUPS}
+      groups={groups}
       initialValues={EMPTY_SUPPLIER_VALUES}
       submitLabel={t('purchasing.suppliers.form.save')}
       cancelHref={LIST_HREF}
@@ -211,7 +252,8 @@ function SupplierCreateForm() {
 
 function SupplierEditForm({ supplierId }: { supplierId: string }) {
   const t = useT()
-  const fields = useSupplierFields(t)
+  const fields = useSupplierFields(t, 'edit')
+  const groups = React.useMemo(() => supplierGroups('edit'), [])
   const [initial, setInitial] = React.useState<SupplierRecord | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -287,7 +329,7 @@ function SupplierEditForm({ supplierId }: { supplierId: string }) {
       titleHeadingLevel={1}
       backHref={LIST_HREF}
       fields={fields}
-      groups={SUPPLIER_GROUPS}
+      groups={groups}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('purchasing.suppliers.form.save')}
       cancelHref={LIST_HREF}

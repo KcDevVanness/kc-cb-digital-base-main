@@ -116,6 +116,8 @@ export async function promoteQuoteLines(input: {
             hsCode: fields.hsCode,
             unit: fields.unit ?? 'PCS',
             netWeight: fields.netWeight,
+            grossWeight: fields.grossWeight,
+            volume: fields.volume,
             dimensions: fields.dimensions,
             cartonQuantity: fields.cartonQuantity,
             categoryId,

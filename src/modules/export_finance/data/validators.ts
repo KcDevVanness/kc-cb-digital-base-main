@@ -1,5 +1,8 @@
 import { z } from 'zod'
 import { SHIPMENT_STATUSES } from '../../cross_border/data/validators'
+// The money engine owns the system-wide caliber: an amount is 2 decimals and positivity is decided
+// on scaled integers, never on a float.
+import { AMOUNT_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
 
 /**
  * Input contracts for the export-finance module.
@@ -56,8 +59,15 @@ export const currencyCodeSchema = z
   .regex(/^[A-Za-z]{3}$/, 'currency code must be a three-letter ISO code')
   .transform((value) => value.toUpperCase())
 
-/** Amounts are entered by finance with at most two decimals; the column stores four. */
-const TAX_REFUND_AMOUNT_PATTERN = /^\d+(\.\d{1,2})?$/
+/**
+ * A recorded tax refund amount: a strictly positive decimal with at most two decimals — the money
+ * caliber (`AMOUNT_SCALE`) the `tax_refund_amount` column stores as `numeric(18,2)`. A third
+ * decimal, a float artifact or a value the string cannot carry is refused here rather than rounded
+ * onto the column, and positivity is decided on scaled integers (`toScaledUnits`), never on a
+ * float. `null` (and an absent field) means "not recorded", which is what the status enums say; a
+ * recorded `0` is neither, so it is rejected.
+ */
+const AMOUNT_PATTERN = /^\d+(?:\.\d{1,2})?$/
 
 export const taxRefundAmountSchema = z
   .union([z.string(), z.number(), z.null()])
@@ -67,7 +77,7 @@ export const taxRefundAmountSchema = z
     const text = typeof value === 'number' ? String(value) : value.trim()
     return text.length === 0 ? null : text
   })
-  .refine((value) => value === null || TAX_REFUND_AMOUNT_PATTERN.test(value), {
+  .refine((value) => value === null || (AMOUNT_PATTERN.test(value) && toScaledUnits(value, AMOUNT_SCALE) > 0n), {
     message: 'amount must be a positive decimal with at most 2 decimal places',
   })
 

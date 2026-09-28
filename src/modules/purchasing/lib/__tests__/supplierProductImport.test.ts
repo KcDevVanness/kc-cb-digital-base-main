@@ -66,7 +66,7 @@ describe('changedLibraryFields', () => {
     expect(changedLibraryFields(STORED_ROW, blank)).toEqual({})
   })
 
-  it('writes only what differs, comparing decimals numerically and packing deeply', () => {
+  it('writes only what differs, comparing decimals exactly on the column scale and packing deeply', () => {
     const values = supplierProductValuesFromLine({
       itemNo: 'P4108',
       productName: 'Eversweet 3 Pro (2026)',

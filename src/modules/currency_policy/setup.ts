@@ -1,6 +1,7 @@
 import type { ModuleSetupConfig } from '@open-mercato/shared/modules/setup'
 import { createLogger } from '@open-mercato/shared/lib/logger'
 import { applyCurrencyPolicy } from './lib/apply'
+import { seedRateFetchConfig } from './lib/rateFetchConfig'
 
 const logger = createLogger('currency_policy').child({ component: 'setup' })
 
@@ -28,6 +29,8 @@ export const setup: ModuleSetupConfig = {
       entriesUpdated: outcome.entriesUpdated,
       entriesRemoved: outcome.entriesRemoved,
     })
+
+    await seedRateFetchConfig(ctx.em, { tenantId: ctx.tenantId, organizationId: ctx.organizationId })
   },
 }
 

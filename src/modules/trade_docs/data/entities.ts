@@ -78,13 +78,13 @@ export class TradeDocsContract {
   @Property({ name: 'source_snapshot', type: 'jsonb', nullable: true })
   sourceSnapshot?: Record<string, unknown> | null
 
-  @Property({ name: 'contract_total', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'contract_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
   contractTotal: string = '0'
 
-  @Property({ name: 'finance_total', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'finance_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
   financeTotal: string = '0'
 
-  @Property({ name: 'difference_total', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'difference_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
   differenceTotal: string = '0'
 
   @Property({ name: 'signed_at', type: 'date', nullable: true })
@@ -192,13 +192,13 @@ export class TradeDocsContractLine {
   @Property({ type: 'numeric', precision: 18, scale: 6, default: '0' })
   quantity: string = '0'
 
-  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 6, default: '0' })
+  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 4, default: '0' })
   unitPrice: string = '0'
 
-  @Property({ name: 'contract_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'contract_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   contractAmount: string = '0'
 
-  @Property({ name: 'finance_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'finance_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   financeAmount: string = '0'
 
   @Property({ type: 'text', nullable: true })
@@ -270,10 +270,10 @@ export class TradeDocsInvoice {
   @Property({ name: 'currency_code', type: 'text', default: 'CNY' })
   currencyCode: string = 'CNY'
 
-  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
   subtotal: string = '0'
 
-  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
   total: string = '0'
 
   @Property({ name: 'issued_at', type: 'date', nullable: true })
@@ -346,10 +346,10 @@ export class TradeDocsInvoiceLine {
   @Property({ type: 'numeric', precision: 18, scale: 6, default: '0' })
   quantity: string = '0'
 
-  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 6, default: '0' })
+  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 4, default: '0' })
   unitPrice: string = '0'
 
-  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
   amount: string = '0'
 
   @ManyToOne(() => TradeDocsContractLine, {

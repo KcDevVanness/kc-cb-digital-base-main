@@ -9,11 +9,12 @@ import {
 } from '@open-mercato/shared/lib/commands/helpers'
 import { extractUndoPayload } from '@open-mercato/shared/lib/commands/undo'
 import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/optimistic-lock-command'
-import { badRequest, conflict, CrudHttpError, notFound } from '@open-mercato/shared/lib/crud/errors'
+import { badRequest, conflict, CrudHttpError, isUniqueViolation, notFound } from '@open-mercato/shared/lib/crud/errors'
 import { ORGANIZATION_SCOPE_REQUIRED_ERROR_CODE } from '@open-mercato/shared/lib/auth/organizationScope'
 import type { CrudEmitContext, CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
+import { PRODUCT_BRAND_DICTIONARY_KEY, assertDictionaryValue } from '../../product_codes/lib/dictionaryValues'
 import { PurchasingSupplier } from '../data/entities'
 import { assertCurrencyInDictionary } from '../lib/currencyDictionary'
 import { supplierCreateSchema, supplierUpdateSchema } from '../data/validators'
@@ -31,6 +32,7 @@ type SerializedSupplier = {
   email: string | null
   address: string | null
   defaultCurrencyCode: string
+  brandValue: string | null
   isActive: boolean
   notes: string | null
   tenantId: string
@@ -47,6 +49,7 @@ function serializeSupplier(entity: PurchasingSupplier): SerializedSupplier {
     email: entity.email ?? null,
     address: entity.address ?? null,
     defaultCurrencyCode: entity.defaultCurrencyCode,
+    brandValue: entity.brandValue ?? null,
     isActive: entity.isActive,
     notes: entity.notes ?? null,
     tenantId: String(entity.tenantId),
@@ -105,12 +108,78 @@ async function assertCodeAvailable(
 }
 
 /**
- * The unique constraint is the real guarantee; two concurrent creates can still race past the
- * check above, so the driver's violation is mapped to the same 409 the check produces instead
- * of escaping as a 500.
+ * The supplier number this module issues: `SUP-0001`, `SUP-0002`, … — our own number for the
+ * supplier, never the number the supplier prints on its own documents (that is 供应商货号 /
+ * `supplier_sku` on a library row).
  */
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { name?: string }).name === 'UniqueConstraintViolationException'
+const SUPPLIER_CODE_PREFIX = 'SUP-'
+const SUPPLIER_CODE_WIDTH = 4
+const ISSUED_SUPPLIER_CODE = /^SUP-(\d+)$/
+/** Bounded like the SKU issuance (`product_codes/lib/issuance.ts`): five collisions is real contention. */
+const MAX_CODE_ISSUE_ATTEMPTS = 5
+
+/**
+ * The next `SUP-####` for this organization.
+ *
+ * The scan reads **every** row, soft-deleted ones included, for two reasons the schema already
+ * states: the unique index on (tenant, organization, code) covers deleted rows too, and the code is
+ * frozen into historical purchase-order snapshots (`supplierSnapshotFor` below) — so a number must
+ * never come back. Taking the highest issued serial, rather than probing for a free one, is what
+ * makes that true in a single query. Hand-typed or imported values simply do not match the issued
+ * shape and are skipped, which is why the old numbering can coexist with this one.
+ */
+async function nextSupplierCode(
+  em: EntityManager,
+  scope: { tenantId: string; organizationId: string },
+): Promise<string> {
+  const rows = await (em.fork().getKysely<any>())
+    .selectFrom('purchasing_suppliers')
+    .select('code')
+    .where('tenant_id', '=', scope.tenantId)
+    .where('organization_id', '=', scope.organizationId)
+    .where('code', 'like', `${SUPPLIER_CODE_PREFIX}%`)
+    .execute()
+  let highest = 0
+  for (const row of rows as Array<{ code: string | null }>) {
+    const match = row.code ? ISSUED_SUPPLIER_CODE.exec(row.code) : null
+    if (!match) continue
+    const serial = Number.parseInt(match[1], 10)
+    if (Number.isFinite(serial) && serial > highest) highest = serial
+  }
+  return `${SUPPLIER_CODE_PREFIX}${String(highest + 1).padStart(SUPPLIER_CODE_WIDTH, '0')}`
+}
+
+/**
+ * Creates the supplier, issuing the code when the caller did not supply one.
+ *
+ * Two paths, one rule: the unique index is the real guarantee and this only picks the value. An
+ * **issued** code retries (bounded) because the operator never typed it — "this code already
+ * exists" would be a sentence about a field they cannot see; an **explicit** code fails on the
+ * first collision with the same readable 409 the availability check above produces.
+ *
+ * Each attempt creates in its own fork: a failed flush leaves the request-scoped identity map
+ * holding the rejected entity, and reusing that EM would replay the collision.
+ */
+async function createSupplierRow(
+  em: EntityManager,
+  scope: { tenantId: string; organizationId: string },
+  data: Record<string, unknown>,
+  explicitCode: string | null,
+): Promise<PurchasingSupplier> {
+  const attempts = explicitCode ? 1 : MAX_CODE_ISSUE_ATTEMPTS
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const code = explicitCode ?? (await nextSupplierCode(em, scope))
+    try {
+      const scoped = em.fork()
+      const supplier = scoped.create(PurchasingSupplier, { ...data, code } as PurchasingSupplier)
+      await scoped.persist(supplier).flush()
+      return supplier
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error
+      if (explicitCode) throw conflict('A supplier with this code already exists in this organization')
+    }
+  }
+  throw conflict('A supplier code could not be issued; please retry')
 }
 
 const createSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingSupplier> = {
@@ -122,30 +191,35 @@ const createSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
     const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
-    await assertCodeAvailable(em, scope, parsed.code)
+    // A blank or omitted code is the normal path from the form (the field is not rendered on
+    // create): the command issues the next `SUP-####`. An explicit value keeps the old contract.
+    const explicitCode = parsed.code && parsed.code.length > 0 ? parsed.code : null
+    if (explicitCode) await assertCodeAvailable(em, scope, explicitCode)
     await assertCurrencyInDictionary(em, scope, parsed.defaultCurrencyCode)
+    // The brand is the prefix of every generated code, so it must be a value the `product_brand`
+    // dictionary lists — the same restriction the form's picker applies. Without this check an API
+    // caller could save a supplier whose rows can never generate, and the refusal would only surface
+    // much later, at 生成 time.
+    if (parsed.brandValue) await assertDictionaryValue(em, scope, PRODUCT_BRAND_DICTIONARY_KEY, parsed.brandValue)
 
-    const supplier = await de
-      .createOrmEntity({
-        entity: PurchasingSupplier,
-        data: {
-          name: parsed.name,
-          code: parsed.code,
-          contactName: parsed.contactName ?? null,
-          phone: parsed.phone ?? null,
-          email: parsed.email ?? null,
-          address: parsed.address ?? null,
-          defaultCurrencyCode: parsed.defaultCurrencyCode,
-          isActive: parsed.isActive,
-          notes: parsed.notes ?? null,
-          tenantId: scope.tenantId,
-          organizationId: scope.organizationId,
-        },
-      })
-      .catch((error: unknown) => {
-        if (isUniqueViolation(error)) throw conflict('A supplier with this code already exists in this organization')
-        throw error
-      })
+    const supplier = await createSupplierRow(
+      em,
+      scope,
+      {
+        name: parsed.name,
+        contactName: parsed.contactName ?? null,
+        phone: parsed.phone ?? null,
+        email: parsed.email ?? null,
+        address: parsed.address ?? null,
+        defaultCurrencyCode: parsed.defaultCurrencyCode,
+        brandValue: parsed.brandValue ?? null,
+        isActive: parsed.isActive,
+        notes: parsed.notes ?? null,
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+      },
+      explicitCode,
+    )
 
     await emitCrudSideEffects({
       dataEngine: de,
@@ -234,6 +308,11 @@ const updateSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
     if (parsed.defaultCurrencyCode !== undefined && parsed.defaultCurrencyCode !== current.defaultCurrencyCode) {
       await assertCurrencyInDictionary(em, scope, parsed.defaultCurrencyCode)
     }
+    // Only a *new* brand is checked: clearing it stays allowed (the field is optional) and a value
+    // that predates the dictionary is left alone until the operator picks a listed one.
+    if (parsed.brandValue && parsed.brandValue !== current.brandValue) {
+      await assertDictionaryValue(em, scope, PRODUCT_BRAND_DICTIONARY_KEY, parsed.brandValue)
+    }
 
     const updated = await de.updateOrmEntity({
       entity: PurchasingSupplier,
@@ -246,6 +325,7 @@ const updateSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
         if (parsed.email !== undefined) entity.email = parsed.email
         if (parsed.address !== undefined) entity.address = parsed.address
         if (parsed.defaultCurrencyCode !== undefined) entity.defaultCurrencyCode = parsed.defaultCurrencyCode
+        if (parsed.brandValue !== undefined) entity.brandValue = parsed.brandValue ?? null
         if (parsed.isActive !== undefined) entity.isActive = parsed.isActive
         if (parsed.notes !== undefined) entity.notes = parsed.notes
       },
@@ -272,7 +352,7 @@ const updateSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
     const changes = buildChanges(
       (before ?? null) as unknown as Record<string, unknown> | null,
       after as unknown as Record<string, unknown>,
-      ['name', 'code', 'contactName', 'phone', 'email', 'address', 'defaultCurrencyCode', 'isActive', 'notes'],
+      ['name', 'code', 'contactName', 'phone', 'email', 'address', 'defaultCurrencyCode', 'brandValue', 'isActive', 'notes'],
     )
     return {
       actionLabel: translate('purchasing.audit.suppliers.update', 'Update supplier'),
@@ -302,6 +382,7 @@ const updateSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
         entity.email = before.email
         entity.address = before.address
         entity.defaultCurrencyCode = before.defaultCurrencyCode
+        entity.brandValue = before.brandValue
         entity.isActive = before.isActive
         entity.notes = before.notes
       },

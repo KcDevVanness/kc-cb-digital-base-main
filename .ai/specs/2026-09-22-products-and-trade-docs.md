@@ -31,7 +31,7 @@
 
 ## TLDR
 
-Build two app-owned modules. **`products`** owns the product master the business actually sells: product types, a category tree, products with export/packaging/lithium fields, and three fixed price tiers (`purchase` / `internal` / `export` — the price the company pays, the price the subsidiary is charged, and the price the subsidiary charges its customers). **`trade_docs`** owns purchase/sales **contracts** and inbound/outbound **invoices** referencing those products by id + snapshot, and computes every contract line and total in **two calibers**: the *financial amount* (exact, currency-decimal-rounded, invoice-authoritative once an invoice line is confirmed) and the *contract amount* (2-digit half-up, for the printed contract). The difference is stored on the contract head, invoices archive their scanned file as an attachment, and — last — the contract can be rendered to Excel.
+Build two app-owned modules. **`products`** owns the product master the business actually sells: product types, a category tree, products with export/packaging/lithium fields, and three fixed price tiers (`purchase` / `internal` / `export` — the price the company pays, the price the subsidiary is charged, and the price the subsidiary charges its customers). **`trade_docs`** owns purchase/sales **contracts** and inbound/outbound **invoices** referencing those products by id + snapshot, and computes every contract line and total in **two calibers**: the *financial amount* (exact, 2-decimal half-up, invoice-authoritative once an invoice line is confirmed) and the *contract amount* (also 2-decimal half-up, for the printed contract). Both calibers now share scale 2 — currency-independent, JPY included — so they differ only when a confirmed invoice overrides a line's financial amount. The difference is stored on the contract head, invoices archive their scanned file as an attachment, and — last — the contract can be rendered to Excel.
 
 ## Problem Statement
 
@@ -40,7 +40,7 @@ The current system cannot express the company's commercial chain. Concretely:
 1. **No owned product master.** The installed `catalog` is the platform's product registry with its own page set and customization surface; the owner's stated position is that official components will need heavy customization and that business UI/flows must be owned by the app. Product data used by contracts (品牌方型号, 规格串, HS/CN/原产国, 单件净重/毛重与尺寸, 装箱数, 锂电能量, 认证) is exactly what contract generation and export declarations need, and it must be maintained in an app-owned surface.
 2. **No three-tier pricing.** Today nothing stores "purchase price / internal settlement price / export price" for the same SKU, per currency, with a minimum-quantity ladder — the three prices the business negotiates in the same meeting.
 3. **No contract document at all.** Purchasing has orders and payments, sales has quotes/orders, but the **购销合同** (the signed paper that carries 唛头, 付款方式, 运输方式, 目的地, 交期, 大写金额) exists nowhere; it is produced by hand in Excel today.
-4. **No second amount caliber.** Finance needs a number that ties to the invoice to the cent; the contract needs a number that reads as a round 2-decimal figure. With one number, either the contract disagrees with the invoice or finance carries fractional cents. Both must exist side by side, with the difference visible.
+4. **Amount caliber tied to the invoice.** Finance needs a number that ties to the invoice; the contract prints its own 2-decimal figure. The two must exist side by side with the difference visible — the only legitimate divergence now is a confirmed invoice overriding a line (both calibers are a fixed 2 decimals).
 5. **Invoice scans have no home.** Supplier/issued invoice files arrive as PDFs/photos and are currently filed outside the system; the owner asked for **archive + download only** in this slice (no parsing, no AI).
 
 Evidence: the repository's own inventory — `src/modules/purchasing/**` implements suppliers/orders/payments but no product master and no contract; `docs/dev/business-architecture.md` records "商品主数据 → 复用 `catalog`" as a decision taken **before** the owner's customization requirement, and the catalog eject spike (`.ai/analysis/2026-09-21-catalog-eject-spike.md`) showed ejecting the official module is a 12-entity/9-page/24-command liability.
@@ -57,16 +57,17 @@ Evidence: the repository's own inventory — `src/modules/purchasing/**` impleme
 - **REQ-001** — `products` is a new app-owned module (`src/modules/<id>/`, `{ id: 'products', from: '@app' }`) with its own entities, commands, routes, pages, ACL, i18n and migrations; no installed file, generated file, or shipped migration is edited.
 - **REQ-002** — Product types are organization-scoped, unique by code, seeded with the Petkit starting set, deactivatable, and deletable only when unreferenced.
 - **REQ-003** — Categories form a per-organization tree with stored hierarchy columns (`parent_id`, `root_id`, `tree_path`, `ancestor_ids`, `child_ids`, `descendant_ids`) rebuilt by command on create/update; a cycle is rejected with 422 and no data change.
-- **REQ-004** — A product carries SKU (unique per organization), names, brand/series/manufacturer model, type, one primary category, spec summary, barcode, unit, export fields (HS/CN/origin), weights and dimensions **per unit** plus the units-per-carton figure, lithium battery fields, certification list, status, notes, and an **optional** link to an official catalog product (`catalog_product_id` + `catalog_snapshot`) so the official chain stays compatible.
-- **REQ-005** — Prices are rows with a fixed tier code (`purchase` | `internal` | `export`), a currency, a minimum quantity, a 6-decimal unit price, an optional validity window, and an active flag; the product's full price set is submitted in one `replace` command that upserts and deactivates missing rows instead of deleting them.
+- **REQ-004** — A product carries SKU (unique per organization), names, brand/series/manufacturer model, type, one primary category, spec summary, barcode, unit, export fields (HS/CN/origin), weights, volume and dimensions **per unit** plus the units-per-carton figure, lithium battery fields, certification list, status, notes, and an **optional** link to an official catalog product (`catalog_product_id` + `catalog_snapshot`) so the official chain stays compatible.
+- **REQ-005** — Prices are rows with a fixed tier code (`purchase` | `internal` | `export`), a currency, a minimum quantity, a 4-decimal unit price, an optional validity window, and an active flag; the product's full price set is submitted in one `replace` command that upserts and deactivates missing rows instead of deleting them.
 - **REQ-006** — `trade_docs` is a second new app-owned module owning contracts and invoices; contracts carry `direction` (`purchase` | `sales`), a lifecycle (`draft → issued → signed → closed`, `cancelled` from `draft`/`issued` with a mandatory reason), a counterparty by id + snapshot, our party snapshot, a price tier, a currency, an optional exchange-rate snapshot, source reference (order id + snapshot) and the signed/delivery dates plus the printed header terms (付款方式/运输方式/目的地/唛头/备注).
 - **REQ-007** — Contract lines reference a `products` product by scalar id + snapshot (sku/name/model/spec/unit/HS code/origin) and carry quantity, unit price, and the two derived amounts; an issued contract's number is `PC-<year>-<4 digits>` / `SC-<year>-<4 digits>`, unique per organization.
 - **REQ-008** — Invoices carry `direction` (`inbound` | `outbound`), an external number (indexed, not unique), a lifecycle (`draft → confirmed`, `void`), an optional contract, counterparty snapshot, source reference, currency, subtotal/total, issue date, and an archived attachment; invoice lines may bind to a contract line.
 - **REQ-009** — **Amount caliber (single authoritative definition):**
-  - *financial amount* = `HALF_UP(quantity × unit_price, currency decimal places)` per line, with the currency scale read from `Currency.decimalPlaces` (missing/invalid → 2, clamped to 0..8); the line's financial amount is **the bound confirmed invoice line's amount when one exists**, otherwise the computed value; the contract's `finance_total` is the sum of line financial amounts (never a re-quantization of a sum).
+  - *financial amount* = `HALF_UP(quantity × unit_price, 2)` per line (currency-independent — `AMOUNT_SCALE = 2`; JPY is 2 as well); the line's financial amount is **the bound confirmed invoice line's amount when one exists**, otherwise the computed value; the contract's `finance_total` is the sum of line financial amounts (never a re-quantization of a sum).
   - *contract amount* = `HALF_UP(quantity × unit_price, 2)` per line; `contract_total` is the sum.
   - *difference* = `contract_total − finance_total`, stored on the head.
   - All three are computed with BigInt scaled integers (`parseExactDecimal` + app-side `multiply` / `quantize`), **never `toFixed`**: `(1.005).toFixed(2)` is `"1.00"` and would understate a contract.
+  - *Currency independence (supersedes the original caliber):* the financial amount no longer reads `Currency.decimalPlaces`; both calibers share scale 2 and the line is the single rounding point, so `difference_total` moves only when a confirmed invoice overrides a line. See [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](2026-09-28-money-scale-2dp-unification.md).
 - **REQ-010** — Every route uses `makeCrudRoute` (or a guarded command route) with per-method `metadata` (`requireAuth` + `requireFeatures`) and exported `openApi`; every page ships `page.meta.ts` with `requireAuth` + `requireFeatures`; mutations go through commands with zod validators, scope derived from the session (fail closed), optimistic locking on user-editable records (409 on stale version).
 - **REQ-011** — Every surface ships zh + en strings, loading/empty/error/conflict/permission-denied states, semantic design tokens, keyboard submission (`Cmd/Ctrl+Enter`) and no horizontal overflow at narrow width.
 - **REQ-012** — Invoice attachments are archived and downloadable in this slice (upload via `/api/attachments`, bind via a command); **no parsing, no OCR, no LLM extraction**.
@@ -101,7 +102,7 @@ trade_docs                                                       │
                         └── attachment_id (archived scan, download only)
 
 amount flow per line:  quantity × unit_price
-                       ├─ quantize(currencyScale)  → finance_amount   (or bound confirmed invoice line amount)
+                       ├─ quantize(2)              → finance_amount   (or bound confirmed invoice line amount)
                        └─ quantize(2)              → contract_amount
                        head: Σ finance_amount → finance_total ; Σ contract_amount → contract_total
                              contract_total − finance_total → difference_total
@@ -132,17 +133,17 @@ amount flow per line:  quantity × unit_price
 | category tree | Per-organization tree; a node stores `parent_id`, `root_id`, `tree_path` (`id/id/id`), `ancestor_ids`, `child_ids`, `descendant_ids`; rebuilt after every create/update | `products_categories` | cycle (self or own descendant as parent) → 422, data unchanged |
 | primary category | One `category_id` per product (nullable); the contract groups by category | `products_products` | unknown/foreign-scope category → 400 |
 | price tier | `purchase` (what we pay the agent) / `internal` (what the subsidiary is charged) / `export` (what the subsidiary charges its customers) | `lib/tiers.ts` constant | unknown code → 400 |
-| price row | `(product, tier, currency_code, min_quantity)` unique; `unit_price` numeric(18,6); inactive rows stay for history | `products_prices` | duplicate key in one payload → 400; replace never hard-deletes |
+| price row | `(product, tier, currency_code, min_quantity)` unique; `unit_price` numeric(18,4); inactive rows stay for history | `products_prices` | duplicate key in one payload → 400; replace never hard-deletes |
 | contract direction | `purchase` (we buy: counterparty is a supplier) or `sales` (we sell: counterparty is a customer/branch) | `trade_docs_contracts` | missing/invalid → 400 |
 | contract status | `draft → issued → signed → closed`; `cancelled` only from `draft`/`issued` and requires a reason | command transition table | illegal transition → 422 with state unchanged |
 | contract number | `PC-<year>-<4 digits>` (purchase) / `SC-<year>-<4 digits>` (sales), unique per organization, assigned at `issue` from the max existing number of that direction+year | `trade_docs_contracts` | duplicate → 409 |
-| financial amount | `HALF_UP(quantity × unit_price, currencyScale)`; if the line is bound to a **confirmed** invoice line, that invoice line's `amount` | `lib/money.ts` + `lib/contractTotals.ts` | never negative-scaled; unavailable currency row → scale 2 + UI hint |
+| financial amount | `HALF_UP(quantity × unit_price, 2)` (currency-independent); if the line is bound to a **confirmed** invoice line, that invoice line's `amount` | `lib/money.ts` + `lib/contractTotals.ts` | invoice override shown as the line's source; no currency-scale fallback anymore |
 | contract amount | `HALF_UP(quantity × unit_price, 2)` | `lib/money.ts` | — |
 | difference | `contract_total − finance_total` (signed; negative means finance exceeds the contract) | contract head | displayed, never hidden |
 | invoice status | `draft → confirmed`; `confirmed → void`; `void` reverts its influence on the contract | `trade_docs_invoices` | confirming twice → 422 |
 | invoice number | External document number typed by the operator, indexed but **not unique** (two systems may reuse numbers) | `trade_docs_invoices` | duplicate allowed by design |
 | counterparty snapshot | Name/address/contact/bank captured on the contract head; renaming the master does not rewrite a signed contract | contract/invoice head | — |
-| quantity/price precision | `numeric(18,6)` for quantity and unit price; amounts `numeric(18,4)`; tier prices `numeric(18,6)` | entities | values normalized to strings at the command boundary |
+| quantity/price precision | `numeric(18,6)` for quantity; `numeric(18,4)` for unit price; amounts `numeric(18,2)`; tier prices `numeric(18,4)` | entities | values normalized to strings at the command boundary |
 
 ## Users, Permissions, and Scope
 
@@ -165,7 +166,7 @@ Trusted scope only: every command derives `tenantId` from `ctx.auth.tenantId` an
 | Contracts, invoices, invoice archive | **app-own** | `trade_docs` (new) | references `products` by id + snapshot | No installed document of this shape exists |
 | Supplier master / customer master | reuse | `purchasing`, `customers` | `counterparty_id` scalar + `counterparty_snapshot` | Masters are already owned; contracts must not duplicate them |
 | Order source | reuse (later, id only) | `purchasing`, `sales` | `source_kind` + `source_id` + `source_snapshot` | Contracts may be derived from an order without owning it |
-| Currency decimals | reuse | `currencies` | scoped read of `Currency.decimalPlaces` | One authority for the financial rounding scale |
+| Currency decimals (`Currency.decimalPlaces`) | reuse (metadata only) | `currencies` | display metadata maintained by `currency_policy` | **Superseded by [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](2026-09-28-money-scale-2dp-unification.md):** amounts are a fixed 2 decimals, so this column no longer drives any rounding scale |
 | Currency code picker | reuse | `dictionaries` | `/api/customers/dictionaries/currency` | Same store every other picker uses |
 | Organization tree and visibility | reuse | `directory` + CRUD factory | scope columns + ACL organization set | Platform mechanism, no app code |
 | Attachment storage | reuse | `attachments` | `attachment_id` scalar + `/api/attachments` upload + attach command | Platform storage, drivers, partitions, access rules |
@@ -194,7 +195,7 @@ commands/*                                       validate -> scope -> totals eng
         v
 trade_docs_* tables                              contract head stores contract/finance/difference totals
         |
-        +-- lib/money.ts (BigInt multiply/quantize) <- lib/currencyScale.ts (Currency.decimalPlaces)
+        +-- lib/money.ts (BigInt multiply/quantize; `AMOUNT_SCALE=2`, `PRICE_SCALE=4`)
         +-- lib/contractTotals.ts (invoice-first per line, sums, difference)
         +-- lib/contractTemplate.ts + buildXlsx (Phase 4, attachment)
 ```
@@ -217,7 +218,7 @@ trade_docs_* tables                              contract head stores contract/f
 ### Journey J-002 — Purchase contract → invoice → financial caliber shift
 
 1. Contract operator opens 购销合同 → 新建, sets direction `purchase`, counterparty kind `supplier` (picked from `purchasing` suppliers), price tier `purchase`, currency CNY, adds two product lines with quantities and unit prices (e.g. `3 × 1200.4`).
-2. The line grid immediately shows `contract_amount` (2dp) and `finance_amount` (currency scale); the head shows the two totals and 差额.
+2. The line grid immediately shows `contract_amount` (2dp) and `finance_amount` (2dp); the head shows the two totals and 差额.
 3. 签发 (issue) assigns `PC-2026-0001` and locks the lines; 签订 records `signed_at`; printing uses the contract total.
 4. Supplier sends an invoice for 3600.00 while the contract computed 3601.20: the operator creates an inbound invoice, binds its line to the contract line with the invoiced amount, and 确认 (confirm) — `finance_total` becomes the invoice figure and 差额 shows the 1.20 discrepancy.
 5. 作废 (void) on the invoice reverts `finance_total` to the computed value; nothing else changes.
@@ -297,7 +298,7 @@ References are rendered as display values, never raw ids: product lines show the
 锂电与认证 : 含锂电池▢ 电池容量(mAh) 电池能量(Wh) 认证(多值)
 官方目录链接（选填） : 搜索官方目录商品…▾
                                                         [上一步] [下一步]
-③ 三档价格  三档价格 : [+ 添加价格行] 档位▾ 币种▾ 起订量 单价(6位) 生效起 生效止 启用▢
+③ 三档价格  三档价格 : [+ 添加价格行] 档位▾ 币种▾ 起订量 单价(4位) 生效起 生效止 启用▢
                                                         [上一步] [下一步]
 ④ 变体/SKU  变体 / SKU : [+ 添加 SKU] 编码 名称 条码 状态 默认
                                                         [上一步]
@@ -380,6 +381,7 @@ All tables carry `tenant_id` + `organization_id` (uuid, required, session-derive
 | `unit` | text, default `'PCS'` | — | no | editable |
 | `hs_code`, `cn_code`, `country_of_origin_code` | text, nullable | — | no | export declarations |
 | `net_weight`, `gross_weight` | numeric(16,4), nullable | — | no | per unit |
+| `volume` | numeric(16,0), nullable | — | no | per unit, in **whole cm³** (added 2026-09-24 by `Migration20260924031334_products`, narrowed from scale 6 by `Migration20260924035458_products`); supplied by the supplier library's `unit_volume` on sync, recorded rather than derived from `dimensions`, no reader yet |
 | `dimensions` | jsonb, nullable | — | no | `{length,width,height,unit}`; the form labels it 产品尺寸 / "Product size" (2026-09-23 统一命名) |
 | `carton_quantity` | integer, nullable | — | no | 装箱数 Qty/Box — how many units one carton holds; kept |
 | ~~`carton_dimensions`, `carton_gross_weight`, `carton_net_weight`~~ | dropped 2026-09-23 | — | — | whole-carton measurements are not maintained (unit data only); the columns are dropped by `Migration20260923065528_products` (`up`: `drop column "carton_dimensions", drop column "carton_gross_weight", drop column "carton_net_weight"`, with the matching `down`) |
@@ -401,7 +403,7 @@ All tables carry `tenant_id` + `organization_id` (uuid, required, session-derive
 | `price_tier` | text, required | unique part | no | `purchase` \| `internal` \| `export` |
 | `currency_code` | text, required | unique part | no | 3-letter ISO, uppercased, checked against the currency dictionary |
 | `min_quantity` | integer, default 1 | unique part | no | ≥ 1 |
-| `unit_price` | numeric(18,6), default `'0'` | — | no | ≥ 0 |
+| `unit_price` | numeric(18,4), default `'0'` | — | no | ≥ 0 |
 | `starts_at`, `ends_at` | date, nullable | — | no | optional validity window |
 | `is_active` | boolean, default true | — | no | a tier with no active row means "no price quoted" |
 | `created_at`, `updated_at` | timestamptz | — | no | system |
@@ -418,10 +420,10 @@ All tables carry `tenant_id` + `organization_id` (uuid, required, session-derive
 | `counterparty_id`, `counterparty_snapshot` | uuid nullable / jsonb nullable | index | commercial data | snapshot frozen at `issue` |
 | `our_party_snapshot` | jsonb, nullable | — | commercial data | name/address/contact/bank of our side |
 | `price_tier` | text, nullable | — | no | `purchase` \| `internal` \| `export` |
-| `currency_code` | text, default `'CNY'` | — | no | drives the financial scale |
+| `currency_code` | text, default `'CNY'` | — | no | document currency only; amounts are a fixed 2 decimals, so it no longer drives the rounding scale |
 | `exchange_rate` | numeric(18,8), nullable | — | no | snapshot only, never auto-converted |
 | `source_kind`, `source_id`, `source_snapshot` | text/uuid/jsonb, nullable | index on source_id | no | order reference by id + snapshot |
-| `contract_total`, `finance_total`, `difference_total` | numeric(18,4), default `'0'` | index on finance_total | financial | recomputed by the totals engine on every line/invoice change |
+| `contract_total`, `finance_total`, `difference_total` | numeric(18,2), default `'0'` | index on finance_total | financial | recomputed by the totals engine on every line/invoice change |
 | `signed_at`, `delivery_date` | date, nullable | — | no | set by `sign` / editable headers |
 | `payment_terms`, `shipping_method`, `destination`, `marks`, `notes` | text, nullable | — | no | printed contract terms |
 | `generated_attachment_id`, `generated_at` | uuid nullable / timestamptz nullable | — | no | Phase 4 document pointer |
@@ -437,8 +439,8 @@ All tables carry `tenant_id` + `organization_id` (uuid, required, session-derive
 | `product_id`, `product_snapshot` | uuid nullable / jsonb nullable | index | no | snapshot: sku/name/model/spec/unit/hs_code/origin |
 | `name`, `sku`, `model`, `spec`, `unit` | text, nullable | — | no | printing copies of the snapshot (a re-import of the product cannot rewrite an issued contract) |
 | `quantity` | numeric(18,6), default `'0'` | — | no | editable while `draft` |
-| `unit_price` | numeric(18,6), default `'0'` | — | no | editable while `draft` |
-| `contract_amount`, `finance_amount` | numeric(18,4), default `'0'` | — | financial | derived |
+| `unit_price` | numeric(18,4), default `'0'` | — | no | editable while `draft` |
+| `contract_amount`, `finance_amount` | numeric(18,2), default `'0'` | — | financial | derived |
 | `note` | text, nullable | — | no | editable |
 | `created_at`, `updated_at` | timestamptz | — | no | system |
 
@@ -454,7 +456,7 @@ All tables carry `tenant_id` + `organization_id` (uuid, required, session-derive
 | `contract_id` | uuid, nullable | index | no | same-module `@ManyToOne`, `nullable: true` |
 | `source_kind`, `source_id`, `source_snapshot` | text/uuid/jsonb, nullable | — | no | order reference |
 | `currency_code` | text, default `'CNY'` | — | no | must match the bound contract for confirmation to affect it |
-| `subtotal`, `total` | numeric(18,4), default `'0'` | — | financial | derived from lines |
+| `subtotal`, `total` | numeric(18,2), default `'0'` | — | financial | derived from lines |
 | `issued_at` | date, nullable | — | no | editable |
 | `attachment_id` | uuid, nullable | index | commercial document | platform attachment; archive + download only |
 | `notes` | text, nullable | — | no | editable |
@@ -469,8 +471,8 @@ All tables carry `tenant_id` + `organization_id` (uuid, required, session-derive
 | `line_number` | integer, required | unique per invoice | no | assigned by the command |
 | `product_id`, `product_snapshot` | uuid nullable / jsonb nullable | index | no | same convention as contract lines |
 | `description`, `sku`, `unit` | text, nullable | — | no | printing |
-| `quantity`, `unit_price` | numeric(18,6), default `'0'` | — | no | editable while `draft` |
-| `amount` | numeric(18,4), default `'0'` | — | financial | editable as printed on the supplier's invoice (may differ from `quantity × unit_price`) |
+| `quantity`, `unit_price` | numeric(18,6) / numeric(18,4), default `'0'` | — | no | editable while `draft` |
+| `amount` | numeric(18,2), default `'0'` | — | financial | editable as printed on the supplier's invoice (may differ from `quantity × unit_price`) |
 | `contract_line_id` | uuid, nullable | index | no | `@ManyToOne` to `TradeDocsContractLine`, `nullable: true`, `deleteRule: 'set null'` |
 | `created_at`, `updated_at` | timestamptz | — | no | system |
 
@@ -521,7 +523,7 @@ No jobs, queues, or scheduled work are introduced. Attachment access, indexing, 
 ## Security, Privacy, and Compliance
 
 - **Authorization:** feature ids as listed above; list/detail/mutation all gated; UI hiding never substitutes for the API check. No role-name checks anywhere.
-- **Tenant isolation:** scope columns on every table; commands fail closed without a resolvable organization; reads use the factory's automatic scope guard, with cross-module reads (currency decimals, product snapshots) written as scoped Kysely queries with bound parameters.
+- **Tenant isolation:** scope columns on every table; commands fail closed without a resolvable organization; reads use the factory's automatic scope guard, with cross-module reads (currency metadata, product snapshots) written as scoped Kysely queries with bound parameters.
 - **Sensitive data:** counterparty addresses/banks are commercial data, not personal PII; contract and invoice files are stored through the platform's attachment driver (partition by entity, access-checked download). No secrets, no tokens, no encryption map additions — no new column holds an end-customer identifier.
 - **Abuse and failure modes:** duplicate SKU/code → 409 (uniqueness includes soft-deleted rows so the user never gets a driver error); cycle attempts → 422 with data unchanged; stale writes → 409 via `updated_at` optimistic lock; invoice confirmation cannot be replayed (422) and voiding reverses cleanly; the money engine parses only decimal strings and rejects non-finite input (line rejected, contract unchanged); no endpoint accepts a client-computed total — the head totals are always server-derived.
 
@@ -529,7 +531,7 @@ No jobs, queues, or scheduled work are introduced. Attachment access, indexing, 
 
 | Test ID | Level | Setup / fixture | Actions | Assertions | Requirement IDs |
 |---|---|---|---|---|---|
-| TEST-001 | unit | — | `lib/money.ts` cases: `1 × 0.005` @2dp, `2.5 × 0.125` @2dp, `3 × 12.3456` @2dp, `3 × 1200.4` @0dp vs contract 2dp, sum of `0.01+0.02`, difference on an invoice-covered line, `resolveCurrencyScale(null\|0\|99)` | exact strings as specified in Phase 2 | REQ-009 |
+| TEST-001 | unit | — | `lib/money.ts` cases: `1 × 0.005` @2dp, `2.5 × 0.125` @2dp, `3 × 12.3456` @2dp, sum of `0.01+0.02`, difference on an invoice-covered line (currency independence: both calibers @2dp regardless of `Currency.decimalPlaces`) | exact strings as specified in Phase 2 | REQ-009 |
 | TEST-002 | unit | — | `lib/categoryTree.ts` on A>B>C then moving B to root; cycle attempt | `ancestor_ids`/`descendant_ids`/`tree_path`/`depth` match hand-computed values; cycle rejected | REQ-003 |
 | TEST-003 | unit | — | validators: invalid tier, lowercase currency, `min_quantity: 0` | each rejected with a field error | REQ-005 |
 | TEST-004 | API | tenant + HQ org + operator with features | type → category A/B/C → product → three price rows → list with `search` | 201s, `treePath` = `A/B/C`, prices round-trip, duplicate SKU → 409, inactive product filtered out | REQ-002…005 |
@@ -570,8 +572,8 @@ No jobs, queues, or scheduled work are introduced. Attachment access, indexing, 
 - **Depends on:** Phase 1 exit gate
 - **Outcome:** purchase and sales contracts with dual-caliber amounts and lifecycle; inbound/outbound invoices that move the financial caliber when confirmed and archive their file.
 - **Why this order / value delivered:** the contracts are the commercial document the owner asked for; after this phase finance can tie every contract to an invoice.
-- **Deliverables:** `src/modules/trade_docs/**` (entities, validators, `lib/{money,currencyScale,contractTotals}.ts`, commands, routes, pages, i18n, README), registration, migration (generated → reviewed → approved).
-- **Independent slices / estimated commits:** (a) entities + money engine + currencyScale + contractTotals + unit tests; (b) contract commands/routes; (c) invoice commands/routes + attach; (d) pages/components + i18n.
+- **Deliverables:** `src/modules/trade_docs/**` (entities, validators, `lib/{money,contractTotals}.ts`, commands, routes, pages, i18n, README), registration, migration (generated → reviewed → approved).
+- **Independent slices / estimated commits:** (a) entities + money engine + contractTotals + unit tests; (b) contract commands/routes; (c) invoice commands/routes + attach; (d) pages/components + i18n.
 - **Requirements closed:** REQ-006…REQ-012.
 - **Tests:** TEST-001, TEST-007, TEST-008, TEST-009, TEST-010 (trade docs), TEST-012.
 - **Validation:** `yarn generate`, `yarn typecheck`, `yarn lint`, `yarn jest --config jest.config.cjs src/modules/trade_docs`, API smoke, browser pass.
@@ -673,7 +675,7 @@ No jobs, queues, or scheduled work are introduced. Attachment access, indexing, 
 | Two masters for the same product (`products` and `catalog`) | Confusion about which one a document references | Contracts reference `products` only; `catalog_product_id` link is documented in the module README and `docs/dev/business-architecture.md` | Reconciliation remains manual until a follow-up slice |
 | Float rounding in money | A contract prints a value the invoice disagrees with | BigInt engine + unit tests pinned on `0.005`, `0.125`, `12.3456` | Accepted (tests fail loudly if someone reintroduces `toFixed`) |
 | Invoice-authoritative per-line override | A wrong invoice silently moves `finance_total` | Only **confirmed** invoices count; `difference_total` is displayed; the line shows its source | Operator error; audit trail records who confirmed |
-| Currency row missing (new organization) | Financial scale falls back to 2 | Fallback is explicit, clamped 0..8, and surfaced as a UI hint | A currency with ≠2 decimals could be mis-scaled until seeded |
+| Currency-decimal caliber removed | Financial scale no longer follows `Currency.decimalPlaces` | Amounts are a fixed 2 decimals (JPY included); the column stays as display metadata — superseded by the unification spec | None (invoice override is the only remaining caliber difference) |
 | Broken category hierarchy data | Lists show wrong paths | Command-side rebuild after every create/update; cycle rejected; tree computed with the proven algorithm | Manual DB edits outside commands |
 | Contract numbering race | Duplicate `PC-<year>-0001` | Unique constraint on `(tenant, org, number)` → 409; the command reads the max existing number inside the transaction | Two simultaneous issues: one gets 409 and retries |
 | Attachment upload before/after binding | Orphan uploads | Binding is idempotent; the invoice row keeps its state and offers retry | Orphan files in storage |
@@ -722,8 +724,9 @@ Verdict: `Implemented` (Phases 0–6, verified end to end).
 
 ## Changelog
 
-| Date | Change |
-|---|---|
+| 2026-09-28 | 金额口径统一：金额 2 位/单价 4 位，HALF_UP，引擎单点；金额列 numeric(18,2)、单价列 numeric(18,4)（见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](2026-09-28-money-scale-2dp-unification.md)）。本 spec 的 REQ-005 单价 6→4 位；REQ-009 金融口径不再读 `Currency.decimalPlaces`、与合同口径同为 2 位（差异只剩「已确认发票覆盖」）；契约头合计、行金额、发票小计/行金额列 18,4→18,2；合同/发票/单据行单价列 18,6→18,4；删除 `lib/currencyScale.ts` 与 `currencyScale`/`currencyScaleFallback` 输出。 |
+| 2026-09-24 | **局部写入不再清空未提及的小数字段（同一次改动里发现并修掉的数据丢失缺陷）.** 现场：`sync-fields` 只改 `volume` 时，商品主数据的 `net_weight`/`gross_weight` 被清空（反向亦然）。根因：`nullableDecimalSchema` 把 `undefined` 折叠成 `null`（`transform(undefined → null)` + `pipe(...)`），而 `productUpdateSchema = productCreateSchema.partial()`、更新命令按 `parsed.X !== undefined` 才写 → 「没传」与「清空」不可区分，任何**局部**写入都会清掉载荷里没提到的十进制列（`netWeight`/`grossWeight`/`volume`/`batteryWh`）；隔壁的整数助手 `nullableNonNegativeIntegerSchema` 行为正确（同一载荷下 `carton_quantity` 未被清），这正是可对照的证据。修复：两个模块的 `nullableDecimalSchema` 保留 `undefined`（`transform` 三分支 + `pipe` 目标加 `z.undefined()`），并补一条契约测试「省略的十进制在局部更新里保持 absent，显式 `null` 仍然清空」。验证：探针 `productUpdateSchema.parse({ id, volume })` 修前 `netWeight: null`、修后 `undefined`；实测 `sync-fields` 只带 `volume` 后主数据 `net_weight 1.2800 / gross_weight 1.9000 / volume 88642` 三者齐全、再跑一次 `fieldsChanged: []`；`yarn test` 18 套 106 例全绿。教训：[`.ai/lessons/partial-update-must-not-clear-absent-fields.md`](../../.ai/lessons/partial-update-must-not-clear-absent-fields.md) |
+| 2026-09-24 | **体积列 `volume`（owner：供应商表的 G.W./N.W. 之外还要记体积，单位 cm³；同步路径也要带上，用不用是后话）.** 商品主数据新增可空列 `volume`（单件体积，**整数 cm³**，`numeric(16,0)`；先按 scale 6 建列再于同日 `Migration20260924035458_products` 收窄，表单因此显示 `88642` 而不是 `88642.000000`）：实体、`productCreateSchema`（scale 6）、`products.items` 的 `select` 与投影、命令的 `SerializedProduct`/`PRODUCT_COLUMNS`/`applyProductInput`/create/undo 恢复、商品表单（「出口与包装」卡，标签「体积（cm³）」/ "Volume (cm³)"，`lib/formLayout.ts` 归 declaration 步）、zh/en 字典，迁移 `Migration20260924031334_products`（`add "volume" numeric(16,6) null` + 对称 `down`；`products_products` 由 products 链创建，链条顺序无坑）。来源：供应商产品库的 `unit_volume` 经 `lib/supplierMapping.ts` 的 `ProductFieldValues.volume` 写入（`purchasing/lib/productMapping.ts` 映射，报价行侧声明 `null`），两侧 `productsReads` 的 select/映射同步加列。口径：按供应商印的数照录，**不由 `dimensions` 推算**；暂无读取方（运费询价按 m³/CBM 计费，读取时换算）。验证：`yarn generate` + `yarn typecheck` + `yarn ds:check` + 单测全绿；集成套件断言「产品库体积 → 商品 `volume`」 |
 | 2026-09-23 | **尺寸字段统一命名「产品尺寸」**（owner 口径：整箱数据已不维护，`dimensions` 就是产品自己的尺寸，不再叫「单件尺寸」）。`products.items.form.field.dimensions` 的 zh 改为 `产品尺寸`、en 改为 `Product size`；供应商产品库那张卡此前已从「内盒尺寸」改成 `产品尺寸（cm）` / `Product size L×W×H (cm)`，报价导入列映射的目标名也从「内箱尺寸」改成 `产品尺寸 (cm)` / `Product size (cm)`（alias 仍匹配工作簿表头的 `内箱尺寸` / `Inner Box`）。字段 id 与列名（`dimensions`、`innerPacking` / `inner_packing`）全部未动。 |
 | 2026-09-23 | **整箱数据移除（owner 口径：采购只维护单件数据）.** The product master keeps the **unit** measurements and the units-per-carton figure only: `cartonDimensions` / `cartonGrossWeight` / `cartonNetWeight` left the entity, validator, command, API schema + serialization, the form (the 箱规尺寸 card and the 箱毛重/箱净重 inputs), `lib/formLayout.ts` and both i18n files; `dimensions`, `net_weight`, `gross_weight` and `carton_quantity` stay. The same change removed the whole-carton columns from the supplier product library and stopped both supplier→master mappers — `sourcing`'s `lib/productMapping.ts` and `purchasing`'s — from writing them. DB columns dropped by `Migration20260923065528_products` (down re-adds them). The columns are dropped by `Migration20260923065528_products` (applied to the dev database; `down` re-adds them). |
 | 2026-09-23 | **合同文档标题改为跟随语言（owner 语言规则）. The contract template used to hard-code one bilingual label per cell (「合同号 Contract No.」). Every label is now a `trade_docs.contracts.print.*` key resolved by `resolveTranslations()` in `trade_docs.contracts.generate-document` and passed to `buildContractSheet(input, t)`; the archived XLSX keeps the language it was generated in. The two amount-word rows (人民币大写 + `SAY …`) stay: that pairing is the bank/customs convention for the amount, not a language pair. The seed dictionaries of this module lost their English glosses for the same reason (a dictionary label has no locale). Unit test `lib/__tests__/contractTemplate.test.ts` pins both a zh and an en render. |
@@ -732,7 +735,7 @@ Verdict: `Implemented` (Phases 0–6, verified end to end).
 | 2026-09-22 | Phase 6 implemented and verified (owner chose option A). New app-owned module `internal_sales`: quote/order list, create and edit pages whose lines reference `products_products`; installed `sales` remains the engine underneath and only its catalog-bound create page is hidden. Two installed behaviours were discovered by reading the command layer and drove the design: `sales.*.update` never replaces lines (they live on their own collection endpoint), and every sales command locks the **parent document's** version while a line write bumps it — so exactly the head patch carries the operator's version, the form runs with `disableOptimisticLock`, and it re-reads the document after saving (without that, the operator's second save 409s). Verified end to end in the browser and in the database: a quote (2 × 55.50 → 111.00) and two orders (3 × 44.40, 6 × 63.25 after an edit) carry the owned product id, the frozen snapshot and the catalog default variant bridge; edits keep the same line id (upsert, no duplicate) and the head totals follow. A stale-closure bug in the async product picker was found and fixed while verifying (the row lost its product when a slow lookup resolved behind a second state write). |
 | 2026-09-22 | Phase 5 implemented and verified. Stepped product form (3 steps, input survives switching, a rejected submit jumps to the offending step) with `lib/formLayout.ts` as the field/step seam. The installed catalog's product/variant/category pages are hidden through `routes.pages` overrides (`CATALOG` gone from the sidebar; module, API and `config/catalog` still enabled). Purchase order lines now reference `products_products` (migration applied: `product_id` uuid null added, `catalog_product_id` relaxed to nullable): verified new line `productId` + frozen snapshot, missing reference 400, foreign-organization product 400, historical catalog-only lines still rendering; the catalog link is written through the product form (UI pick + save confirmed by API) and also carries to the order line as the bridge so shipment allocation succeeds (201) — an unlinked product is refused at allocation with a message naming the fix (422). |
 | 2026-09-22 | Owner review of the built surfaces added Phase 5 (REQ-015…017): the product form becomes step-based with `lib/formLayout.ts` as the future field-whitelist seam, the installed catalog's product/variant/category pages are hidden through registry page overrides, and purchase order lines are switched to reference `products_products` by id + snapshot (additive `product_id` column; `catalog_product_id` kept for historical rows). `sales` document lines stay on the catalog and are recorded as a non-goal. |
-| 2026-09-22 | Currency-scale fallback surfaced: the contract list publishes `currencyScale` / `currencyScaleFallback` (read from `currencies.decimal_places`) and the detail page shows the hint when the scope has no currency row, so finance can tell a two-decimal fallback from the currency's own definition. |
+| 2026-09-22 | Currency-scale fallback surfaced: the contract list publishes `currencyScale` / `currencyScaleFallback` (read from `currencies.decimal_places`) and the detail page shows the hint when the scope has no currency row, so finance can tell a two-decimal fallback from the currency's own definition. **（已废止 — superseded by 2026-09-28 金额口径统一：金额与币种无关、恒 2 位；`currencyScale`/`currencyScaleFallback` 输出与 `lib/currencyScale.ts` 已删除，见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](2026-09-28-money-scale-2dp-unification.md)。）** |
 | 2026-09-22 | Phase 3/4 surfaces verified: contract list/detail show the two calibers plus the difference, per-line `financeSource`, and CSV export carries `Contract Amount / Finance Amount / Difference`. Follow-up decided during the browser pass: pickers are narrowed with an explicit `organizationId` filter (reads expand to descendants, writes act in the selected organization) — recorded as a lesson. |
 | 2026-09-22 | Q-002 resolved by moving product batch import out of this spec into [`.ai/specs/2026-09-22-supplier-quotation-import.md`](2026-09-22-supplier-quotation-import.md); the non-goal now points there. Owner approved the one new dependency (SheetJS `xlsx`) for that slice; this spec's own `buildXlsx` write path is unchanged |
 | 2026-09-22 | REQ-016 corrected: the page-hide domain is `overrides.routes.pages`. The original top-level `pages` key was read by no applier — the catalog pages stayed routed and in the sidebar while `yarn generate` reported success. Mechanism and diagnosis recorded in `.ai/lessons/module-override-page-hide-needs-routes-domain.md`. The same fix extended the hide to `customers`/`sales`/`wms`/`currencies`/`dictionaries`/`feature_toggles` — 65 `navHidden: true` page overrides in total and **no** `null` page drops (the only `null` in `src/modules.ts` is the `catalog.injection.product-seo` widget), because official notifications freeze `linkHref` at emit time; see `docs/dev/business-architecture.md` → 自建模块对官方模块的消费清单 for what those pages' APIs are still used by |

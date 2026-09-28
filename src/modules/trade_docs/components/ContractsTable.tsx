@@ -18,9 +18,11 @@ import { deleteCrud, fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
-import { formatCurrency, formatDate } from '@open-mercato/ui/utils/format'
+import { formatDate } from '@open-mercato/ui/utils/format'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { AMOUNT_SCALE, toScaledUnits } from '../lib/money'
 import { downloadApiFile } from './downloadFile'
 import { CONTRACT_STATUSES, type ContractStatus, contractStatusLabel, directionLabel } from './contractLabels'
 
@@ -73,10 +75,14 @@ export function toContractRecord(item: Record<string, unknown>): ContractRecord 
   }
 }
 
-function amountCell(value: string, currencyCode: string, locale: string): React.ReactNode {
+/**
+ * The list's money cells render through the shared `MoneyAmount`, so a foreign-currency total carries
+ * its `≈ ¥…` line; an empty total keeps the em dash and never invents a figure.
+ */
+function amountCell(value: string, currencyCode: string): React.ReactNode {
   const text = value.trim()
   if (!text) return <span className="text-xs text-muted-foreground">—</span>
-  return <span className="tabular-nums">{formatCurrency(text, currencyCode, locale) ?? text}</span>
+  return <MoneyAmount currencyCode={currencyCode} amount={text} />
 }
 
 function buildColumns(t: TranslateFn, locale: string): ColumnDef<ContractRecord>[] {
@@ -118,13 +124,13 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<ContractRecord>
       accessorKey: 'contractTotal',
       header: t('trade_docs.contracts.list.columns.contractTotal'),
       meta: { priority: 5 },
-      cell: ({ row }) => amountCell(row.original.contractTotal, row.original.currencyCode, locale),
+      cell: ({ row }) => amountCell(row.original.contractTotal, row.original.currencyCode),
     },
     {
       accessorKey: 'financeTotal',
       header: t('trade_docs.contracts.list.columns.financeTotal'),
       meta: { priority: 6 },
-      cell: ({ row }) => amountCell(row.original.financeTotal, row.original.currencyCode, locale),
+      cell: ({ row }) => amountCell(row.original.financeTotal, row.original.currencyCode),
     },
     {
       id: 'differenceTotal',
@@ -132,14 +138,17 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<ContractRecord>
       enableSorting: false,
       meta: { priority: 7 },
       cell: ({ row }) => {
-        const diff = Number(row.original.differenceTotal)
-        if (!Number.isFinite(diff) || diff === 0) {
+        // Exact zero test on scaled units: the difference is an amount, so whether this cell reads
+        // as "no difference" is never decided by a float.
+        if (toScaledUnits(row.original.differenceTotal, AMOUNT_SCALE) === 0n) {
           return <span className="tabular-nums text-xs text-muted-foreground">0</span>
         }
         return (
-          <span className="tabular-nums font-medium text-status-error-text">
-            {formatCurrency(row.original.differenceTotal, row.original.currencyCode, locale) ?? row.original.differenceTotal}
-          </span>
+          <MoneyAmount
+            currencyCode={row.original.currencyCode}
+            amount={row.original.differenceTotal}
+            className="font-medium text-status-error-text"
+          />
         )
       },
     },

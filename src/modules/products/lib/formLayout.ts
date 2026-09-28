@@ -90,6 +90,7 @@ export const PRODUCT_FORM_FIELD_STEPS: Record<string, ProductFormStep> = {
   countryOfOriginCode: 'declaration',
   netWeight: 'declaration',
   grossWeight: 'declaration',
+  volume: 'declaration',
   dimensions: 'declaration',
   cartonQuantity: 'declaration',
   containsLithiumBattery: 'declaration',

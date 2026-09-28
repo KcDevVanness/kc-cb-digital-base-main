@@ -24,8 +24,9 @@ import {
 import { EmptyState } from '@open-mercato/ui/primitives/empty-state'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
-import { formatCurrency } from '@open-mercato/ui/utils/format'
-import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { AMOUNT_SCALE, toScaledUnits } from '../lib/money'
 import { contractStatusLabel, directionLabel, invoiceStatusLabel, type ContractStatus } from './contractLabels'
 import { downloadApiFile } from './downloadFile'
 
@@ -78,7 +79,6 @@ type ContractHead = {
   generatedAttachmentId: string | null
   attachmentId: string | null
   updatedAt: string | null
-  currencyScaleFallback: boolean
   counterpartySnapshot: Record<string, unknown> | null
   ourPartySnapshot: Record<string, unknown> | null
 }
@@ -152,7 +152,6 @@ function toHead(item: Record<string, unknown>): ContractHead {
     generatedAttachmentId: (item.generatedAttachmentId ?? null) as string | null,
     attachmentId: (item.attachmentId ?? null) as string | null,
     updatedAt: (item.updatedAt ?? null) as string | null,
-    currencyScaleFallback: item.currencyScaleFallback === true,
     counterpartySnapshot: (item.counterpartySnapshot ?? null) as Record<string, unknown> | null,
     ourPartySnapshot: (item.ourPartySnapshot ?? null) as Record<string, unknown> | null,
   }
@@ -198,7 +197,7 @@ function SummaryField({ label, children }: { label: string; children: React.Reac
   )
 }
 
-function buildLineColumns(t: TranslateFn, locale: string, currencyCode: string): ColumnDef<ContractLineRecord>[] {
+function buildLineColumns(t: TranslateFn, currencyCode: string): ColumnDef<ContractLineRecord>[] {
   return [
     { accessorKey: 'lineNumber', header: '#', meta: { priority: 1 } },
     {
@@ -248,9 +247,7 @@ function buildLineColumns(t: TranslateFn, locale: string, currencyCode: string):
       enableSorting: false,
       meta: { priority: 8 },
       cell: ({ row }) => (
-        <span className="tabular-nums">
-          {formatCurrency(row.original.contractAmount, currencyCode, locale) ?? row.original.contractAmount}
-        </span>
+        <MoneyAmount currencyCode={currencyCode} amount={row.original.contractAmount} />
       ),
     },
     {
@@ -259,9 +256,7 @@ function buildLineColumns(t: TranslateFn, locale: string, currencyCode: string):
       enableSorting: false,
       meta: { priority: 9 },
       cell: ({ row }) => (
-        <span className="tabular-nums">
-          {formatCurrency(row.original.financeAmount, currencyCode, locale) ?? row.original.financeAmount}
-        </span>
+        <MoneyAmount currencyCode={currencyCode} amount={row.original.financeAmount} />
       ),
     },
     {
@@ -427,7 +422,6 @@ function ContractScanSection({ contractId, attachmentId, updatedAt, onChanged }:
 
 export default function ContractDetail({ contractId }: { contractId: string }) {
   const t = useT()
-  const locale = useLocale()
   const queryClient = useQueryClient()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const [cancelOpen, setCancelOpen] = React.useState(false)
@@ -474,8 +468,8 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
   const lines = linesQuery.data ?? []
   const invoices = invoicesQuery.data ?? []
   const columns = React.useMemo(
-    () => buildLineColumns(t, locale, head?.currencyCode ?? 'CNY'),
-    [head?.currencyCode, locale, t],
+    () => buildLineColumns(t, head?.currencyCode ?? 'CNY'),
+    [head?.currencyCode, t],
   )
 
   const runTransition = React.useCallback(
@@ -573,7 +567,8 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
   if (!head) return <RecordNotFoundState label={t('trade_docs.contracts.form.notFound')} backHref={LIST_HREF} />
 
   const actions = ALLOWED_ACTIONS[head.status]
-  const difference = Number(head.differenceTotal)
+  // Scaled units, not a float: the difference is an amount, so "is there a difference?" is exact.
+  const hasDifference = toScaledUnits(head.differenceTotal, AMOUNT_SCALE) !== 0n
 
   return (
     <div className="space-y-6">
@@ -612,32 +607,31 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
       <section className="space-y-3">
         <SectionHeader title={t('trade_docs.contracts.detail.amounts.title')} />
         <p className="text-xs text-muted-foreground">{t('trade_docs.contracts.detail.amounts.hint')}</p>
-        {head.currencyScaleFallback ? (
-          <p className="text-xs text-status-warning-text" role="status">
-            {t('trade_docs.contracts.hints.currencyScaleFallback')}
-          </p>
-        ) : null}
         <div className="grid gap-4 sm:grid-cols-3">
           <SummaryField label={t('trade_docs.contracts.detail.amounts.contractTotal')}>
-            <span className="text-lg font-semibold tabular-nums">
-              {formatCurrency(head.contractTotal, head.currencyCode, locale) ?? head.contractTotal}
-            </span>
+            <MoneyAmount
+              currencyCode={head.currencyCode}
+              amount={head.contractTotal}
+              className="text-lg font-semibold"
+            />
           </SummaryField>
           <SummaryField label={t('trade_docs.contracts.detail.amounts.financeTotal')}>
-            <span className="text-lg font-semibold tabular-nums">
-              {formatCurrency(head.financeTotal, head.currencyCode, locale) ?? head.financeTotal}
-            </span>
+            <MoneyAmount
+              currencyCode={head.currencyCode}
+              amount={head.financeTotal}
+              className="text-lg font-semibold"
+            />
           </SummaryField>
           <SummaryField label={t('trade_docs.contracts.detail.amounts.differenceTotal')}>
-            <span
+            <MoneyAmount
+              currencyCode={head.currencyCode}
+              amount={head.differenceTotal}
               className={
-                Number.isFinite(difference) && difference !== 0
-                  ? 'text-lg font-semibold tabular-nums text-status-error-text'
-                  : 'text-lg font-semibold tabular-nums'
+                hasDifference
+                  ? 'text-lg font-semibold text-status-error-text'
+                  : 'text-lg font-semibold'
               }
-            >
-              {formatCurrency(head.differenceTotal, head.currencyCode, locale) ?? head.differenceTotal}
-            </span>
+            />
           </SummaryField>
         </div>
       </section>
@@ -704,9 +698,11 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
                   </StatusBadge>
                   <span className="text-xs text-muted-foreground">{directionLabel(t, invoice.direction)}</span>
                 </div>
-                <span className="text-sm tabular-nums">
-                  {formatCurrency(invoice.total, invoice.currencyCode, locale) ?? invoice.total}
-                </span>
+                <MoneyAmount
+                  currencyCode={invoice.currencyCode}
+                  amount={invoice.total}
+                  className="items-end text-sm"
+                />
               </li>
             ))}
           </ul>

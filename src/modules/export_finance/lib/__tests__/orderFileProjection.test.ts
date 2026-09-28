@@ -85,7 +85,6 @@ describe('computeFinanceView', () => {
     total: '6000.0000',
     depositAmount: null,
     depositPercent: null,
-    currencyScale: 2,
     paymentAmounts: [] as string[],
     kcPriceAmount: null,
     kcPriceCurrency: null,
@@ -124,10 +123,10 @@ describe('computeFinanceView', () => {
     expect(view.outstandingAmount).toBe('-500.00')
   })
 
-  it('rounds the deposit percentage half-up at the currency scale', () => {
-    const view = computeFinanceView({ ...base, total: '6000.0050', depositPercent: '30.000', currencyScale: 2 })
+  it('rounds the deposit percentage half-up at the amount scale', () => {
+    const view = computeFinanceView({ ...base, total: '6000.0050', depositPercent: '30.000' })
     expect(view.depositPlanned).toBe('1800.00')
-    const odd = computeFinanceView({ ...base, total: '100.0000', depositPercent: '33.333', currencyScale: 2 })
+    const odd = computeFinanceView({ ...base, total: '100.0000', depositPercent: '33.333' })
     expect(odd.depositPlanned).toBe('33.33')
   })
 

@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 30 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 37 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -58,3 +58,10 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [Enabling the S3 provider is a three-way contract: the flag at build, the flag at runtime, and a scope-carrying driver config](lessons/s3-storage-enablement-traps.md) — area:integration,framework-context; module:attachments,storage_s3; topic:s3,env-parity,driver-resolution,tenant-scope,generated-files,minio
 - [A CrudForm column:2 group is a 3fr sidebar; row editors and their grids follow the container](lessons/crudform-column-two-is-a-sidebar.md) — area:backend-ui,framework-context; module:purchasing,products,trade_docs,internal_sales,cross_border; topic:crud-form,form-groups,column-layout,row-editors,container-queries,responsive
 - [A pruned field is carried by a dozen files: grep the identifier, and leave the raw-source table alone](lessons/pruning-a-field-means-pruning-every-carrier.md) — area:module-data,architecture; module:products,purchasing,sourcing; topic:field-removal,generated-migrations,migration-ordering,shared-write-contract,supplier-mapping,doc-coupling
+- [A migration that alters a renamed table must live where it runs after the rename](lessons/cross-module-rename-migration-ordering.md) — area:architecture,framework-context,module-data; module:purchasing,sourcing,platform; topic:migrations,migration-ordering,fresh-database,module-order,table-rename,integration-environment
+- [A new entity property needs a dev-runtime restart; until then the API accepts the write and silently drops it](lessons/entity-property-needs-dev-runtime-restart.md) — area:module-data,debugging,framework-context; module:purchasing,sourcing,products,platform; topic:entity-properties,mikro-orm-metadata,dev-runtime,restart-action,silent-write-drop,migrations
+- [A partial update must not read "field absent" as "field cleared"](lessons/partial-update-must-not-clear-absent-fields.md) — area:module-data,debugging,architecture; module:products,purchasing,sourcing,platform; topic:validators,nullable-fields,partial-update,data-loss,supplier-mapping,zod
+- [A module's seeded dictionaries reach existing orgs only after seed:defaults](lessons/module-seeded-dictionaries-need-seed-defaults.md) — area:module-data,debugging; module:product_codes,purchasing,dictionaries; topic:dictionary,seeding,seed-defaults,existing-tenant,pickers,empty-dropdown
+- [DataTable truncates every cell at 150px, and a right-aligned child's overflow hides without a tooltip](lessons/datatable-cell-truncates-at-150px.md) — area:backend-ui,framework-context; module:purchasing,platform; topic:data-table,column-width,truncation,tooltip,table-cell,column-meta
+- [「不需要小数点」 is a column-scale decision, not a display format](lessons/no-decimals-means-narrow-the-column-scale.md) — area:module-data,backend-ui,architecture; module:purchasing,products,sourcing; topic:numeric-scale,column-precision,form-input,owner-feedback,validators,migrations
+- [A picker whose only remaining option is one value is a defect: delete the entry point, not the data model](lessons/one-option-picker-is-a-defect.md) — area:backend-ui,module-data; module:purchasing; topic:form-affordance,price-list,round-trip-submission,base-row,owner-feedback

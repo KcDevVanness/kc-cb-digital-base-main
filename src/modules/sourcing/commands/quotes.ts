@@ -77,8 +77,19 @@ export type SerializedQuote = {
   updatedAt: string | null
 }
 
-function toIso(value: Date | null | undefined): string | null {
-  return value ? value.toISOString() : null
+/**
+ * Serialize a date column for the wire.
+ *
+ * The driver hands back a `Date` for `timestamptz` columns but a plain string for `date` ones
+ * (`quote_date`, `valid_until`), and `de.updateOrmEntity` returns the row re-read from the database —
+ * so the helper takes what the column actually returns rather than what the property type promises.
+ * Assuming `Date` made `sourcing.quotes.approve` answer 500 *after* it had already committed the
+ * approval (measured on the deployed stack, 2026-09-24).
+ */
+function toIso(value: Date | string | null | undefined): string | null {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
 }
 
 export function serializeQuote(entity: SourcingQuote): SerializedQuote {

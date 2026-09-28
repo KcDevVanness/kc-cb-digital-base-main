@@ -21,6 +21,8 @@ export function supplierProductToProductFields(product: PurchasingSupplierProduc
     hsCode: product.hsCode && product.hsCode.trim().length > 0 ? product.hsCode.trim() : null,
     unit: product.unit && product.unit.trim().length > 0 ? product.unit.trim() : null,
     netWeight: product.unitNetWeight ?? null,
+    grossWeight: product.unitGrossWeight ?? null,
+    volume: product.unitVolume ?? null,
     dimensions: asRecord(product.innerPacking ?? null),
     cartonQuantity: product.cartonQuantity ?? null,
   }

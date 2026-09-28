@@ -63,6 +63,7 @@
   "products.items.form.field.countryOfOriginCode": "原产国代码",
   "products.items.form.field.netWeight": "净重",
   "products.items.form.field.grossWeight": "毛重",
+  "products.items.form.field.volume": "体积（cm³）",
   "products.items.form.field.dimensions": "产品尺寸",
   "products.items.form.field.length": "长",
   "products.items.form.field.width": "宽",

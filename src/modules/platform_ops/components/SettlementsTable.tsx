@@ -13,12 +13,12 @@ import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import SettlementImportDialog from './SettlementImportDialog'
 import {
   SETTLEMENTS_API_PATH,
   SETTLEMENTS_LIST_HREF,
   SettlementStatusBadge,
-  formatSettlementMoney,
   formatSettlementPeriod,
   loadChannelOptions,
   toSettlementRecord,
@@ -32,6 +32,16 @@ const QUERY_KEY_ROOT = 'platform-ops-settlements'
 /** A statement carries no value for a period the platform did not report. */
 function EmptyCell() {
   return <span className="text-xs text-muted-foreground">—</span>
+}
+
+/**
+ * The statement's amounts are stated in the currency the platform reported with them, so each one
+ * carries its `≈ ¥…` line; a figure the platform did not report keeps the em dash.
+ */
+function moneyCell(value: string, currencyCode: string): React.ReactNode {
+  const text = value.trim()
+  if (!text) return <EmptyCell />
+  return <MoneyAmount currencyCode={currencyCode} amount={text} />
 }
 
 function buildColumns(
@@ -73,21 +83,21 @@ function buildColumns(
       header: t('platform_ops.settlements.list.columns.gross'),
       enableSorting: false,
       meta: { priority: 4 },
-      cell: ({ row }) => formatSettlementMoney(row.original.grossAmount, row.original.currencyCode, locale),
+      cell: ({ row }) => moneyCell(row.original.grossAmount, row.original.currencyCode),
     },
     {
       accessorKey: 'feeAmount',
       header: t('platform_ops.settlements.list.columns.fee'),
       enableSorting: false,
       meta: { priority: 5 },
-      cell: ({ row }) => formatSettlementMoney(row.original.feeAmount, row.original.currencyCode, locale),
+      cell: ({ row }) => moneyCell(row.original.feeAmount, row.original.currencyCode),
     },
     {
       accessorKey: 'netAmount',
       header: t('platform_ops.settlements.list.columns.net'),
       enableSorting: false,
       meta: { priority: 6 },
-      cell: ({ row }) => formatSettlementMoney(row.original.netAmount, row.original.currencyCode, locale),
+      cell: ({ row }) => moneyCell(row.original.netAmount, row.original.currencyCode),
     },
     {
       accessorKey: 'status',

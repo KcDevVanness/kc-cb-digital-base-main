@@ -1269,5 +1269,6 @@
   "vector.api.errors.purgeFailed": "向量索引清除失败",
   "vector.api.errors.reindexFailed": "向量重建索引失败",
   "vector.api.errors.searchFailed": "向量搜索失败",
-  "vector.api.errors.updateFailed": "更新向量设置失败。"
+  "vector.api.errors.updateFailed": "更新向量设置失败。",
+  "money.cnyEquivalent": "≈ {amount}"
 }

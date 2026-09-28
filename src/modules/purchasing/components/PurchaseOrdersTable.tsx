@@ -14,12 +14,12 @@ import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import {
   ORDERS_API_PATH,
   ORDERS_LIST_HREF,
   ORDER_STATUSES,
   PurchaseOrderStatusBadge,
-  formatMoney,
   formatOrderDate,
   orderStatusLabel,
   toPurchaseOrderRecord,
@@ -67,7 +67,13 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<PurchaseOrderRe
       accessorKey: 'total',
       header: t('purchasing.orders.list.columns.total'),
       meta: { priority: 4, align: 'right' },
-      cell: ({ row }) => formatMoney(row.original.total, row.original.currencyCode, locale),
+      cell: ({ row }) => (
+        <MoneyAmount
+          currencyCode={row.original.currencyCode}
+          amount={row.original.total}
+          className="items-end"
+        />
+      ),
     },
     {
       accessorKey: 'expectedShipAt',

@@ -47,6 +47,7 @@ import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primiti
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { useCurrencyOptions, withCurrentCurrency } from '../../currency_policy/lib/clientOptions'
 import { quantizeExactDecimal, subtractExactDecimal, toAmountString } from '../../trade_docs/lib/money'
 import type { ShipmentStatus } from '../../cross_border/data/validators'
@@ -803,6 +804,12 @@ export default function ContainerFileDetail({ shipmentId }: { shipmentId: string
     setRefundError(t('export_finance.cabinets.detail.refund.readOnly'))
   }, [t])
 
+  /**
+   * The container's refund amounts are all stated in the refund record's own currency — the record
+   * `taxRefundAmount` and every per-order share are derived from — so the `≈ ¥…` line needs no
+   * invented code. Without that record there is no amount to label, and the block renders as it did.
+   */
+  const refundCurrency = refund?.currencyCode ?? null
   const orderColumns = React.useMemo<ColumnDef<ContainerOrderRow>[]>(() => [
     {
       accessorKey: 'number',
@@ -858,10 +865,15 @@ export default function ContainerFileDetail({ shipmentId }: { shipmentId: string
         // A share that could not be derived is unknown, not zero: a zero here would claim the order
         // carries nothing of the container's refund.
         const allocated = formatAmount(orderRow.original.allocatedRefundAmount)
-        return allocated ?? <EmptyCell />
+        if (allocated === null) return <EmptyCell />
+        // The share is derived from the refund record's amount, so it is stated in that record's
+        // currency — the one currency this table knows.
+        return refundCurrency
+          ? <MoneyAmount currencyCode={refundCurrency} amount={allocated} className="items-end" />
+          : allocated
       },
     },
-  ], [t])
+  ], [refundCurrency, t])
 
   const exportDocumentRows = React.useMemo<ChecklistRow[]>(
     () => CONTAINER_EXPORT_CHECKLIST_KEYS.map((key) => ({
@@ -1098,16 +1110,32 @@ export default function ContainerFileDetail({ shipmentId }: { shipmentId: string
         <div className="space-y-1 border-t border-border pt-3">
           <div className="flex items-center justify-between gap-4 text-sm">
             <span className="text-muted-foreground">{t('export_finance.cabinets.detail.orders.totalRow')}</span>
-            <span className="font-medium tabular-nums">{allocatedTotal ?? EMPTY_CELL}</span>
+            {allocatedTotal !== null && refundCurrency ? (
+              <MoneyAmount
+                currencyCode={refundCurrency}
+                amount={allocatedTotal}
+                className="items-end font-medium"
+              />
+            ) : (
+              <span className="font-medium tabular-nums">{allocatedTotal ?? EMPTY_CELL}</span>
+            )}
           </div>
           <div className="flex items-center justify-between gap-4 text-sm">
             <span className="text-muted-foreground">{t('export_finance.cabinets.detail.refund.field.amount')}</span>
-            <span className="tabular-nums">{containerAmount ?? EMPTY_CELL}</span>
+            {containerAmount !== null && refundCurrency ? (
+              <MoneyAmount currencyCode={refundCurrency} amount={containerAmount} className="items-end" />
+            ) : (
+              <span className="tabular-nums">{containerAmount ?? EMPTY_CELL}</span>
+            )}
           </div>
           {difference ? (
             <div className="flex items-center justify-between gap-4 text-sm font-medium text-status-warning-text">
               <span>{t('export_finance.cabinets.detail.orders.differenceRow')}</span>
-              <span className="tabular-nums">{difference}</span>
+              {refundCurrency ? (
+                <MoneyAmount currencyCode={refundCurrency} amount={difference} className="items-end" />
+              ) : (
+                <span className="tabular-nums">{difference}</span>
+              )}
             </div>
           ) : null}
           <p className="text-xs text-muted-foreground">

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { parseBooleanToken } from '@open-mercato/shared/lib/boolean'
 import { SUPPLIER_PRODUCT_PRICE_KINDS } from '../lib/priceKinds'
+import { PRICE_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
 
 /**
  * ISO-4217 shape only. Membership in the seeded currency dictionary is enforced in the
@@ -19,7 +20,7 @@ export const currencyCodeSchema = z
 
 const DECIMAL_PATTERN = /^-?\d+(?:\.\d+)?$/
 
-function decimalSchema(scale: number, options: { min?: string } = {}) {
+function decimalSchema(scale: number, options: { min?: string; max?: string } = {}) {
   return z
     .string()
     .trim()
@@ -29,14 +30,83 @@ function decimalSchema(scale: number, options: { min?: string } = {}) {
       return fraction.length <= scale
     }, `value must have at most ${scale} decimal places`)
     .refine((value) => (options.min === undefined ? true : Number(value) >= Number(options.min)), `value must be >= ${options.min}`)
+    .refine((value) => (options.max === undefined ? true : Number(value) <= Number(options.max)), `value must be <= ${options.max}`)
 }
 
-const nullableDecimalSchema = (scale: number, options: { min?: string } = {}) =>
+/**
+ * A nullable decimal: an explicit value is normalized to the column's scale, `null` clears it, and an
+ * **absent** key stays `undefined`.
+ *
+ * The absent case is load-bearing, exactly as in `products/data/validators.ts`: the update schema is
+ * `.partial()` and the update command writes a field only when it is `!== undefined`, while the
+ * quotation import submits only the columns it actually changed. A helper that folded `undefined`
+ * into `null` therefore erased the decimal columns a partial write did not mention (measured
+ * 2026-09-24 on the master's weights; the same shape lived here for `unit_net_weight`).
+ */
+const nullableDecimalSchema = (scale: number, options: { min?: string; max?: string } = {}) =>
   z
     .union([z.string(), z.number(), z.null()])
     .optional()
-    .transform((value) => (value === null || value === undefined ? null : value))
-    .pipe(z.union([decimalSchema(scale, options), z.null()]))
+    .transform((value) => (value === undefined ? undefined : value === null ? null : value))
+    .pipe(z.union([decimalSchema(scale, options), z.null(), z.undefined()]))
+
+/**
+ * A money / price / percentage input on a fixed scale: accepts a decimal string or a finite number,
+ * normalizes it to a decimal string, and **refuses** a value finer than `scale` decimals instead of
+ * silently rounding it (REQ-004 — a manual entry beyond the column's scale is a 400, never a quiet
+ * rewrite). Bounds are compared as scaled integers through the money engine, so `min`/`max` never
+ * round-trip through a float either.
+ *
+ * The command layer's money fields (order lines, deposit terms, payments, receipts) build on this:
+ * the schemas live with the module's other write contracts so every entry point — form, API, import —
+ * is bound by the same caliber.
+ */
+export function exactDecimalSchema(
+  scale: number,
+  options: { min?: string; max?: string; positive?: boolean } = {},
+) {
+  return z
+    .union([z.string(), z.number()])
+    .transform((value) => (typeof value === 'number' ? String(value) : value).trim())
+    .superRefine((value, ctx) => {
+      if (!DECIMAL_PATTERN.test(value)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'value must be a decimal number' })
+        return
+      }
+      const fraction = value.split('.')[1] ?? ''
+      if (fraction.length > scale) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `value must have at most ${scale} decimal places` })
+        return
+      }
+      const units = toScaledUnits(value, scale)
+      if (options.positive && units <= 0n) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'value must be greater than 0' })
+        return
+      }
+      if (options.min !== undefined && units < toScaledUnits(options.min, scale)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `value must be >= ${options.min}` })
+      }
+      if (options.max !== undefined && units > toScaledUnits(options.max, scale)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `value must be <= ${options.max}` })
+      }
+    })
+}
+
+/**
+ * The nullable/optional twin of `exactDecimalSchema`: an explicit value is checked and normalized,
+ * `null` clears it, and an **absent** key stays `undefined` — the same three-way distinction the
+ * update command relies on to tell "leave unchanged" from "clear".
+ */
+export function nullableExactDecimalSchema(
+  scale: number,
+  options: { min?: string; max?: string; positive?: boolean } = {},
+) {
+  return z
+    .union([z.string(), z.number(), z.null()])
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === null ? null : value))
+    .pipe(z.union([exactDecimalSchema(scale, options), z.null(), z.undefined()]))
+}
 
 const nullableNonNegativeIntegerSchema = z
   .union([z.string(), z.number(), z.null()])
@@ -83,12 +153,19 @@ const pageSizeSchema = z.coerce.number().min(1).max(200).default(50)
  */
 export const supplierCreateSchema = z.object({
   name: z.string().min(1).max(200),
-  code: z.string().min(1).max(64),
+  /**
+   * Our own supplier number. Omitted or blank → `purchasing.suppliers.create` issues the next
+   * `SUP-####` for the organization (see `.ai/specs/2026-09-24-supplier-code-issuance.md`); an
+   * explicit value is stored as typed, which keeps imports and integrations on the old contract.
+   */
+  code: z.string().trim().max(64).optional(),
   contactName: z.string().max(200).nullable().optional(),
   phone: z.string().max(64).nullable().optional(),
   email: z.string().max(200).nullable().optional(),
   address: z.string().max(1000).nullable().optional(),
   defaultCurrencyCode: currencyCodeSchema.default('CNY'),
+  /** Default brand for this supplier's library rows; see `PurchasingSupplier.brandValue`. */
+  brandValue: z.string().trim().max(64).nullable().optional(),
   isActive: z.boolean().default(true),
   notes: z.string().max(2000).nullable().optional(),
 })
@@ -102,6 +179,7 @@ export const supplierUpdateSchema = z.object({
   email: z.string().max(200).nullable().optional(),
   address: z.string().max(1000).nullable().optional(),
   defaultCurrencyCode: currencyCodeSchema.optional(),
+  brandValue: z.string().trim().max(64).nullable().optional(),
   isActive: z.boolean().optional(),
   notes: z.string().max(2000).nullable().optional(),
 })
@@ -187,9 +265,9 @@ export const supplierProductSources = ['manual', 'quote'] as const
 /**
  * The supplier library's write contract.
  *
- * The unit net weight is a decimal string and MOQ/packing counts are integers, exactly like the
- * quotation line columns they are fed from, so an import can copy a value across without a
- * conversion step. `supplierId` is part of the create contract only: a code is unique *per
+ * The unit weights and the unit volume are decimal strings and MOQ/packing counts are integers,
+ * exactly like the quotation line columns they are fed from, so an import can copy a value across
+ * without a conversion step. `supplierId` is part of the create contract only: a code is unique *per
  * supplier*, so moving a row to another supplier would silently collide — the update schema omits
  * it and the form renders it read-only.
  */
@@ -197,6 +275,8 @@ export const supplierProductCreateSchema = z.object({
   supplierId: z.string().uuid(),
   supplierSku: z.string().trim().min(1).max(120),
   itemNo: nullableText(120),
+  /** Code-generation brand override; blank falls back to the supplier's `brandValue`. */
+  brandValue: z.string().trim().max(64).nullable().optional(),
   name: z.string().trim().min(1).max(300),
   nameZh: nullableText(300),
   nameEn: nullableText(300),
@@ -207,6 +287,18 @@ export const supplierProductCreateSchema = z.object({
   moqQuantity: nullableNonNegativeIntegerSchema,
   cartonQuantity: nullableNonNegativeIntegerSchema,
   unitNetWeight: nullableDecimalSchema(4, { min: '0' }),
+  unitGrossWeight: nullableDecimalSchema(4, { min: '0' }),
+  unitVolume: nullableDecimalSchema(0, { min: '0' }),
+  /**
+   * The supplier's discount off this item's supply price, as a whole-number percentage — a
+   * **product-level** term (the same supplier discounts different items differently), never a
+   * per-row or per-currency one. `scale: 0` (owner rule 2026-09-24): the rate a supplier quotes is a
+   * whole percent, so a fraction is a typo rather than a term, and the field must not carry one in.
+   * Blank means no discount; `100` means the goods are free, which is a legitimate (if odd) contract
+   * value, so only the range is enforced. The 折后价 is derived, never stored: `netUnitPrice()` in
+   * `lib/priceKinds.ts` is the single implementation the form, the list and the promotion share.
+   */
+  discountPercent: nullableDecimalSchema(0, { min: '0', max: '100' }),
   innerPacking: dimensionsSchema,
   /**
    * The product photos, as `attachments` ids. Replace-set semantics: the submitted array is the
@@ -303,7 +395,8 @@ export const supplierProductPriceRowSchema = z.object({
   priceKind: z.enum(SUPPLIER_PRODUCT_PRICE_KINDS),
   currencyCode: currencyCodeSchema,
   minQuantity: z.coerce.number().int().min(1).default(1),
-  unitPrice: decimalSchema(6, { min: '0' }),
+  /** The system-wide unit-price caliber: 4 decimals, never re-rounded after entry (REQ-002). */
+  unitPrice: decimalSchema(PRICE_SCALE, { min: '0' }),
   isActive: z.boolean().default(true),
 })
 

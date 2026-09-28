@@ -548,7 +548,7 @@
         },
         "unit_price": {
           "name": "unit_price",
-          "type": "numeric(18,6)",
+          "type": "numeric(18,4)",
           "unsigned": false,
           "autoincrement": false,
           "primary": false,
@@ -556,7 +556,7 @@
           "unique": false,
           "length": null,
           "precision": 18,
-          "scale": 6,
+          "scale": 4,
           "default": "0",
           "comment": null,
           "collation": null,
@@ -1184,6 +1184,23 @@
           "collation": null,
           "enumItems": [],
           "mappedType": "datetime"
+        },
+        "volume": {
+          "name": "volume",
+          "type": "numeric(16,0)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": 16,
+          "scale": 0,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "decimal"
         }
       },
       "indexes": [

@@ -37,6 +37,7 @@ import { toUtcDateInputValue } from '@open-mercato/ui/primitives/date-format'
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import {
   ORDERS_API_PATH,
   ORDERS_LINES_API_PATH,
@@ -44,7 +45,6 @@ import {
   ORDERS_PAYMENTS_API_PATH,
   ORDERS_TRANSITIONS_API_PATH,
   PurchaseOrderStatusBadge,
-  formatMoney,
   formatOrderDate,
   toPurchaseOrderRecord,
   toOptionalNumber,
@@ -257,7 +257,7 @@ function SummaryField({ label, children }: { label: string; children: React.Reac
   )
 }
 
-function buildLineColumns(t: TranslateFn, locale: string, currencyCode: string): ColumnDef<OrderLineRecord>[] {
+function buildLineColumns(t: TranslateFn, currencyCode: string): ColumnDef<OrderLineRecord>[] {
   return [
     {
       accessorKey: 'productTitle',
@@ -292,7 +292,9 @@ function buildLineColumns(t: TranslateFn, locale: string, currencyCode: string):
       header: t('purchasing.orders.form.lines.unitPrice'),
       enableSorting: false,
       meta: { priority: 3, align: 'right' },
-      cell: ({ row }) => formatMoney(row.original.unitPrice, currencyCode, locale),
+      cell: ({ row }) => (
+        <MoneyAmount currencyCode={currencyCode} amount={row.original.unitPrice} className="items-end" />
+      ),
     },
     {
       accessorKey: 'taxRate',
@@ -306,7 +308,9 @@ function buildLineColumns(t: TranslateFn, locale: string, currencyCode: string):
       header: t('purchasing.orders.list.columns.total'),
       enableSorting: false,
       meta: { priority: 5, align: 'right' },
-      cell: ({ row }) => formatMoney(row.original.lineTotal, currencyCode, locale),
+      cell: ({ row }) => (
+        <MoneyAmount currencyCode={currencyCode} amount={row.original.lineTotal} className="items-end" />
+      ),
     },
     {
       accessorKey: 'note',
@@ -602,7 +606,13 @@ function PurchasePaymentsSection({
       header: t('purchasing.orders.payments.field.amount'),
       enableSorting: false,
       meta: { priority: 2, align: 'right' },
-      cell: ({ row }) => formatMoney(row.original.amount, row.original.currencyCode || currencyCode, locale),
+      cell: ({ row }) => (
+        <MoneyAmount
+          currencyCode={row.original.currencyCode || currencyCode}
+          amount={row.original.amount}
+          className="items-end"
+        />
+      ),
     },
     {
       accessorKey: 'paidAt',
@@ -1281,8 +1291,8 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
   })
 
   const lineColumns = React.useMemo(
-    () => buildLineColumns(t, locale, order?.currencyCode ?? ''),
-    [locale, order?.currencyCode, t],
+    () => buildLineColumns(t, order?.currencyCode ?? ''),
+    [order?.currencyCode, t],
   )
 
   if (loading && !order) return <LoadingMessage label={t('purchasing.orders.form.loadFailed')} />
@@ -1357,13 +1367,13 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
         <SummaryField label={t('purchasing.orders.detail.customer')}>{customerName ?? EMPTY_CELL}</SummaryField>
         <SummaryField label={t('purchasing.orders.form.field.currency')}>{order.currencyCode}</SummaryField>
         <SummaryField label={t('purchasing.orders.list.columns.total')}>
-          {formatMoney(order.total, order.currencyCode, locale)}
+          <MoneyAmount currencyCode={order.currencyCode} amount={order.total} />
         </SummaryField>
         <SummaryField label={t('purchasing.orders.list.columns.paid')}>
-          {formatMoney(summary.paid, order.currencyCode, locale)}
+          <MoneyAmount currencyCode={order.currencyCode} amount={summary.paid} />
         </SummaryField>
         <SummaryField label={t('purchasing.orders.list.columns.outstanding')}>
-          {formatMoney(summary.outstanding, order.currencyCode, locale)}
+          <MoneyAmount currencyCode={order.currencyCode} amount={summary.outstanding} />
         </SummaryField>
         <SummaryField label={t('purchasing.orders.list.columns.paymentStatus')}>
           <StatusBadge variant={PAYMENT_STATUS_MAP[summary.status]} dot>

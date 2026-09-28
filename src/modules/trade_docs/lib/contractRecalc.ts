@@ -3,7 +3,6 @@ import { notFound } from '@open-mercato/shared/lib/crud/errors'
 import { withAtomicFlush } from '@open-mercato/shared/lib/commands/flush'
 import { TradeDocsContract, TradeDocsContractLine } from '../data/entities'
 import { resolveContractTotals, type ConfirmedInvoiceLineRef } from './contractTotals'
-import { readCurrencyScale } from './currencyScale'
 import { contractFilter, type TradeDocsScope } from './scope'
 
 /**
@@ -52,7 +51,6 @@ export async function recomputeContractHead(
     }
   }
 
-  const currencyScale = await readCurrencyScale(em, scope, contract.currencyCode)
   const resolved = resolveContractTotals({
     lines: lines.map((line) => ({
       id: String(line.id),
@@ -60,7 +58,6 @@ export async function recomputeContractHead(
       unitPrice: line.unitPrice,
     })),
     invoiceLines,
-    currencyScale,
   })
 
   const byId = new Map(resolved.lines.map((line) => [line.id, line]))

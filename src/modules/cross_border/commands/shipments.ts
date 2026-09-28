@@ -25,6 +25,7 @@ import {
 } from '../data/validators'
 import { ensureScope, type Scope } from '../lib/scope'
 import {
+  allocationExceedsOrderedQuantity,
   loadAllocatedQuantities,
   loadPurchaseOrderLines,
   resolveDefaultVariantId,
@@ -116,15 +117,19 @@ async function resolveAllocations(
         error: `Purchase order line ${allocation.purchaseOrderLineId} has no catalog product link, so the goods cannot be received into stock; sync the supplier product to the product master and link it to a catalog product first`,
       })
     }
-    const ordered = Number.parseFloat(line.quantity)
-    const committed = alreadyAllocated[allocation.purchaseOrderLineId] ?? 0
-    const next = committed + Number(allocation.quantity)
-    if (next > ordered + 1e-6) {
+    // The over-allocation guard is exact: the ordered, already-committed and requested quantities
+    // are compared as scaled integers at the column's scale, so a value a ten-thousandth over the
+    // ordered quantity is refused deterministically. The old string-to-float comparison with a
+    // `+ 1e-6` tolerance hid exactly that difference.
+    const committed = alreadyAllocated[allocation.purchaseOrderLineId] ?? '0'
+    if (allocationExceedsOrderedQuantity(line.quantity, committed, allocation.quantity)) {
       throw new CrudHttpError(422, {
         error: `Allocating ${allocation.quantity} exceeds the ordered quantity of ${line.quantity} (already allocated ${committed}) for ${line.orderNumber ?? line.orderId}`,
       })
     }
-    return { line: { ...line, catalogProductId: line.catalogProductId }, quantity: Number(allocation.quantity).toFixed(4) }
+    // The validator already normalized the quantity onto the column's scale; writing that string
+    // keeps every digit instead of round-tripping it through a float (`Number(...).toFixed(4)`).
+    return { line: { ...line, catalogProductId: line.catalogProductId }, quantity: allocation.quantity }
   })
 }
 

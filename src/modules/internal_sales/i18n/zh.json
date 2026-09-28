@@ -42,5 +42,6 @@
   "internal_sales.list.columns.total": "金额（未税）",
   "internal_sales.list.columns.lines": "行数",
   "internal_sales.list.columns.createdAt": "创建时间",
-  "internal_sales.list.actions.edit": "编辑"
+  "internal_sales.list.actions.edit": "编辑",
+  "internal_sales.form.linePrecision": "第 {line} 行：数量与单价最多 4 位小数。"
 }

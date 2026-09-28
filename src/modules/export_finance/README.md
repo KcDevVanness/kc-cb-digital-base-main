@@ -69,9 +69,10 @@ tax-refund figures. Run `yarn mercato auth sync-role-acls` after changing them.
 
 ## Money
 
-Every amount is quantized through `trade_docs/lib/money.ts` (BigInt `HALF_UP`), with the currency
-scale from `trade_docs/lib/currencyScale.ts`. `Number.toFixed` is never used: `(1.005).toFixed(2)`
-is `"1.00"` and would understate a refund.
+Every amount is quantized through `trade_docs/lib/money.ts` (BigInt `HALF_UP`) at the fixed amount
+scale (`AMOUNT_SCALE = 2`, currency-independent). `Number.toFixed` is never used: `(1.005).toFixed(2)`
+is `"1.00"` and would understate a refund. (The old `trade_docs/lib/currencyScale.ts` helper is gone —
+see [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](../../../.ai/specs/2026-09-28-money-scale-2dp-unification.md).)
 
 See `.ai/specs/2026-09-22-order-file-and-export-finance.md` for the field-by-field mapping of the
 35-field order file.

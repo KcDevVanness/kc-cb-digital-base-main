@@ -168,7 +168,7 @@ platform_ops_* tables (tenant + organization scoped, updated_at, soft delete whe
 | `channel_id` | uuid | FK within module |
 | `external_order_id` | text | unique per (channel) |
 | `status`, `currency_code` | text | as reported by the platform |
-| `gross_amount`, `fee_amount`, `net_amount` | numeric(18,4) | |
+| `gross_amount`, `fee_amount`, `net_amount` | numeric(18,2) | |
 | `placed_at` | timestamptz, nullable | |
 | `shipment_id`, `shipment_number` | uuid / text, nullable | set when a consignment fulfilled it |
 | `raw` | jsonb, nullable | the payload as received (evidence) |
@@ -182,7 +182,7 @@ platform_ops_* tables (tenant + organization scoped, updated_at, soft delete whe
 | `external_settlement_id` | text | unique per (channel) |
 | `period_start`, `period_end` | date | |
 | `currency_code` | text | |
-| `gross_amount`, `fee_amount`, `net_amount` | numeric(18,4) | |
+| `gross_amount`, `fee_amount`, `net_amount` | numeric(18,2) | |
 | `status` | text | `imported` \| `reconciled` |
 | `received_at` | timestamptz, nullable | payout date |
 | `raw` | jsonb, nullable | |
@@ -194,7 +194,7 @@ platform_ops_* tables (tenant + organization scoped, updated_at, soft delete whe
 | `id`, `tenant_id`, `organization_id`, `settlement_id` | uuid | |
 | `external_order_id` | text | |
 | `order_mirror_id` | uuid, nullable | resolved match |
-| `gross_amount`, `fee_amount`, `net_amount` | numeric(18,4) | |
+| `gross_amount`, `fee_amount`, `net_amount` | numeric(18,2) | |
 
 ### `platform_ops_reconciliation_items`
 
@@ -204,7 +204,7 @@ platform_ops_* tables (tenant + organization scoped, updated_at, soft delete whe
 | `kind` | text | `missing_in_erp` \| `amount_mismatch` \| `duplicate_line` |
 | `external_ref` | text | the order or settlement id involved |
 | `settlement_id`, `order_mirror_id` | uuid, nullable | context |
-| `expected_amount`, `actual_amount` | numeric(18,4), nullable | |
+| `expected_amount`, `actual_amount` | numeric(18,2), nullable | |
 | `currency_code` | text, nullable | |
 | `status` | text | `open` \| `resolved` \| `ignored` |
 | `note`, `resolved_at`, `resolved_by` | text / timestamptz / uuid | |
@@ -322,6 +322,7 @@ Verdict: `Implemented (Phases A + B); Phase C open on PRD Q4`.
 
 | Date | Change |
 |---|---|
+| 2026-09-28 | 金额口径统一：金额 2 位/单价 4 位，HALF_UP，引擎单点；金额列 numeric(18,2)、单价列 numeric(18,4)（见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](2026-09-28-money-scale-2dp-unification.md)）。本 spec：镜像/结算/结算行 `gross_amount`/`fee_amount`/`net_amount` 与对账 `expected_amount`/`actual_amount` 由 numeric(18,4) 改 numeric(18,2)；写路径改走引擎、对账按 scaled-int 精确比较（1e-6 浮点容差取消）。 |
 | 2026-09-21 | Initial spec; PRD Q4 resolved with the reversible "landing point first" default (⚠ owner override welcome) |
 | 2026-09-21 | Phases A+B implemented and verified: 5 tables + migration applied; `integrations` + `data_sync` enabled and migrated; channels/orders/settlements/lines/reconciliation routes; commands (channel CRUD, idempotent `orders.ingest`, `settlements.import` with the comparison pass, `reconciliation.resolve|ignore`); UI (channels list/create/edit, orders mirror list, settlements list/detail + import dialog, reconciliation queue with note dialogs). Smoke: ingest `created:2` → replay `unchanged:2`; import `lines:3, raised:2, linked:1` → replay `raised:0`; resolve+ignore → replay still `raised:0` (no resurrection). Gates green; platform_ops contributes 0 lint warnings. Phase C (transport) waits on Q4. |
 | 2026-09-23 | Status → `Implemented (Phases A + B)`; Phase C restated as not started (no `di.ts`, no adapter, no file-drop endpoint) and the acceptance evidence recorded as manual smoke. |

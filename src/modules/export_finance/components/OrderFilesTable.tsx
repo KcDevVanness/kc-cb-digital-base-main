@@ -18,6 +18,7 @@ import { SimpleTooltip } from '@open-mercato/ui/primitives/tooltip'
 import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primitives/date-format'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { downloadApiFile } from '../../trade_docs/components/downloadFile'
 import type {
   ExportFinanceCollectionStatus,
@@ -96,14 +97,15 @@ function DateCell({ value, locale }: { value: string | null; locale: string }) {
   return formatted ? <>{formatted}</> : <EmptyCell />
 }
 
-/** Amounts arrive already quantized to the currency scale — they are rendered, never re-rounded. */
+/**
+ * Amounts arrive already quantized to the currency scale — they are rendered, never re-rounded.
+ * A row that carries a currency states which one it is in, so the amount shows its `≈ ¥…` line; an
+ * amount whose currency the row does not carry stays exactly as it rendered before.
+ */
 function AmountCell({ value, currency }: { value: string | null; currency?: string | null }) {
   if (value === null) return <EmptyCell />
-  return (
-    <span className="tabular-nums">
-      {currency ? `${value} ${currency}` : value}
-    </span>
-  )
+  if (!currency) return <span className="tabular-nums">{value}</span>
+  return <MoneyAmount currencyCode={currency} amount={value} className="items-end" />
 }
 
 function BusinessStatusBadge({ status }: { status: OrderFileStatus }) {

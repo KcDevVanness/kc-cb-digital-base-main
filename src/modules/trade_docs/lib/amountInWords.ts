@@ -8,6 +8,10 @@
  *
  * Only the two currencies this business signs in are supported by name; any other code falls back
  * to the code itself (e.g. `SAY RUB 3601.20 ONLY`), which is honest rather than wrong.
+ *
+ * The `Number()` calls below are display-only: they read a single digit, a group of at most four
+ * digits or the two-digit minor unit to pick a word, and never take part in money arithmetic,
+ * comparison or storage.
  */
 
 const CN_DIGITS = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖'] as const
@@ -144,8 +148,8 @@ export function amountInChineseWords(amount: string, currencyCode: string): stri
 /**
  * English rendering: `SAY YUAN ONE THOUSAND TWO HUNDRED THIRTY-FOUR AND FEN FIFTY-SIX ONLY`.
  *
- * The minor unit is exactly two digits: the amount arrives at the *stored* scale (`3601.2000`),
- * and reading more digits would turn 20 fen into "TWO THOUSAND". The currency name appears once and
+ * The minor unit is exactly two digits: the amount arrives at the amount scale (`3601.20`), and
+ * reading more digits would turn 20 fen into "TWO THOUSAND". The currency name appears once and
  * is followed by the minor unit, which is how a trade contract spells it out.
  */
 export function amountInEnglishWords(amount: string, currencyCode: string): string {

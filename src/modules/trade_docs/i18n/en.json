@@ -243,6 +243,5 @@
   "trade_docs.common.loading": "Loading…",
   "trade_docs.common.retry": "Retry",
   "trade_docs.common.notAuthorized": "You do not have permission for this feature. Ask an administrator to grant it.",
-  "trade_docs.audit.contracts.generateDocument": "Generate contract document",
-  "trade_docs.contracts.hints.currencyScaleFallback": "This organization has no currency decimal places configured, so financial amounts were rounded to two decimals."
+  "trade_docs.audit.contracts.generateDocument": "Generate contract document"
 }

@@ -15,6 +15,8 @@ describe('sourcing productMapping', () => {
     hsCode: null,
     unit: null,
     netWeight: null,
+    grossWeight: null,
+    volume: null,
     dimensions: null,
     cartonQuantity: null,
   }
@@ -31,6 +33,10 @@ describe('sourcing productMapping', () => {
     } as never)
     expect(fields.specSummary).toBe('Material: ABS, SUS304 / Capacity: 1.8L / Power: 5V 1A')
     expect(fields.netWeight).toBe('1.2800')
+    // a line has no G.W. column of its own, so it never proposes a gross weight for the master
+    expect(fields.grossWeight).toBeNull()
+    // nor a volume: the per-unit cm³ is a library-row column
+    expect(fields.volume).toBeNull()
     expect(fields.dimensions).toEqual({ length: 21.9, width: 21.9, height: 18.5, unit: 'cm' })
     expect(fields.cartonQuantity).toBe(8)
     // the master is single-unit data only: a line carries no carton size and no carton weights at
@@ -56,12 +62,14 @@ describe('sourcing productMapping', () => {
     expect(changedProductFields({ ...EMPTY_PRODUCT, name: 'New name' }, partial)).toEqual({})
   })
 
-  it('asks for the line currency and MOQ, falling back to the quotation currency and 1', () => {
+  it('asks for the line currency and MOQ, quantizing the price to the price scale', () => {
     expect(desiredPriceRow({ currencyCode: 'usd', moqQuantity: 500, unitCost: '230.000000' } as never, 'CNY')).toMatchObject({
       currencyCode: 'USD',
       minQuantity: 500,
-      unitPrice: '230.000000',
+      unitPrice: '230.0000',
     })
+    // a legacy line with 5+ decimals is quantized half away from zero, never handed to the validator raw
+    expect(desiredPriceRow({ currencyCode: 'CNY', moqQuantity: 1, unitCost: '341.23825' } as never, 'CNY').unitPrice).toBe('341.2383')
     expect(desiredPriceRow({ currencyCode: null, moqQuantity: null, unitCost: null } as never, 'CNY')).toMatchObject({
       currencyCode: 'CNY',
       minQuantity: 1,

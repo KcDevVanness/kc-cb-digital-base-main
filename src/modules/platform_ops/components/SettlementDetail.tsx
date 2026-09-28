@@ -12,12 +12,12 @@ import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { ReceiptText } from 'lucide-react'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import {
   SETTLEMENTS_API_PATH,
   SETTLEMENT_LINES_API_PATH,
   SETTLEMENTS_LIST_HREF,
   SettlementStatusBadge,
-  formatSettlementMoney,
   formatSettlementPeriod,
   toSettlementLineRecord,
   toSettlementRecord,
@@ -43,7 +43,7 @@ function SummaryField({ label, children }: { label: string; children: React.Reac
   )
 }
 
-function buildLineColumns(t: TranslateFn, locale: string, currencyCode: string): ColumnDef<SettlementLineRecord>[] {
+function buildLineColumns(t: TranslateFn, currencyCode: string): ColumnDef<SettlementLineRecord>[] {
   return [
     {
       accessorKey: 'externalOrderId',
@@ -72,21 +72,21 @@ function buildLineColumns(t: TranslateFn, locale: string, currencyCode: string):
       header: t('platform_ops.settlements.detail.lines.columns.gross'),
       enableSorting: false,
       meta: { priority: 3 },
-      cell: ({ row }) => formatSettlementMoney(row.original.grossAmount, currencyCode, locale),
+      cell: ({ row }) => <MoneyAmount currencyCode={currencyCode} amount={row.original.grossAmount} />,
     },
     {
       accessorKey: 'feeAmount',
       header: t('platform_ops.settlements.detail.lines.columns.fee'),
       enableSorting: false,
       meta: { priority: 4 },
-      cell: ({ row }) => formatSettlementMoney(row.original.feeAmount, currencyCode, locale),
+      cell: ({ row }) => <MoneyAmount currencyCode={currencyCode} amount={row.original.feeAmount} />,
     },
     {
       accessorKey: 'netAmount',
       header: t('platform_ops.settlements.detail.lines.columns.net'),
       enableSorting: false,
       meta: { priority: 5 },
-      cell: ({ row }) => formatSettlementMoney(row.original.netAmount, currencyCode, locale),
+      cell: ({ row }) => <MoneyAmount currencyCode={currencyCode} amount={row.original.netAmount} />,
     },
   ]
 }
@@ -139,8 +139,8 @@ export default function SettlementDetail({ settlementId }: { settlementId: strin
   }, [load])
 
   const lineColumns = React.useMemo(
-    () => buildLineColumns(t, locale, settlement?.currencyCode ?? 'USD'),
-    [locale, settlement?.currencyCode, t],
+    () => buildLineColumns(t, settlement?.currencyCode ?? 'USD'),
+    [settlement?.currencyCode, t],
   )
 
   if (loading && !settlement) return <LoadingMessage label={t('ui.forms.loading')} />
@@ -170,13 +170,13 @@ export default function SettlementDetail({ settlementId }: { settlementId: strin
         <SummaryField label={t('platform_ops.settlements.list.columns.channel')}>{channelLabel}</SummaryField>
         <SummaryField label={t('platform_ops.settlements.list.columns.period')}>{period ?? EMPTY_CELL}</SummaryField>
         <SummaryField label={t('platform_ops.settlements.list.columns.gross')}>
-          {formatSettlementMoney(settlement.grossAmount, settlement.currencyCode, locale)}
+          <MoneyAmount currencyCode={settlement.currencyCode} amount={settlement.grossAmount} />
         </SummaryField>
         <SummaryField label={t('platform_ops.settlements.list.columns.fee')}>
-          {formatSettlementMoney(settlement.feeAmount, settlement.currencyCode, locale)}
+          <MoneyAmount currencyCode={settlement.currencyCode} amount={settlement.feeAmount} />
         </SummaryField>
         <SummaryField label={t('platform_ops.settlements.list.columns.net')}>
-          {formatSettlementMoney(settlement.netAmount, settlement.currencyCode, locale)}
+          <MoneyAmount currencyCode={settlement.currencyCode} amount={settlement.netAmount} />
         </SummaryField>
       </div>
 

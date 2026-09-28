@@ -11,5 +11,7 @@
   "dictionaries.library.scope.currentOrganization": "Current organization: {{name}}. Its dictionaries can be edited; dictionaries from a parent organization are read-only here.",
   "dictionaries.library.scope.noOrganization": "No organization is selected, so dictionaries are read-only. Pick one in the top bar to create or change a dictionary.",
   "dictionaries.library.scope.selectOrganizationRequired": "Select a concrete organization in the top bar first — a dictionary always belongs to exactly one organization.",
-  "dictionaries.library.search.placeholder": "Search name, key, or organization"
+  "dictionaries.library.search.placeholder": "Search name, key, or organization",
+  "master_data.nav.group": "Master data",
+  "dictionaries.masterData.nav.title": "Dictionaries"
 }

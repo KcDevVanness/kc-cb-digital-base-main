@@ -45,6 +45,17 @@ export class PurchasingSupplier {
   @Property({ name: 'default_currency_code', type: 'text', default: 'CNY' })
   defaultCurrencyCode: string = 'CNY'
 
+  /**
+   * The brand this supplier's goods are sold under — a `product_brand` dictionary value (`PK`), and
+   * the **prefix of every generated product code** for this supplier's rows.
+   *
+   * It is a brand rather than the supplier's own code on purpose: the same item sourced from a second
+   * factory must keep one code, and the supplier's code is what the library is moving away from. A
+   * library row may override it; when neither carries a value the form simply cannot generate yet.
+   */
+  @Property({ name: 'brand_value', type: 'text', nullable: true })
+  brandValue?: string | null
+
   @Property({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean = true
 
@@ -127,20 +138,20 @@ export class PurchasingPurchaseOrder {
   @Property({ name: 'currency_code', type: 'text', default: 'CNY' })
   currencyCode: string = 'CNY'
 
-  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
   subtotal: string = '0'
 
-  @Property({ name: 'tax_total', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'tax_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
   taxTotal: string = '0'
 
-  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
   total: string = '0'
 
   /** Deposit as a percentage of the total; the amount below overrides it when set. */
   @Property({ name: 'deposit_percent', type: 'numeric', precision: 6, scale: 3, nullable: true })
   depositPercent?: string | null
 
-  @Property({ name: 'deposit_amount', type: 'numeric', precision: 18, scale: 4, nullable: true })
+  @Property({ name: 'deposit_amount', type: 'numeric', precision: 18, scale: 2, nullable: true })
   depositAmount?: string | null
 
   @Property({ name: 'expected_ship_at', type: 'date', nullable: true })
@@ -240,13 +251,13 @@ export class PurchasingPurchaseOrderLine {
   @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 4, default: '0' })
   unitPrice: string = '0'
 
-  @Property({ name: 'net_total', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'net_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
   netTotal: string = '0'
 
-  @Property({ name: 'tax_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'tax_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   taxAmount: string = '0'
 
-  @Property({ name: 'line_total', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'line_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
   lineTotal: string = '0'
 
   @Property({ type: 'text', nullable: true })
@@ -281,7 +292,7 @@ export class PurchasingPurchasePayment {
   @Property({ type: 'text' })
   stage!: string
 
-  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
   amount: string = '0'
 
   @Property({ name: 'currency_code', type: 'text', default: 'CNY' })
@@ -392,7 +403,7 @@ export class PurchasingPurchaseOrderDocument {
   properties: ['tenantId', 'organizationId', 'supplierId', 'supplierSku'],
 })
 export class PurchasingSupplierProduct {
-  [OptionalProps]?: 'createdAt' | 'updatedAt' | 'deletedAt' | 'unit' | 'status' | 'source' | 'imageAttachmentIds'
+  [OptionalProps]?: 'createdAt' | 'updatedAt' | 'deletedAt' | 'unit' | 'status' | 'source' | 'imageAttachmentIds' | 'discountPercent'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -421,6 +432,15 @@ export class PurchasingSupplierProduct {
   /** The supplier's original item number, kept for display next to the derived code. */
   @Property({ name: 'item_no', type: 'text', nullable: true })
   itemNo?: string | null
+
+  /**
+   * Row-level brand override for code generation; falls back to the supplier's `brand_value`.
+   *
+   * Kept per row because one supplier can make goods for two brands, and because a row imported from a
+   * quotation may belong to a different line than its supplier's default.
+   */
+  @Property({ name: 'brand_value', type: 'text', nullable: true })
+  brandValue?: string | null
 
   /** The supplier's own product name, as printed on their sheet. */
   @Property({ type: 'text' })
@@ -459,11 +479,46 @@ export class PurchasingSupplierProduct {
   cartonQuantity?: number | null
 
   /**
-   * Net weight of one piece, in kg. Per-carton weights are deliberately absent: purchasing reads
-   * single-unit data only, and Qty/Box is the one carton figure this library keeps.
+   * The weight pair of one piece, in kg — the supplier sheet's N.W. and G.W. columns. Per-carton
+   * weights are deliberately absent: purchasing reads single-unit data only, and Qty/Box is the one
+   * carton figure this library keeps. Both are optional; a sheet that prints only one of them stays
+   * saveable.
    */
   @Property({ name: 'unit_net_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
   unitNetWeight?: string | null
+
+  /** Gross weight of one piece including its packaging, in kg — the sheet's G.W. column. */
+  @Property({ name: 'unit_gross_weight', type: 'numeric', precision: 16, scale: 4, nullable: true })
+  unitGrossWeight?: string | null
+
+  /**
+   * Volume of one piece in cm³ — the sheet's 体积 column, kept per unit like the weights, so a
+   * shipment's freight volume is `quantity × unit_volume`. Recorded as the supplier prints it, not
+   * derived from `inner_packing`: a rounded sheet figure must not be silently recomputed. The unit
+   * is cm³, not the m³ (CBM) a freight quote prints, and the column holds whole cm³ (`scale: 0`) so
+   * the form shows `88642` rather than a padded `88642.000000`.
+   */
+  @Property({ name: 'unit_volume', type: 'numeric', precision: 16, scale: 0, nullable: true })
+  unitVolume?: string | null
+
+  /**
+   * The supplier's discount off this item's supply price, in percent (0–100, whole numbers only;
+   * null/blank = no discount).
+   *
+   * **Product-level on purpose** (owner rule 2026-09-24): the same supplier gives different discounts
+   * on different items, so one number per library row is the granularity the business keeps — not one
+   * per supplier (that would force every item to share a rate) and not one per price row (the rate
+   * does not vary by currency or ladder step). It is a term of the *supply* price: `unit_price` stays
+   * the price the supplier prints and 折后价 = `unit_price × (1 − discount_percent/100)` is what we
+   * actually pay. That net figure is derived, never stored here — the product master's `purchase`
+   * tier is where it becomes a number (`lib/supplierProductPromotion.ts`).
+   *
+   * `scale: 0` (owner rule 2026-09-24, same narrowing as `unit_volume`): the rate is a whole percent,
+   * and a padded `5.0000` in the form was the complaint. A fraction is refused by the contract
+   * (`data/validators.ts`), so no reader has to trim one.
+   */
+  @Property({ name: 'discount_percent', type: 'numeric', precision: 3, scale: 0, nullable: true })
+  discountPercent?: string | null
 
   /**
    * `{ length, width, height, unit: 'cm' }` of one piece — the item's own size, labelled 产品尺寸 /
@@ -569,7 +624,7 @@ export class PurchasingSupplierProductPrice {
   @Property({ name: 'min_quantity', type: 'integer', default: 1 })
   minQuantity: number = 1
 
-  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 6, default: '0' })
+  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 4, default: '0' })
   unitPrice: string = '0'
 
   @Property({ name: 'is_active', type: 'boolean', default: true })

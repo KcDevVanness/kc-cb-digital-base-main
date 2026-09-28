@@ -1,4 +1,4 @@
-import type { EntityManager } from '@mikro-orm/postgresql'
+import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import type { CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import { emitCrudSideEffects } from '@open-mercato/shared/lib/commands/helpers'
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
@@ -9,6 +9,7 @@ import { supplierProductCrudEvents, supplierProductCrudIndexer, type PurchasingS
 import { supplierProductToProductFields } from './productMapping'
 import { findProductById, findProductBySku, loadProductPrices } from './productsReads'
 import { findLatestQuotedPrice } from './quoteLineReads'
+import { netUnitPrice } from './priceKinds'
 import { findBasePriceOfItem } from './supplierProductPrices'
 
 /**
@@ -71,6 +72,11 @@ function productWriteContext(ctx: CommandRuntimeContext): CommandRuntimeContext 
  * line — the buyer maintains it on the library row, it is the price they last confirmed, and the
  * quotation remains the document that negotiated it. Falling back to the newest matching line keeps
  * rows that never quoted a price behaving exactly as before.
+ *
+ * Both branches are the **折后价** (`netUnitPrice`, `lib/priceKinds.ts`): the row's discount is a term
+ * of the supply price, so whatever supply price the master receives, it receives it after the
+ * discount. The `purchase` tier means "what we pay", and writing the undiscounted list price there
+ * would overstate every downstream cost figure by the discount.
  */
 async function resolveDesiredPurchasePrice(
   em: EntityManager,
@@ -79,13 +85,16 @@ async function resolveDesiredPurchasePrice(
 ): Promise<DesiredPriceRow | null> {
   const libraryPrice = await findBasePriceOfItem(em, scope, String(product.id), 'supplier_cost')
   const quoted = libraryPrice ? null : await findLatestQuotedPrice(em, scope, product.supplierId, product.supplierSku)
+  const discountPercent = product.discountPercent ?? null
 
   if (libraryPrice) {
     return {
       priceTier: 'purchase',
       currencyCode: libraryPrice.currencyCode,
       minQuantity: libraryPrice.minQuantity >= 1 ? libraryPrice.minQuantity : 1,
-      unitPrice: libraryPrice.unitPrice,
+      // `?? libraryPrice.unitPrice` only guards an unparseable amount: the master must still receive
+      // the number the buyer stored rather than nothing at all.
+      unitPrice: netUnitPrice(libraryPrice.unitPrice, discountPercent) ?? libraryPrice.unitPrice,
       startsAt: null,
       endsAt: null,
       isActive: true,
@@ -100,7 +109,7 @@ async function resolveDesiredPurchasePrice(
     priceTier: 'purchase',
     currencyCode: quoted.currencyCode,
     minQuantity,
-    unitPrice: quoted.unitPrice,
+    unitPrice: netUnitPrice(quoted.unitPrice, discountPercent) ?? quoted.unitPrice,
     startsAt: null,
     endsAt: null,
     isActive: true,
@@ -217,6 +226,27 @@ export async function promoteSupplierProduct(input: {
       code: 'sku_belongs_to_deleted_product',
     })
   }
+  if (existing) {
+    // One master SKU, one supplier row. When another live row already owns this product, writing
+    // this row's values onto it would replace that supplier's data (name, spec, packaging) with a
+    // different purchase source's — silently, and in the direction the operator did not intend. The
+    // intent behind a second row for the same item is 关联已有商品 (a link, no master write), so the
+    // refusal names it and nothing is written.
+    const owner = await input.em.fork().findOne(PurchasingSupplierProduct, {
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+      productId: existing.id,
+      id: { $ne: product.id },
+      deletedAt: null,
+    } as FilterQuery<PurchasingSupplierProduct>)
+    if (owner) {
+      const ownerLabel = owner.supplierNameSnapshot ? `${owner.supplierSku} (${owner.supplierNameSnapshot})` : owner.supplierSku
+      throw new CrudHttpError(422, {
+        error: `SKU ${product.supplierSku} is already the master product of supplier code ${ownerLabel}; use 关联已有商品 to point this row at the same product instead of overwriting it`,
+        code: 'sku_owned_by_another_supplier_product',
+      })
+    }
+  }
 
   let productId: string
   let action: SupplierProductPromotionResult['action']
@@ -231,6 +261,8 @@ export async function promoteSupplierProduct(input: {
         hsCode: fields.hsCode,
         unit: fields.unit ?? 'PCS',
         netWeight: fields.netWeight,
+        grossWeight: fields.grossWeight,
+        volume: fields.volume,
         dimensions: fields.dimensions,
         cartonQuantity: fields.cartonQuantity,
         status: 'active',

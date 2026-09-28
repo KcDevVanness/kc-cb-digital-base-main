@@ -15,6 +15,8 @@ describe('supplierMapping', () => {
     hsCode: null,
     unit: null,
     netWeight: null,
+    grossWeight: null,
+    volume: null,
     dimensions: null,
     cartonQuantity: null,
   }
@@ -33,11 +35,11 @@ describe('supplierMapping', () => {
   it('never sends an empty value over an existing product field', () => {
     expect(changedProductFields(EMPTY_PRODUCT, {
       name: null, nameEn: null, specSummary: null, hsCode: null, unit: null, netWeight: null,
-      dimensions: null, cartonQuantity: null,
+      grossWeight: null, volume: null, dimensions: null, cartonQuantity: null,
     })).toEqual({})
     const values = {
       name: 'New name', nameEn: null, specSummary: null, hsCode: null, unit: null, netWeight: null,
-      dimensions: null, cartonQuantity: null,
+      grossWeight: null, volume: null, dimensions: null, cartonQuantity: null,
     }
     expect(changedProductFields({ ...EMPTY_PRODUCT, name: 'Old name' }, values)).toEqual({ name: 'New name' })
     expect(changedProductFields({ ...EMPTY_PRODUCT, name: 'New name' }, values)).toEqual({})
@@ -46,16 +48,22 @@ describe('supplierMapping', () => {
   it('compares decimal strings numerically instead of textually', () => {
     const values = {
       name: null, nameEn: null, specSummary: null, hsCode: null, unit: null, netWeight: '1.28',
-      dimensions: null, cartonQuantity: null,
+      grossWeight: '1.8400', volume: '88642', dimensions: null, cartonQuantity: null,
     }
-    expect(changedProductFields({ ...EMPTY_PRODUCT, netWeight: '1.2800' }, values)).toEqual({})
-    expect(changedProductFields({ ...EMPTY_PRODUCT, netWeight: '0.9000' }, values)).toEqual({ netWeight: '1.28' })
+    expect(changedProductFields({
+      ...EMPTY_PRODUCT, netWeight: '1.2800', grossWeight: '1.8400', volume: '88642',
+    }, values)).toEqual({})
+    expect(changedProductFields({ ...EMPTY_PRODUCT, netWeight: '0.9000', grossWeight: null }, values)).toEqual({
+      netWeight: '1.28',
+      grossWeight: '1.8400',
+      volume: '88642',
+    })
   })
 
   it('sends a carton quantity only when it differs from the stored one', () => {
     const values = {
       name: null, nameEn: null, specSummary: null, hsCode: null, unit: null, netWeight: null,
-      dimensions: null, cartonQuantity: 12,
+      grossWeight: null, volume: null, dimensions: null, cartonQuantity: 12,
     }
     expect(changedProductFields({ ...EMPTY_PRODUCT, cartonQuantity: 12 }, values)).toEqual({})
     expect(changedProductFields({ ...EMPTY_PRODUCT, cartonQuantity: 6 }, values)).toEqual({ cartonQuantity: 12 })
@@ -86,6 +94,21 @@ describe('supplierMapping', () => {
     const secondRung = mergePriceRows(existing, purchaseRow({ minQuantity: 1, unitPrice: '250.000000' }))
     expect(secondRung.rows).toHaveLength(4)
     expect(secondRung.rows.filter((row) => row.priceTier === 'purchase')).toHaveLength(2)
+  })
+
+  it('compares prices as exact scaled integers, never as floats', () => {
+    const huge = '10000000000000.0001'
+    const next = '10000000000000.0002'
+    // The trap the old `Number(a) === Number(b)` comparison fell into: these are two different
+    // prices, but they are the same IEEE double.
+    expect(Number(huge) === Number(next)).toBe(true)
+
+    const existing = [
+      { id: 'p1', priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 500, unitPrice: huge, startsAt: null, endsAt: null, isActive: true },
+    ]
+    expect(mergePriceRows(existing, purchaseRow({ unitPrice: next })).changed).toBe(true)
+    // the same price spelled with a finer scale is not rewritten
+    expect(mergePriceRows(existing, purchaseRow({ unitPrice: '10000000000000.00010' })).changed).toBe(false)
   })
 
   it('reports no change when the quoted price already matches the stored one', () => {

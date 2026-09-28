@@ -1,5 +1,6 @@
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import { PurchasingSupplierProductPrice } from '../data/entities'
+import { comparePriceBaseRows } from './priceKinds'
 
 /**
  * The base price of each kind, as a list column and the promotion read it.
@@ -11,6 +12,13 @@ import { PurchasingSupplierProductPrice } from '../data/entities'
 export type SupplierProductPriceCell = {
   currencyCode: string
   unitPrice: string
+  /**
+   * 折后价, when the caller could compute it (the list route knows the row's `discount_percent`).
+   * The read below stays discount-free on purpose: the discount lives on the library row, not on the
+   * price row, so the cell cannot derive it and the caller attaches it (`lib/priceKinds.ts`
+   * `netUnitPrice`).
+   */
+  netUnitPrice?: string | null
   minQuantity: number
 }
 
@@ -20,16 +28,6 @@ export type SupplierProductBasePrices = {
 }
 
 const EMPTY_BASE_PRICES: SupplierProductBasePrices = { supplierCost: null, companyOffer: null }
-
-/**
- * The "base" row of a kind is its lowest ladder step, and ties (two currencies at the same step)
- * are broken by currency code so a column can never flip between renders on equal data.
- */
-function isBaseCandidate(current: SupplierProductPriceCell | null, candidate: SupplierProductPriceCell): boolean {
-  if (!current) return true
-  if (candidate.minQuantity !== current.minQuantity) return candidate.minQuantity < current.minQuantity
-  return candidate.currencyCode.localeCompare(current.currencyCode) < 0
-}
 
 /**
  * The active base prices of many library items in one query, keyed by item id.
@@ -66,9 +64,9 @@ export async function loadBasePricesByItem(
       minQuantity: row.minQuantity,
     }
     if (row.priceKind === 'supplier_cost') {
-      if (isBaseCandidate(entry.supplierCost, cell)) entry.supplierCost = cell
+      if (!entry.supplierCost || comparePriceBaseRows(cell, entry.supplierCost) < 0) entry.supplierCost = cell
     } else if (row.priceKind === 'company_offer') {
-      if (isBaseCandidate(entry.companyOffer, cell)) entry.companyOffer = cell
+      if (!entry.companyOffer || comparePriceBaseRows(cell, entry.companyOffer) < 0) entry.companyOffer = cell
     }
     byItem.set(itemId, entry)
   }

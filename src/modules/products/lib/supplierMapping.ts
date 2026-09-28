@@ -14,8 +14,11 @@
  *
  * The source-specific halves (which columns of a quotation line or of a library row feed these
  * values) stay in their own modules: this file only knows the master's field names and the merge
- * semantics, and it imports no entity from any module.
+ * semantics, and it imports no entity from any module. The one cross-module import is the money
+ * engine, because a price comparison must be an exact decimal one.
  */
+
+import { PRICE_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
 
 export type ProductFieldValues = {
   name: string | null
@@ -24,6 +27,8 @@ export type ProductFieldValues = {
   hsCode: string | null
   unit: string | null
   netWeight: string | null
+  grossWeight: string | null
+  volume: string | null
   dimensions: Record<string, unknown> | null
   cartonQuantity: number | null
 }
@@ -74,6 +79,8 @@ export function changedProductFields(
     hsCode: string | null
     unit: string | null
     netWeight: string | null
+    grossWeight: string | null
+    volume: string | null
     dimensions: Record<string, unknown> | null
     cartonQuantity: number | null
   },
@@ -86,6 +93,8 @@ export function changedProductFields(
   if (values.hsCode && values.hsCode !== current.hsCode) payload.hsCode = values.hsCode
   if (values.unit && values.unit !== current.unit) payload.unit = values.unit
   if (values.netWeight && Number(values.netWeight) !== Number(current.netWeight ?? Number.NaN)) payload.netWeight = values.netWeight
+  if (values.grossWeight && Number(values.grossWeight) !== Number(current.grossWeight ?? Number.NaN)) payload.grossWeight = values.grossWeight
+  if (values.volume && Number(values.volume) !== Number(current.volume ?? Number.NaN)) payload.volume = values.volume
   if (values.dimensions && JSON.stringify(values.dimensions) !== JSON.stringify(current.dimensions ?? null)) {
     payload.dimensions = values.dimensions
   }
@@ -119,8 +128,14 @@ export function mergePriceRows(
   desired: DesiredPriceRow,
 ): { rows: Record<string, unknown>[]; changed: boolean } {
   const key = priceRowKey(desired)
+  // The comparison is exact at the column scale, never a float one: both sides become scaled
+  // integers, so two prices a ten-thousandth apart are always told apart (`Number` collapses
+  // 4-decimal values past 2^53) and two spellings of the same price (`230`, `230.0000`) are equal.
   let changed = !existing.some(
-    (row) => priceRowKey(row) === key && Number(row.unitPrice) === Number(desired.unitPrice) && row.isActive,
+    (row) =>
+      priceRowKey(row) === key &&
+      toScaledUnits(row.unitPrice, PRICE_SCALE) === toScaledUnits(desired.unitPrice, PRICE_SCALE) &&
+      row.isActive,
   )
   const rows: Record<string, unknown>[] = existing.map((row) => {
     if (priceRowKey(row) !== key) {

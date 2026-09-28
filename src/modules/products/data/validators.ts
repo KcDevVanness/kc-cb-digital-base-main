@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import { parseBooleanToken } from '@open-mercato/shared/lib/boolean'
+import { PRICE_SCALE } from '../../trade_docs/lib/money'
 import { PRODUCT_PRICE_TIERS } from '../lib/tiers'
 
 /**
  * Input contracts for the products module.
  *
  * Decimal columns are submitted as strings so no value ever passes through a binary float:
- * a numeric(18,6) price typed as `26.500001` must reach the database unchanged. More decimals
+ * a numeric(18,4) price typed as `26.5001` must reach the database unchanged. More decimals
  * than the column holds are rejected instead of silently rounded, because a silently rounded
  * price is indistinguishable from an operator's typo.
  */
@@ -40,12 +41,23 @@ function decimalSchema(scale: number, options: { min?: string } = {}) {
     })
 }
 
+/**
+ * A nullable decimal: an explicit value is normalized to the column's scale, `null` clears it, and
+ * an **absent** key stays `undefined`.
+ *
+ * That last part is load-bearing. `productUpdateSchema` is `.partial()`, and the update command
+ * writes a field only when it is `!== undefined`; a helper that turned `undefined` into `null` made
+ * every partial update (the supplier sync sends changed fields only) silently erase the decimal
+ * columns it did not mention — measured 2026-09-24: a `sync-fields` payload carrying only `volume`
+ * wiped `net_weight` and `gross_weight`, and the reverse. `z.undefined()` inside the pipeline is what
+ * keeps "not sent" distinguishable from "cleared".
+ */
 const nullableDecimalSchema = (scale: number, options: { min?: string } = {}) =>
   z
     .union([z.string(), z.number(), z.null()])
     .optional()
-    .transform((value) => (value === null || value === undefined ? null : value))
-    .pipe(z.union([decimalSchema(scale, options), z.null()]))
+    .transform((value) => (value === undefined ? undefined : value === null ? null : value))
+    .pipe(z.union([decimalSchema(scale, options), z.null(), z.undefined()]))
 
 const nullableNonNegativeIntegerSchema = z
   .union([z.string(), z.number(), z.null()])
@@ -54,7 +66,14 @@ const nullableNonNegativeIntegerSchema = z
   .refine((value) => value === null || (Number.isInteger(value) && value >= 0), 'value must be a non-negative integer')
 
 const ISO_CODE_PATTERN = /^[A-Za-z]{2,4}$/
-const SKU_PATTERN = /^[A-Za-z0-9._\-/]{1,64}$/
+
+/**
+ * The one charset/length rule `products_products.sku` accepts, exported because two call sites need
+ * it in two different shapes: the create schema applies it through zod, while `products.items.update`
+ * applies it only to a **changed** SKU — an unchanged legacy code is deliberately not re-validated
+ * (see `.ai/specs/2026-09-24-supplier-product-code-rules.md`, REQ-PC-009).
+ */
+export const SKU_PATTERN = /^[A-Za-z0-9._\-/]{1,64}$/
 
 /**
  * ISO-4217-shaped currency code, **uppercase only**.
@@ -227,6 +246,7 @@ export const productCreateSchema = z.object({
     .optional(),
   netWeight: nullableDecimalSchema(4, { min: '0' }),
   grossWeight: nullableDecimalSchema(4, { min: '0' }),
+  volume: nullableDecimalSchema(0, { min: '0' }),
   dimensions: dimensionsSchema,
   cartonQuantity: nullableNonNegativeIntegerSchema,
   batteryCapacityMah: nullableNonNegativeIntegerSchema,
@@ -245,8 +265,16 @@ export const productCreateSchema = z.object({
   variants: productVariantsSchema.optional(),
 })
 
+/**
+ * The update contract widens `sku` on purpose: the charset/length rule moved into the update
+ * **command**, which applies it only when the value actually changes. A product migrated with a
+ * legacy code (a PetKit-era item number, a code carrying a space) must stay editable — its name,
+ * spec and prices — while every *new* SKU still has to pass `SKU_PATTERN`. Create keeps the strict
+ * schema above, so nothing can be created outside the rule.
+ */
 export const productUpdateSchema = productCreateSchema.partial().extend({
   id: z.string().uuid(),
+  sku: z.string().trim().min(1).max(200).optional(),
 })
 
 export const productListSchema = z.object({
@@ -282,7 +310,7 @@ export const productPriceRowSchema = z
     priceTier: z.enum(PRODUCT_PRICE_TIERS),
     currencyCode: productCurrencyCodeSchema,
     minQuantity: z.coerce.number().int().min(1).default(1),
-    unitPrice: decimalSchema(6, { min: '0' }),
+    unitPrice: decimalSchema(PRICE_SCALE, { min: '0' }),
     startsAt: z.string().min(1).nullable().optional(),
     endsAt: z.string().min(1).nullable().optional(),
     isActive: z.boolean().default(true),

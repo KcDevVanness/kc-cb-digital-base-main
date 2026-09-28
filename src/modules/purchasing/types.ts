@@ -35,6 +35,13 @@ export type SupplierProductListRow = {
    */
   supplierCostPrice: SupplierProductPriceCell | null
   companyOfferPrice: SupplierProductPriceCell | null
+  /**
+   * Where 本公司报价 came from: the linked product's `internal`（内部结算价）tier, or a library
+   * `company_offer` row stored before our offer moved to the product master (2026-09-24).
+   */
+  companyOfferSource: 'product' | 'library' | null
+  /** The supplier's discount off the supply price, in whole percent (`numeric(3,0)` string); null = none. */
+  discountPercent: string | null
   imageAttachmentIds: string[]
   moqQuantity: number | null
   cartonQuantity: number | null
@@ -60,6 +67,8 @@ export type SupplierProductListRow = {
 export type SupplierProductPriceCell = {
   currencyCode: string
   unitPrice: string
+  /** 折后价 (`unitPrice × (1 − discount/100)`), attached by the list route; null/absent = no discount. */
+  netUnitPrice?: string | null
   minQuantity: number
 }
 
