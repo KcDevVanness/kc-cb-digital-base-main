@@ -67,20 +67,20 @@ This plan is the requirement record; the tracker has no issue. The incident itse
 
 ### Phase 1: the rule and its two enforcement points
 
-- [ ] 1.1 `scripts/guards/guard-tree.mjs` — 3d9dec4
-- [ ] 1.2 `.github/workflows/guard-tree.yml` — 3d9dec4
-- [ ] 1.3 `.githooks/pre-push` — 3d9dec4
+- [x] 1.1 `scripts/guards/guard-tree.mjs` — fbf30a1
+- [x] 1.2 `.github/workflows/guard-tree.yml` — fbf30a1
+- [x] 1.3 `.githooks/pre-push` — fbf30a1
 
 ### Phase 2: knowledge
 
-- [ ] 2.1 lesson record + catalog row — 3d9dec4
-- [ ] 2.2 `docs/dev/parallel-development.md` — 3d9dec4
+- [x] 2.1 lesson record + catalog row — fbf30a1
+- [x] 2.2 `docs/dev/parallel-development.md` — fbf30a1
 
 ### Phase 3: evidence
 
-- [ ] 3.1 guard vs the real wipe commit and the three clean refs — `af9a724` refused (missing all four sentinels; 2 of 1541 files kept), `origin/main` / `origin/feat/cross-border-erp` / repaired `origin/qa-evidence-pr-11` all OK
-- [ ] 3.2 pre-push hook end to end — wipe push refused with 0 refs on the scratch remote; `HEAD` pushed (1541 → 1545 files); `--no-verify` pushed the wipe commit; missing hooks dir left pushes untouched; ref deletion skipped
-- [ ] 3.3 PR green + `guard-tree` required on `main` — see the PR's verification comment
+- [x] 3.1 guard vs the real wipe commit and the three clean refs — `af9a724` refused (missing all four sentinels; 2 of 1541 files kept), `origin/main` / `origin/feat/cross-border-erp` / repaired `origin/qa-evidence-pr-11` all OK
+- [x] 3.2 pre-push hook end to end — wipe push refused with 0 refs on the scratch remote; `HEAD` pushed (1541 → 1545 files); `--no-verify` pushed the wipe commit; missing hooks dir left pushes untouched; ref deletion skipped
+- [x] 3.3 PR green + `guard-tree` required on `main` — see the PR's verification comment
 
 ## Notes
 
