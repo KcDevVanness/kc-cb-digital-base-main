@@ -141,6 +141,7 @@ export class ProductsCategory {
  */
 @Entity({ tableName: 'products_products' })
 @Index({ name: 'products_products_scope_idx', properties: ['organizationId', 'tenantId'] })
+@Index({ name: 'products_products_source_idx', properties: ['organizationId', 'tenantId', 'sourceProduct'] })
 @Unique({ name: 'products_products_scope_sku_uniq', properties: ['tenantId', 'organizationId', 'sku'] })
 export class ProductsProduct {
   [OptionalProps]?: 'createdAt' | 'updatedAt' | 'deletedAt'
@@ -251,6 +252,19 @@ export class ProductsProduct {
   /** Optional link to the installed catalog product; never written by this module. */
   @Property({ name: 'catalog_product_id', type: 'uuid', nullable: true })
   catalogProductId?: string | null
+
+  /**
+   * Provenance of a **distributed copy**: the product row this one was copied from by
+   * `products.items.distribute`. `null` for rows built in this organization. The link is what makes
+   * repeated distributions updates instead of duplicates, and it clears to `null` when the source
+   * is deleted — the copy stays a normal, sellable product of its own organization.
+   */
+  @ManyToOne(() => ProductsProduct, {
+    fieldName: 'source_product_id',
+    nullable: true,
+    deleteRule: 'set null',
+  })
+  sourceProduct?: ProductsProduct | null
 
   @Property({ name: 'catalog_snapshot', type: 'jsonb', nullable: true })
   catalogSnapshot?: Record<string, unknown> | null

@@ -62,6 +62,8 @@ export type SerializedProduct = {
   status: string
   catalogProductId: string | null
   catalogSnapshot: Record<string, unknown> | null
+  /** Set when this row is a distributed copy; the id of the source product it was copied from. */
+  sourceProductId: string | null
   notes: string | null
   tenantId: string
   organizationId: string
@@ -96,6 +98,7 @@ export function serializeProduct(entity: ProductsProduct): SerializedProduct {
     status: entity.status,
     catalogProductId: entity.catalogProductId ? String(entity.catalogProductId) : null,
     catalogSnapshot: entity.catalogSnapshot ?? null,
+    sourceProductId: entity.sourceProduct ? String(entity.sourceProduct.id) : null,
     notes: entity.notes ?? null,
     tenantId: String(entity.tenantId),
     organizationId: String(entity.organizationId),
