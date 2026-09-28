@@ -18,6 +18,8 @@
 ## 并行单元与所有权
 
 - **一个模块 / 一个 spec 阶段 = 一个工作单元 = 一个分支 = 一个 PR = 一个 agent。**
+- **开工前先认领**：`git worktree list` + `gh pr list --state open` 查这个单元是否已有分支 / 工作树 /
+  PR；有就续跑（`om-auto-continue-pr`），不要再开第二个。
 - **同一模块禁止并行**：两个 agent 改同一个模块的实体/命令/迁移必然互相覆盖。
 - 跨模块协作只走 ID / 快照 / 事件 / enricher / 可选 DI（本仓硬性约束），不要进对方目录改代码。
 - 每个工作单元一份 spec（`.ai/specs/<date>-<name>.md`）或一份计划（`docs/plans/`），
@@ -84,20 +86,29 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 
 ## PR 与合并
 
-1. 一个工作单元一个 PR，**ready（非 draft）**打开；标题 `feat(<area>): …` / `fix(<area>): …`。
-2. 合并前：rebase 到最新 `main`，门禁全绿（`.ai/agentic.config.json` 的 `validation.commands`）。
-3. **squash 合并**，保持 `main` 线性；合并后删远端分支。
-4. **CI**：`.github/workflows/validate.yml` 在 PR（→ `main`）与 `main` 上按顺序跑同一组门禁命令
-   （`generate` / `typecheck` / `lint` / `ds:check` / `test` / `build`），检查名 **`validate`**；
-   `main` 的分支保护要求它通过。本地要复现同一结论，就按顺序跑这 6 条命令。
-5. **标签**：`.ai/agentic.config.json` 里 `labels.enabled=true`，仓库已按
+1. 一个工作单元一个 PR，**先以 draft 打开**（第一次 push 就有 PR，进度可见），标题
+   `feat(<area>): …` / `fix(<area>): …`；门禁全绿且 Progress 全勾后 `gh pr ready` 转 ready。
+2. **PR body 必含**：`Tracking plan:` + `Source doc:`（本仓没有 issue 体系，spec / run 路径就是需求单；
+   tracker 开了 issue 之后补 `Closes #N` / `Refs #N`）、`## Goal`（问题 + 根因）、`## What Changed`、
+   `## Assumptions`、`## 🧪 Tests`（命令 + 结果计数）、`## 💥 Breaking Changes`、`## Rollback`
+   （怎么撤回：迁移 / 开关 / revert，或 None）、`## 📋 Progress`。AI 参与生成的提交在 body 里带
+   `[AI-Generated]` trailer（不要写进 subject）；流水线评论以 `🤖` 开头。
+3. 合并前：rebase 到最新 `main`，门禁全绿（`.ai/agentic.config.json` 的 `validation.commands`）。
+4. **squash 合并**，保持 `main` 线性；合并后删远端分支。
+5. **CI**：`.github/workflows/validate.yml` 在**所有 PR**（不限目标分支）与 `main` 上按顺序跑同一组
+   门禁命令（`generate` / `typecheck` / `lint` / `lessons` / `ds:check` / `test` / `build`），检查名
+   **`validate`**；docs / 部署侧改动的 PR 由 job 内的 scope 步骤跳过重步骤，检查照常报告（required
+   check 不会卡在 "Expected — Waiting"）。本地复现同一结论，就按同一顺序跑同一份命令。
+6. **标签**：`.ai/agentic.config.json` 里 `labels.enabled=true`，仓库已按
    `.ai/trackers/github.md` 的 `ensure-label-taxonomy` 建好 `review`/`changes-requested`/`qa`/
    `qa-failed`/`merge-queue`/`blocked`/`do-not-merge`/`needs-qa`/`skip-qa`/`in-progress`/
    `priority-*`/`risk-*` 等标签；流水线技能按状态自动打标，N 个 PR 卡在哪一步可以直接筛出来。
-6. **分支保护现状**：`main` 要求走 PR、要求 `validate` 通过、要求线性历史，禁止 force push 与
+7. **分支保护现状**：`main` 要求走 PR、要求 `validate` 通过、要求线性历史，禁止 force push 与
    删除分支；必需评审数 0（单人仓不会把自己锁死），`enforce_admins=false`（管理员可应急绕过）。
-   仓库只允许 **squash** 合并，合并后自动删远端分支。
-7. **CI 偶发**：`Install dependencies` 步骤见过一次 Yarn 4 的 `onCancel handler was attached after
+   仓库只允许 **squash** 合并，合并后自动删远端分支。**直推 `main` / `production` 一律禁止**：
+   `main` 的 admin bypass 是应急口子、不是日常通道，`production` 是部署分支（`deploy.yml` 由它的
+   push 触发），两者都只接受 PR。
+8. **CI 偶发**：`Install dependencies` 步骤见过一次 Yarn 4 的 `onCancel handler was attached after
    the promise settled`（网络抖动，非代码问题）。先 `gh run rerun <run-id> --failed` 重跑一次再改代码。
 
 ## 何时不要并行
@@ -119,4 +130,5 @@ git worktree list                  # 每个工作单元一棵树
 git -C ../<worktree> branch --show-current
 gh pr list --state open            # 每个工作单元一个 PR
 gh pr checks <n>                   # validate 检查的门禁结论
+gh pr ready <n>                    # 门禁绿 + Progress 全勾后把 draft 转 ready
 ```
