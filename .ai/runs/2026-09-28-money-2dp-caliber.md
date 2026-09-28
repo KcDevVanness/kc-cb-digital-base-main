@@ -38,29 +38,29 @@ this branch's HEAD; it contains only the caliber slice and none of the other ses
 
 ### Phase 1: Engine and schema on this branch
 
-- [x] 1.1 Engine: `AMOUNT_SCALE=2`/`PRICE_SCALE=4`, `divideHalfUp`/`toScaledUnits` in the engine, currency-scale machinery deleted — extracted
-- [x] 1.2 Columns on this branch's tables patched to amounts `18,2` / prices `18,4`; migrations regenerated, scoped and reviewed — extracted
-- [x] 1.3 The supplier-price ALTER relocated to the `sourcing` chain — extracted
+- [x] 1.1 Engine: `AMOUNT_SCALE=2`/`PRICE_SCALE=4`, `divideHalfUp`/`toScaledUnits` in the engine, currency-scale machinery deleted — ec8889a — extracted
+- [x] 1.2 Columns on this branch's tables patched to amounts `18,2` / prices `18,4`; migrations regenerated, scoped and reviewed — ec8889a — extracted
+- [x] 1.3 The supplier-price ALTER relocated to the `sourcing` chain — ec8889a — extracted
 
 ### Phase 2: Write paths and reconciliation
 
-- [x] 2.1 purchasing (engine totals, deposit derivation, exact guards, price kinds) — extracted
-- [x] 2.2 platform_ops (quantize + warn, exact reconciliation, dedup rule) — extracted
-- [x] 2.3 cross_border (exact quantities, exact over-allocation guard) — extracted
-- [x] 2.4 sourcing/products (import quantization, price scale 4, exact change detection) — extracted
-- [x] 2.5 currency_policy (engine rate inversion, 2-decimal CNY conversion) — extracted
-- [x] 2.6 trade_docs/export_finance validators and call sites — extracted
+- [x] 2.1 purchasing (engine totals, deposit derivation, exact guards, price kinds) — e9a0c2b — extracted
+- [x] 2.2 platform_ops (quantize + warn, exact reconciliation, dedup rule) — e9a0c2b — extracted
+- [x] 2.3 cross_border (exact quantities, exact over-allocation guard) — e9a0c2b, 25fc81e — extracted
+- [x] 2.4 sourcing/products (import quantization, price scale 4, exact change detection) — e9a0c2b — extracted
+- [x] 2.5 currency_policy (engine rate inversion, 2-decimal CNY conversion) — e9a0c2b — extracted
+- [x] 2.6 trade_docs/export_finance validators and call sites — e9a0c2b — extracted
 
 ### Phase 3: Display, templates and entry checks
 
-- [x] 3.1 `MoneyAmount`/`formatMoneyAmount` fixed 2 decimals; unit prices 4 (`kind="price"`) — extracted
-- [x] 3.2 Contract template: 4-decimal price / 2-decimal amount cells — extracted
-- [x] 3.3 internal_sales entry validation (`lineScaleViolation`) + i18n keys — extracted
+- [x] 3.1 `MoneyAmount`/`formatMoneyAmount` fixed 2 decimals; unit prices 4 (`kind="price"`) — 80d6b1d — extracted
+- [x] 3.2 Contract template: 4-decimal price / 2-decimal amount cells — 80d6b1d — extracted
+- [x] 3.3 internal_sales entry validation (`lineScaleViolation`) + i18n keys — 80d6b1d — extracted
 
 ### Phase 4: Documentation
 
-- [x] 4.1 Spec `.ai/specs/2026-09-28-money-scale-2dp-unification.md` + lesson recurrence — extracted
-- [x] 4.2 Affected specs/docs/README caliber statements and status board row — extracted
+- [x] 4.1 Spec `.ai/specs/2026-09-28-money-scale-2dp-unification.md` + lesson recurrence — 08867ab — extracted
+- [x] 4.2 Affected specs/docs/README caliber statements and status board row — 08867ab — extracted
 
 ### Phase 5: Validation
 
@@ -68,6 +68,8 @@ this branch's HEAD; it contains only the caliber slice and none of the other ses
 - [x] 5.2 Commit, push, open the PR against `feat/cross-border-erp`
 
 ## Progress
+
+PR: #9 (base `feat/cross-border-erp`)
 
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
@@ -100,7 +102,7 @@ this branch's HEAD; it contains only the caliber slice and none of the other ses
 ### Phase 5: Validation
 
 - [x] 5.1 `yarn generate`, `yarn typecheck`, `yarn lint`, `yarn ds:check`, `yarn test`, `yarn build` on this branch — all green (typecheck 0; 39 suites / 310 tests; lint 0 errors / 8 pre-existing warnings; ds:check 705 files; production build ✓)
-- [ ] 5.2 Commit, push, open the PR against `feat/cross-border-erp`
+- [x] 5.2 Commit, push, open the PR against `feat/cross-border-erp` — 9726cf8…08867ab, pushed, PR #9
 
 ### Deferred (not this PR)
 
