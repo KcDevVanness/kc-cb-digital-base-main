@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 38 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 39 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -66,3 +66,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [「不需要小数点」 is a column-scale decision, not a display format](lessons/no-decimals-means-narrow-the-column-scale.md) — area:module-data,backend-ui,architecture; module:purchasing,products,sourcing; topic:numeric-scale,column-precision,form-input,owner-feedback,validators,migrations
 - [A picker whose only remaining option is one value is a defect: delete the entry point, not the data model](lessons/one-option-picker-is-a-defect.md) — area:backend-ui,module-data; module:purchasing; topic:form-affordance,price-list,round-trip-submission,base-row,owner-feedback
 - [A PR whose base is a feature branch runs no CI at all](lessons/gate-must-cover-every-pr-target.md) — area:spec-pr; module:platform; topic:ci,gate,branch-protection,pull-request,worktree,parallel-development
+- [An evidence branch is cut from its target branch and only adds files](lessons/evidence-branch-is-cut-from-its-target.md) — area:spec-pr; module:platform; topic:git,worktree,branch-hygiene,ci,repo-wipe,screenshots
