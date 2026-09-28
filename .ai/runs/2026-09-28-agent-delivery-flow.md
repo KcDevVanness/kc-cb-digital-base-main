@@ -71,5 +71,5 @@ tracker has no issues.
 
 ### Phase 3: evidence
 
-- [ ] 3.1 lessons check + YAML/JSON parse
-- [ ] 3.2 PR draft → ready with `validate` green
+- [x] 3.1 lessons check + YAML/JSON parse — `node scripts/check-lessons.mjs` valid; workflow parses with `pull_request:` unfiltered and the `lessons` step present; CI run 36402727338 `validate` pass (5m28s)
+- [x] 3.2 PR draft → ready with `validate` green — #10 opened as a draft, flipped ready after the green run
