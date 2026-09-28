@@ -89,37 +89,37 @@ the quote→order step finally has a UI entry.
 
 ### Phase 1: Internal-sales buyer linkage
 
-- [x] 1.1 Merge two buyer sources (organization tree + `parties`) into one picker with the source at the front of the label
-- [x] 1.2 Snapshot protocol `internalSales.{organizationId|partyId}` + name auto-fill + explicit clear semantics
-- [x] 1.3 `parties/options` role filter (`?roles=`) so branch-role records stay out of the buyer list
-- [x] 1.4 Fix the variant-bridge save race (same-value `onChange` re-fire must not clear derived state)
-- [x] 1.5 Gate list actions by the document's manage feature (read-only roles see a read-only list)
+- [x] 1.1 Merge two buyer sources (organization tree + `parties`) into one picker with the source at the front of the label — 7f7fd99
+- [x] 1.2 Snapshot protocol `internalSales.{organizationId|partyId}` + name auto-fill + explicit clear semantics — 7f7fd99
+- [x] 1.3 `parties/options` role filter (`?roles=`) so branch-role records stay out of the buyer list — 7f7fd99
+- [x] 1.4 Fix the variant-bridge save race (same-value `onChange` re-fire must not clear derived state) — 7f7fd99
+- [x] 1.5 Gate list actions by the document's manage feature (read-only roles see a read-only list) — 7f7fd99
 
 ### Phase 2: Product distribution to branches
 
-- [x] 2.1 `products_products.source_product_id` column + reviewed migration
-- [x] 2.2 `products.items.distribute` command (whitelist, variant upsert by code, first-price-only, SKU skip, per-target authorization)
-- [x] 2.3 `POST /api/products/items/distribute` + row/header dialog entries with all UI states
+- [x] 2.1 `products_products.source_product_id` column + reviewed migration — 8b9e691
+- [x] 2.2 `products.items.distribute` command (whitelist, variant upsert by code, first-price-only, SKU skip, per-target authorization) — 8b9e691
+- [x] 2.3 `POST /api/products/items/distribute` + row/header dialog entries with all UI states — 8b9e691
 
 ### Phase 3: Multi-company org model (data + docs)
 
-- [x] 3.1 Branch orgs under the head office; branch roles and accounts; HQ operator account
-- [x] 3.2 Branch parties (internal buyers) with bank/address block
-- [x] 3.3 Branch warehouses + locations (the receive needs warehouse + location + catalog variant)
-- [x] 3.4 Currency/dictionary seeds per branch; product copies via the distribution action
+- [x] 3.1 Branch orgs under the head office; branch roles and accounts; HQ operator account — a9e6e47
+- [x] 3.2 Branch parties (internal buyers) with bank/address block — a9e6e47
+- [x] 3.3 Branch warehouses + locations (the receive needs warehouse + location + catalog variant) — a9e6e47
+- [x] 3.4 Currency/dictionary seeds per branch; product copies via the distribution action — a9e6e47
 
 ### Phase 4: Fulfilment prerequisite (catalog master)
 
-- [x] 4.1 Mirror the five canonical products into the official catalog (+ one default active variant each) and set the links
-- [x] 4.2 Verify the variant bridge fills `productVariantId` from the new links
+- [x] 4.1 Mirror the five canonical products into the official catalog (+ one default active variant each) and set the links — 8b9e691
+- [x] 4.2 Verify the variant bridge fills `productVariantId` from the new links — 8b9e691
 
 ### Phase 5: New capability — quote → order
 
-- [x] 5.1 Spec `.ai/specs/2026-09-28-internal-sales-quote-to-order.md`
-- [x] 5.2 Row action + irreversible confirm + engine convert call + redirect to the order edit page
-- [x] 5.3 i18n (zh/en) and the module README note
+- [x] 5.1 Spec `.ai/specs/2026-09-28-internal-sales-quote-to-order.md` — 7f7fd99
+- [x] 5.2 Row action + irreversible confirm + engine convert call + redirect to the order edit page — 7f7fd99
+- [x] 5.3 i18n (zh/en) and the module README note — 7f7fd99
 
 ### Phase 6: Simulated records + duplicate cleanup
 
-- [x] 6.1 `scripts/demo-data/seed-internal-trade-parties.mjs` (idempotent, `MOCK-` marked) and one real run
-- [x] 6.2 Soft-delete the six `eversweet-*` duplicate rows (HQ + both branch copies) and record the口径
+- [x] 6.1 `scripts/demo-data/seed-internal-trade-parties.mjs` (idempotent, `MOCK-` marked) and one real run — 4b26578
+- [x] 6.2 Soft-delete the six `eversweet-*` duplicate rows (HQ + both branch copies) and record the口径 — 8b9e691
