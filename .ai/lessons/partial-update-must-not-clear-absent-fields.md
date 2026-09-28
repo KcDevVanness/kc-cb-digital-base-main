@@ -5,7 +5,7 @@ areas: ["module-data", "debugging", "architecture"]
 topics: ["validators", "nullable-fields", "partial-update", "data-loss", "supplier-mapping", "zod"]
 ---
 
-# A partial update must not read "field absent" as "field cleared"
+# A partial update must not read 'field absent' as 'field cleared'
 
 **Context**: adding `volume` to the product master (2026-09-24) and syncing the supplier library's
 `unit_volume` into it. `sync-fields` reported `fieldsChanged: ["volume"]`, the write answered 200, and the

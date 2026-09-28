@@ -85,8 +85,9 @@ describe('computeFinanceView', () => {
     total: '6000.0000',
     depositAmount: null,
     depositPercent: null,
-    currencyScale: 2,
     paymentAmounts: [] as string[],
+    collectedAmount: null,
+    collectedAt: null,
     kcPriceAmount: null,
     kcPriceCurrency: null,
     subsidiaryInvoiceAmount: null,
@@ -124,11 +125,25 @@ describe('computeFinanceView', () => {
     expect(view.outstandingAmount).toBe('-500.00')
   })
 
-  it('rounds the deposit percentage half-up at the currency scale', () => {
-    const view = computeFinanceView({ ...base, total: '6000.0050', depositPercent: '30.000', currencyScale: 2 })
+  it('rounds the deposit percentage half-up at the amount scale', () => {
+    const view = computeFinanceView({ ...base, total: '6000.0050', depositPercent: '30.000' })
     expect(view.depositPlanned).toBe('1800.00')
-    const odd = computeFinanceView({ ...base, total: '100.0000', depositPercent: '33.333', currencyScale: 2 })
+    const odd = computeFinanceView({ ...base, total: '100.0000', depositPercent: '33.333' })
     expect(odd.depositPlanned).toBe('33.33')
+  })
+
+  it('passes the collection record through and keeps it null when nobody recorded one', () => {
+    const none = computeFinanceView(base)
+    expect(none.collectedAmount).toBeNull()
+    expect(none.collectedAt).toBeNull()
+
+    const recorded = computeFinanceView({
+      ...base,
+      collectedAmount: '4200.0000',
+      collectedAt: '2026-09-20T00:00:00.000Z',
+    })
+    expect(recorded.collectedAmount).toBe('4200.00')
+    expect(recorded.collectedAt).toBe('2026-09-20T00:00:00.000Z')
   })
 
   it('keeps the KC price and the subsidiary invoice null when no document exists', () => {

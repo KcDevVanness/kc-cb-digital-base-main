@@ -240,10 +240,12 @@ export const enabledModules: ModuleEntry[] = [
 enabledModules.push({
   id: 'purchasing',
   from: '@app',
-  // Sidebar group order is a single app-wide decision: the six business-role groups come first,
-  // then the 基础数据 vocabulary group (the dictionary library's main-menu entry), and every
-  // installed group keeps its existing position after them.
-  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group', 'export_finance.nav.group', 'products.nav.group', 'parties.nav.group', 'platform_ops.nav.group', 'master_data.nav.group'] } },
+  // Sidebar group order is a single app-wide decision: the business-role groups come first —
+  // 采购 / 出口业务 / 经营概览 (boss-facing results) / 财务 (finance-desk work and ledgers) /
+  // 数据同步 (the RU pipeline's maintenance pages) / 商品主数据 / 交易对手 / 平台运营 — then the
+  // 基础数据 vocabulary group (the dictionary library's main-menu entry), and every installed
+  // group keeps its existing position after them.
+  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group', 'executive_overview.nav.group', 'export_finance.nav.group', 'ru_sync.nav.group', 'products.nav.group', 'parties.nav.group', 'platform_ops.nav.group', 'master_data.nav.group'] } },
 })
 
 // App-owned cross-border module — consignments (shipments) that combine purchase orders, their
@@ -253,6 +255,11 @@ enabledModules.push({ id: 'cross_border', from: '@app' })
 // Integration foundation for the marketplace/platform connectors (Phase 4 of
 // docs/plans/cross-border-erp.md): `integrations` owns external-id mapping and the provider
 // registry, `data_sync` owns streaming import/export runs, cursors and progress.
+//
+// `progress` is what `data_sync` resolves `progressService` from when a run starts
+// (`data_sync/api/run.ts`): without this entry `POST /api/data_sync/run` fails with
+// "Could not resolve 'progressService'" and no sync run — RU supply pulls included — can start.
+enabledModules.push({ id: 'progress', from: '@open-mercato/core' })
 enabledModules.push({ id: 'integrations', from: '@open-mercato/core' })
 enabledModules.push({ id: 'data_sync', from: '@open-mercato/core' })
 
@@ -289,6 +296,24 @@ enabledModules.push({ id: 'trade_docs', from: '@app' })
 // views. Reads the purchasing / cross_border / trade_docs tables read-only.
 // See .ai/specs/2026-09-22-order-file-and-export-finance.md
 enabledModules.push({ id: 'export_finance', from: '@app' })
+
+// App-owned finance module — shipment-level cost records, the read-time landed-cost allocation on
+// top of them, period expenses, and the read-only payable / receivable / inventory-value / profit
+// ledgers derived from the purchasing, cross_border, trade_docs, products, sales and platform_ops
+// tables. Reads peer data through scoped read-only projections; writes only its own two tables.
+// See .ai/specs/2026-09-28-finance-ledger-and-cockpit-data.md
+enabledModules.push({ id: 'finance', from: '@app' })
+
+// App-owned RU sync module — the RU PETKIT supply contract as a `data_sync` provider: one entity per
+// endpoint, the snapshot projection and its per-endpoint cursor, and the RU-code → product map.
+// It writes only its own tables; the pulled data is read by the cockpit through these projections.
+// See .ai/specs/2026-09-28-finance-ledger-and-cockpit-data.md (Phase 3)
+enabledModules.push({ id: 'ru_sync', from: '@app' })
+
+// App-owned boss cockpit — the read-only executive page and its four dashboard widgets over the RU
+// snapshot projections and the CN ledgers. No entity, no write path: it only reads.
+// See .ai/specs/2026-09-28-finance-ledger-and-cockpit-data.md (Phase 4)
+enabledModules.push({ id: 'boss_cockpit', from: '@app' })
 
 // App-owned trading-party master — buyers, branches and service providers with their bank block.
 // See .ai/specs/2026-09-22-app-owned-party-master.md

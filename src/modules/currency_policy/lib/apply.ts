@@ -43,6 +43,8 @@ function assignCurrencyFields(
     currency.symbol = definition.symbol
     changed = true
   }
+  // Currency metadata, not the amount caliber: amounts are always 2 decimals HALF_UP in the money
+  // engine, so this column is display/dictionary data only (`.ai/specs/2026-09-28-money-scale-2dp-unification.md`).
   if (currency.decimalPlaces !== definition.decimalPlaces) {
     currency.decimalPlaces = definition.decimalPlaces
     changed = true

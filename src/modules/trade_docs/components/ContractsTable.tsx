@@ -22,6 +22,7 @@ import { formatDate } from '@open-mercato/ui/utils/format'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { AMOUNT_SCALE, toScaledUnits } from '../lib/money'
 import { downloadApiFile } from './downloadFile'
 import { CONTRACT_STATUSES, type ContractStatus, contractStatusLabel, directionLabel } from './contractLabels'
 
@@ -137,8 +138,9 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<ContractRecord>
       enableSorting: false,
       meta: { priority: 7 },
       cell: ({ row }) => {
-        const diff = Number(row.original.differenceTotal)
-        if (!Number.isFinite(diff) || diff === 0) {
+        // Exact zero test on scaled units: the difference is an amount, so whether this cell reads
+        // as "no difference" is never decided by a float.
+        if (toScaledUnits(row.original.differenceTotal, AMOUNT_SCALE) === 0n) {
           return <span className="tabular-nums text-xs text-muted-foreground">0</span>
         }
         return (

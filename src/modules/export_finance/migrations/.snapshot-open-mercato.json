@@ -241,6 +241,23 @@
       "name": "export_finance_collections",
       "schema": "public",
       "columns": {
+        "amount": {
+          "name": "amount",
+          "type": "numeric(18,2)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": 18,
+          "scale": 2,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "decimal"
+        },
         "collection_status": {
           "name": "collection_status",
           "type": "text",
@@ -376,6 +393,23 @@
           "collation": null,
           "enumItems": [],
           "mappedType": "text"
+        },
+        "received_at": {
+          "name": "received_at",
+          "type": "date",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "date"
         },
         "tenant_id": {
           "name": "tenant_id",
@@ -810,7 +844,7 @@
         },
         "tax_refund_amount": {
           "name": "tax_refund_amount",
-          "type": "numeric(18,4)",
+          "type": "numeric(18,2)",
           "unsigned": false,
           "autoincrement": false,
           "primary": false,
@@ -818,7 +852,7 @@
           "unique": false,
           "length": null,
           "precision": 18,
-          "scale": 4,
+          "scale": 2,
           "default": null,
           "comment": null,
           "collation": null,

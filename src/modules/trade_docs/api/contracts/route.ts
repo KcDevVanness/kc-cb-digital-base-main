@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import type { EntityManager } from '@mikro-orm/postgresql'
 import { makeCrudRoute } from '@open-mercato/shared/lib/crud/factory'
 import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern'
 import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
@@ -12,7 +11,6 @@ import {
   contractUpdateSchema,
 } from '../../data/validators'
 import { PRODUCT_PRICE_TIERS } from '../../../products/lib/tiers'
-import { readCurrencyScaleInfo } from '../../lib/currencyScale'
 import { createTradeDocsCrudOpenApi, tradeDocsCreatedSchema, tradeDocsOkSchema } from '../openapi'
 
 const ENTITY_ID = 'trade_docs:trade_docs_contract' as const
@@ -31,8 +29,6 @@ const contractListItemSchema = z
     contractTotal: z.string(),
     financeTotal: z.string(),
     differenceTotal: z.string(),
-    currencyScale: z.number().nullable().optional(),
-    currencyScaleFallback: z.boolean().optional(),
     signedAt: z.string().nullable().optional(),
     deliveryDate: z.string().nullable().optional(),
     created_at: z.string().nullable().optional(),
@@ -204,49 +200,6 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       updated_at: toIsoTimestamp(item.updated_at),
       updatedAt: toIsoTimestamp(item.updated_at),
     }),
-  },
-  hooks: {
-    /**
-     * Publishes the rounding scale the head totals were computed with.
-     *
-     * The stored totals do not say whether the currency's own `decimal_places` was used or the
-     * two-decimal fallback, and finance must be able to see that difference: a scope whose
-     * `currencies` rows were never seeded rounds every financial amount to two decimals.
-     */
-    async afterList(payload, ctx) {
-      const items = Array.isArray(payload?.items) ? (payload.items as Array<Record<string, unknown>>) : []
-      const codes = Array.from(
-        new Set(
-          items
-            .map((item) => (typeof item.currencyCode === 'string' ? item.currencyCode : ''))
-            .filter((code) => code.length > 0),
-        ),
-      )
-      if (codes.length === 0) return
-
-      const em = ctx.container.resolve<EntityManager>('em')
-      const tenantId = ctx.auth?.tenantId ?? null
-      const organizationId = ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null
-      if (!tenantId || !organizationId) {
-        for (const item of items) {
-          item.currencyScale = null
-          item.currencyScaleFallback = false
-        }
-        return
-      }
-
-      const scope = { tenantId, organizationId }
-      const byCode = new Map<string, { scale: number; configured: boolean }>()
-      for (const code of codes) {
-        byCode.set(code.toUpperCase(), await readCurrencyScaleInfo(em, scope, code))
-      }
-      for (const item of items) {
-        const code = typeof item.currencyCode === 'string' ? item.currencyCode.toUpperCase() : ''
-        const info = byCode.get(code)
-        item.currencyScale = info?.scale ?? null
-        item.currencyScaleFallback = info ? !info.configured : false
-      }
-    },
   },
   actions: {
     create: {

@@ -41,10 +41,13 @@
 | **供应商产品库**（每个供应商的货品清单：货号/中英品名/申报要素/单位/装箱数/单件毛重 G.W.+单件净重 N.W.+单件体积（cm³）（2026-09-24 起，三项都可留空）/产品尺寸/MOQ/HS/图片，价格按「价格类型 × 币种 × 起订量」维护（表单只录一条**供货价**：币种 + 单价 + 折扣，2026-09-24 起）；可同步为商品，毛重/净重/体积都会写到商品主数据的 `gross_weight`/`net_weight`/`volume`。**2026-09-23 业主口径：采购只维护单件数据，整箱毛重/净重与外箱尺寸已从产品库与商品主数据一并移除**） | **自建** `purchasing`（2026-09-23 从 `sourcing` 整体移交：实体/命令/API/页面都在本模块） | 平台没有“供应商侧货品”实体：报价行是**文档级**的（只能经 `sourcing_quotes.supplier_id` 反查），商品主数据 `products_products` 是内部唯一主源（库存/内部销售/合同需要它），两者都不是“这家供应商卖这些货”的清单。页面挂在「采购」菜单组；实体、命令、API 与页面自 2026-09-23 起整体归 `purchasing`（`sourcing` 的报价提升经 `purchasing` 的命令喂数据，报价行只经只读投影读取）。详见 [`.ai/specs/2026-09-22-supplier-product-library.md`](../../.ai/specs/2026-09-22-supplier-product-library.md) |
 | **购销合同与发票**（采购/销售合同、进项/销项发票、双口径金额） | **自建** `trade_docs` | 平台没有购销合同单据；合同两方向（采购/销售）、发票挂合同、财务金额与合同金额两个口径与差额自管 |
 | **出口收汇与出口退税档案**（是否已收款、涉外收入证明、退税状态/金额/备注、报告草单、退税资料整理，以及订单档案/柜档案两种只读输出） | **自建** `export_finance` | 平台没有收汇与出口退税实体。**两个锚点**：收汇按**采购单**（`export_finance_collections`，唯一键 `(tenant, org, purchase_order_id)`），退税按**柜/发运单**（`export_finance_refunds`，唯一键 `(tenant, org, shipment_id)`）——退税以柜为申报单位，拼柜时按各订单采购金额占比把税额**反向分摊**回订单（读时派生，不落库）。柜与订单的关系只走 `cross_border_shipment_allocations`，不新增关联表；聚合层以只读 Kysely 跨表读取 `purchasing`/`cross_border`/`trade_docs`。详见 [`.ai/specs/2026-09-22-order-file-and-export-finance.md`](../../.ai/specs/2026-09-22-order-file-and-export-finance.md) |
+| **柜级费用与到岸成本**（海运/空运/报关/保险/关税…每笔柜费用的金额+币种+汇率+往来方+附件；到岸成本 = 采购价 + 按采购行分摊的柜费用，读时派生不落库）、**库存资金占用**（单位成本取该 SKU 最近一次已收货柜的到岸单价，其次采购价档，都无则单列未计价）、以及**期间费用单**与**应付 / 应收两本只读台账**（应付按供应商×币种分组、状态复用采购模块的推导；应收三类来源统一行形、是否已收只看收款日期；跨币种一律不加总）；（损益为后续阶段） | **自建** `finance`（2026-09-28 立项，Phase 1–2 已实现并验证） | 平台与既有自建模块都没有费用/成本实体：`cross_border_shipments` 零金额列（运费/关税只有两个单证类型枚举）、收货只动数量（`wms` 无成本层）、`export_finance_collections` 只有状态没有金额 → 钱的口径缺一层。与 `export_finance`（收汇/退税档案）分模块的理由：生命周期与权限面不同（成本毛利敏感），页面共用同一个「财务」菜单组 key（`export_finance.nav.group`）。只写自己的两张表，读 peer 表一律 scoped 只读投影。详见 [`.ai/specs/2026-09-28-finance-ledger-and-cockpit-data.md`](../../.ai/specs/2026-09-28-finance-ledger-and-cockpit-data.md) |
+| **俄方供应链数据同步**（PETKIT 合同 17 个端点：supply 8 = SKU/库存/在途/未识别在途/计划/供应单/参数/映射表；ads 9 = 总览/订单/站内销售/平台销售/月度汇总/结算/广告类型/价格/成本） | **自建** `ru_sync` | provider 代码归 provider 模块：适配器实现 `DataSyncAdapter`（`providerKey: ru_petkit`），每端点一份 zod schema + 快照投影（`(endpoint, 自然键, as_of)` 幂等 upsert）+ 每端点游标（整轮成功才推进）；订单落 `platform_ops.orders.ingest`、结算落 `settlements.import`，其余只入快照；RU 码→商品映射与未映射派生清单同在此模块。详见 [`.ai/specs/2026-09-28-finance-ledger-and-cockpit-data.md`](../../.ai/specs/2026-09-28-finance-ledger-and-cockpit-data.md) |
+| **老板驾驶舱**（只读：供应三数 + 未识别在途 + CN 资金三数 + SKU 覆盖率 + ДРР 双口径 + 周复盘） | **自建** `boss_cockpit` | 平台没有这个聚合面：一页只读、零写表，数据来自 `ru_sync` 快照投影与 `finance` 派生台账；4 个 dashboard widget 与页面读同一个 `GET /api/boss_cockpit/summary`，逐 widget 走 `metadata.features` 门禁；四预警由 `ru_sync` 在对应端点拉取收尾后评估并发 typed event → `notifications`（同条件按 `groupKey` 刷新） |
 | 客户 / 分公司档案 | **自建** `parties`（2026-09-22 决策，Phases 1–3 已实现并验证，迁移已应用；Phase 4 待 Q-P-004） | 官方 CRM 的拓客半部（deal/pipeline/calendar/tasks）不适用、档案半部语义不匹配货代/报关行/银行等服务方 → 买方/分公司/服务方统一进 `parties`（`parties_parties` + `parties_roles` + `parties_bank_accounts`）；`customers` 保留启用（`sales requires customers`，对分公司的内部销售单据仍挂它）。spec：[`.ai/specs/2026-09-22-app-owned-party-master.md`](../../.ai/specs/2026-09-22-app-owned-party-master.md) |
 | 官方 `catalog` 的后台页面 | **全部隐藏**（模块与 API 保留） | 自建 `products` 才是业务商品主数据 → 官方 `catalog` 的 商品/变体/类别 页面通过 `src/modules.ts` 的 `routes.pages` 覆盖隐藏；`config/catalog`（价格类型 + 欧盟单位价展示开关）自 2026-09-23 起同样 `navHidden`——本部署没有任何自有面读它（价格词表是 `products_prices.price_tier`，`purchasing`/`sourcing` 用自己的 `supplier_cost`/`company_offer`，`catalog_price_kinds` 为空），页面仍可 URL 直达、删一行即恢复；`sales` 单据行仍从 catalog 取商品/价格（切换是后续独立切片） |
 | 官方 `dictionaries` 的字典库页面 | **复用** `dictionaries`（引擎）+ **自建页面体**（2026-09-23） | 字典实体、命令、`/api/dictionaries**`、ACL 与「条目」编辑器仍归官方模块；但官方列表不显示字典归属组织，而本部署每个组织各有一份同名词表（`currency`、`supplier_product_unit`…）→ 页面体由 `src/modules/dictionaries/backend/config/dictionaries/page.tsx` 遮蔽包内同名文件，按组织分组、只放开当前组织的写，「所有组织」下整页只读；`page.meta.ts` 转出官方元数据（导航与门禁不变）。见 [`src/modules/dictionaries/README.md`](../../src/modules/dictionaries/README.md) |
-| 对分公司的内部销售 | **复用** `sales`（引擎）+ **自建界面** `internal_sales` | 单据编号/状态/金额/发货/发票/收款仍在官方 `sales` 链；新建与编辑走自建页面（选品用自建 `products`、行自动带官方目录变体桥接）；官方「新建单据」页隐藏、列表保留 → [`.ai/specs/2026-09-22-products-and-trade-docs.md`](../../.ai/specs/2026-09-22-products-and-trade-docs.md) Phase 6 | 报价→订单→发货→退货→发票→贷项→收款整链、单据编号序列、多币种、渠道与报价 |
+| 对分公司的内部销售 | **复用** `sales`（引擎）+ **自建界面** `internal_sales` | 单据编号/状态/金额/发货/发票/收款仍在官方 `sales` 链；新建与编辑走自建页面（选品用自建 `products`、行自动带官方目录变体桥接；买方 = 关联组织 + 外部客户，2026-09-28 见下「已切换的 `customers` 消费方」）；官方「新建单据」页隐藏、列表保留 → [`.ai/specs/2026-09-22-products-and-trade-docs.md`](../../.ai/specs/2026-09-22-products-and-trade-docs.md) Phase 6 | 报价→订单→发货→退货→发票→贷项→收款整链、单据编号序列、多币种、渠道与报价 |
 | 多仓库存与仓内作业 | **复用** `wms` | 仓库/库位/批次/余额/预留/**移动台账**/盘点 + 收货/调整/移库/预留/分配命令 |
 | 币种与汇率 | **复用** `currencies` | 汇率主数据 + 抓取配置 |
 | 组织与多公司 | **复用** `directory` | 组织树 + 后代展开可见性，配置见 [`multi-company-org-model.md`](./multi-company-org-model.md) |
@@ -75,6 +78,7 @@
 | `products`、`purchasing`（采购单 + 供应商）、`trade_docs`、`platform_ops`、`internal_sales`、`sourcing`（报价面板）、`export_finance`（收汇/退税） | `GET /api/currency_policy/currencies`（自建） | 币种下拉——2026-09-22 已从 `customers` 托管的字典路由切换过来，不再依赖 `customers` 及其 `customers.people.view` 门禁；数据仍取自官方 `dictionaries` 模块（见 [`.ai/specs/2026-09-22-app-owned-party-master.md`](../../.ai/specs/2026-09-22-app-owned-party-master.md) Phase 3） | 客户端加载器统一在 `currency_policy/lib/clientOptions.ts`（`loadCurrencyOptions` / `useCurrencyOptions` / `withCurrentCurrency`），`sourcing` 经 `components/currencyOptions.ts` 转出；各模块早先自带的 `CURRENCY_DICTIONARY_URL` 常量仍在使用，尚未收敛 |
 | `products` | `GET /api/catalog/products` | 商品表单的「官方目录链接」字段（变体解析桥） | `products/components/ProductForm.tsx:561` |
 | `cross_border` | `GET /api/wms/warehouses`、`GET /api/wms/locations` | 发运单的仓库/库位选择器 | `cross_border/components/ShipmentForm.tsx:49-50` |
+| `products`（分发对话框）、`internal_sales`（买方选择器） | `GET /api/directory/organization-switcher`（官方） | 组织选项：分发目标 = 调用者可写组织 − 当前组织；内部买方 = `selectable` 节点 − 当前组织。共享装配在 `src/lib/orgs/organizationOptions.ts`（与顶栏切换器同一份 payload，因此可见性规则天然一致） | `products/components/DistributeProductsDialog.tsx`、`internal_sales/components/InternalSalesForm.tsx` |
 
 币种链路现在只有**一跳**到官方数据：路由在自建 `currency_policy`（门禁 `currencies.view`），数据取自 `dictionaries` 模块的
 `dictionaries`/`dictionary_entries` 表。切换前的旧路由 `customers/api/dictionaries/currency/route.ts` 仍在官方包里、无人调用。
@@ -85,18 +89,25 @@
 金额格式统一用框架的 `formatCurrency`。规格与分期见
 [`.ai/specs/2026-09-24-cny-equivalent-amounts.md`](../../.ai/specs/2026-09-24-cny-equivalent-amounts.md)。
 
+**已切换的 `customers` 消费方**：`internal_sales` 内部销售表单的买方选择器（2026-09-28）不再读
+`customers/companies`——买方改为**关联组织**（顶栏组织切换器 payload：可见组织集 − 当前组织，分公司账号因此没有
+内部选项）**加外部客户**（自建 `parties`，角色 `buyer`/`branch`，由该路由新增的可选 `?roles=` 过滤）的合并选择器；
+选中即回填买方名称，链接冻结在单据快照 `customerSnapshot.internalSales.{organizationId|partyId}`（不占
+`customerEntityId`——那是 `customer_entities.id`）。决定与证据：
+[`.ai/specs/2026-09-28-internal-sales-buyer-linkage.md`](../../.ai/specs/2026-09-28-internal-sales-buyer-linkage.md)。
+
 **尚未切换的 `customers` 消费方**（各自 spec 负责，不由 `parties` spec 单方面改语义）：
 
 | 消费方 | 位置 | 说明 |
 |---|---|---|
 | `purchasing` 采购单的「客户」选择器 | `purchasing/components/orderFormOptions.ts:21` | `.ai/specs/2026-09-22-order-file-and-export-finance.md` 给采购单加了 `customer_id`，其对方仍取自 `customers/companies`；该 spec 决定何时切 `parties` |
-| `internal_sales` 内部销售表单的对方选择器 | `internal_sales/components/InternalSalesForm.tsx:46` | 对分公司的内部销售；分公司已是 `parties` 里的主体，切换与否则由 `internal_sales` 的 spec 决定 |
 
 ### 服务端契约消费（实体 / 命令 / 工具函数）
 
 | 消费方 | 官方契约 | 形式 | 位置 |
 |---|---|---|---|
 | `cross_border` | `wms.inventory.receive` | 命令（`dispatchPeerCommand`）：收货入账并回写采购单行已收数量 | `cross_border/commands/shipments.ts:586` |
+| `products` | `directory:organization` | 直接 import 实体：分发命令在写入前校验目标组织存在且属于本租户（无 ACL 组织集的调用者路径） | `products/commands/distribution.ts:8` |
 | `currency_policy` | `currencies:currency`、`dictionaries:dictionary*`、`directory:organization` | 直接 import 实体，对账 FX 主数据与币种字典 | `currency_policy/lib/apply.ts:2-3`、`cli.ts:4` |
 | `products`、`purchasing`、`sourcing` | `dictionaries:dictionary*` + `normalizeDictionaryValue` | 服务端校验币种码必须存在于字典 | 各模块 `lib/currencyDictionary.ts` |
 | `scope_guards` | `auth:user/role/acl` 实体 + `RbacService`、`directory` scope 工具 | 拦截越权写入 | `scope_guards/lib/scopeGuard.ts:3-5` |
@@ -136,7 +147,7 @@
 | SKU/变体归属 | **自建进** `products`（2026-09-22）：变体（SKU）成为 `products` 的一等实体；官方 `catalog` 保留启用并退化为 legacy/可选链接。**分两段走**：Phases 1–2（SKU 主数据 + 商品表单步骤 + option source）现在就绪；发运与海外仓收货的切换（wms 轮）延后 | 库存按变体入账而变体只在官方 `catalog`（`.ai/lessons/stock-receipt-needs-variant-resolution.md`），商品主数据被拆成两处；`sales` 依赖 `catalog` 故不能停用。spec → [`.ai/specs/2026-09-22-product-variants.md`](../../.ai/specs/2026-09-22-product-variants.md) |
 | 是否自建一套产品目录 / eject `catalog` | **改为自建** `products`；eject 仍**不做**，官方 `catalog` 保留启用 | 业务口径变更（2026-09-22）：官方组件需大量定制，业务要自管 UI 与流程 → 自建模块只利用平台底层能力（CRUD/命令/scope/附件/币种/事件），并用 `catalog_product_id` + 快照保持与官方链路兼容。原「复用 `catalog`」结论的依据（eject 的升级责任）仍成立，所以不 eject → [eject 实测](../../.ai/analysis/2026-09-21-catalog-eject-spike.md) |
 | 自产 / 委托加工商品怎么建模（2026-09-23） | **当普通商品建库，不新增链路**：外购、自产、委托加工共用 `products` 一套主数据与三档价格；货源只影响「品牌 / 型号 / 成本价」的填法（`brand` 已去掉 `'Petkit'` 默认值，`manufacturer_model` 业务名为「型号」，`purchase` 档界面标签为「成本价（采购 / 自产）」）。发运/收货仍要求**一张采购单 + 商品的官方目录链接**，自产商品把工厂建成供应商即可；不做 BOM/工单/成本核算 | 业务确认（2026-09-23）：自产部分是**委托加工（外部工厂）**，前面的建档只要「普通商品 + 成本价/销售价」，后面的销售链路走系统原有流程。因此 `purchasing`→`cross_border`→`wms` 的锚点全部保持不动；若将来出现"没有供应商单据的自产入库"，那是独立立项（改动面：`cross_border` 分摊来源、`export_finance` 收汇锚点、订单档案行集） |
-| 金额口径 | **双口径**：财务金额 = `HALF_UP(数量×单价, 币种小数位)`（绑定已确认发票行时取发票金额）；合同金额 = `HALF_UP(数量×单价, 2)`；差额落合同头 | 财务金额必须与发票对得上、合同金额只要 2 位四舍五入；量化必须走 BigInt（`toFixed` 有二进制误差）→ [`.ai/specs/2026-09-22-products-and-trade-docs.md`](../../.ai/specs/2026-09-22-products-and-trade-docs.md) |
+| 金额口径 | **统一 2 位**：财务金额 = `HALF_UP(数量×单价, 2)`（绑定已确认发票行时取发票金额）；合同金额 = `HALF_UP(数量×单价, 2)`；差额落合同头。金额与币种无关（JPY 也是 2 位），单价恒 4 位；量化必须走 BigInt 引擎单点（`toFixed` 有二进制误差）→ [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](../../.ai/specs/2026-09-28-money-scale-2dp-unification.md) |
 | 业务模块能否随业务增删 | **可以**，纯注册表行为、不动数据 | 收缩演练：关掉 `sales`+`wms` 后 `/api` 240→181、`/backend` 105→80，`yarn db:generate` 零迁移 → [收缩实测](../../.ai/analysis/2026-09-21-disable-official-chain-drill.md) |
 | 订单档案字段归属（业务给的 35 字段清单） | **不建"统一订单"实体**：字段按四段归位——采购段（`purchasing`：业务订单号/订单描述/采购负责人/客户 + 采购单级单证）、发运段（`cross_border`：柜型/箱号/封条/订舱号·提单号 + 出口单证）、贸易单证段（`trade_docs`：合同盖章件、KC 订单价格 `finance_total`、销项发票 USD）、财务段（`export_finance`：收汇按单、退税按柜 + 两者单证）；业务/财务两种输出是只读投影，订单状态由采购单状态 + 发运里程碑**派生**，不新存列 | 35 字段里 12 个已存在、9 个由既有机制（单证行/付款行/派生金额）承载，仅 14 个是真缺口；复制采购单/发运单数据的"统一订单"会立刻产生第二份真源。多文件一律用"单证行"（一行一个文件）而非新的一对多附件范式 → [`.ai/specs/2026-09-22-order-file-and-export-finance.md`](../../.ai/specs/2026-09-22-order-file-and-export-finance.md) |
 | 国内是否建仓 | **不建**（不拼柜、无退货回国） | 建仓但不入库只会产生假库存；在途挂在发运单上 |
@@ -172,6 +183,7 @@
 | 定金 / 尾款 | 采购付款的两个阶段，允许部分支付 |
 | 变体 | 同一商品下的 SKU 维度。商品主数据自建后变体也进 `products`（`products_variants`，商品表单步骤 4）；库存仍按变体入账，收货要求商品有「官方目录链接」桥接官方 `catalog` 变体 |
 | 报价单 / 供应商报价 | 供应商在某一时点给出的商品价格集合；在 `sourcing` 里是一张 `sourcing_quotes`（可来自 Excel 导入，也可手工录入），确认后单号 `SQ-<年>-<4位>` |
+| 报价变更分析（版本对比 / 版本序列 / 货号时间线） | 对存档的**只读**投影：任选两份报价按"归一派生 SKU"逐行对比，得到 新增 / 消失 / 涨价 / 降价 四类，另有 币种不同、缺价、未匹配 三种诚实态；**版本**=已确认/已归档 + 有版式指纹，同一版式**同日折叠为一版**（`quote_date` 优先于导入时间）；货号时间线给出单个货号历次报价与首/末次出现。实现于 `src/modules/sourcing/lib/quoteChanges.ts`，spec [`.ai/specs/2026-09-24-supplier-quotation-change-analysis.md`](../../.ai/specs/2026-09-24-supplier-quotation-change-analysis.md) |
 | 版式指纹 | 工作表名 + 归一化表头算出的 16 位哈希；同一个供应商下次发来同样版式时用它命中已保存的列映射模板 |
 | 提升 | 把报价单里勾选的行写成商品主数据 + `purchase` 档价格的动作；按 SKU 匹配已有商品，空值不覆盖，重复执行只计 `skipped` |
 | 供应商产品库 / 供应商货品 | 某家供应商卖的商品清单：`purchasing_supplier_products`，键是 `(供应商, 货号)`；当前价格在 `purchasing_supplier_product_prices`（`price_kind × 币种 × 起订量`：**供应商供货价**；2026-09-24 起**本公司报价**改由商品主数据的 `internal`（内部结算价）档维护，产品库列表只读展示），折扣挂在产品库行上（`discount_percent`，**0–100 的整数**，折后价 = 单价 ×（1 − 折扣），建档时写进商品的 `purchase`（成本价）档），报价单仍是谈判文档、采购单行价仍是谈判值 |
@@ -181,6 +193,22 @@
 | 同步字段到商品 | 已关联的行把当前非空字段与 `supplier_cost` 价推回商品（`purchasing.supplier-products.sync-fields`）；`promote` 对已关联行是幂等的，所以这条是产品库改完之后唯一的回写路径。不碰官方目录链接、`internal`/`export` 价与变体 |
 | 官方目录链接 | 商品主数据 `products_products.catalog_product_id` → 官方 `catalog` 商品；发运与海外仓收货按**变体**入账，所以这是「可发运/可收货」的前置（商品页填写，产品库的下一步提示直达这里） |
 
+### 业务术语 ↔ 系统单据（业务说的 X 在系统里叫什么）
+
+| 业务说的 | 系统里是 | 承载 / 状态 |
+|---|---|---|
+| 采购订单（PO） | 采购单 `/backend/purchasing/orders`，单号 `PO-<年>-<4位>` | `purchasing_purchase_orders` |
+| 内部销售订单（PO） | 「总部 → 分公司」的销售订单，界面在 `internal_sales`（引擎仍是 installed `sales`），单号 `ORDER-` | installed `sales` 单据；本期两处都挂缩写 PO，按上下文区分 |
+| 形式发票（PI） | 形式发票（PI）——发货前开给分公司/供应商的收款依据，单号 `PI-<年>-<4位>`（签发时按组织发号） | **已实现（2026-09-28，Phase 1）**：`trade_docs_documents(kind='proforma')` + `/backend/trade-docs/proformas`，见 [`.ai/specs/2026-09-24-pi-ci-tax-invoice-documents.md`](../../.ai/specs/2026-09-24-pi-ci-tax-invoice-documents.md) |
+| 商业发票（CI） | 商业发票（CI）——出口报关/清关用，单号 `CI-<年>-<4位>`（签发时按组织发号） | **已实现（2026-09-28，Phase 2）**：`trade_docs_documents(kind='commercial')` + `/backend/trade-docs/commercial-invoices`；明细按发运单的销售分摊汇总（无销售分摊时回退采购分摊），逐行留来源；旧槽位（发运单详情的 `commercial_invoice`）只读保留、不再新建 |
+| 税务发票（增值税专用 / 普通 / 出口发票） | 税务发票台账 `/backend/trade-docs/invoices`（「财务」组），销项单号 `TI-<年>-<4位>`（确认时发号） | `trade_docs_invoices`；**已实现（2026-09-28，Phase 3）**：票种 + 税率/税额/价税合计（`lib/invoiceTax.ts`）；出口发票（0%）不参与合同财务金额 |
+| 供应商报价 | 供应商报价单（SQ）`/backend/sourcing/quotes`，单号 `SQ-<年>-<4位>` | `sourcing_quotes`（变更分析在详情与「变更」页签） |
+| 内部销售报价 | 内部销售报价单 `/backend/internal-sales/quotes`（**≠ PI**） | installed `sales` 报价 |
+| 合同 | 购销合同（采购 `PC-` / 销售 `SC-`）`/backend/trade-docs/contracts` | `trade_docs_contracts` |
+| 发运单 / 柜 | 发运单 `/backend/cross_border/shipments` | `cross_border_shipments` |
+
+> 界面命名口径（2026-09-28）：业务缩写进界面名，用括号形式（`内部销售订单（PO）`、`供应商报价单（SQ）`）；报价单不挂缩写，因为它不是 PI。括号内的拉丁缩写按注释处理，不算第二种语言（[`i18n.md`](./i18n.md)）。
+
 ## 开放问题
 
 | 问题 | 影响 | 谁来定 |
@@ -188,13 +216,13 @@
 | `parties` 服务方专有属性（货代追踪/报关资质/银行账户）与「按名称搜索」是否需要明文投影 | 决定 Phase 4 的建模与是否需要额外列；Phase 1–3 不受阻 | 见 [`.ai/specs/2026-09-22-app-owned-party-master.md`](../../.ai/specs/2026-09-22-app-owned-party-master.md) 的 Q-P-004 / Q-P-008 | 业务 + 技术 |
 | **wms 轮**：自建 SKU 如何进入 wms 账（传自建变体 id 还是保留 catalog 桥）、存量库存与历史单据处理、采购/发运粒度、新 SKU 是否即时建 inventory profile | 决定发运与海外仓收货能否脱离官方 catalog；已量出的证据（wms 列为纯 uuid 无外键、receive 会读 `catalog_product_variant` 且要求 profile 行）已沉淀 | 见 [`.ai/specs/2026-09-22-product-variants.md`](../../.ai/specs/2026-09-22-product-variants.md) 的 *Deferred — the wms round*（Q-V-003/004/005/007/008） | 业务 + 技术（等 wms 流程打通时再定） |
 | 平台与货代的对接形态：API 直连、平台导出文件，还是第三方 ERP 服务商 | 决定 `platform_ops` 连接器形状与凭证存放 | 业务 + 技术 |
-| 跨组织主数据分发（总部商品给各分公司） | 影响 `catalog` 使用方式与是否需要共享读路径 | 业务 + 技术 |
+| ~~跨组织主数据分发（总部商品给各分公司）~~ **已决（2026-09-28）** | 选**分发副本**：`products.items.distribute` 把总部的商品（字段白名单 + 变体 + 首次价格）复制进目标组织，副本用 `source_product_id` 回指来源；共享读路径被否决（会破坏「分公司看不到上级」的可见性不变量，且价格只有一个来源）。影响面：`products` 一列一命令一路由 + 商品列表两个分发入口 | 见 [`.ai/specs/2026-09-28-product-distribution-to-branches.md`](../../.ai/specs/2026-09-28-product-distribution-to-branches.md) | 业务已定（业主 2026-09-28） |
 | 提醒规则（触发、阈值、收件人、渠道） | 影响通知与定时作业设计 | 业务 |
 | 货代是否提供实时轨迹 | 决定用实时状态还是里程碑模型 | 业务（问货代） |
 
 ## 验证方式
 
 1. 模块清单一致：`grep -n "id: '" src/modules.ts` 与 `.mercato/generated/enabled-module-ids.generated.ts` 对齐。
-2. 链路里每张单据都能落到模块：`sales`（`/backend/sales/{quotes,orders,documents}`）、`wms`（`/backend/wms/{inventory,warehouses,reservations,movements}`）、`products`（`/backend/products/{items,types,categories}`）、`sourcing`（`/backend/sourcing/quotes` 供应商报价）、`purchasing`（`/backend/purchasing/{suppliers,orders,supplier-products}` 供应商产品库自 2026-09-23 起归本模块）、`trade_docs`（`/backend/trade-docs/{contracts,invoices}`）、`purchasing`（`/backend/purchasing/suppliers`）、`catalog`（`/api/catalog/products`）。其中 `sales`/`wms`/`catalog` 的官方页面都只做**导航隐藏**（`src/modules.ts` 的 `routes.pages` + `metadata.navHidden`，URL 直达仍可用）——不用 `null`，因为官方通知的 `linkHref` 在创建时冻结成行数据（[`.ai/lessons/module-override-page-hide-needs-routes-domain.md`](../../.ai/lessons/module-override-page-hide-needs-routes-domain.md)）。
-3. 菜单按角色成组：侧边栏为 采购 / 外贸 / 财务 / 商品主数据 / 交易对手 / 平台运营 六组业务角色，其后是**基础数据**（2026-09-24 起：字典维护 `/backend/dictionaries`，见 [`.ai/specs/2026-09-24-dictionary-main-menu-entry.md`](../../.ai/specs/2026-09-24-dictionary-main-menu-entry.md)）——“采购”只有一组（供应商、供应商产品库、采购单、供应商报价），“外贸”含内部销售报价/订单、购销合同、发票、发运单，“财务”含订单档案、柜档案。同一 `pageGroupKey` 才是同一个组，组的默认顺序由 `overrides.nav.groupOrder` 前置声明。组 id 同时是按用户持久化的侧边栏偏好键（`/backend/sidebar-customization`）：本次只新增 `export_finance.nav.group`、删掉 `sourcing.nav.group`/`internal_sales.nav.group`/`trade_docs.nav.group`，**不做数据迁移**，点过自定义排序的用户在那三组消失后按新分组重排即可；新建的角色要看到「供应商产品库」入口需 `yarn mercato auth sync-role-acls` + 重启（`.ai/lessons/module-features-need-role-acl-sync.md`）。
-4. 主源表与本仓 spec 的 REQ 对齐：`purchasing` → [`.ai/specs/2026-09-21-purchasing-module.md`](../../.ai/specs/2026-09-21-purchasing-module.md)；`products` + `trade_docs` → [`.ai/specs/2026-09-22-products-and-trade-docs.md`](../../.ai/specs/2026-09-22-products-and-trade-docs.md)；`sourcing` → [`.ai/specs/2026-09-22-supplier-quotation-import.md`](../../.ai/specs/2026-09-22-supplier-quotation-import.md) 与 [`.ai/specs/2026-09-22-supplier-product-library.md`](../../.ai/specs/2026-09-22-supplier-product-library.md)（供应商产品库）；总纲 → [`.ai/specs/2026-09-21-app-owned-business-module.md`](../../.ai/specs/2026-09-21-app-owned-business-module.md)。
+2. 链路里每张单据都能落到模块：`sales`（`/backend/sales/{quotes,orders,documents}`）、`wms`（`/backend/wms/{inventory,warehouses,reservations,movements}`）、`products`（`/backend/products/{items,types,categories}`）、`sourcing`（`/backend/sourcing/quotes` 供应商报价单（SQ））、`purchasing`（`/backend/purchasing/{suppliers,orders,supplier-products}` 供应商产品库自 2026-09-23 起归本模块）、`trade_docs`（`/backend/trade-docs/{contracts,invoices}`）、`purchasing`（`/backend/purchasing/suppliers`）、`catalog`（`/api/catalog/products`）。其中 `sales`/`wms`/`catalog` 的官方页面都只做**导航隐藏**（`src/modules.ts` 的 `routes.pages` + `metadata.navHidden`，URL 直达仍可用）——不用 `null`，因为官方通知的 `linkHref` 在创建时冻结成行数据（[`.ai/lessons/module-override-page-hide-needs-routes-domain.md`](../../.ai/lessons/module-override-page-hide-needs-routes-domain.md)）。
+3. 菜单按角色成组：侧边栏为 采购 / **出口业务** / 财务 / 商品主数据 / 交易对手 / 平台运营 六组业务角色，其后是**基础数据**（2026-09-24 起：字典维护 `/backend/dictionaries`，见 [`.ai/specs/2026-09-24-dictionary-main-menu-entry.md`](../../.ai/specs/2026-09-24-dictionary-main-menu-entry.md)）——“采购”只有一组（供应商、供应商产品库、采购单、供应商报价单（SQ）），“出口业务”含内部销售报价、内部销售订单（PO）、购销合同、发运单（2026-09-28 起组名由「外贸」改为「出口业务」，**只改 label、不改 key**），“财务”含订单档案、柜档案与税务发票台账（2026-09-28 起从出口业务组移入），以及 2026-09-28 新增的柜费用 / 期间费用 / 到岸成本 / 库存资金占用 / 应付台账 / 应收台账六页（自建 `finance`，`pageOrder` 420+）。同一 `pageGroupKey` 才是同一个组，组的默认顺序由 `overrides.nav.groupOrder` 前置声明。组 id 同时是按用户持久化的侧边栏偏好键（`/backend/sidebar-customization`）：本次只新增 `export_finance.nav.group`、删掉 `sourcing.nav.group`/`internal_sales.nav.group`/`trade_docs.nav.group`，**不做数据迁移**，点过自定义排序的用户在那三组消失后按新分组重排即可；新建的角色要看到「供应商产品库」入口需 `yarn mercato auth sync-role-acls` + 重启（`.ai/lessons/module-features-need-role-acl-sync.md`）。
+4. 主源表与本仓 spec 的 REQ 对齐：`purchasing` → [`.ai/specs/2026-09-21-purchasing-module.md`](../../.ai/specs/2026-09-21-purchasing-module.md)；`products` + `trade_docs` → [`.ai/specs/2026-09-22-products-and-trade-docs.md`](../../.ai/specs/2026-09-22-products-and-trade-docs.md)；`sourcing` → [`.ai/specs/2026-09-22-supplier-quotation-import.md`](../../.ai/specs/2026-09-22-supplier-quotation-import.md)、[`.ai/specs/2026-09-24-supplier-quotation-change-analysis.md`](../../.ai/specs/2026-09-24-supplier-quotation-change-analysis.md)（报价变更分析）与 [`.ai/specs/2026-09-22-supplier-product-library.md`](../../.ai/specs/2026-09-22-supplier-product-library.md)（供应商产品库）；总纲 → [`.ai/specs/2026-09-21-app-owned-business-module.md`](../../.ai/specs/2026-09-21-app-owned-business-module.md)。

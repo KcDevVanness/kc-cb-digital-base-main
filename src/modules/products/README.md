@@ -38,8 +38,8 @@ app 自有模块。业务商品主数据的**唯一来源**：产品线 → 产�
 | 层 | 内容 |
 |---|---|
 | 实体（`data/entities.ts`） | `ProductsType` / `ProductsCategory` / `ProductsProduct` / `ProductsPrice` / `ProductsVariant` → 表 `products_types` / `products_categories` / `products_products` / `products_prices` / `products_variants` |
-| API | `GET|POST|PUT|DELETE /api/products/items`、`/types`、`/categories`；`GET /api/products/items/{id}`（产品 + 变体）；`GET|PUT|POST /api/products/prices`（整组价格替换；`POST` 与 `PUT` 同一 `products.prices.replace` 动作）；`GET /api/products/variants/options`（SKU 选择器数据源） |
-| 命令 | `products.types.{create,update,delete}`、`products.categories.{create,update,delete}`、`products.items.{create,update,delete}`（变体随产品一起写入）、`products.prices.replace` |
+| API | `GET|POST|PUT|DELETE /api/products/items`、`/types`、`/categories`；`POST /api/products/items/distribute`（分发到其它组织，幂等）；`GET /api/products/items/{id}`（产品 + 变体）；`GET|PUT|POST /api/products/prices`（整组价格替换；`POST` 与 `PUT` 同一 `products.prices.replace` 动作）；`GET /api/products/variants/options`（SKU 选择器数据源） |
+| 命令 | `products.types.{create,update,delete}`、`products.categories.{create,update,delete}`、`products.items.{create,update,delete}`（变体随产品一起写入）、`products.items.distribute`（跨组织分发副本）、`products.prices.replace` |
 | 后台页面 | `/backend/products/items`（列表/新建/编辑，含三档价格行与变体步）、`/backend/products/taxonomy`（**产品分类**：产品品类树 + 产品线两个页签）；`/backend/products/types` 与 `/backend/products/categories` 是同一页的旧入口（`navHidden`，各自渲染对应页签），create/edit 页仍在原路径且全部 `navHidden` |
 | 事件 | `products.item.{created,updated,deleted}`、`products.type.*`、`products.category.*`、`products.prices.updated` |
 | 权限 | `products.items.view|manage`、`products.types.manage`、`products.categories.manage`、`products.prices.manage`（变体继承 `products.items.*`，不新增 feature） |
@@ -144,6 +144,30 @@ app 自有模块。业务商品主数据的**唯一来源**：产品线 → 产�
 - **收货仍走官方目录桥**（本阶段有意为之）：把 `wms` / `cross_border` 切到自有变体是后续独立一轮
   （见 spec 的 *Deferred — the wms round*）。
 
+## 商品分发到分公司（2026-09-28）
+
+商品主数据是**组织级私有**，而分公司（俄罗斯/东南亚）要对外销售就得在自己组织里有商品行。本模块新增一条
+**幂等的分发命令**把总部的商品复制进目标组织（spec：[`.ai/specs/2026-09-28-product-distribution-to-branches.md`](../../../.ai/specs/2026-09-28-product-distribution-to-branches.md)）：
+
+| 层 | 内容 |
+|---|---|
+| 入口 | `/backend/products/items` 的**行操作**「分发到分公司」（该商品）与**表头按钮**「分发到分公司」（本组织全部在售商品）→ 对话框：目标组织多选（来源 = 顶栏组织切换器 payload 的 `selectable` 节点 − 当前组织）+ 结果摘要（`New N · updated M`，跳过项逐条列出）。**可见性**：这两个入口与「新建/编辑/删除」一并按 `products.items.manage` 显示（`hasFeature(chrome payload)`，与 `purchasing` 供应商库同一写法）——只有 `products.items.view` 的账号（如分公司业务员看自己那 9 行副本）只看到只读列表与导出，服务端仍是最终门禁 |
+| API | `POST /api/products/items/distribute`（`products.items.manage`）：`{ productIds?: uuid[]（≤200）, organizationIds: uuid[]（1..50） }` → `{ created, updated, skipped: [{ sku, organizationId, reason }] }`（200） |
+| 命令 | `products.items.distribute`（`isUndoable: false`，与 `purchasing.supplier-products.promote-batch` 同口径：批量 fan-out 的撤销靠目标组织内删除，审计仍记录命令与载荷） |
+| 列 | `products_products.source_product_id`（可空，外键 → 自身 `on delete set null`，索引 `(organization_id, tenant_id, source_product_id)`）；列表/详情投影出 `sourceProductId` |
+
+**分发规则（有意为之）**：
+
+- **副本 = 字段白名单 + 变体 + 首次价格**：字段逐项列出（`lib/distribution.ts`），**不**复制 `typeId`/`categoryId`
+  （来源组织的分类树）、`catalogProductId`/`catalogSnapshot`（来源组织的官方目录行）、`notes`；变体按 `code` upsert
+  （不删除目标侧新增的变体）；价格**只在首次创建时**复制——此后价格归目标组织自管，重复分发不回写（避免悄悄改分公司的对外销售价）。
+- **幂等靠来源链接**：命中 `source_product_id` 的行走**更新**；同 SKU 但无链接（对方自建）→ `skipped: sku_taken`，
+  不覆盖、不中断其余商品；来源组织自身永远不会被写入。
+- **安全**：来源 = 会话所选组织（`ensureScope`）；每个目标组织逐个对命令上下文的 `ctx.organizationIds`
+  （ACL 展开后的可写组织集，`null` = 不受限角色）校验，越界 **403 且零写入**（校验先于任何写）。
+- **不传播删除、不做自动同步**：总部删除/停用不会影响副本；同步是显式动作（可重复执行）。
+- **分类/产品线不随分发复制**（非目标）：副本的 `typeId`/`categoryId` 为空，需要时另立项。
+
 ## 规则（有意为之）
 
 - **产品品类树的层级列是推导值**：`root_id` / `tree_path` / `depth` / `ancestor_ids` / `child_ids` /
@@ -177,6 +201,10 @@ yarn jest --config jest.config.cjs src/modules/products
 #      去掉一行再 PUT → 该行 deleted_at 有值且编码仍被占用（重开同码 409）；重复编码/两个默认 400；
 #      GET /api/products/variants/options?productId=… 返回「产品名 · 编码 — 名称」；
 # 停用态不入默认列表；无权限 403；跨组织 404；旧 updatedAt 409（只改变体也会 409）
+# 分发：HQ 建商品（含变体 + 一档价）→ 行操作/表头「分发到分公司」→ 选下级组织 → 结果 New 1 · updated 0；
+#      目标组织列表出现副本且 sourceProductId 指向来源、价格随首次复制；再分发 → updated 1 且行数不变、价格不变；
+#      目标已自建同 SKU → 该 SKU 进 skipped（sku_taken），其余照常；分公司令牌分发到上级组织 → 403 且零写入；
+#      分公司行选品器（/backend/internal-sales/quotes/create）能选到副本
 # 分类页：/backend/products/taxonomy 两个页签可切换（URL 带 ?tab=lines）；/backend/products/types 与 /categories 落到对应页签；
 #        侧栏「商品主数据」只有 产品 / 产品分类（无 create 子项）；
 #        品类树默认展开、折叠隐藏整枝、键盘（Tab+Enter）可切换；行「新增子类」预填上级并创建成功；

@@ -1,14 +1,14 @@
 export const metadata = {
   requireAuth: true,
   requireFeatures: ['trade_docs.invoices.view'],
-  pageTitle: 'Invoices',
+  pageTitle: 'Tax invoice ledger',
   pageTitleKey: 'trade_docs.invoices.page.title',
-  pageGroup: 'Cross-Border',
-  pageGroupKey: 'cross_border.nav.group',
-  pageOrder: 330,
+  pageGroup: 'Finance',
+  pageGroupKey: 'export_finance.nav.group',
+  pageOrder: 420,
   icon: 'receipt',
   breadcrumb: [
-    { label: 'Invoices', labelKey: 'trade_docs.invoices.page.title' },
+    { label: 'Tax invoice ledger', labelKey: 'trade_docs.invoices.page.title' },
   ],
 }
 

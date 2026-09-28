@@ -25,8 +25,11 @@ import { EmptyState } from '@open-mercato/ui/primitives/empty-state'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { AMOUNT_SCALE, toScaledUnits } from '../lib/money'
 import { contractStatusLabel, directionLabel, invoiceStatusLabel, type ContractStatus } from './contractLabels'
+import { invoiceKindLabel } from './InvoicesTable'
 import { downloadApiFile } from './downloadFile'
 
 const CONTRACTS_API_PATH = 'trade_docs/contracts'
@@ -71,6 +74,7 @@ type ContractHead = {
   signedAt: string | null
   deliveryDate: string | null
   paymentTerms: string | null
+  incoterms: string | null
   shippingMethod: string | null
   destination: string | null
   marks: string | null
@@ -78,7 +82,6 @@ type ContractHead = {
   generatedAttachmentId: string | null
   attachmentId: string | null
   updatedAt: string | null
-  currencyScaleFallback: boolean
   counterpartySnapshot: Record<string, unknown> | null
   ourPartySnapshot: Record<string, unknown> | null
 }
@@ -103,6 +106,7 @@ type InvoiceRecord = {
   id: string
   number: string | null
   direction: string
+  invoiceKind: string | null
   status: string
   total: string
   currencyCode: string
@@ -145,6 +149,7 @@ function toHead(item: Record<string, unknown>): ContractHead {
     signedAt: (item.signedAt ?? null) as string | null,
     deliveryDate: (item.deliveryDate ?? null) as string | null,
     paymentTerms: (item.paymentTerms ?? null) as string | null,
+    incoterms: (item.incoterms ?? null) as string | null,
     shippingMethod: (item.shippingMethod ?? null) as string | null,
     destination: (item.destination ?? null) as string | null,
     marks: (item.marks ?? null) as string | null,
@@ -152,7 +157,6 @@ function toHead(item: Record<string, unknown>): ContractHead {
     generatedAttachmentId: (item.generatedAttachmentId ?? null) as string | null,
     attachmentId: (item.attachmentId ?? null) as string | null,
     updatedAt: (item.updatedAt ?? null) as string | null,
-    currencyScaleFallback: item.currencyScaleFallback === true,
     counterpartySnapshot: (item.counterpartySnapshot ?? null) as Record<string, unknown> | null,
     ourPartySnapshot: (item.ourPartySnapshot ?? null) as Record<string, unknown> | null,
   }
@@ -181,6 +185,7 @@ function toInvoice(item: Record<string, unknown>): InvoiceRecord {
     id: String(item.id),
     number: (item.number ?? null) as string | null,
     direction: String(item.direction ?? 'inbound'),
+    invoiceKind: (item.invoiceKind ?? item.invoice_kind ?? null) as string | null,
     status: String(item.status ?? 'draft'),
     total: String(item.total ?? '0'),
     currencyCode: String(item.currencyCode ?? 'CNY'),
@@ -389,6 +394,10 @@ function ContractScanSection({ contractId, attachmentId, updatedAt, onChanged }:
         </Button>
         {attachmentId ? (
           <>
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              label={t('trade_docs.contracts.attach.preview')}
+            />
             <a
               className="text-sm font-medium hover:underline"
               href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
@@ -568,7 +577,8 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
   if (!head) return <RecordNotFoundState label={t('trade_docs.contracts.form.notFound')} backHref={LIST_HREF} />
 
   const actions = ALLOWED_ACTIONS[head.status]
-  const difference = Number(head.differenceTotal)
+  // Scaled units, not a float: the difference is an amount, so "is there a difference?" is exact.
+  const hasDifference = toScaledUnits(head.differenceTotal, AMOUNT_SCALE) !== 0n
 
   return (
     <div className="space-y-6">
@@ -607,11 +617,6 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
       <section className="space-y-3">
         <SectionHeader title={t('trade_docs.contracts.detail.amounts.title')} />
         <p className="text-xs text-muted-foreground">{t('trade_docs.contracts.detail.amounts.hint')}</p>
-        {head.currencyScaleFallback ? (
-          <p className="text-xs text-status-warning-text" role="status">
-            {t('trade_docs.contracts.hints.currencyScaleFallback')}
-          </p>
-        ) : null}
         <div className="grid gap-4 sm:grid-cols-3">
           <SummaryField label={t('trade_docs.contracts.detail.amounts.contractTotal')}>
             <MoneyAmount
@@ -632,7 +637,7 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
               currencyCode={head.currencyCode}
               amount={head.differenceTotal}
               className={
-                Number.isFinite(difference) && difference !== 0
+                hasDifference
                   ? 'text-lg font-semibold text-status-error-text'
                   : 'text-lg font-semibold'
               }
@@ -659,6 +664,7 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
           <SummaryField label={t('trade_docs.contracts.form.field.signedAt')}>{head.signedAt ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.deliveryDate')}>{head.deliveryDate ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.paymentTerms')}>{head.paymentTerms ?? '—'}</SummaryField>
+          <SummaryField label={t('trade_docs.contracts.form.field.incoterms')}>{head.incoterms ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.shippingMethod')}>{head.shippingMethod ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.destination')}>{head.destination ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.marks')}>{head.marks ?? '—'}</SummaryField>
@@ -702,6 +708,11 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
                     {invoiceStatusLabel(t, invoice.status)}
                   </StatusBadge>
                   <span className="text-xs text-muted-foreground">{directionLabel(t, invoice.direction)}</span>
+                  {/*
+                    The kind is what tells a reader why a listed invoice may not move the contract's
+                    financial figures: an export invoice is excluded by caliber, everything else counts.
+                  */}
+                  <span className="text-xs text-muted-foreground">{invoiceKindLabel(t, invoice.invoiceKind)}</span>
                 </div>
                 <MoneyAmount
                   currencyCode={invoice.currencyCode}

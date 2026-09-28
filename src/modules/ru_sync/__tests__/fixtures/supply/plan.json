@@ -1,0 +1,41 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 1,
+  "items": [
+    {
+      "sku": "PK44",
+      "status": "overdue",
+      "is_critical": true,
+      "own_qty": "14",
+      "fbo_qty": "24",
+      "total_qty": "38",
+      "in_transit_qty": "228",
+      "days_until_oos": 92,
+      "demand_per_day": "2.97",
+      "demand_30d": "89",
+      "demand_60d": "153",
+      "demand_90d": "248",
+      "demand_120d": "298",
+      "demand_in_horizon_qty": "169",
+      "order_by": "2026-10-23",
+      "overdue_days": 67,
+      "recommended_qty": "74",
+      "unit_cost": {
+        "amount": "162.00",
+        "currency": "RUB"
+      },
+      "order_amount": {
+        "amount": "11988.00",
+        "currency": "RUB"
+      },
+      "expected_loss": {
+        "amount": "70211.00",
+        "currency": "RUB"
+      },
+      "horizon_days": 97,
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    }
+  ]
+}

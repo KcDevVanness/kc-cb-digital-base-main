@@ -33,6 +33,12 @@ The order's refund **status** is the least advanced of its containers:
   served by `GET /api/export_finance/order-files` and `GET /api/export_finance/container-files`
   (JSON or CSV), which assemble the 订单档案 from `purchasing`, `cross_border`, `trade_docs` and
   this module.
+- Preview entries next to every download on both document families (collection documents and refund
+  documents, in the tables, their row menus and their dialog fields), through the shared app viewer
+  `src/lib/attachments/AttachmentPreview.tsx`: images render in the dialog, PDFs are drawn to canvas
+  by Mozilla PDF.js (`pdfjs-dist`, an already-declared dependency — the platform serves PDFs as
+  binary attachments, so PDF.js parses the bytes itself), anything else says so and keeps the
+  download.
 
 ## What it deliberately does not do
 
@@ -47,7 +53,7 @@ The order's refund **status** is the least advanced of its containers:
 
 | Surface | What ships |
 |---|---|
-| Backend pages | `/backend/export-finance/orders` (订单档案 list, business/finance tabs, CSV export) and `/backend/export-finance/orders/[id]` (order file detail); `/backend/export-finance/containers` (柜档案 list, CSV export) and `/backend/export-finance/containers/[id]` (container file detail). All four carry `pageGroupKey: export_finance.nav.group` — the sidebar group 「财务」 / "Finance" (`src/modules.ts` puts it third in `nav.groupOrder`, after 采购 and 外贸). |
+| Backend pages | `/backend/export-finance/orders` (订单档案 list, business/finance tabs, CSV export) and `/backend/export-finance/orders/[id]` (order file detail); `/backend/export-finance/containers` (柜档案 list, CSV export) and `/backend/export-finance/containers/[id]` (container file detail). All four carry `pageGroupKey: export_finance.nav.group` — the sidebar group 「财务」 / "Finance" (`src/modules.ts` puts it third in `nav.groupOrder`, after 采购 and 出口业务 — the group renamed from 外贸 on 2026-09-28). 2026-09-28: the trade_docs tax-invoice ledger (`/backend/trade-docs/invoices`, pageOrder 420) also joins this group. |
 | API | `GET\|PUT /api/export_finance/collections` and `GET\|PUT /api/export_finance/refunds` — `GET` is the anchor read, `PUT` runs `collections.save` / `refunds.save`; `GET\|POST\|PUT\|DELETE /api/export_finance/collection-documents` and `…/refund-documents` — `GET` is the list, the three write verbs are the six document commands; `GET /api/export_finance/order-files` and `GET /api/export_finance/container-files` — the two projections, JSON by default, `?format=csv` for the export (the order file also takes `?view=business\|finance`). |
 | Commands | `export_finance.collections.save`, `export_finance.refunds.save`, `export_finance.collection-documents.{create,update,delete}`, `export_finance.refund-documents.{create,update,delete}` |
 | Events | `export_finance.collections.updated`, `export_finance.refunds.updated` — the upsert commands emit only the `updated` form, and both are `clientBroadcast`; `export_finance.{collection,refund}-documents.{created,updated,deleted}` for the document CRUD. All fire after the write committed. |
@@ -69,9 +75,10 @@ tax-refund figures. Run `yarn mercato auth sync-role-acls` after changing them.
 
 ## Money
 
-Every amount is quantized through `trade_docs/lib/money.ts` (BigInt `HALF_UP`), with the currency
-scale from `trade_docs/lib/currencyScale.ts`. `Number.toFixed` is never used: `(1.005).toFixed(2)`
-is `"1.00"` and would understate a refund.
+Every amount is quantized through `trade_docs/lib/money.ts` (BigInt `HALF_UP`) at the fixed amount
+scale (`AMOUNT_SCALE = 2`, currency-independent). `Number.toFixed` is never used: `(1.005).toFixed(2)`
+is `"1.00"` and would understate a refund. (The old `trade_docs/lib/currencyScale.ts` helper is gone —
+see [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](../../../.ai/specs/2026-09-28-money-scale-2dp-unification.md).)
 
 See `.ai/specs/2026-09-22-order-file-and-export-finance.md` for the field-by-field mapping of the
 35-field order file.
@@ -95,6 +102,8 @@ yarn jest --config jest.config.cjs src/modules/export_finance
 #   PUT  /api/export_finance/refunds { shipmentId } for a missing/cancelled shipment → 409
 #   POST /api/export_finance/collection-documents               → 201; DELETE → row soft-deleted
 #   GET  /api/export_finance/container-files without export_finance.cabinets.view → 403
+#   preview smoke (2026-09-24): 收汇单证 / 退税资料 rows and their dialog fields show 预览 + 下载;
+#   an image renders in the dialog, a PDF is drawn to canvas by PDF.js, any other type says so and keeps 下载
 ```
 
 ## Rollback

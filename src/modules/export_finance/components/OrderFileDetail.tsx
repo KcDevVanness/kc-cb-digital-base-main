@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from '@open-mercato/ui/primitives/dialog'
 import { EmptyState } from '@open-mercato/ui/primitives/empty-state'
+import { Input } from '@open-mercato/ui/primitives/input'
 import { Label } from '@open-mercato/ui/primitives/label'
 import { SegmentedControl, SegmentedControlItem } from '@open-mercato/ui/primitives/segmented-control'
 import {
@@ -44,6 +45,7 @@ import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primiti
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT } from '@open-mercato/shared/lib/i18n/context'
+import { AttachmentPreviewLink, useAttachmentPreview } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { useCurrencyOptions, withCurrentCurrency } from '../../currency_policy/lib/clientOptions'
 import type {
@@ -143,6 +145,10 @@ type CollectionRecord = {
   purchaseOrderNumber: string | null
   currencyCode: string
   collectionStatus: ExportFinanceCollectionStatus
+  /** 已收金额; `null` = nobody has recorded a receipt yet (never rendered as 0). */
+  collectedAmount: string | null
+  /** 收款日期, `YYYY-MM-DD`; `null` when no receipt is recorded. */
+  collectedAt: string | null
   updatedAt: string | null
 }
 
@@ -167,6 +173,8 @@ function toCollectionRecord(item: Record<string, unknown> | null | undefined): C
     collectionStatus: COLLECTION_STATUS_OPTIONS.includes(status as ExportFinanceCollectionStatus)
       ? (status as ExportFinanceCollectionStatus)
       : 'unknown',
+    collectedAmount: typeof item.amount === 'string' && item.amount.length > 0 ? item.amount : null,
+    collectedAt: typeof item.receivedAt === 'string' && item.receivedAt.length > 0 ? item.receivedAt.slice(0, 10) : null,
     updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : null,
   }
 }
@@ -488,17 +496,24 @@ function CollectionDocumentAttachmentField({
           {t('export_finance.orders.collection.documents.field.attachmentId')}
         </Button>
         {attachmentId ? (
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={disabled}
-            onClick={() => {
-              setValue('')
-              setFileName(null)
-            }}
-          >
-            {t('export_finance.orders.collection.documents.remove')}
-          </Button>
+          <>
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              fileName={fileName}
+              label={t('export_finance.orders.collection.documents.preview')}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={disabled}
+              onClick={() => {
+                setValue('')
+                setFileName(null)
+              }}
+            >
+              {t('export_finance.orders.collection.documents.remove')}
+            </Button>
+          </>
         ) : null}
       </div>
       {fileName ? <p className="text-xs text-muted-foreground">{fileName}</p> : null}
@@ -553,9 +568,12 @@ function OrderCollectionSection({
   const locale = useLocale()
   const scopeVersion = useOrganizationScopeVersion()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
+  const { openPreview, previewDialog } = useAttachmentPreview()
   const [collection, setCollection] = React.useState<CollectionRecord | null>(null)
   const [statusValue, setStatusValue] = React.useState<ExportFinanceCollectionStatus>('unknown')
   const [currencyValue, setCurrencyValue] = React.useState('')
+  const [collectedAmountValue, setCollectedAmountValue] = React.useState('')
+  const [collectedDateValue, setCollectedDateValue] = React.useState('')
   // The currency dictionary is the app's picker source; a code the record already carries stays
   // selectable so opening the record can never blank it.
   const dictionaryCurrencies = useCurrencyOptions(
@@ -613,6 +631,8 @@ function OrderCollectionSection({
       setCollection(item)
       setStatusValue(item?.collectionStatus ?? 'unknown')
       setCurrencyValue(item?.currencyCode ?? DEFAULT_CURRENCY_CODE)
+      setCollectedAmountValue(item?.collectedAmount ?? '')
+      setCollectedDateValue(item?.collectedAt ?? '')
     } catch {
       setCollection(null)
       setLoadFailed(true)
@@ -660,6 +680,9 @@ function OrderCollectionSection({
       purchaseOrderNumber,
       currencyCode: currencyValue.trim().toUpperCase() || collection?.currencyCode || DEFAULT_CURRENCY_CODE,
       collectionStatus: statusValue,
+      // An empty field means "not recorded": sent as null so the column stays empty instead of 0.
+      collectedAmount: collectedAmountValue.trim().length > 0 ? collectedAmountValue.trim() : null,
+      collectedAt: collectedDateValue.trim().length > 0 ? collectedDateValue.trim() : null,
       ...(collection?.updatedAt ? { updatedAt: collection.updatedAt } : {}),
     }
     try {
@@ -686,7 +709,7 @@ function OrderCollectionSection({
     } finally {
       setIsSaving(false)
     }
-  }, [collection, currencyValue, loadCollection, mutationContext, onForbidden, purchaseOrderId, purchaseOrderNumber, runMutation, statusValue, t])
+  }, [collection, collectedAmountValue, collectedDateValue, currencyValue, loadCollection, mutationContext, onForbidden, purchaseOrderId, purchaseOrderNumber, runMutation, statusValue, t])
 
   const fields = React.useMemo<CrudField[]>(() => [
     {
@@ -819,12 +842,18 @@ function OrderCollectionSection({
         const attachmentId = row.original.attachmentId
         if (!attachmentId) return <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>
         return (
-          <Link
-            href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
-            className="text-sm text-primary hover:underline"
-          >
-            {t('export_finance.orders.collection.documents.download')}
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              label={t('export_finance.orders.collection.documents.preview')}
+            />
+            <Link
+              href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
+              className="text-sm text-primary hover:underline"
+            >
+              {t('export_finance.orders.collection.documents.download')}
+            </Link>
+          </div>
         )
       },
     },
@@ -899,6 +928,31 @@ function OrderCollectionSection({
                   </SelectContent>
                 </Select>
               </div>
+              <div className="w-full space-y-1 sm:w-48">
+                <Label htmlFor="collection-amount">
+                  {t('export_finance.orders.collection.field.amount')}
+                </Label>
+                <Input
+                  id="collection-amount"
+                  inputMode="decimal"
+                  value={collectedAmountValue}
+                  disabled={!canManage || isSaving}
+                  onChange={(event) => setCollectedAmountValue(event.target.value)}
+                  placeholder={t('export_finance.orders.collection.field.amountPlaceholder')}
+                />
+              </div>
+              <div className="w-full space-y-1 sm:w-48">
+                <Label htmlFor="collection-date">
+                  {t('export_finance.orders.collection.field.collectedAt')}
+                </Label>
+                <Input
+                  id="collection-date"
+                  type="date"
+                  value={collectedDateValue}
+                  disabled={!canManage || isSaving}
+                  onChange={(event) => setCollectedDateValue(event.target.value)}
+                />
+              </div>
               {canManage ? (
                 <Button type="button" disabled={isSaving} onClick={() => { void handleSave() }}>
                   {isSaving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
@@ -961,6 +1015,10 @@ function OrderCollectionSection({
                 <RowActions
                   items={[
                     ...(row.attachmentId ? [{
+                      id: 'preview',
+                      label: t('export_finance.orders.collection.documents.preview'),
+                      onSelect: () => openPreview(row.attachmentId as string),
+                    }, {
                       id: 'download',
                       label: t('export_finance.orders.collection.documents.download'),
                       href: `/api/attachments/file/${encodeURIComponent(row.attachmentId)}?download=1`,
@@ -1009,6 +1067,7 @@ function OrderCollectionSection({
         </DialogContent>
       </Dialog>
 
+      {previewDialog}
       {ConfirmDialogElement}
     </>
   )
@@ -1229,6 +1288,12 @@ export default function OrderFileDetail({ purchaseOrderId }: { purchaseOrderId: 
               </SummaryField>
               <SummaryField label={t('export_finance.orders.detail.finance.outstandingAmount')}>
                 <AmountValue value={row.finance.outstandingAmount} />
+              </SummaryField>
+              <SummaryField label={t('export_finance.orders.detail.finance.collectedAmount')}>
+                <AmountValue value={row.finance.collectedAmount} />
+              </SummaryField>
+              <SummaryField label={t('export_finance.orders.detail.finance.collectedAt')}>
+                <TextValue value={row.finance.collectedAt ? row.finance.collectedAt.slice(0, 10) : null} />
               </SummaryField>
               <SummaryField label={t('export_finance.orders.detail.finance.kcPrice')}>
                 <AmountValue value={row.finance.kcPriceAmount} currency={row.finance.kcPriceCurrency} />

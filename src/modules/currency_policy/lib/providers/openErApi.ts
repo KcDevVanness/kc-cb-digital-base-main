@@ -4,6 +4,7 @@ import type {
 } from '@open-mercato/core/modules/currencies/services/providers/base'
 import { fetchWithTimeout, resolveTimeoutMs } from '@open-mercato/shared/lib/http/fetchWithTimeout'
 import { createLogger } from '@open-mercato/shared/lib/logger'
+import { invertRate } from '../rateLookup'
 
 const logger = createLogger('currency_policy').child({ component: 'open-er-api' })
 
@@ -70,6 +71,8 @@ export function buildCnyRatePairs(
     if (typeof cnyPerUnit !== 'number' || !Number.isFinite(cnyPerUnit) || cnyPerUnit <= 0) continue
 
     // 1 CNY = `cnyPerUnit` of `code` → the two directions the app may need, both stored.
+    const unitPerCny = invertRate(cnyPerUnit)
+    if (!unitPerCny) continue
     results.push({
       fromCurrencyCode: 'CNY',
       toCurrencyCode: code,
@@ -81,7 +84,9 @@ export function buildCnyRatePairs(
     results.push({
       fromCurrencyCode: code,
       toCurrencyCode: 'CNY',
-      rate: (1 / cnyPerUnit).toString(),
+      // Inverted through the engine (HALF_UP at 8 decimals), the same rule the display uses to fall back
+      // on a stored `CNY→X` row — `1 / n` in a float would be a second, drifting definition of the pair.
+      rate: unitPerCny,
       source: OPEN_ER_API_SOURCE,
       date: effectiveDate,
       type: null,

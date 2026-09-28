@@ -48,7 +48,7 @@ export const partyOptionsOpenApi: OpenApiRouteDoc = {
     GET: {
       summary: 'List party options',
       description:
-        'Scoped option source for pickers: display names only, filtered by code (the plaintext column). Encrypted fields are decrypted for the response but never used as a filter.',
+        'Scoped option source for pickers: display names only, filtered by code (the plaintext column). Encrypted fields are decrypted for the response but never used as a filter. Optional `roles=<role>[,<role>]` narrows the list to parties holding any of the listed roles; an unknown role name answers 400.',
       tags: [partiesTag],
       responses: [
         { status: 200, description: 'Available party options.', schema: partyOptionsResponseSchema },
