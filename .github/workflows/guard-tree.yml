@@ -29,22 +29,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # The base commit, so the guard script that runs is the trusted one: a head that edits or
-      # deletes `scripts/guards/guard-tree.mjs` cannot change the verdict. Nothing from the head is
-      # ever checked out into the workspace.
+      # The merge commit, fetched shallow: it carries both sides, and nothing from it is executed —
+      # the guard script comes from the base commit below whenever the base carries it.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 1
 
       # `refs/pull/<n>/head` resolves for same-repository and fork pull requests alike, so the head
-      # tree is read exactly as proposed, not as the merge result.
-      - name: Fetch the head of the pull request
+      # tree is read exactly as proposed, not as the merge result. The base commit is fetched too,
+      # both for its tree and for its copy of the guard script.
+      - name: Fetch both sides of the pull request
         env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: git fetch --no-tags --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr-head"
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git fetch --no-tags --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr-head"
 
       - name: Refuse a tree that lost the repository
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: node scripts/guards/guard-tree.mjs --base "$BASE_SHA" --head refs/remotes/pr-head
+        run: |
+          guard=scripts/guards/guard-tree.mjs
+          if git cat-file -e "${BASE_SHA}:${guard}" 2>/dev/null; then
+            git show "${BASE_SHA}:${guard}" > "$RUNNER_TEMP/guard-tree.mjs"
+            guard="$RUNNER_TEMP/guard-tree.mjs"
+          else
+            echo "::notice::${BASE_SHA} does not carry ${guard} yet — running the copy from this pull request"
+          fi
+          node "$guard" --base "$BASE_SHA" --head refs/remotes/pr-head

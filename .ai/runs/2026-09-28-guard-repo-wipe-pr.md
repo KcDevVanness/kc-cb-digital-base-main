@@ -67,20 +67,20 @@ This plan is the requirement record; the tracker has no issue. The incident itse
 
 ### Phase 1: the rule and its two enforcement points
 
-- [x] 1.1 `scripts/guards/guard-tree.mjs` — fbf30a1
-- [x] 1.2 `.github/workflows/guard-tree.yml` — fbf30a1
-- [x] 1.3 `.githooks/pre-push` — fbf30a1
+- [ ] 1.1 `scripts/guards/guard-tree.mjs` — fbf30a1
+- [ ] 1.2 `.github/workflows/guard-tree.yml` — fbf30a1
+- [ ] 1.3 `.githooks/pre-push` — fbf30a1
 
 ### Phase 2: knowledge
 
-- [x] 2.1 lesson record + catalog row — fbf30a1
-- [x] 2.2 `docs/dev/parallel-development.md` — fbf30a1
+- [ ] 2.1 lesson record + catalog row — fbf30a1
+- [ ] 2.2 `docs/dev/parallel-development.md` — fbf30a1
 
 ### Phase 3: evidence
 
-- [x] 3.1 guard vs the real wipe commit and the three clean refs — `af9a724` refused (missing all four sentinels; 2 of 1541 files kept), `origin/main` / `origin/feat/cross-border-erp` / repaired `origin/qa-evidence-pr-11` all OK
-- [x] 3.2 pre-push hook end to end — wipe push refused with 0 refs on the scratch remote; `HEAD` pushed (1541 → 1545 files); `--no-verify` pushed the wipe commit; missing hooks dir left pushes untouched; ref deletion skipped
-- [x] 3.3 PR green + `guard-tree` required on `main` — see the PR's verification comment
+- [ ] 3.1 guard vs the real wipe commit and the three clean refs — `af9a724` refused (missing all four sentinels; 2 of 1541 files kept), `origin/main` / `origin/feat/cross-border-erp` / repaired `origin/qa-evidence-pr-11` all OK
+- [ ] 3.2 pre-push hook end to end — wipe push refused with 0 refs on the scratch remote; `HEAD` pushed (1541 → 1545 files); `--no-verify` pushed the wipe commit; missing hooks dir left pushes untouched; ref deletion skipped
+- [ ] 3.3 PR green + `guard-tree` required on `main` — see the PR's verification comment
 
 ## Notes
 
@@ -90,5 +90,10 @@ This plan is the requirement record; the tracker has no issue. The incident itse
 - The workflow deliberately uses `pull_request`, not `pull_request_target`: this repository is
   public and GitHub's default event policy starts blocking `pull_request_target` on 2026-11-02,
   which would leave a required check permanently unreported.
-- `3d9dec4` carries the rule, the hook, the lesson and the doc; the trigger correction and this plan
+- `fbf30a1` carries the rule, the hook, the lesson and the doc; the trigger correction and this plan
   land in the follow-up commit on the same branch.
+- The first CI run of `guard-tree` failed with `MODULE_NOT_FOUND`: the workflow checked out the base
+  commit, which does not carry the guard script yet. It now checks out the merge commit, fetches both
+  sides shallow, and runs the script **from the base when the base has it** (extracted with
+  `git show`), falling back to the pull request's copy with a notice only while the base predates the
+  guard. Landing commit recorded in step 1.2.
