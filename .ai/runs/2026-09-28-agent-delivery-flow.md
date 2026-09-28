@@ -60,14 +60,14 @@ tracker has no issues.
 
 ### Phase 1: rules
 
-- [ ] 1.1 `AGENTS.md`: `Delivery Flow` section
-- [ ] 1.2 `docs/dev/parallel-development.md`: draft-first + PR body + disclosure
+- [x] 1.1 `AGENTS.md`: `Delivery Flow` section — ad4d803
+- [x] 1.2 `docs/dev/parallel-development.md`: draft-first + PR body + disclosure — ad4d803
 
 ### Phase 2: gate wiring
 
-- [ ] 2.1 `.github/workflows/validate.yml`: every PR target + lessons step
-- [ ] 2.2 `.ai/agentic.config.json`: local list matches CI
-- [ ] 2.3 lesson record + catalog row
+- [x] 2.1 `.github/workflows/validate.yml`: every PR target + lessons step — 3fe2444
+- [x] 2.2 `.ai/agentic.config.json`: local list matches CI — 3fe2444
+- [x] 2.3 lesson record + catalog row — 3fe2444
 
 ### Phase 3: evidence
 
