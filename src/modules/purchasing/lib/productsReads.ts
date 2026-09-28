@@ -95,6 +95,7 @@ function toProductRow(row: RawProductRow): ProductRow {
     grossWeight: row.gross_weight === null || row.gross_weight === undefined ? null : String(row.gross_weight),
     volume: row.volume === null || row.volume === undefined ? null : String(row.volume),
     dimensions: row.dimensions ?? null,
+    // Carton count is an integer count, not money.
     cartonQuantity: row.carton_quantity === null || row.carton_quantity === undefined ? null : Number(row.carton_quantity),
     categoryId: row.category_id ?? null,
     deletedAt: row.deleted_at ?? null,
@@ -185,6 +186,7 @@ export async function loadProductPrices(
     id: String(row.id),
     priceTier: String(row.price_tier),
     currencyCode: String(row.currency_code),
+    // Price-ladder step: an integer count, not money (`unitPrice` below is the price).
     minQuantity: Number(row.min_quantity),
     unitPrice: String(row.unit_price),
     startsAt: toDateOnly(row.starts_at),
@@ -241,6 +243,7 @@ export async function loadBaseTierPricesByProduct(
     const candidate: ProductTierPriceCell = {
       currencyCode: String(row.currency_code),
       unitPrice: String(row.unit_price),
+      // Price-ladder step: an integer count, not money.
       minQuantity: Number(row.min_quantity),
     }
     const current = byProduct[productId]

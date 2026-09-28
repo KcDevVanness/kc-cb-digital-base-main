@@ -34,7 +34,8 @@ import { loadCodeListOptions } from '../lib/codeListOptions'
 import { PRODUCT_BRAND_DICTIONARY_KEY } from '../../product_codes/lib/dictionaryValues'
 import SupplierProductCodePanel from './SupplierProductCodePanel'
 import { loadCurrencyOptions } from './PurchaseOrderForm'
-import { formatCurrency } from '@open-mercato/ui/utils/format'
+import { formatMoneyAmount } from '@/lib/money/format'
+import { PRICE_SCALE } from '../../trade_docs/lib/money'
 import { netUnitPrice, type SupplierProductPriceKind } from '../lib/priceKinds'
 
 const API_PATH = 'purchasing/supplier-products'
@@ -300,7 +301,7 @@ function SupplierProductPriceGroup({ values, setValue, errors, t }: CrudFormGrou
                 )
               }
               return t('purchasing.supplierProducts.price.net', 'Net after discount: {amount}', {
-                amount: formatCurrency(net, currencyCode || 'CNY') ?? net,
+                amount: formatMoneyAmount(net, currencyCode || 'CNY', undefined, PRICE_SCALE) ?? net,
               })
             })()}
           </p>
@@ -336,7 +337,7 @@ function SupplierProductPriceGroup({ values, setValue, errors, t }: CrudFormGrou
                   })}
                 </span>
                 <span className="text-foreground">
-                  {formatCurrency(row.unitPrice, row.currencyCode.trim().toUpperCase() || 'CNY') ?? row.unitPrice}
+                  {formatMoneyAmount(row.unitPrice, row.currencyCode.trim().toUpperCase() || 'CNY', undefined, PRICE_SCALE) ?? row.unitPrice}
                 </span>
                 <span>
                   {row.isActive

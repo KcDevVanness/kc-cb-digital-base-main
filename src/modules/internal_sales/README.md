@@ -25,6 +25,8 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
 > 是因为 `rbacService.userHasAllFeatures` 对 `isSuperAdmin` 直接放行，而不是因为 id 对上了。
 > 要按角色真正收紧门禁，先把两边的 id 统一。
 
+> **金额口径（REQ-006，见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](../../../.ai/specs/2026-09-28-money-scale-2dp-unification.md)）：** 本模块是内置 `sales` 的**边界适配层**——入口只发**金额 2 位、单价 4 位**；`InternalSalesForm` 在提交前校验每行「数量与单价最多 4 位小数」（`Line {line}: quantity and unit price accept at most 4 decimal places`），超位即拒。内核 `sales_*` 列仍 18,4 属实现细节，展示与导出统一按 2 位（`MoneyAmount`）。
+
 ## 为什么这样做（而不是 eject `sales`）
 
 - 官方 `sales` 单据链的行 schema 是 `productId: uuid().optional()`，**不做目录校验**；命令里查目录只为 UoM 富化，

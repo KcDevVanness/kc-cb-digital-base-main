@@ -1,4 +1,4 @@
-# `trade_docs` — 购销合同、发票与双口径金额
+# `trade_docs` — 购销合同、发票与统一金额口径（金额 2 位 / 单价 4 位）
 
 app 自有模块。**合同的唯一台账**：采购/销售两个方向的购销合同（含行、商品快照）→ 进项/销项发票
 （可绑定合同行、扫描件归档）→ 合同头三列金额（合同金额 / 财务金额 / 差额）。需求与验收见
@@ -20,13 +20,13 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 
 ```text
 行：数量 × 单价
-   ├─ quantize(币种小数位)        → 财务金额（行绑定「已确认」发票行时取该发票行金额）
+   ├─ quantize(2)                → 财务金额（行绑定「已确认」发票行时取该发票行金额）
    └─ quantize(2)                → 合同金额（合同上打印的数字）
 头：Σ 财务金额 = finance_total ；Σ 合同金额 = contract_total ；contract − finance = difference_total
 ```
 
 - 量化是 BigInt 半进位（远离零），**禁止 `toFixed`**：`(1.005).toFixed(2) === '1.00'`。
-- 币种小数位来自 `currencies.decimal_places`（读不到/非法 → 2，钳制 0..8）。
+- **金额恒 2 位、与币种无关**（JPY 也是 2 位），单价恒 4 位（`AMOUNT_SCALE=2`、`PRICE_SCALE=4`）；`currencies.decimal_places` 只是展示元数据，不再驱动舍入（`lib/currencyScale.ts` 已删除，见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](../../../.ai/specs/2026-09-28-money-scale-2dp-unification.md)）。合同与财务两个口径同为 2 位，唯一差异来自「已确认发票覆盖」。
 - 发票优先是**逐行**、且只认 `confirmed`：草稿/作废发票不影响合同；作废后自动回退为按单价计算。
 - 合同头的三列由 `lib/contractRecalc.ts` 在写入行的同一事务内重算，命令层不自己写算术。
 

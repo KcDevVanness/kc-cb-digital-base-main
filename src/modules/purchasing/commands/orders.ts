@@ -17,12 +17,24 @@ import {
   PurchasingSupplier,
 } from '../data/entities'
 import {
+  exactDecimalSchema,
+  nullableExactDecimalSchema,
   purchaseOrderDocumentCreateSchema,
   purchaseOrderDocumentUpdateSchema,
 } from '../data/validators'
 import { ensureScope } from './shared'
 import { assertCurrencyInDictionary } from '../lib/currencyDictionary'
-import { computeLineTotals, computeOrderTotals, type OrderTotals, type PaymentRow } from '../lib/orderTotals'
+import {
+  PERCENT_SCALE,
+  QUANTITY_SCALE,
+  applyReceiptQuantity,
+  computeLineTotals,
+  computeOrderTotals,
+  quantizeAmount,
+  type OrderTotals,
+  type PaymentRow,
+} from '../lib/orderTotals'
+import { AMOUNT_SCALE, PRICE_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
 import { loadSupplierProducts } from '../lib/supplierProductReads'
 import { eventsConfig } from '../events'
 
@@ -78,9 +90,14 @@ const lineInputSchema = z
     productId: z.string().uuid().nullable().optional(),
     catalogProductId: z.string().uuid().nullable().optional(),
     supplierProductId: z.string().uuid().nullable().optional(),
-    quantity: z.coerce.number().positive(),
-    unitPrice: z.coerce.number().min(0),
-    taxRate: z.coerce.number().min(0).max(100).default(0),
+    /**
+     * Exact-decimal inputs on the module's own scales: quantity `numeric(18,4)`, unit price 4
+     * decimals (REQ-002), tax rate 3-decimal percent. A value beyond its scale is a 400 rather than a
+     * silent rewrite, and the parsed value is the decimal string every downstream step uses.
+     */
+    quantity: exactDecimalSchema(QUANTITY_SCALE, { positive: true }),
+    unitPrice: exactDecimalSchema(PRICE_SCALE, { min: '0' }),
+    taxRate: exactDecimalSchema(PERCENT_SCALE, { min: '0', max: '100' }).default('0'),
     priceIncludesTax: z.boolean().default(true),
     note: z.string().max(500).nullable().optional(),
   })
@@ -102,8 +119,8 @@ export const purchaseOrderCreateSchema = z.object({
   customerId: z.string().uuid().nullable().optional(),
   customerSnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
   currencyCode: z.string().trim().regex(/^[A-Za-z]{3}$/).transform((value) => value.toUpperCase()),
-  depositPercent: z.coerce.number().min(0).max(100).nullable().optional(),
-  depositAmount: z.coerce.number().min(0).nullable().optional(),
+  depositPercent: nullableExactDecimalSchema(PERCENT_SCALE, { min: '0', max: '100' }),
+  depositAmount: nullableExactDecimalSchema(AMOUNT_SCALE, { min: '0' }),
   expectedShipAt: z.string().min(1).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   lines: z.array(lineInputSchema).min(1),
@@ -123,7 +140,7 @@ export const purchaseOrderTransitionSchema = z.object({
 export const purchasePaymentCreateSchema = z.object({
   orderId: z.string().uuid(),
   stage: z.enum(['deposit', 'balance', 'other']),
-  amount: z.coerce.number().positive(),
+  amount: exactDecimalSchema(AMOUNT_SCALE, { positive: true }),
   paidAt: z.string().min(1),
   reference: z.string().max(200).nullable().optional(),
   methodNote: z.string().max(500).nullable().optional(),
@@ -322,9 +339,9 @@ async function resolveOrderLines(
         catalogProductId: (product.catalog_product_id as string | null) ?? null,
         supplierProductId: supplierProduct?.id ?? null,
         productSnapshot: snapshot,
-        quantity: Number(line.quantity).toFixed(4),
-        unitPrice: Number(line.unitPrice).toFixed(4),
-        taxRate: Number(line.taxRate).toFixed(3),
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        taxRate: line.taxRate,
         priceIncludesTax: line.priceIncludesTax,
         note: line.note ?? null,
         ...totals,
@@ -347,9 +364,9 @@ async function resolveOrderLines(
           spec: supplierProduct.description,
           supplierSku: supplierProduct.itemNo ?? supplierProduct.supplierSku,
         },
-        quantity: Number(line.quantity).toFixed(4),
-        unitPrice: Number(line.unitPrice).toFixed(4),
-        taxRate: Number(line.taxRate).toFixed(3),
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        taxRate: line.taxRate,
         priceIncludesTax: line.priceIncludesTax,
         note: line.note ?? null,
         ...totals,
@@ -368,9 +385,9 @@ async function resolveOrderLines(
         sku: product.sku ?? null,
         unit: product.default_unit ?? null,
       },
-      quantity: Number(line.quantity).toFixed(4),
-      unitPrice: Number(line.unitPrice).toFixed(4),
-      taxRate: Number(line.taxRate).toFixed(3),
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      taxRate: line.taxRate,
       priceIncludesTax: line.priceIncludesTax,
       note: line.note ?? null,
       ...totals,
@@ -378,6 +395,17 @@ async function resolveOrderLines(
   })
 
   return { lines: resolved, totals: computeOrderTotals(resolved) }
+}
+
+/**
+ * The deposit amount the order stores: only an **explicit** override, quantized to the amount scale
+ * by the engine. A percentage term is a *plan*, not a stored amount — it is derived at read time
+ * (`HALF_UP(total × percent ÷ 100, 2)`, see `computeDepositAmount`), so storing it here would let a
+ * later total change keep a stale figure (an explicit amount wins over the percentage).
+ */
+function quantizeDepositAmount(amount: string | null | undefined): string | null {
+  if (amount === null || amount === undefined) return null
+  return quantizeAmount(amount, AMOUNT_SCALE)
 }
 
 async function persistLines(
@@ -493,8 +521,8 @@ const createOrderCommand: CommandHandler<Record<string, unknown>, PurchasingPurc
         subtotal: totals.subtotal,
         taxTotal: totals.taxTotal,
         total: totals.total,
-        depositPercent: parsed.depositPercent === null || parsed.depositPercent === undefined ? null : String(parsed.depositPercent),
-        depositAmount: parsed.depositAmount === null || parsed.depositAmount === undefined ? null : Number(parsed.depositAmount).toFixed(4),
+        depositPercent: parsed.depositPercent ?? null,
+        depositAmount: quantizeDepositAmount(parsed.depositAmount),
         expectedShipAt: parsed.expectedShipAt ? new Date(parsed.expectedShipAt) : null,
         notes: parsed.notes ?? null,
       },
@@ -605,8 +633,8 @@ const updateOrderCommand: CommandHandler<Record<string, unknown>, PurchasingPurc
         if (parsed.supplierId) entity.supplierId = parsed.supplierId
         if (supplierSnapshot) entity.supplierSnapshot = supplierSnapshot
         if (parsed.currencyCode) entity.currencyCode = parsed.currencyCode
-        if (parsed.depositPercent !== undefined) entity.depositPercent = parsed.depositPercent === null ? null : String(parsed.depositPercent)
-        if (parsed.depositAmount !== undefined) entity.depositAmount = parsed.depositAmount === null ? null : Number(parsed.depositAmount).toFixed(4)
+        if (parsed.depositPercent !== undefined) entity.depositPercent = parsed.depositPercent
+        if (parsed.depositAmount !== undefined) entity.depositAmount = quantizeDepositAmount(parsed.depositAmount)
         if (resolved) {
           entity.subtotal = resolved.totals.subtotal
           entity.taxTotal = resolved.totals.taxTotal
@@ -787,7 +815,7 @@ const recordPaymentCommand: CommandHandler<Record<string, unknown>, PurchasingPu
         organizationId: scope.organizationId,
         order,
         stage: parsed.stage,
-        amount: Number(parsed.amount).toFixed(4),
+        amount: quantizeAmount(parsed.amount, AMOUNT_SCALE),
         // Payments are recorded in the order's currency; a mismatch is rejected rather than
         // converted, because this module performs no FX.
         currencyCode: order.currencyCode,
@@ -874,7 +902,7 @@ const deletePaymentCommand: CommandHandler<
  */
 export const purchaseReceiptSchema = z.object({
   purchaseOrderLineId: z.string().uuid(),
-  quantity: z.coerce.number().positive(),
+  quantity: exactDecimalSchema(QUANTITY_SCALE, { positive: true }),
   sourceType: z.string().max(64).optional(),
   sourceId: z.string().uuid().optional(),
   note: z.string().max(500).optional(),
@@ -904,24 +932,31 @@ const applyReceiptCommand: CommandHandler<Record<string, unknown>, { lineId: str
       })
     }
 
-    const ordered = Number.parseFloat(line.quantity)
-    const alreadyReceived = Number.parseFloat(line.receivedQuantity ?? '0')
-    const next = alreadyReceived + Number(parsed.quantity)
-    if (next > ordered + 1e-6) {
+    // Compared as scaled integers on the quantity's own scale, so the ceiling is exact to the
+    // fourth decimal and an over-receipt is refused rather than clamped.
+    const { receivedQuantity, exceedsOrdered } = applyReceiptQuantity(
+      line.quantity,
+      line.receivedQuantity ?? '0',
+      parsed.quantity,
+    )
+    if (exceedsOrdered) {
       throw new CrudHttpError(422, {
-        error: `Receiving ${parsed.quantity} exceeds the ordered quantity ${line.quantity} (already received ${alreadyReceived})`,
+        error: `Receiving ${parsed.quantity} exceeds the ordered quantity ${line.quantity} (already received ${line.receivedQuantity ?? '0'})`,
       })
     }
 
-    const receivedQuantity = next.toFixed(4)
     await em.fork().nativeUpdate(PurchasingPurchaseOrderLine, { id: line.id }, { receivedQuantity })
 
+    const nextUnits = toScaledUnits(receivedQuantity, QUANTITY_SCALE)
     const openLines = await em.fork().find(PurchasingPurchaseOrderLine, {
       order: order.id,
     } as FilterQuery<PurchasingPurchaseOrderLine>)
     const fullyReceived = openLines.every((candidate) => {
-      const current = String(candidate.id) === String(line.id) ? receivedQuantity : String(candidate.receivedQuantity ?? '0')
-      return Number.parseFloat(current) + 1e-6 >= Number.parseFloat(candidate.quantity)
+      const current =
+        String(candidate.id) === String(line.id)
+          ? nextUnits
+          : toScaledUnits(candidate.receivedQuantity ?? '0', QUANTITY_SCALE)
+      return current >= toScaledUnits(candidate.quantity, QUANTITY_SCALE)
     })
 
     let orderStatus = order.status

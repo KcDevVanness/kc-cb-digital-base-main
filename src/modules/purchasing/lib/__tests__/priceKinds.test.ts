@@ -9,13 +9,14 @@ import { comparePriceBaseRows, netUnitPrice, pickBasePriceRow, trimDecimalText }
  * rule and its "no price yet" answer are therefore the two things every one of them depends on.
  */
 describe('netUnitPrice', () => {
-  it('applies the discount to the supply price at the six decimals `unit_price` carries', () => {
-    expect(netUnitPrice('100', '5')).toBe('95.000000')
-    expect(netUnitPrice('12.5', '0')).toBe('12.500000')
-    expect(netUnitPrice('12.5', null)).toBe('12.500000')
-    expect(netUnitPrice(12.5, 3.75)).toBe('12.031250')
-    // 12.345678 × 0.95 = 11.7283941 — rounded to the column's scale, not to float noise.
-    expect(netUnitPrice('12.345678', '5')).toBe('11.728394')
+  it('applies the discount to the supply price at the four decimals `unit_price` carries', () => {
+    expect(netUnitPrice('100', '5')).toBe('95.0000')
+    expect(netUnitPrice('12.5', '0')).toBe('12.5000')
+    expect(netUnitPrice('12.5', null)).toBe('12.5000')
+    // 12.5 × (100 − 3.75) / 100 = 12.03125 — half-up at the fourth decimal, never banker's rounding.
+    expect(netUnitPrice(12.5, 3.75)).toBe('12.0313')
+    // The price is quantized to the price scale first (12.345678 → 12.3457); × 0.95 = 11.728415 → 11.7284.
+    expect(netUnitPrice('12.345678', '5')).toBe('11.7284')
   })
 
   it('has no net for a missing or unparseable price, and never invents a zero', () => {
@@ -27,9 +28,9 @@ describe('netUnitPrice', () => {
   })
 
   it('reads a missing or unparseable discount as "no discount", never as a silent factor', () => {
-    expect(netUnitPrice('10', 'abc')).toBe('10.000000')
-    expect(netUnitPrice('10', '')).toBe('10.000000')
-    expect(netUnitPrice('10', undefined)).toBe('10.000000')
+    expect(netUnitPrice('10', 'abc')).toBe('10.0000')
+    expect(netUnitPrice('10', '')).toBe('10.0000')
+    expect(netUnitPrice('10', undefined)).toBe('10.0000')
   })
 })
 

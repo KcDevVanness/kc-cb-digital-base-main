@@ -5,6 +5,7 @@ import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import { PurchasingSupplierProduct } from '../data/entities'
 import { supplierProductCrudEvents, supplierProductCrudIndexer, loadSupplierName, type PurchasingScope } from '../commands/shared'
 import { loadQuoteLines, type QuoteLineRef, type QuoteRef } from './quoteLineReads'
+import { toScaledUnits } from '../../trade_docs/lib/money'
 
 /**
  * Feeding quotation lines into the supplier's product library.
@@ -51,6 +52,8 @@ type LibraryValues = {
 const TEXT_FIELDS = ['itemNo', 'name', 'description', 'unit', 'hsCode'] as const
 const INTEGER_FIELDS = ['moqQuantity', 'cartonQuantity'] as const
 const DECIMAL_FIELDS = ['unitNetWeight'] as const
+/** The library's decimal columns store at 4 decimals (`nullableDecimalSchema(4)` in the validators). */
+const DECIMAL_FIELD_SCALE = 4
 const PACKING_FIELDS = ['innerPacking'] as const
 
 function trimmedOrNull(value: string | null | undefined): string | null {
@@ -107,7 +110,17 @@ export function changedLibraryFields(
   for (const field of DECIMAL_FIELDS) {
     const next = values[field]
     if (next === null || next === undefined) continue
-    if (Number(next) !== Number(stored[field] ?? Number.NaN)) payload[field] = next
+    const storedValue = stored[field]
+    // A stored value that is absent differs from any provided one; otherwise compare as scaled
+    // integers on the column's 4-decimal scale, so `1.2800` and `1.28` are the same number and a
+    // real change is never lost to a float's epsilon.
+    if (storedValue === null || storedValue === undefined) {
+      payload[field] = next
+      continue
+    }
+    if (toScaledUnits(next, DECIMAL_FIELD_SCALE) !== toScaledUnits(String(storedValue), DECIMAL_FIELD_SCALE)) {
+      payload[field] = next
+    }
   }
   for (const field of PACKING_FIELDS) {
     const next = normalizePacking(values[field])

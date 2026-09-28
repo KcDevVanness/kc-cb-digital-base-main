@@ -305,7 +305,7 @@ export class ProductsPrice {
   @Property({ name: 'min_quantity', type: 'integer', default: 1 })
   minQuantity: number = 1
 
-  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 6, default: '0' })
+  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 4, default: '0' })
   unitPrice: string = '0'
 
   @Property({ name: 'starts_at', type: 'date', nullable: true })

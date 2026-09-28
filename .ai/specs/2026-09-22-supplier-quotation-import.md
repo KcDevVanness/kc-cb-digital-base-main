@@ -287,9 +287,9 @@ Cross-record references: the supplier field is a `CrudForm` `select` backed by t
 | `item_no`, `product_name`, `variant_label` | text, nullable | — | no | supplier values + the extracted variant token |
 | `derived_sku` | text, nullable | index | no | required for promotion; 1..64 of `[A-Za-z0-9._\-/]` |
 | `hs_code`, `description`, `unit` | text | — | no | `unit` default `'PCS'` |
-| `unit_cost` | numeric(18,6), nullable | — | no | ≥ 0 |
+| `unit_cost` | numeric(18,4), nullable | — | no | ≥ 0 |
 | `currency_code` | text, nullable | — | no | line-level override of the header currency |
-| `suggested_rsp` | numeric(18,6), nullable | — | no | kept on the line; never promoted |
+| `suggested_rsp` | numeric(18,4), nullable | — | no | kept on the line; never promoted |
 | `moq_raw`, `moq_quantity` | text / integer, nullable | — | no | raw text preserved; quantity ≥ 1 when present |
 | `carton_quantity` | integer, nullable | — | no | 装箱数 Qty/Box, ≥ 0; the one carton figure the pipeline keeps reading |
 | `unit_net_weight` | numeric(16,4), nullable | — | no | kg, ≥ 0 |
@@ -586,6 +586,7 @@ Every new runtime/discovery surface, with the reference module file it adapts (`
 
 | Date | Change |
 |---|---|
+| 2026-09-28 | 金额口径统一：金额 2 位/单价 4 位，HALF_UP，引擎单点；金额列 numeric(18,2)、单价列 numeric(18,4)（见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](2026-09-28-money-scale-2dp-unification.md)）。本 spec：报价行 `unit_cost`/`suggested_rsp` 由 numeric(18,6) 改 numeric(18,4)；导入路径超位值量化到 4 位并记 warning。 |
 | 2026-09-23 | **箱子规格数据从报价层删除**（owner：业务一直不需要箱子规格数据，映射到表里也没人用）。`sourcing_quote_lines` 去掉 `cartons`（箱数）、`carton_gross_weight`/`carton_net_weight`（箱毛重/净重）、`outer_packing`（外箱尺寸）、`carton_volume`（体积）——实体、validator、命令、`/api/sourcing/quote-lines` 的 schema/select/序列化、解析器（含由 `carton_length/width/height` 拼外箱尺寸的辅助函数）、列映射目标与 alias、标准模板 `TEMPLATE_COLUMNS`（下载的模板同步变窄）、报价行网格的「箱规」列与 i18n 一并去掉；保留 `carton_quantity`（装箱数）、`unit_net_weight`（单重）、`inner_packing`（产品尺寸）。整行源数据仍在 `raw` jsonb 里，因此没有信息真正丢失。列由 `Migration20260923075340_sourcing` 删除（已应用到本机 dev 库，`down` 可重建空列）；标准模板随之从 **15 列缩到 12 列**（`SKU / 货号`、`品名`、`分类`、`规格`、`HS编码`、`单位`、`单价`、`币种`、`MOQ`、`装箱数 Qty per Carton`、`单重 Unit N.W.(kg)`、`产品尺寸 Product Size(cm)`，示例行同步减格），模板内的 `inner_packing` 表头也随全 app 命名统一改成「产品尺寸 Product Size(cm)」（alias 里同时保留 `内箱尺寸`/`Inner Box`，供应商自己的老文件照样识别）。实测：`GET /api/sourcing/template` 下载后解析表头为上述 12 列，报价复核页的 69 行老报价单照常渲染，网格只剩 行/分类/货号/品名/SKU/HS/单价/MOQ/现采购价/状态/告警。 |
 | 2026-09-23 | **Wizard labels follow the locale; seed labels single-language.** `ColumnMappingTable` rendered every target field as `${labelZh} / ${labelEn}` (「货号 / SKU」), which is a second language rather than a bilingual feature; it now renders `labelZh` or `labelEn` by `useLocale()`. The alias tables keep both spellings because a supplier workbook may print either — they are match targets, not UI. The `quote_section` seeds became the display name alone (`喂食`), and the picker renders the stored banner in front of it (`FEEDING — 喂食`) — a label carries one language, the code belongs to the picker. Rule and enforcement: `docs/dev/i18n.md`, `src/lib/i18n/__tests__/language-purity.test.ts`. |
 | 2026-09-22 | Initial draft: app-owned `sourcing` module (supplier quotations + mapping profiles + promotion into `products`), SheetJS-based workbook reading, alias/profile/AI mapping, standard template, 6 phases. Decisions locked with the owner: SheetJS parser, built-in but gated AI mapping, Item No. + variant-suffix SKUs, quotation intermediate layer before the product master. Status `Ready for implementation`. |

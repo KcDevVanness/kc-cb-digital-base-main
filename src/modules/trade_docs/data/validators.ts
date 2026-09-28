@@ -3,15 +3,28 @@ import { z } from 'zod'
 // `products` product and quote one of its tiers, so the three codes stay defined in exactly one
 // place. The dependency never points back — `products` knows nothing about contracts.
 import { PRODUCT_PRICE_TIERS } from '../../products/lib/tiers'
+// The money engine owns the system-wide caliber, so the input schemas quote its constants instead
+// of repeating the numbers: an amount is 2 decimals, a unit price 4, and both are compared as
+// scaled integers (never through a float).
+import { AMOUNT_SCALE, PRICE_SCALE, toScaledUnits } from '../lib/money'
 
 /**
  * Input contracts for contracts and invoices.
  *
- * Decimal columns arrive as strings and keep every digit the column holds: a quantity or unit
- * price with more decimals than `numeric(18,6)` is rejected instead of silently rounded, because
- * the amount calibers are derived from exactly these two numbers. All amount columns on the head
- * (`contract_total`, `finance_total`, `difference_total`, `total`) are **derived server-side** and
- * are deliberately absent from every input schema — a client cannot post a total.
+ * Decimal columns arrive as strings and keep every digit the column holds: a value with more
+ * decimals than its column is rejected (a 400 at the API) instead of silently rounded, because the
+ * line amount is derived from exactly the quantity and the unit price. The calibers are the
+ * deployment-wide money caliber — quantity `numeric(18,6)`, unit price `numeric(18,4)`
+ * (`PRICE_SCALE`), amount `numeric(18,2)` (`AMOUNT_SCALE`), exchange rate `numeric(18,8)`. Values
+ * within their caliber are zero-padded to the column scale, so the command and the entity never
+ * disagree about formatting.
+ *
+ * Imported/integrated data does not come through here; those paths quantize explicitly with the
+ * engine and log a warning (see the module's import paths).
+ *
+ * All amount columns on the head (`contract_total`, `finance_total`, `difference_total`, `total`)
+ * are **derived server-side** and are deliberately absent from every input schema — a client
+ * cannot post a total.
  */
 
 const DECIMAL_PATTERN = /^-?\d+(?:\.\d+)?$/
@@ -34,7 +47,9 @@ function decimalSchema(scale: number, options: { min?: string; allowNegative?: b
         ctx.addIssue({ code: 'custom', message: 'value must not be negative' })
         return
       }
-      if (options.min !== undefined && Number(value) < Number(options.min)) {
+      // The bound is compared as scaled integers: the value already carries at most `scale`
+      // decimals at this point, so the comparison is exact and never at the mercy of a float.
+      if (options.min !== undefined && toScaledUnits(value, scale) < toScaledUnits(options.min, scale)) {
         ctx.addIssue({ code: 'custom', message: `value must be at least ${options.min}` })
       }
     })
@@ -102,7 +117,7 @@ export const contractLineInputSchema = z.object({
   spec: nullableText(500),
   unit: nullableText(24),
   quantity: decimalSchema(6, { min: '0' }),
-  unitPrice: decimalSchema(6, { min: '0' }),
+  unitPrice: decimalSchema(PRICE_SCALE, { min: '0' }),
   note: nullableText(500),
 })
 
@@ -193,9 +208,9 @@ export const invoiceLineInputSchema = z.object({
   sku: nullableText(64),
   unit: nullableText(24),
   quantity: decimalSchema(6, { min: '0' }),
-  unitPrice: decimalSchema(6, { min: '0' }),
+  unitPrice: decimalSchema(PRICE_SCALE, { min: '0' }),
   /** The figure printed on the invoice; may differ from `quantity × unitPrice`. */
-  amount: decimalSchema(4, { min: '0' }),
+  amount: decimalSchema(AMOUNT_SCALE, { min: '0' }),
   contractLineId: z.string().uuid().nullable().optional(),
 })
 

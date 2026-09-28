@@ -205,8 +205,8 @@ purchasing.supplier.* / purchasing.purchase_order.* / purchasing.purchase_paymen
 | `supplier_id` + `supplier_snapshot` | uuid + jsonb | index | no | snapshot frozen at `placed` |
 | `status` | text enum | index | no | command-driven |
 | `currency_code` | text | — | no | fixed at `placed` |
-| `subtotal`, `total` | numeric(18,4) | — | no | recomputed from lines while `draft` |
-| `deposit_percent`, `deposit_amount` | numeric | — | no | editable while `draft` |
+| `subtotal`, `total` | numeric(18,2) | — | no | recomputed from lines while `draft` |
+| `deposit_percent`, `deposit_amount` | numeric / numeric(18,2) | — | no | editable while `draft` |
 | `expected_ship_at` | date, nullable | — | no | editable until `shipped` |
 | `placed_at`, `shipped_at`, `received_at`, `closed_at` | timestamps, nullable | — | no | transition stamps |
 | `notes` | text | — | no | editable |
@@ -225,7 +225,7 @@ purchasing.supplier.* / purchasing.purchase_order.* / purchasing.purchase_paymen
 | `tax_rate` | numeric(6,3), default 0 | — | no | editable while `draft`; percent |
 | `price_includes_tax` | boolean, default true | — | no | editable while `draft`; drives the derivation below |
 | `unit_price` | numeric(18,4) | — | no | editable while `draft`; entered as quoted (gross when the toggle is on, net otherwise) |
-| `net_total`, `tax_amount`, `line_total` | numeric(18,4) | — | no | derived: net = price − tax when the toggle is on, else price; tax = net × rate; line_total = net + tax (gross) |
+| `net_total`, `tax_amount`, `line_total` | numeric(18,2) | — | no | derived: net = price − tax when the toggle is on, else price; tax = net × rate; line_total = net + tax (gross) |
 | `note` | text | — | no | editable |
 
 Order totals (`subtotal` = Σ net, `tax_total` = Σ tax, `total` = Σ gross) are recomputed from lines while `draft`; payments are recorded against the gross `total`.
@@ -237,7 +237,7 @@ Order totals (`subtotal` = Σ net, `tax_total` = Σ tax, `total` = Σ gross) are
 | `id`, `tenant_id`, `organization_id` | uuid | PK / composite index | no | system |
 | `order_id` | uuid | index | no | immutable |
 | `stage` | text enum (`deposit`/`balance`/`other`) | index | no | immutable |
-| `amount` | numeric(18,4) | — | financial | immutable; corrections are new rows or deletion before close |
+| `amount` | numeric(18,2) | — | financial | immutable; corrections are new rows or deletion before close |
 | `currency_code` | text | — | no | must equal the order currency (mismatch rejected) |
 | `paid_at` | date | index | no | editable |
 | `reference`, `method_note` | text | — | financial | editable |
@@ -370,6 +370,7 @@ Verdict: `Implemented` — Phases 1–4 shipped and smoke-verified (no automated
 
 | Date | Change |
 |---|---|
+| 2026-09-28 | 金额口径统一：金额 2 位/单价 4 位，HALF_UP，引擎单点；金额列 numeric(18,2)、单价列 numeric(18,4)（见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](2026-09-28-money-scale-2dp-unification.md)）。本 spec：订单 `subtotal`/`tax_total`/`total`/`deposit_amount`、行 `net_total`/`tax_amount`/`line_total`、付款 `amount` 由 numeric(18,4) 改 numeric(18,2)；行 `unit_price` 仍 18,4；数量/税率标度不变。 |
 | 2026-09-23 | **Purchase-order line product picker merged (owner UI review).** A line used to open on one of two pickers with a 「改从商品库选择」/「改从供应商产品库选择」 toggle; a buyer reading the form could not tell which list they were searching, and one of the two modes was empty for a role without that permission. The line editor now has **one search box** over both sources — the supplier's own library first, then the product master — with the source named under each suggestion (`lines.source.*`). The option value carries the source (`supplier-product:` / `product:` prefixes, form-only: `supplierProductMode` is gone), so the payload still sends exactly one reference and the wire contract is unchanged. Verified in the browser: picking the library suggestion saved a line with `supplierProductId` set and `productId`/`catalogProductId` null (read back through `GET /api/purchasing/purchase-orders/lines`). Related: the supplier-options loader in `sourcing` asked for `pageSize: 200` against a 100-capped route (400 → empty dropdown) and was fixed in the same pass; see `.ai/lessons/option-loaders-must-respect-page-size-caps.md`. |
 | 2026-09-21 | Initial draft derived from the owner-confirmed business inputs; entity/state model proposed for confirmation |
 | 2026-09-21 | Owner confirmed the model (deposit percent-or-amount, split/consolidated shipments, per-line tax with an include-tax toggle, no price list, product-level lines). Status → `Ready for implementation`. Phase 1 (supplier master) implemented: entity, validators, create/update/delete commands with undo, command-backed CRUD route, ACL/setup/events, zh+en locales, migration generated and reviewed (not applied). Business context also deposited in `docs/dev/business-architecture.md`. |

@@ -143,8 +143,8 @@ export class ExportFinanceRefund {
   @Property({ name: 'tax_refund_status', type: 'text', default: 'unknown' })
   taxRefundStatus: string = 'unknown'
 
-  /** Hand-entered by finance: the amount the refund application claims, quantized to 4 places. */
-  @Property({ name: 'tax_refund_amount', type: 'numeric', precision: 18, scale: 4, nullable: true })
+  /** Hand-entered by finance: the amount the refund application claims, quantized to 2 places. */
+  @Property({ name: 'tax_refund_amount', type: 'numeric', precision: 18, scale: 2, nullable: true })
   taxRefundAmount?: string | null
 
   /** 税金额备注 — container-level free text, surfaced on an order only through its containers. */

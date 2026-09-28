@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { parseBooleanToken } from '@open-mercato/shared/lib/boolean'
 import { SUPPLIER_PRODUCT_PRICE_KINDS } from '../lib/priceKinds'
+import { PRICE_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
 
 /**
  * ISO-4217 shape only. Membership in the seeded currency dictionary is enforced in the
@@ -48,6 +49,64 @@ const nullableDecimalSchema = (scale: number, options: { min?: string; max?: str
     .optional()
     .transform((value) => (value === undefined ? undefined : value === null ? null : value))
     .pipe(z.union([decimalSchema(scale, options), z.null(), z.undefined()]))
+
+/**
+ * A money / price / percentage input on a fixed scale: accepts a decimal string or a finite number,
+ * normalizes it to a decimal string, and **refuses** a value finer than `scale` decimals instead of
+ * silently rounding it (REQ-004 — a manual entry beyond the column's scale is a 400, never a quiet
+ * rewrite). Bounds are compared as scaled integers through the money engine, so `min`/`max` never
+ * round-trip through a float either.
+ *
+ * The command layer's money fields (order lines, deposit terms, payments, receipts) build on this:
+ * the schemas live with the module's other write contracts so every entry point — form, API, import —
+ * is bound by the same caliber.
+ */
+export function exactDecimalSchema(
+  scale: number,
+  options: { min?: string; max?: string; positive?: boolean } = {},
+) {
+  return z
+    .union([z.string(), z.number()])
+    .transform((value) => (typeof value === 'number' ? String(value) : value).trim())
+    .superRefine((value, ctx) => {
+      if (!DECIMAL_PATTERN.test(value)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'value must be a decimal number' })
+        return
+      }
+      const fraction = value.split('.')[1] ?? ''
+      if (fraction.length > scale) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `value must have at most ${scale} decimal places` })
+        return
+      }
+      const units = toScaledUnits(value, scale)
+      if (options.positive && units <= 0n) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'value must be greater than 0' })
+        return
+      }
+      if (options.min !== undefined && units < toScaledUnits(options.min, scale)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `value must be >= ${options.min}` })
+      }
+      if (options.max !== undefined && units > toScaledUnits(options.max, scale)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `value must be <= ${options.max}` })
+      }
+    })
+}
+
+/**
+ * The nullable/optional twin of `exactDecimalSchema`: an explicit value is checked and normalized,
+ * `null` clears it, and an **absent** key stays `undefined` — the same three-way distinction the
+ * update command relies on to tell "leave unchanged" from "clear".
+ */
+export function nullableExactDecimalSchema(
+  scale: number,
+  options: { min?: string; max?: string; positive?: boolean } = {},
+) {
+  return z
+    .union([z.string(), z.number(), z.null()])
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === null ? null : value))
+    .pipe(z.union([exactDecimalSchema(scale, options), z.null(), z.undefined()]))
+}
 
 const nullableNonNegativeIntegerSchema = z
   .union([z.string(), z.number(), z.null()])
@@ -336,7 +395,8 @@ export const supplierProductPriceRowSchema = z.object({
   priceKind: z.enum(SUPPLIER_PRODUCT_PRICE_KINDS),
   currencyCode: currencyCodeSchema,
   minQuantity: z.coerce.number().int().min(1).default(1),
-  unitPrice: decimalSchema(6, { min: '0' }),
+  /** The system-wide unit-price caliber: 4 decimals, never re-rounded after entry (REQ-002). */
+  unitPrice: decimalSchema(PRICE_SCALE, { min: '0' }),
   isActive: z.boolean().default(true),
 })
 

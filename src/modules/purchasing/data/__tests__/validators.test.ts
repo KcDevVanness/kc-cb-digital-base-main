@@ -167,7 +167,10 @@ describe('purchasing supplier product validators', () => {
     expect(parsed.rows[0]).toEqual({ priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '12.5', isActive: true })
     expect(supplierProductPriceRowSchema.safeParse({ ...row, priceKind: 'retail' }).success).toBe(false)
     expect(supplierProductPriceRowSchema.safeParse({ ...row, currencyCode: 'CNYX' }).success).toBe(false)
+    // The price caliber is 4 decimals (REQ-002): a fifth is a 400, four are accepted as typed.
+    expect(supplierProductPriceRowSchema.safeParse({ ...row, unitPrice: '12.12345' }).success).toBe(false)
     expect(supplierProductPriceRowSchema.safeParse({ ...row, unitPrice: '12.1234567' }).success).toBe(false)
+    expect(supplierProductPriceRowSchema.parse({ ...row, unitPrice: '12.1234' }).unitPrice).toBe('12.1234')
     expect(
       supplierProductPricesReplaceSchema.safeParse({
         supplierProductId: '11111111-1111-4111-8111-111111111111',

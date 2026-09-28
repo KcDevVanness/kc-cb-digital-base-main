@@ -24,7 +24,7 @@ import {
 } from '../data/validators'
 import { ensureScope, invoiceFilter, loadContract, loadInvoice, type TradeDocsScope } from '../lib/scope'
 import { recomputeContractHead } from '../lib/contractRecalc'
-import { productSnapshotPayload, readProductSnapshots } from '../lib/currencyScale'
+import { productSnapshotPayload, readProductSnapshots } from '../lib/productSnapshots'
 import { sumAmounts } from '../lib/money'
 import { eventsConfig } from '../events'
 
