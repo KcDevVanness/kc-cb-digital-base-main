@@ -27,7 +27,7 @@ import {
 } from '../data/validators'
 import { contractFilter, ensureScope, loadContract, type TradeDocsScope } from '../lib/scope'
 import { recomputeContractHead } from '../lib/contractRecalc'
-import { productSnapshotPayload, readProductSnapshots } from '../lib/currencyScale'
+import { productSnapshotPayload, readProductSnapshots } from '../lib/productSnapshots'
 import { buildContractSheet, CONTRACT_TEMPLATE_ID } from '../lib/contractTemplate'
 import { eventsConfig } from '../events'
 

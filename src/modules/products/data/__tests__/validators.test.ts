@@ -19,7 +19,7 @@ describe('product price row validation', () => {
     for (const tier of ['purchase', 'internal', 'export'] as const) {
       const parsed = productPriceRowSchema.parse({ ...baseRow, priceTier: tier })
       expect(parsed.priceTier).toBe(tier)
-      expect(parsed.unitPrice).toBe('168.000000')
+      expect(parsed.unitPrice).toBe('168.0000')
     }
   })
 
@@ -38,8 +38,11 @@ describe('product price row validation', () => {
     expect(result.success).toBe(false)
   })
 
-  it('rejects a price with more decimals than the column holds', () => {
-    const result = productPriceRowSchema.safeParse({ ...baseRow, unitPrice: '1.2345678' })
+  it('reserves the fourth decimal for a price and rejects a fifth', () => {
+    // The acceptance sample: `341.2382` is a price; `341.23825` is a finer value than the column
+    // holds and is a 400, not a silent HALF_UP on the way in.
+    expect(productPriceRowSchema.parse({ ...baseRow, unitPrice: '341.2382' }).unitPrice).toBe('341.2382')
+    const result = productPriceRowSchema.safeParse({ ...baseRow, unitPrice: '341.23825' })
     expect(result.success).toBe(false)
   })
 

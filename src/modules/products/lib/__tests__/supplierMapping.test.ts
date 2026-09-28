@@ -96,6 +96,21 @@ describe('supplierMapping', () => {
     expect(secondRung.rows.filter((row) => row.priceTier === 'purchase')).toHaveLength(2)
   })
 
+  it('compares prices as exact scaled integers, never as floats', () => {
+    const huge = '10000000000000.0001'
+    const next = '10000000000000.0002'
+    // The trap the old `Number(a) === Number(b)` comparison fell into: these are two different
+    // prices, but they are the same IEEE double.
+    expect(Number(huge) === Number(next)).toBe(true)
+
+    const existing = [
+      { id: 'p1', priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 500, unitPrice: huge, startsAt: null, endsAt: null, isActive: true },
+    ]
+    expect(mergePriceRows(existing, purchaseRow({ unitPrice: next })).changed).toBe(true)
+    // the same price spelled with a finer scale is not rewritten
+    expect(mergePriceRows(existing, purchaseRow({ unitPrice: '10000000000000.00010' })).changed).toBe(false)
+  })
+
   it('reports no change when the quoted price already matches the stored one', () => {
     const existing = [
       { id: 'p1', priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 500, unitPrice: '230.000000', startsAt: null, endsAt: null, isActive: true },

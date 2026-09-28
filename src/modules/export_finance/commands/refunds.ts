@@ -7,7 +7,7 @@ import { conflict, notFound } from '@open-mercato/shared/lib/crud/errors'
 import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/optimistic-lock-command'
 import type { CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
-import { STORED_AMOUNT_SCALE, toAmountString } from '../../trade_docs/lib/money'
+import { AMOUNT_SCALE, toAmountString } from '../../trade_docs/lib/money'
 import { ExportFinanceRefund } from '../data/entities'
 import { refundSaveSchema } from '../data/validators'
 import { loadShipmentRef } from '../lib/peerReads'
@@ -45,12 +45,12 @@ function refundFilter(scope: Scope, id: string): FilterQuery<ExportFinanceRefund
   } as FilterQuery<ExportFinanceRefund>
 }
 
-/** The entered two-decimal amount widened to the `numeric(18,4)` column, via the money engine. */
+/** The entered amount quantized to the two-decimal amount scale, via the money engine. */
 function toStoredAmount(value: string | null): string | null {
   if (value === null) return null
   const parsed = parseExactDecimal(value)
   if (!parsed) return null
-  return toAmountString(parsed, STORED_AMOUNT_SCALE)
+  return toAmountString(parsed, AMOUNT_SCALE)
 }
 
 /**

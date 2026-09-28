@@ -24,10 +24,10 @@ const ENTITY_ID = 'purchasing:purchasing_supplier_product' as const
  * separate facts, and only the client knows the reader's locale. `minQuantity` rides along so the
  * column can mark a price that only applies from a carton up.
  *
- * `netUnitPrice` is the 折后价 (`unit_price × (1 − discount/100)`, six decimals, computed by
- * `lib/priceKinds.ts`) — the number the business actually pays, and the one the promotion writes into
- * the product master. `unitPrice` stays on the cell as the supplier's printed 供货价 so the column can
- * show both.
+ * `netUnitPrice` is the 折后价 (`HALF_UP(unit_price × (100 − discount) ÷ 100, 4)`, computed by
+ * `lib/priceKinds.ts` on the system-wide 4-decimal price caliber) — the number the business actually
+ * pays, and the one the promotion writes into the product master. `unitPrice` stays on the cell as the
+ * supplier's printed 供货价 so the column can show both.
  */
 const supplierProductPriceCellSchema = z.object({
   currencyCode: z.string(),

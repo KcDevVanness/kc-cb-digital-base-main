@@ -1,9 +1,11 @@
 import { parseExactDecimal, type ExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
 import {
+  AMOUNT_SCALE,
+  divideHalfUp,
   multiplyExactDecimal,
   quantizeExactDecimal,
-  STORED_AMOUNT_SCALE,
   toAmountString,
+  toScaledUnits,
 } from '../../trade_docs/lib/money'
 import type { OrderFileStatus } from '../data/validators'
 
@@ -200,39 +202,18 @@ function quantizeAmount(value: string | null | undefined, scale: number): string
 }
 
 /**
- * Scaled-integer units of an amount at `scale`. All money comparisons and ratios in this module
- * go through scaled integers: comparing `numeric(18,4)` strings as floats would lose cents
- * beyond 2^53 and would make a refund total depend on the machine's arithmetic.
- */
-export function toScaledUnits(value: string | number | null | undefined, scale: number): bigint {
-  const parsed = parseAmount(value)
-  return parsed ? quantizeExactDecimal(parsed, scale).units : 0n
-}
-
-/** Scaled-integer division, half away from zero — the only rounding this module performs itself. */
-export function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
-  if (denominator === 0n) return 0n
-  const negative = (numerator < 0n) !== (denominator < 0n)
-  const absNumerator = numerator < 0n ? -numerator : numerator
-  const absDenominator = denominator < 0n ? -denominator : denominator
-  let quotient = absNumerator / absDenominator
-  if ((absNumerator % absDenominator) * 2n >= absDenominator) quotient += 1n
-  return negative ? -quotient : quotient
-}
-
-/**
- * `total × percent ÷ 100` quantized to the currency scale.
+ * `total × percent ÷ 100`, quantized to the amount scale (2 decimals).
  *
  * The division is folded into the percentage's scale (`scale + 2`) instead of dividing, so the
  * whole computation stays in scaled integers: `20%` of `6000.005` is rounded once, by the money
  * engine, and never by a float.
  */
-function depositFromPercent(totalValue: string, percentValue: string, currencyScale: number): string | null {
+function depositFromPercent(totalValue: string, percentValue: string): string | null {
   const total = parseAmount(totalValue)
   const percent = parseAmount(percentValue)
   if (!total || !percent) return null
   const shiftedPercent: ExactDecimal = { units: percent.units, scale: percent.scale + 2 }
-  return toAmountString(multiplyExactDecimal(total, shiftedPercent), currencyScale)
+  return toAmountString(multiplyExactDecimal(total, shiftedPercent), AMOUNT_SCALE)
 }
 
 /**
@@ -253,7 +234,7 @@ export function deriveBusinessStatus(input: { poStatus: string; pickedUp: boolea
 }
 
 /**
- * The finance half of one order, on one currency scale.
+ * The finance half of one order, on the system-wide amount scale (2 decimals).
  *
  * The planned deposit uses the explicit amount when the order set one, otherwise the percentage;
  * both absent means `null` — "nobody planned a deposit" is not "a deposit of zero". Actual money
@@ -263,7 +244,6 @@ export function computeFinanceView(input: {
   total: string
   depositAmount: string | null
   depositPercent: string | null
-  currencyScale: number
   paymentAmounts: string[]
   kcPriceAmount: string | null
   kcPriceCurrency: string | null
@@ -271,29 +251,29 @@ export function computeFinanceView(input: {
   subsidiaryInvoiceCurrency: string | null
   exchangeRate: string | null
 }): FinanceView {
-  const orderAmount = quantizeAmount(input.total, input.currencyScale) ?? '0'
+  const orderAmount = quantizeAmount(input.total, AMOUNT_SCALE) ?? '0'
 
   const depositPlanned = input.depositAmount !== null && input.depositAmount !== undefined
-    ? quantizeAmount(input.depositAmount, input.currencyScale)
+    ? quantizeAmount(input.depositAmount, AMOUNT_SCALE)
     : input.depositPercent !== null && input.depositPercent !== undefined
-      ? depositFromPercent(input.total, input.depositPercent, input.currencyScale)
+      ? depositFromPercent(input.total, input.depositPercent)
       : null
 
   const orderAmountDecimal = parseAmount(orderAmount)
   const depositDecimal = parseAmount(depositPlanned)
   const balancePlanned = orderAmountDecimal && depositDecimal
-    ? toAmountString({ units: orderAmountDecimal.units - depositDecimal.units, scale: orderAmountDecimal.scale }, input.currencyScale)
+    ? toAmountString({ units: orderAmountDecimal.units - depositDecimal.units, scale: orderAmountDecimal.scale }, AMOUNT_SCALE)
     : null
 
   let paidUnits = 0n
   for (const amount of input.paymentAmounts) {
     const parsed = parseAmount(amount)
     if (!parsed) continue
-    paidUnits += quantizeExactDecimal(parsed, input.currencyScale).units
+    paidUnits += quantizeExactDecimal(parsed, AMOUNT_SCALE).units
   }
-  const paidAmount = toAmountString({ units: paidUnits, scale: input.currencyScale }, input.currencyScale)
+  const paidAmount = toAmountString({ units: paidUnits, scale: AMOUNT_SCALE }, AMOUNT_SCALE)
   const outstandingAmount = orderAmountDecimal
-    ? toAmountString({ units: orderAmountDecimal.units - paidUnits, scale: input.currencyScale }, input.currencyScale)
+    ? toAmountString({ units: orderAmountDecimal.units - paidUnits, scale: AMOUNT_SCALE }, AMOUNT_SCALE)
     : '0'
 
   return {
@@ -302,9 +282,9 @@ export function computeFinanceView(input: {
     balancePlanned,
     paidAmount,
     outstandingAmount,
-    kcPriceAmount: quantizeAmount(input.kcPriceAmount, input.currencyScale),
+    kcPriceAmount: quantizeAmount(input.kcPriceAmount, AMOUNT_SCALE),
     kcPriceCurrency: input.kcPriceAmount === null ? null : input.kcPriceCurrency,
-    subsidiaryInvoiceAmount: quantizeAmount(input.subsidiaryInvoiceAmount, input.currencyScale),
+    subsidiaryInvoiceAmount: quantizeAmount(input.subsidiaryInvoiceAmount, AMOUNT_SCALE),
     subsidiaryInvoiceCurrency: input.subsidiaryInvoiceAmount === null ? null : input.subsidiaryInvoiceCurrency,
     exchangeRate: input.exchangeRate,
   }
@@ -329,7 +309,7 @@ export function allocateTaxRefund(input: {
   if (!refund || input.orders.length === 0) return result
 
   const target = quantizeExactDecimal(refund, 2)
-  const totals = input.orders.map((order) => toScaledUnits(order.total, STORED_AMOUNT_SCALE))
+  const totals = input.orders.map((order) => toScaledUnits(order.total, AMOUNT_SCALE))
   const denominator = totals.reduce((sum, units) => sum + units, 0n)
   if (denominator === 0n) return result
 
@@ -636,7 +616,7 @@ export function buildContainerChecklist(sources: ContainerChecklistSources): {
  * zero rendered as 0%. Basis points are scaled integers, like every other ratio in this module.
  */
 export function sharePercentages(orders: AllocationOrder[]): Array<string | null> {
-  const units = orders.map((order) => toScaledUnits(order.total, STORED_AMOUNT_SCALE))
+  const units = orders.map((order) => toScaledUnits(order.total, AMOUNT_SCALE))
   const denominator = units.reduce((sum, value) => sum + value, 0n)
   if (denominator === 0n) return orders.map(() => null)
   return units.map((value) => {

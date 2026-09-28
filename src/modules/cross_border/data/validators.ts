@@ -1,4 +1,11 @@
 import { z } from 'zod'
+import { toScaledUnits } from '../../trade_docs/lib/money'
+
+/**
+ * Allocation quantities live on a `numeric(18,4)` column: at most 4 decimals, compared and stored
+ * as exact decimals — never re-read through a float.
+ */
+export const ALLOCATION_QUANTITY_SCALE = 4
 
 export const SHIPMENT_STATUSES = ['draft', 'in_transit', 'received', 'cancelled'] as const
 export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number]
@@ -29,9 +36,58 @@ const uuid = () => z.string().uuid()
 const optionalText = (max: number) => z.string().trim().max(max).nullable().optional()
 const optionalDate = () => z.string().min(1).nullable().optional()
 
+/**
+ * Decimal columns keep every digit they are given: a quantity with more decimals than the column
+ * holds is rejected instead of silently rounded, because the value is a frozen snapshot of what
+ * was ordered. The lower bound is compared as scaled integers (`toScaledUnits`) so a value a
+ * ten-thousandth over the bound is not judged by float noise.
+ */
+const DECIMAL_PATTERN = /^-?\d+(?:\.\d+)?$/
+
+function decimalSchema(scale: number, options: { min?: string; minExclusive?: boolean } = {}) {
+  return z
+    .union([z.string(), z.number()])
+    .transform((value) => (typeof value === 'number' ? String(value) : value.trim()))
+    .superRefine((value, ctx) => {
+      if (!DECIMAL_PATTERN.test(value)) {
+        ctx.addIssue({ code: 'custom', message: 'value must be a plain decimal number' })
+        return
+      }
+      const fraction = value.split('.')[1] ?? ''
+      if (fraction.length > scale) {
+        ctx.addIssue({ code: 'custom', message: `value allows at most ${scale} decimal places` })
+        return
+      }
+      if (value.startsWith('-') && value !== '-0') {
+        ctx.addIssue({ code: 'custom', message: 'value must not be negative' })
+        return
+      }
+      if (options.min !== undefined) {
+        const valueUnits = toScaledUnits(value, scale)
+        const minUnits = toScaledUnits(options.min, scale)
+        if (options.minExclusive ? valueUnits <= minUnits : valueUnits < minUnits) {
+          ctx.addIssue({
+            code: 'custom',
+            message: options.minExclusive ? `value must be greater than ${options.min}` : `value must be at least ${options.min}`,
+          })
+        }
+      }
+    })
+    .transform((value) => {
+      const negative = value.startsWith('-')
+      const digits = negative ? value.slice(1) : value
+      const [integerPart, fractionPart = ''] = digits.split('.')
+      const padded = fractionPart.padEnd(scale, '0')
+      return `${negative && !/^0*$/.test(integerPart + padded) ? '-' : ''}${integerPart}.${padded}`
+    })
+}
+
 const allocationInputSchema = z.object({
   purchaseOrderLineId: uuid(),
-  quantity: z.coerce.number().positive(),
+  // Normalized to the column's scale and compared as scaled integers: a value with a fifth
+  // decimal, an exponent string (`1e-7`) or a float artifact (`0.30000000000000004`) is a 400
+  // instead of being rounded onto the column, and zero is not an allocation.
+  quantity: decimalSchema(ALLOCATION_QUANTITY_SCALE, { min: '0', minExclusive: true }),
 })
 
 export const shipmentCreateSchema = z.object({

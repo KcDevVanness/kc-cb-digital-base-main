@@ -141,6 +141,7 @@ export async function loadQuoteLines(
   return rows.map((row) => ({
     id: String(row.id),
     quoteId: String(row.quote_id),
+    // Integer counts and sequences (a line number), never money — the amount caliber does not apply.
     lineNumber: Number(row.line_number ?? 0),
     itemNo: row.item_no ?? null,
     productName: row.product_name ?? null,
@@ -151,6 +152,8 @@ export async function loadQuoteLines(
     unit: String(row.unit ?? 'PCS'),
     unitCost: row.unit_cost === null || row.unit_cost === undefined ? null : String(row.unit_cost),
     currencyCode: row.currency_code ?? null,
+    // MOQ / carton counts are integers, not amounts: read as JS integers so the form's number
+    // field can edit them; the money caliber never touches a count.
     moqQuantity: row.moq_quantity === null || row.moq_quantity === undefined ? null : Number(row.moq_quantity),
     cartonQuantity: row.carton_quantity === null || row.carton_quantity === undefined ? null : Number(row.carton_quantity),
     unitNetWeight: row.unit_net_weight === null || row.unit_net_weight === undefined ? null : String(row.unit_net_weight),
@@ -196,6 +199,7 @@ export async function findLatestQuotedPrice(
     .executeTakeFirst()
   if (!row) return null
   const currency = (row.currency_code ?? row.quote_currency_code ?? 'CNY').toUpperCase()
+  // A ladder step is a whole count (≥1), never an amount: rounded to an integer for the price row.
   const minQuantity = row.moq_quantity === null || row.moq_quantity === undefined ? 1 : Math.max(1, Math.round(Number(row.moq_quantity)))
   return {
     currencyCode: currency,
