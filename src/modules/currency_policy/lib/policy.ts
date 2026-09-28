@@ -22,6 +22,13 @@ export type PolicyCurrency = {
   /** Operator-facing dictionary label, shown as `CODE – label` in the CRM pickers. */
   label: string
   symbol: string
+  /**
+   * 币种元数据（`Currency.decimal_places`），只跟着平台自带的币种主数据走，供字典/展示参考。
+   *
+   * **不是金额舍入口径**：系统内金额恒 2 位 HALF_UP、单价恒 4 位（见
+   * `.ai/specs/2026-09-28-money-scale-2dp-unification.md`），舍入只发生在金额引擎
+   * `trade_docs/lib/money.ts`。JPY 的 CLDR 默认 0 位在本系统同样按 2 位显示。
+   */
   decimalPlaces: number
   decimalSeparator: string
   thousandsSeparator: string

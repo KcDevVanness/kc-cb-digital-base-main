@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals'
-import { resolveCnyRate } from '../rateLookup'
+import { invertRate, resolveCnyRate } from '../rateLookup'
 
 /**
  * The direction rule the whole display rests on.
@@ -26,9 +26,21 @@ describe('resolveCnyRate', () => {
 
   it('inverts a stored CNY→X rate when the direct direction is absent', () => {
     const resolved = resolveCnyRate('USD', [row('CNY', 'USD', '0.148751')])
-    // 1 / 0.148751 = 6.7226…, i.e. the same figure the direct row carries.
-    expect(Number(resolved?.rate)).toBeCloseTo(6.7226, 3)
+    // `1 / 0.148751 = 6.722643881385…` → HALF_UP at 8 decimals — the same figure the direct row carries.
+    expect(resolved?.rate).toBe('6.72264388')
     expect(resolved?.inverted).toBe(true)
+  })
+
+  it('quantizes the inverted rate to eight decimals through the engine, not a float', () => {
+    // 1 / 0.00000001 = 100000000 — an exact 8-decimal string; a float path renders `100000000`.
+    expect(resolveCnyRate('HKD', [row('CNY', 'HKD', '0.00000001')])?.rate).toBe('100000000.00000000')
+    expect(resolveCnyRate('THB', [row('CNY', 'THB', '3')])?.rate).toBe('0.33333333')
+    expect(resolveCnyRate('USD', [row('CNY', 'USD', '0.148751')])?.rate).toMatch(/^-?\d+\.\d{8}$/)
+  })
+
+  it('inverts the other direction of the same pair back to a deterministic 8-decimal string', () => {
+    // 0.85719698 CNY→HKD mirrors the stored HKD→CNY row: 1.166593 CNY per HKD.
+    expect(resolveCnyRate('HKD', [row('CNY', 'HKD', '0.85719698')])?.rate).toBe('1.16659300')
   })
 
   it('prefers the direct direction over the inverse even when the inverse is newer', () => {
@@ -54,9 +66,27 @@ describe('resolveCnyRate', () => {
     expect(resolveCnyRate('USD', [])).toBeNull()
     expect(resolveCnyRate('USD', [row('USD', 'CNY', '0')])).toBeNull()
     expect(resolveCnyRate('USD', [row('USD', 'CNY', 'not-a-number')])).toBeNull()
+    expect(resolveCnyRate('USD', [row('CNY', 'USD', '0')])).toBeNull()
+    expect(resolveCnyRate('USD', [row('CNY', 'USD', '-2')])).toBeNull()
+    expect(resolveCnyRate('USD', [row('CNY', 'USD', 'nope')])).toBeNull()
   })
 
   it('normalizes the code it is asked for', () => {
     expect(resolveCnyRate(' usd ', [row('USD', 'CNY', '6.7')])?.currencyCode).toBe('USD')
+  })
+})
+
+describe('invertRate', () => {
+  it('inverts to a deterministic eight-decimal string, half away from zero', () => {
+    expect(invertRate('0.148751')).toBe('6.72264388')
+    expect(invertRate(4)).toBe('0.25000000')
+    expect(invertRate('0.00000001')).toBe('100000000.00000000')
+  })
+
+  it('has no inverse for a non-positive or unparseable rate', () => {
+    expect(invertRate('0')).toBeNull()
+    expect(invertRate('-2')).toBeNull()
+    expect(invertRate('')).toBeNull()
+    expect(invertRate('nope')).toBeNull()
   })
 })

@@ -22,6 +22,12 @@ const events = [
   { id: 'trade_docs.invoice.confirmed', label: 'Invoice Confirmed', entity: 'invoice', category: 'lifecycle', clientBroadcast: true },
   { id: 'trade_docs.invoice.voided', label: 'Invoice Voided', entity: 'invoice', category: 'lifecycle', clientBroadcast: true },
   { id: 'trade_docs.invoice.attached', label: 'Invoice Attachment Bound', entity: 'invoice', category: 'crud', clientBroadcast: true },
+  { id: 'trade_docs.document.created', label: 'Document Created', entity: 'document', category: 'crud', clientBroadcast: true },
+  { id: 'trade_docs.document.updated', label: 'Document Updated', entity: 'document', category: 'crud', clientBroadcast: true },
+  { id: 'trade_docs.document.deleted', label: 'Document Deleted', entity: 'document', category: 'crud', clientBroadcast: true },
+  { id: 'trade_docs.document.issued', label: 'Document Issued', entity: 'document', category: 'lifecycle', clientBroadcast: true },
+  { id: 'trade_docs.document.voided', label: 'Document Voided', entity: 'document', category: 'lifecycle', clientBroadcast: true },
+  { id: 'trade_docs.document.document.generated', label: 'Document File Generated', entity: 'document', category: 'lifecycle', clientBroadcast: true },
 ] as const
 
 export const eventsConfig = createModuleEvents({

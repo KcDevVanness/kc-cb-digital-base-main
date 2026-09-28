@@ -3,8 +3,8 @@ export const metadata = {
   requireFeatures: ['boss_cockpit.view'],
   pageTitle: 'Boss cockpit',
   pageTitleKey: 'boss_cockpit.page.title',
-  pageGroup: 'Finance',
-  pageGroupKey: 'export_finance.nav.group',
+  pageGroup: 'Executive overview',
+  pageGroupKey: 'executive_overview.nav.group',
   pageOrder: 300,
   icon: 'gauge',
   breadcrumb: [

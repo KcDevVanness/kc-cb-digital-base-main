@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { parseISO } from 'date-fns/parseISO'
 import { Archive, CheckCircle2, Trash2 } from 'lucide-react'
 import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
@@ -11,6 +12,8 @@ import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
 import { Badge } from '@open-mercato/ui/primitives/badge'
 import { Button } from '@open-mercato/ui/primitives/button'
+import { toDateInputValue } from '@open-mercato/ui/primitives/date-format'
+import { DatePicker } from '@open-mercato/ui/primitives/date-picker'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { Label } from '@open-mercato/ui/primitives/label'
 import {
@@ -274,13 +277,12 @@ export function QuoteReviewPanel({ quoteId }: { quoteId: string }) {
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="review-date">{t('sourcing.quotes.list.columns.quoteDate', 'Quote date')}</Label>
-          <Input
+          <DatePicker
             id="review-date"
-            type="date"
-            value={quoteDate}
+            value={quoteDate ? parseISO(quoteDate) : null}
             disabled={!isDraft}
-            onChange={(event) => {
-              setQuoteDate(event.target.value)
+            onChange={(date) => {
+              setQuoteDate(toDateInputValue(date) ?? '')
               setHeaderDirty(true)
             }}
           />

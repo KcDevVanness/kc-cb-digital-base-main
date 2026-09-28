@@ -138,20 +138,20 @@ export class PurchasingPurchaseOrder {
   @Property({ name: 'currency_code', type: 'text', default: 'CNY' })
   currencyCode: string = 'CNY'
 
-  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
   subtotal: string = '0'
 
-  @Property({ name: 'tax_total', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'tax_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
   taxTotal: string = '0'
 
-  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
   total: string = '0'
 
   /** Deposit as a percentage of the total; the amount below overrides it when set. */
   @Property({ name: 'deposit_percent', type: 'numeric', precision: 6, scale: 3, nullable: true })
   depositPercent?: string | null
 
-  @Property({ name: 'deposit_amount', type: 'numeric', precision: 18, scale: 4, nullable: true })
+  @Property({ name: 'deposit_amount', type: 'numeric', precision: 18, scale: 2, nullable: true })
   depositAmount?: string | null
 
   @Property({ name: 'expected_ship_at', type: 'date', nullable: true })
@@ -251,13 +251,13 @@ export class PurchasingPurchaseOrderLine {
   @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 4, default: '0' })
   unitPrice: string = '0'
 
-  @Property({ name: 'net_total', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'net_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
   netTotal: string = '0'
 
-  @Property({ name: 'tax_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'tax_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   taxAmount: string = '0'
 
-  @Property({ name: 'line_total', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'line_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
   lineTotal: string = '0'
 
   @Property({ type: 'text', nullable: true })
@@ -292,7 +292,7 @@ export class PurchasingPurchasePayment {
   @Property({ type: 'text' })
   stage!: string
 
-  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
   amount: string = '0'
 
   @Property({ name: 'currency_code', type: 'text', default: 'CNY' })
@@ -624,7 +624,7 @@ export class PurchasingSupplierProductPrice {
   @Property({ name: 'min_quantity', type: 'integer', default: 1 })
   minQuantity: number = 1
 
-  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 6, default: '0' })
+  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 4, default: '0' })
   unitPrice: string = '0'
 
   @Property({ name: 'is_active', type: 'boolean', default: true })

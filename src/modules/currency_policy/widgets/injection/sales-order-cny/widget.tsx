@@ -1,8 +1,7 @@
 "use client"
 
 import type { InjectionColumnWidget } from '@open-mercato/shared/modules/widgets/injection'
-import { formatCurrency } from '@open-mercato/ui/utils/format'
-import { formatRateLine } from '@/lib/money/format'
+import { formatMoneyAmount, formatRateLine } from '@/lib/money/format'
 import type { CnyEquivalentValue } from '../../../data/enrichers'
 
 /**
@@ -14,9 +13,9 @@ import type { CnyEquivalentValue } from '../../../data/enrichers'
  * `data/enrichers.ts` and read here through the enriched path `_currency_policy.cnyEquivalent`
  * (`.ai/guides/extensions.md` → Response Enrichers + Widget Injection).
  *
- * The cell renders the converted amount with the shared framework formatter and prints the rate line
- * underneath, so a reader can audit the figure without leaving the list. A row whose currency has no
- * stored rate carries `null` and the column stays empty rather than inventing a number.
+ * The cell renders the converted amount with the shared money formatter (fixed 2 decimals) and prints the
+ * rate line underneath, so a reader can audit the figure without leaving the list. A row whose currency
+ * has no stored rate carries `null` and the column stays empty rather than inventing a number.
  */
 const widget: InjectionColumnWidget = {
   metadata: {
@@ -39,7 +38,7 @@ const widget: InjectionColumnWidget = {
         if (!value || typeof value.amount !== 'string' || value.amount.length === 0) return null
         return (
           <span className="flex flex-col">
-            <span className="tabular-nums">{formatCurrency(value.amount, 'CNY') ?? value.amount}</span>
+            <span className="tabular-nums">{formatMoneyAmount(value.amount, 'CNY') ?? value.amount}</span>
             <span className="text-xs text-muted-foreground tabular-nums">
               {formatRateLine(value.currencyCode, value.rate, value.date)}
             </span>

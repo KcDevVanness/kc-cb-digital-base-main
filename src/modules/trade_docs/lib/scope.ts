@@ -2,7 +2,7 @@ import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import type { CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import { badRequest, CrudHttpError, notFound } from '@open-mercato/shared/lib/crud/errors'
 import { ORGANIZATION_SCOPE_REQUIRED_ERROR_CODE } from '@open-mercato/shared/lib/auth/organizationScope'
-import { TradeDocsContract, TradeDocsInvoice } from '../data/entities'
+import { TradeDocsContract, TradeDocsDocument, TradeDocsInvoice } from '../data/entities'
 
 export type TradeDocsScope = { tenantId: string; organizationId: string }
 
@@ -40,6 +40,25 @@ export function invoiceFilter(scope: TradeDocsScope, id: string): FilterQuery<Tr
     organizationId: scope.organizationId,
     deletedAt: null,
   } as FilterQuery<TradeDocsInvoice>
+}
+
+export function documentFilter(scope: TradeDocsScope, id: string): FilterQuery<TradeDocsDocument> {
+  return {
+    id,
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+    deletedAt: null,
+  } as FilterQuery<TradeDocsDocument>
+}
+
+export async function loadDocument(
+  em: EntityManager,
+  scope: TradeDocsScope,
+  id: string,
+): Promise<TradeDocsDocument> {
+  const document = await em.fork().findOne(TradeDocsDocument, documentFilter(scope, id))
+  if (!document) throw notFound('Document not found')
+  return document
 }
 
 export async function loadContract(

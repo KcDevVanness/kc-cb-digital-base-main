@@ -3,9 +3,9 @@ export const metadata = {
   requireFeatures: ['ru_sync.view'],
   pageTitle: 'RU SKU map',
   pageTitleKey: 'ru_sync.skuMap.page.title',
-  pageGroup: 'Finance',
-  pageGroupKey: 'export_finance.nav.group',
-  pageOrder: 436,
+  pageGroup: 'Data sync',
+  pageGroupKey: 'ru_sync.nav.group',
+  pageOrder: 500,
   icon: 'link',
   breadcrumb: [
     { label: 'RU SKU map', labelKey: 'ru_sync.skuMap.page.title' },

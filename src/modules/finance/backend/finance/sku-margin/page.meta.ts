@@ -3,9 +3,9 @@ export const metadata = {
   requireFeatures: ['finance.profit.view'],
   pageTitle: 'SKU margin',
   pageTitleKey: 'finance.skuMargin.page.title',
-  pageGroup: 'Finance',
-  pageGroupKey: 'export_finance.nav.group',
-  pageOrder: 442,
+  pageGroup: 'Executive overview',
+  pageGroupKey: 'executive_overview.nav.group',
+  pageOrder: 320,
   icon: 'line-chart',
   breadcrumb: [
     { label: 'SKU margin', labelKey: 'finance.skuMargin.page.title' },

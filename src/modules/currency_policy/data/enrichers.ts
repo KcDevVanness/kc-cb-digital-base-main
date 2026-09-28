@@ -1,5 +1,7 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
 import type { EnricherContext, ResponseEnricher } from '@open-mercato/shared/lib/crud/response-enricher'
+import { parseExactDecimal, type ExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
+import { AMOUNT_SCALE, multiplyExactDecimal, toAmountString } from '../../trade_docs/lib/money'
 import { loadRateRows, resolveCnyRate } from '../lib/rateLookup'
 
 /**
@@ -30,7 +32,10 @@ const AMOUNT_FIELD = 'grandTotalGrossAmount'
 const CURRENCY_FIELD = 'currencyCode'
 
 export type CnyEquivalentValue = {
-  /** The converted amount, as a decimal string (display only — never written back). */
+  /**
+   * The converted amount, as a fixed 2-decimal string — `HALF_UP(amount × rate, 2)`, the system's one
+   * amount caliber (display only, never written back).
+   */
   amount: string
   /** The order's own currency, so the column can name what was converted. */
   currencyCode: string
@@ -44,11 +49,12 @@ export type CnyEquivalentValue = {
 type OrderRecord = Record<string, unknown> & { id: string }
 type EnrichedOrder = OrderRecord & { _currency_policy: { cnyEquivalent: CnyEquivalentValue | null } }
 
-function readAmount(record: OrderRecord): { currencyCode: string; amount: number } | null {
+function readAmount(record: OrderRecord): { currencyCode: string; amount: ExactDecimal } | null {
   const currencyCode = typeof record[CURRENCY_FIELD] === 'string' ? String(record[CURRENCY_FIELD]).trim().toUpperCase() : ''
-  const rawAmount = record[AMOUNT_FIELD]
-  const amount = typeof rawAmount === 'number' ? rawAmount : Number.parseFloat(String(rawAmount ?? ''))
-  if (currencyCode.length !== 3 || !Number.isFinite(amount)) return null
+  // The amount is parsed exactly (MikroORM hands `numeric` over as a string) and stays exact until the
+  // single HALF_UP below — `Number.parseFloat` would reintroduce a binary float into the conversion.
+  const amount = parseExactDecimal(record[AMOUNT_FIELD])
+  if (currencyCode.length !== 3 || !amount) return null
   return { currencyCode, amount }
 }
 
@@ -90,13 +96,14 @@ const enricher: ResponseEnricher<OrderRecord, { _currency_policy: { cnyEquivalen
     return records.map((record, index) => {
       const pair = pairs[index]
       const rate = pair ? resolveCnyRate(pair.currencyCode, rows) : null
+      const rateValue = rate ? parseExactDecimal(rate.rate) : null
       return Object.assign(record, {
         _currency_policy: {
-          cnyEquivalent: pair && rate
+          cnyEquivalent: pair && rate && rateValue
             ? {
-                // Six decimals, the scale the app's money columns carry (`unit_price`/`numeric(18,6)`) —
-                // a raw float product would put `672.2643879999999` on the wire.
-                amount: (pair.amount * Number.parseFloat(rate.rate)).toFixed(6),
+                // `HALF_UP(amount × rate, 2)` through the shared engine: the conversion is an amount, so it
+                // carries the amount caliber. A float product would put `672.2643879999999` on the wire.
+                amount: toAmountString(multiplyExactDecimal(pair.amount, rateValue), AMOUNT_SCALE),
                 currencyCode: pair.currencyCode,
                 rate: rate.rate,
                 date: rate.date.toISOString(),

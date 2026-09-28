@@ -62,6 +62,10 @@ const OPTION_PAGE_SIZE = 50
 export const ORDER_STATUSES = ['draft', 'placed', 'shipped', 'received', 'closed', 'cancelled'] as const
 export type OrderStatus = (typeof ORDER_STATUSES)[number]
 
+/** The derived payment vocabulary, shared by the list, the detail page and the finance ledger. */
+export const PAYMENT_STATUSES = ['unpaid', 'deposit_paid', 'partially_paid', 'paid'] as const
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number]
+
 const ORDER_STATUS_MAP: StatusMap<OrderStatus> = {
   draft: 'neutral',
   placed: 'info',
@@ -110,6 +114,10 @@ export type PurchaseOrderRecord = {
   subtotal: string
   taxTotal: string
   total: string
+  /** Derived from the payment rows by the read API; not stored on the order. */
+  paidTotal: string
+  outstanding: string
+  paymentStatus: PaymentStatus
   expectedShipAt: string | null
   placedAt: string | null
   createdAt: string | null
@@ -164,6 +172,11 @@ export function toPurchaseOrderRecord(item: Record<string, unknown>): PurchaseOr
     subtotal: readText(item, 'subtotal') || '0',
     taxTotal: readText(item, 'taxTotal', 'tax_total') || '0',
     total: readText(item, 'total') || '0',
+    paidTotal: readText(item, 'paidTotal', 'paid_total') || '0',
+    outstanding: readText(item, 'outstanding') || '0',
+    paymentStatus: PAYMENT_STATUSES.includes(item.paymentStatus as PaymentStatus)
+      ? (item.paymentStatus as PaymentStatus)
+      : 'unpaid',
     expectedShipAt: readOptionalText(item, 'expectedShipAt', 'expected_ship_at'),
     placedAt: readOptionalText(item, 'placedAt', 'placed_at'),
     createdAt: readOptionalText(item, 'createdAt', 'created_at'),
@@ -273,7 +286,11 @@ export type PurchaseOrderLineValues = {
  * A purchase order is placed on one supplier, so "what does this supplier sell us" is the question
  * the picker is usually asked; the master is the fallback for goods that are not in that supplier's
  * list yet (or that we track centrally). The operator never has to decide which library to search —
- * the option's description names the source, and the pick's reference follows from it.
+ * every option names its source first, and the pick's reference follows from it.
+ *
+ * The source has to be the first thing on the bold line (owner review, 2026-09-24): one physical
+ * item appears twice — the supplier's library row and the product created from it — with the same
+ * code and name, and a source note underneath was not enough to tell them apart.
  *
  * A library row that has no product record yet says so on the option: it stays pickable (ordering
  * before archiving is a legitimate step) but the buyer is told, at the moment of choosing, that it
@@ -299,13 +316,16 @@ async function loadLineProductOptions(
   return [
     ...library.map((option) => ({
       value: toSupplierProductPickerValue(option.value),
-      label: option.label,
-      description: option.linked ? librarySourceLabel : `${librarySourceLabel} · ${libraryUnlinkedLabel}`,
+      // The source leads the label rather than trailing in the description: a library row and the
+      // product created from it carry the same code and name, so the bold line — what the eye
+      // compares — has to differ. The second line then only carries what an unlinked pick costs.
+      label: `${librarySourceLabel} · ${option.label}`,
+      description: option.linked ? null : libraryUnlinkedLabel,
     })),
     ...master.map((option) => ({
       value: toProductPickerValue(option.value),
-      label: option.label,
-      description: masterSourceLabel,
+      label: `${masterSourceLabel} · ${option.label}`,
+      description: null,
     })),
   ]
 }

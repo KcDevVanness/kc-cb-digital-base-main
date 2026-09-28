@@ -1,4 +1,5 @@
 {
+  "ru_sync.nav.group": "Data sync",
   "ru_sync.endpoint.skus": "SKU master data",
   "ru_sync.endpoint.sku_mappings": "SKU mapping table",
   "ru_sync.endpoint.stock": "Stock",

@@ -25,9 +25,10 @@ import {
   contractUpdateSchema,
   type ContractLineInput,
 } from '../data/validators'
+import { invalidateContractCaches } from '../lib/cacheInvalidation'
 import { contractFilter, ensureScope, loadContract, type TradeDocsScope } from '../lib/scope'
 import { recomputeContractHead } from '../lib/contractRecalc'
-import { productSnapshotPayload, readProductSnapshots } from '../lib/currencyScale'
+import { productSnapshotPayload, readProductSnapshots } from '../lib/productSnapshots'
 import { buildContractSheet, CONTRACT_TEMPLATE_ID } from '../lib/contractTemplate'
 import { eventsConfig } from '../events'
 
@@ -69,6 +70,7 @@ type SerializedContract = {
   signedAt: string | null
   deliveryDate: string | null
   paymentTerms: string | null
+  incoterms: string | null
   shippingMethod: string | null
   destination: string | null
   marks: string | null
@@ -104,6 +106,7 @@ function serializeContract(entity: TradeDocsContract): SerializedContract {
     signedAt: toDateOnly(entity.signedAt),
     deliveryDate: toDateOnly(entity.deliveryDate),
     paymentTerms: entity.paymentTerms ?? null,
+    incoterms: entity.incoterms ?? null,
     shippingMethod: entity.shippingMethod ?? null,
     destination: entity.destination ?? null,
     marks: entity.marks ?? null,
@@ -300,6 +303,7 @@ const createContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
               signedAt: parsed.signedAt ? new Date(parsed.signedAt) : null,
               deliveryDate: parsed.deliveryDate ? new Date(parsed.deliveryDate) : null,
               paymentTerms: parsed.paymentTerms,
+              incoterms: parsed.incoterms,
               shippingMethod: parsed.shippingMethod,
               destination: parsed.destination,
               marks: parsed.marks,
@@ -326,6 +330,11 @@ const createContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
       events: contractCrudEvents,
       indexer: contractCrudIndexer,
     })
+    await invalidateContractCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(contract.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'created',
+    )
 
     return contract
   },
@@ -364,6 +373,11 @@ const createContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
       events: contractCrudEvents,
       indexer: contractCrudIndexer,
     })
+    await invalidateContractCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'deleted',
+    )
   },
 }
 
@@ -412,6 +426,7 @@ const updateContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
               if (parsed.signedAt !== undefined) entity.signedAt = parsed.signedAt ? new Date(parsed.signedAt) : null
               if (parsed.deliveryDate !== undefined) entity.deliveryDate = parsed.deliveryDate ? new Date(parsed.deliveryDate) : null
               if (parsed.paymentTerms !== undefined) entity.paymentTerms = parsed.paymentTerms
+              if (parsed.incoterms !== undefined) entity.incoterms = parsed.incoterms
               if (parsed.shippingMethod !== undefined) entity.shippingMethod = parsed.shippingMethod
               if (parsed.destination !== undefined) entity.destination = parsed.destination
               if (parsed.marks !== undefined) entity.marks = parsed.marks
@@ -441,6 +456,11 @@ const updateContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
       events: contractCrudEvents,
       indexer: contractCrudIndexer,
     })
+    await invalidateContractCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(updated.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'updated',
+    )
 
     return updated
   },
@@ -500,6 +520,11 @@ const deleteContractCommand: CommandHandler<
       events: contractCrudEvents,
       indexer: contractCrudIndexer,
     })
+    await invalidateContractCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(removed.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'deleted',
+    )
 
     return removed
   },
@@ -655,6 +680,7 @@ const generateContractDocumentCommand: CommandHandler<
       signedAt: toDateOnly(contract.signedAt),
       deliveryDate: toDateOnly(contract.deliveryDate),
       paymentTerms: contract.paymentTerms ?? null,
+      incoterms: contract.incoterms ?? null,
       shippingMethod: contract.shippingMethod ?? null,
       destination: contract.destination ?? null,
       marks: contract.marks ?? null,
@@ -779,6 +805,11 @@ const attachContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
       events: contractCrudEvents,
       indexer: contractCrudIndexer,
     })
+    await invalidateContractCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(updated.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'updated',
+    )
 
     return updated
   },

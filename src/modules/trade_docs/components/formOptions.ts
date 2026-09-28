@@ -26,6 +26,7 @@ export { loadPortOptions } from '../../cross_border/components/shipmentFormOptio
 
 export const PAYMENT_TERM_DICTIONARY_KEY = 'payment_terms'
 export const SHIPPING_METHOD_DICTIONARY_KEY = 'shipping_method'
+export const INCOTERM_DICTIONARY_KEY = 'incoterms'
 
 /**
  * Suggestions from one of this module's own dictionaries (payment terms, shipping methods). These
@@ -49,6 +50,16 @@ export function loadShippingMethodOptions(query?: string): Promise<CrudFieldOpti
 }
 
 /**
+ * Trade terms (贸易术语) printed on a PI/CI: `EXW`, `FOB`, `CIF`, … — the same `incoterms`
+ * dictionary the setup seeds. `loadDictionaryOptions` returns an empty list when the dictionary is
+ * missing, so a deployment that has not seeded it simply offers no suggestions instead of throwing;
+ * the field keeps `allowCustomValues`, so a negotiated term is still typeable.
+ */
+export function loadIncotermOptions(query?: string): Promise<CrudFieldOption[]> {
+  return loadDictionaryOptions(INCOTERM_DICTIONARY_KEY, query)
+}
+
+/**
  * Option loaders shared by the contract and invoice forms.
  *
  * Every picker is backed by the owning module's own scoped option source, so a form can only offer
@@ -64,6 +75,10 @@ const PARTIES_OPTIONS_URL = '/api/parties/options'
 const PRODUCTS_API_PATH = 'products/items'
 const CONTRACTS_API_PATH = 'trade_docs/contracts'
 const CONTRACT_LINES_API_PATH = 'trade_docs/contracts/lines'
+const SALES_ORDERS_API_PATH = 'sales/orders'
+const PURCHASE_ORDERS_API_PATH = 'purchasing/purchase-orders'
+const SHIPMENTS_API_PATH = 'cross_border/shipments'
+const DOCUMENTS_API_PATH = 'trade_docs/documents'
 
 export function readText(source: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
@@ -196,4 +211,225 @@ export async function loadContractLineOptions(
       label: `#${lineNumber} ${name} · ${quantity} × ${unitPrice}`.trim(),
     }
   })
+}
+
+/** Display name inside a jsonb snapshot, tolerating both camelCase and snake_case keys. */
+export function snapshotText(snapshot: unknown, key = 'name'): string {
+  if (!snapshot || typeof snapshot !== 'object') return ''
+  const value = (snapshot as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value : ''
+}
+
+/**
+ * Internal sales orders a document can be anchored to (the PI's 来源单据 = PO anchor).
+ *
+ * Read from the installed sales list, so the order is resolved by the module that owns it; the
+ * label carries the order number and the buyer so an operator can pick without memorizing ids.
+ */
+export async function loadSalesOrderOptions(query?: string): Promise<CrudFieldOption[]> {
+  const term = query?.trim()
+  const payload = await fetchCrudList<Record<string, unknown>>(SALES_ORDERS_API_PATH, {
+    pageSize: 50,
+    sortField: 'created_at',
+    sortDir: 'desc',
+    ...(term ? { search: term } : {}),
+  })
+  return (payload.items ?? [])
+    .map((item) => {
+      const value = String(item.id ?? '')
+      const number = readText(item, 'orderNumber', 'order_number') || value.slice(0, 8)
+      const customer = snapshotText(item.customerSnapshot ?? item.customer_snapshot)
+      return { value, label: customer ? `${number} — ${customer}` : number }
+    })
+    .filter((option) => option.value.length > 0)
+}
+
+/**
+ * Purchase orders a document can be anchored to.
+ *
+ * The installed purchasing list, same read the shipment form draws its allocatable orders from; the
+ * supplier name comes from the list projection so no second request is needed.
+ */
+export async function loadPurchaseOrderOptions(query?: string): Promise<CrudFieldOption[]> {
+  const term = query?.trim()
+  const payload = await fetchCrudList<Record<string, unknown>>(PURCHASE_ORDERS_API_PATH, {
+    pageSize: 50,
+    sortField: 'created_at',
+    sortDir: 'desc',
+    ...(term ? { search: term } : {}),
+  })
+  return (payload.items ?? [])
+    .map((item) => {
+      const value = String(item.id ?? '')
+      const number = readText(item, 'number') || value.slice(0, 8)
+      const supplier = readText(item, 'supplierName', 'supplier_name')
+      return { value, label: supplier ? `${number} — ${supplier}` : number }
+    })
+    .filter((option) => option.value.length > 0)
+}
+
+/**
+ * Shipments a commercial invoice can be anchored to (the CI's 来源单据 = shipment anchor).
+ *
+ * Read from the cross-border shipment list, so the shipment is resolved by the module that owns it;
+ * the label is its own number, which is what the CI prints as its source.
+ */
+export async function loadShipmentOptions(query?: string): Promise<CrudFieldOption[]> {
+  const term = query?.trim()
+  const payload = await fetchCrudList<Record<string, unknown>>(SHIPMENTS_API_PATH, {
+    pageSize: 50,
+    sortField: 'created_at',
+    sortDir: 'desc',
+    ...(term ? { search: term } : {}),
+  })
+  return (payload.items ?? [])
+    .map((item) => {
+      const value = String(item.id ?? '')
+      const number = readText(item, 'number') || value.slice(0, 8)
+      return { value, label: number }
+    })
+    .filter((option) => option.value.length > 0)
+}
+
+/**
+ * Documents of one family (`proforma` / `commercial`) offered as one-shot copy sources — the PI →
+ * CI → tax-invoice chain. Read from this module's own list route, so the scope and defaults match
+ * the list pages the operator already sees; the caller renders `number ?? draft` + counterparty
+ * (`DocumentCopyFromDialog`) rather than the loader baking in a display string, so a source without
+ * a number still reads as a draft instead of a bare UUID.
+ */
+export type DocumentOption = {
+  value: string
+  kind: string
+  number: string | null
+  counterpartyName: string | null
+}
+
+export async function loadDocumentOptions(
+  kind: 'proforma' | 'commercial',
+  query?: string,
+): Promise<DocumentOption[]> {
+  const term = query?.trim()
+  const payload = await fetchCrudList<Record<string, unknown>>(DOCUMENTS_API_PATH, {
+    kind,
+    pageSize: 20,
+    sortField: 'created_at',
+    sortDir: 'desc',
+    ...(term ? { search: term } : {}),
+  })
+  return (payload.items ?? [])
+    .map((item) => {
+      const counterpartyName =
+        (item.counterpartyName as string | null | undefined) ??
+        (snapshotText(item.counterpartySnapshot ?? item.counterparty_snapshot) || null)
+      return {
+        value: String(item.id ?? ''),
+        kind: readText(item, 'kind') || kind,
+        number: (item.number ?? null) as string | null,
+        counterpartyName,
+      }
+    })
+    .filter((option) => option.value.length > 0)
+}
+
+/**
+ * The parties master's own option source (`/api/parties/options`).
+ *
+ * Used by the contract/PI "our party" picker so the printed seller head comes from master data;
+ * search is by party code, matching the route's own filter, and an unreadable list rejects with the
+ * caller's message so the form can show it instead of silently offering nothing.
+ */
+export async function loadPartyOptions(
+  errorMessage: string,
+  query?: string,
+): Promise<CrudFieldOption[]> {
+  const term = query?.trim()
+  const url = term ? `${PARTIES_OPTIONS_URL}?search=${encodeURIComponent(term)}` : PARTIES_OPTIONS_URL
+  const payload = await readApiResultOrThrow<{ items?: Array<{ value?: string; label?: string }> }>(
+    url,
+    undefined,
+    { errorMessage },
+  )
+  return (payload.items ?? [])
+    .map((item) => ({ value: String(item.value ?? ''), label: String(item.label ?? '') }))
+    .filter((option) => option.value.length > 0)
+}
+
+/**
+ * Bank accounts of one party, as `GET /api/parties/{id}` projects them, so a contract/PI can print
+ * the beneficiary account the master data holds. An account with no number still lists by bank name
+ * so the picker is never empty for a party that has one.
+ */
+export async function loadPartyBankAccountOptions(
+  errorMessage: string,
+  partyId: string,
+): Promise<CrudFieldOption[]> {
+  const scopedPartyId = partyId.trim()
+  if (!scopedPartyId) return []
+  const payload = await readApiResultOrThrow<{
+    item?: { bankAccounts?: Array<Record<string, unknown>> }
+  }>(`/api/parties/${encodeURIComponent(scopedPartyId)}`, undefined, { errorMessage })
+  return (payload.item?.bankAccounts ?? [])
+    .map((account) => {
+      const value = String(account.id ?? '')
+      const bank = readText(account, 'beneficiaryBank', 'beneficiary_bank')
+      const number = readText(account, 'accountNumber', 'account_number')
+      const label = [bank, number].filter((part) => part.length > 0).join(' — ') || value.slice(0, 8)
+      return { value, label: account.isDefault === true ? `${label} ★` : label }
+    })
+    .filter((option) => option.value.length > 0)
+}
+
+export type PartyDetail = {
+  id: string
+  name: string
+  /** Address composed for the printed head; the master stores it in parts. */
+  address: string
+  contact: string
+  bankAccounts: Array<{
+    id: string
+    beneficiaryBank: string
+    accountNumber: string
+    swiftCode: string
+    bankAddress: string
+    isDefault: boolean
+  }>
+}
+
+/**
+ * One party's head plus its bank accounts, as `GET /api/parties/{id}` projects them. The picker
+ * fills the contract/PI's printed "our party" block from this, so the paper and the master agree;
+ * the free-text fields stay editable afterwards for documents that predate the master data.
+ */
+export async function loadPartyDetail(errorMessage: string, partyId: string): Promise<PartyDetail | null> {
+  const scopedPartyId = partyId.trim()
+  if (!scopedPartyId) return null
+  const payload = await readApiResultOrThrow<{ item?: Record<string, unknown> }>(
+    `/api/parties/${encodeURIComponent(scopedPartyId)}`,
+    undefined,
+    { errorMessage },
+  )
+  const item = payload.item
+  if (!item) return null
+  const address = [
+    readText(item, 'addressLine1', 'address_line1'),
+    readText(item, 'addressLine2', 'address_line2'),
+    readText(item, 'city'),
+    readText(item, 'countryCode', 'country_code'),
+  ].filter((part) => part.length > 0).join(', ')
+  const rawAccounts = Array.isArray(item.bankAccounts) ? (item.bankAccounts as Array<Record<string, unknown>>) : []
+  return {
+    id: scopedPartyId,
+    name: readText(item, 'name'),
+    address,
+    contact: readText(item, 'contactName', 'contact_name') || readText(item, 'email'),
+    bankAccounts: rawAccounts.map((account) => ({
+      id: String(account.id ?? ''),
+      beneficiaryBank: readText(account, 'beneficiaryBank', 'beneficiary_bank'),
+      accountNumber: readText(account, 'accountNumber', 'account_number'),
+      swiftCode: readText(account, 'swiftCode', 'swift_code'),
+      bankAddress: readText(account, 'bankAddress', 'bank_address'),
+      isDefault: account.isDefault === true,
+    })),
+  }
 }

@@ -3,9 +3,9 @@ export const metadata = {
   requireFeatures: ['finance.ledger.view'],
   pageTitle: 'Inventory value',
   pageTitleKey: 'finance.inventoryValue.page.title',
-  pageGroup: 'Finance',
-  pageGroupKey: 'export_finance.nav.group',
-  pageOrder: 426,
+  pageGroup: 'Executive overview',
+  pageGroupKey: 'executive_overview.nav.group',
+  pageOrder: 330,
   icon: 'warehouse',
   breadcrumb: [
     { label: 'Inventory value', labelKey: 'finance.inventoryValue.page.title' },

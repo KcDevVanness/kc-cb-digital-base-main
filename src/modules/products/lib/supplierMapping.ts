@@ -14,8 +14,11 @@
  *
  * The source-specific halves (which columns of a quotation line or of a library row feed these
  * values) stay in their own modules: this file only knows the master's field names and the merge
- * semantics, and it imports no entity from any module.
+ * semantics, and it imports no entity from any module. The one cross-module import is the money
+ * engine, because a price comparison must be an exact decimal one.
  */
+
+import { PRICE_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
 
 export type ProductFieldValues = {
   name: string | null
@@ -125,8 +128,14 @@ export function mergePriceRows(
   desired: DesiredPriceRow,
 ): { rows: Record<string, unknown>[]; changed: boolean } {
   const key = priceRowKey(desired)
+  // The comparison is exact at the column scale, never a float one: both sides become scaled
+  // integers, so two prices a ten-thousandth apart are always told apart (`Number` collapses
+  // 4-decimal values past 2^53) and two spellings of the same price (`230`, `230.0000`) are equal.
   let changed = !existing.some(
-    (row) => priceRowKey(row) === key && Number(row.unitPrice) === Number(desired.unitPrice) && row.isActive,
+    (row) =>
+      priceRowKey(row) === key &&
+      toScaledUnits(row.unitPrice, PRICE_SCALE) === toScaledUnits(desired.unitPrice, PRICE_SCALE) &&
+      row.isActive,
   )
   const rows: Record<string, unknown>[] = existing.map((row) => {
     if (priceRowKey(row) !== key) {

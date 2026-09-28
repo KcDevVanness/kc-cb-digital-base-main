@@ -1,4 +1,5 @@
 {
+  "executive_overview.nav.group": "Executive overview",
   "boss_cockpit.page.title": "Boss cockpit",
   "boss_cockpit.page.description": "The RU supply numbers and the CN cash numbers on one page. Every figure carries its snapshot date and source; currencies are never added together and missing data is labelled as missing.",
   "boss_cockpit.loading": "Assembling the cockpit…",

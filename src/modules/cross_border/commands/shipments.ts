@@ -11,6 +11,7 @@ import {
   CrossBorderShipment,
   CrossBorderShipmentAllocation,
   CrossBorderShipmentMilestone,
+  CrossBorderShipmentSalesAllocation,
 } from '../data/entities'
 import {
   SHIPMENT_MILESTONES,
@@ -26,11 +27,13 @@ import {
 import { invalidatePeerCaches, invalidateShipmentCaches, PEER_CACHE_RESOURCES } from '../lib/cacheInvalidation'
 import { ensureScope, type Scope } from '../lib/scope'
 import {
+  allocationExceedsOrderedQuantity,
   loadAllocatedQuantities,
   loadPurchaseOrderLines,
   resolveDefaultVariantId,
   type PurchaseOrderLineRef,
 } from '../lib/purchasingReads'
+import { loadSalesOrderLines, type SalesOrderLineRef } from '../lib/shipmentSalesReads'
 import { eventsConfig } from '../events'
 
 const SHIPMENT_ENTITY_ID = 'cross_border:cross_border_shipment' as const
@@ -117,15 +120,19 @@ async function resolveAllocations(
         error: `Purchase order line ${allocation.purchaseOrderLineId} has no catalog product link, so the goods cannot be received into stock; sync the supplier product to the product master and link it to a catalog product first`,
       })
     }
-    const ordered = Number.parseFloat(line.quantity)
-    const committed = alreadyAllocated[allocation.purchaseOrderLineId] ?? 0
-    const next = committed + Number(allocation.quantity)
-    if (next > ordered + 1e-6) {
+    // The over-allocation guard is exact: the ordered, already-committed and requested quantities
+    // are compared as scaled integers at the column's scale, so a value a ten-thousandth over the
+    // ordered quantity is refused deterministically. The old string-to-float comparison with a
+    // `+ 1e-6` tolerance hid exactly that difference.
+    const committed = alreadyAllocated[allocation.purchaseOrderLineId] ?? '0'
+    if (allocationExceedsOrderedQuantity(line.quantity, committed, allocation.quantity)) {
       throw new CrudHttpError(422, {
         error: `Allocating ${allocation.quantity} exceeds the ordered quantity of ${line.quantity} (already allocated ${committed}) for ${line.orderNumber ?? line.orderId}`,
       })
     }
-    return { line: { ...line, catalogProductId: line.catalogProductId }, quantity: Number(allocation.quantity).toFixed(4) }
+    // The validator already normalized the quantity onto the column's scale; writing that string
+    // keeps every digit instead of round-tripping it through a float (`Number(...).toFixed(4)`).
+    return { line: { ...line, catalogProductId: line.catalogProductId }, quantity: allocation.quantity }
   })
 }
 
@@ -149,6 +156,96 @@ async function replaceAllocations(
         productSnapshot: entry.line.productSnapshot,
         quantity: entry.quantity,
         receivedQuantity: null,
+      }),
+    )
+  }
+  await em.flush()
+}
+
+/**
+ * A validated internal-sales allocation: the order/line ids, the frozen display snapshot and the
+ * price/currency the operator may have adjusted. `catalogProductId` is narrowed to a string — the
+ * guard refuses a line that is not bridged to the catalog, so every value here can be persisted on
+ * the row (whose `catalog_product_id` is required).
+ */
+type ResolvedSalesAllocation = {
+  orderId: string
+  orderNumber: string | null
+  line: SalesOrderLineRef
+  catalogProductId: string
+  productSnapshot: Record<string, unknown> | null
+  quantity: string
+  unitPrice: string | null
+  currencyCode: string | null
+}
+
+/**
+ * Validates the sales allocation set against the internal sales-order lines it points at.
+ *
+ * The line is the authority: it must exist in the caller's organization (a line from another
+ * tenant/organization, or a soft-deleted one, is a 422), and it must be bridged to the installed
+ * catalog — the CI draws its product from `catalog_product_id`, so a line that is not bridged
+ * cannot be aggregated. The catalog product is resolved from the line's product link (falling back
+ * to the picked value); the sales order number, product snapshot, unit price and currency come
+ * from the line as well, with the client's edited price/currency winning where it sent them.
+ */
+async function resolveSalesAllocations(
+  em: EntityManager,
+  scope: Scope,
+  allocations: ShipmentCreateInput['salesAllocations'],
+): Promise<ResolvedSalesAllocation[]> {
+  const lineIds = allocations.map((allocation) => allocation.salesOrderLineId)
+  if (new Set(lineIds).size !== lineIds.length) {
+    throw new CrudHttpError(422, { error: 'The same sales order line is listed twice in this shipment' })
+  }
+
+  const lines = await loadSalesOrderLines(em, scope, lineIds)
+
+  return allocations.map((allocation) => {
+    const line = lines[allocation.salesOrderLineId]
+    if (!line) {
+      throw new CrudHttpError(422, { error: `Sales order line not found in this organization: ${allocation.salesOrderLineId}` })
+    }
+    const catalogProductId = line.catalogProductId ?? allocation.catalogProductId
+    if (!catalogProductId) {
+      throw new CrudHttpError(422, {
+        error: `Sales order line ${allocation.salesOrderLineId} is not bridged to a catalog product, so its goods cannot be aggregated into a commercial invoice; link the product to the product master's catalog entry first`,
+      })
+    }
+    return {
+      orderId: line.orderId,
+      orderNumber: line.orderNumber ?? allocation.salesOrderNumber ?? null,
+      line,
+      catalogProductId,
+      productSnapshot: line.productSnapshot ?? allocation.productSnapshot ?? null,
+      quantity: allocation.quantity,
+      unitPrice: allocation.unitPrice ?? line.unitPrice,
+      currencyCode: allocation.currencyCode ?? line.currencyCode,
+    }
+  })
+}
+
+async function replaceSalesAllocations(
+  em: EntityManager,
+  scope: Scope,
+  shipment: CrossBorderShipment,
+  resolved: ResolvedSalesAllocation[],
+): Promise<void> {
+  await em.nativeDelete(CrossBorderShipmentSalesAllocation, { shipment: shipment.id } as FilterQuery<CrossBorderShipmentSalesAllocation>)
+  for (const entry of resolved) {
+    em.persist(
+      em.create(CrossBorderShipmentSalesAllocation, {
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        shipment,
+        salesOrderId: entry.orderId,
+        salesOrderLineId: entry.line.id,
+        salesOrderNumber: entry.orderNumber,
+        catalogProductId: entry.catalogProductId,
+        productSnapshot: entry.productSnapshot,
+        quantity: entry.quantity,
+        unitPrice: entry.unitPrice,
+        currencyCode: entry.currencyCode,
       }),
     )
   }
@@ -209,6 +306,7 @@ const createShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
     const resolved = await resolveAllocations(em, scope, parsed.allocations)
+    const resolvedSales = await resolveSalesAllocations(em, scope, parsed.salesAllocations)
 
     const shipment = await de.createOrmEntity({
       entity: CrossBorderShipment,
@@ -231,6 +329,7 @@ const createShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
       },
     })
     await replaceAllocations(em, scope, shipment, resolved)
+    await replaceSalesAllocations(em, scope, shipment, resolvedSales)
 
     await emitCrudSideEffects({
       dataEngine: de,
@@ -241,6 +340,11 @@ const createShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
       events: shipmentCrudEvents,
       indexer: shipmentCrudIndexer,
     })
+    await invalidateShipmentCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(shipment.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'created',
+    )
 
     return shipment
   },
@@ -274,6 +378,11 @@ const createShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
       events: shipmentCrudEvents,
       indexer: shipmentCrudIndexer,
     })
+    await invalidateShipmentCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'deleted',
+    )
   },
 }
 
@@ -297,6 +406,7 @@ const updateShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
     })
 
     const resolved = parsed.allocations ? await resolveAllocations(em, scope, parsed.allocations, String(shipment.id)) : null
+    const resolvedSales = parsed.salesAllocations ? await resolveSalesAllocations(em, scope, parsed.salesAllocations) : null
 
     const updated = await de.updateOrmEntity({
       entity: CrossBorderShipment,
@@ -318,6 +428,7 @@ const updateShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
     })
     if (!updated) throw notFound('Shipment not found')
     if (resolved) await replaceAllocations(em, scope, updated, resolved)
+    if (resolvedSales) await replaceSalesAllocations(em, scope, updated, resolvedSales)
 
     await emitCrudSideEffects({
       dataEngine: de,
@@ -328,6 +439,11 @@ const updateShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
       events: shipmentCrudEvents,
       indexer: shipmentCrudIndexer,
     })
+    await invalidateShipmentCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(updated.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'updated',
+    )
 
     return updated
   },
@@ -376,6 +492,11 @@ const deleteShipmentCommand: CommandHandler<
       events: shipmentCrudEvents,
       indexer: shipmentCrudIndexer,
     })
+    await invalidateShipmentCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(removed.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'deleted',
+    )
 
     return removed
   },

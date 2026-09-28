@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from '@open-mercato/ui/primitives/dialog'
 import { EmptyState } from '@open-mercato/ui/primitives/empty-state'
+import { Input } from '@open-mercato/ui/primitives/input'
 import { Label } from '@open-mercato/ui/primitives/label'
 import { SegmentedControl, SegmentedControlItem } from '@open-mercato/ui/primitives/segmented-control'
 import {
@@ -44,6 +45,7 @@ import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primiti
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT } from '@open-mercato/shared/lib/i18n/context'
+import { AttachmentPreviewLink, useAttachmentPreview } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { useCurrencyOptions, withCurrentCurrency } from '../../currency_policy/lib/clientOptions'
 import type {
@@ -494,17 +496,24 @@ function CollectionDocumentAttachmentField({
           {t('export_finance.orders.collection.documents.field.attachmentId')}
         </Button>
         {attachmentId ? (
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={disabled}
-            onClick={() => {
-              setValue('')
-              setFileName(null)
-            }}
-          >
-            {t('export_finance.orders.collection.documents.remove')}
-          </Button>
+          <>
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              fileName={fileName}
+              label={t('export_finance.orders.collection.documents.preview')}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={disabled}
+              onClick={() => {
+                setValue('')
+                setFileName(null)
+              }}
+            >
+              {t('export_finance.orders.collection.documents.remove')}
+            </Button>
+          </>
         ) : null}
       </div>
       {fileName ? <p className="text-xs text-muted-foreground">{fileName}</p> : null}
@@ -559,6 +568,7 @@ function OrderCollectionSection({
   const locale = useLocale()
   const scopeVersion = useOrganizationScopeVersion()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
+  const { openPreview, previewDialog } = useAttachmentPreview()
   const [collection, setCollection] = React.useState<CollectionRecord | null>(null)
   const [statusValue, setStatusValue] = React.useState<ExportFinanceCollectionStatus>('unknown')
   const [currencyValue, setCurrencyValue] = React.useState('')
@@ -832,12 +842,18 @@ function OrderCollectionSection({
         const attachmentId = row.original.attachmentId
         if (!attachmentId) return <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>
         return (
-          <Link
-            href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
-            className="text-sm text-primary hover:underline"
-          >
-            {t('export_finance.orders.collection.documents.download')}
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              label={t('export_finance.orders.collection.documents.preview')}
+            />
+            <Link
+              href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
+              className="text-sm text-primary hover:underline"
+            >
+              {t('export_finance.orders.collection.documents.download')}
+            </Link>
+          </div>
         )
       },
     },
@@ -999,6 +1015,10 @@ function OrderCollectionSection({
                 <RowActions
                   items={[
                     ...(row.attachmentId ? [{
+                      id: 'preview',
+                      label: t('export_finance.orders.collection.documents.preview'),
+                      onSelect: () => openPreview(row.attachmentId as string),
+                    }, {
                       id: 'download',
                       label: t('export_finance.orders.collection.documents.download'),
                       href: `/api/attachments/file/${encodeURIComponent(row.attachmentId)}?download=1`,
@@ -1047,6 +1067,7 @@ function OrderCollectionSection({
         </DialogContent>
       </Dialog>
 
+      {previewDialog}
       {ConfirmDialogElement}
     </>
   )

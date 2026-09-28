@@ -36,14 +36,13 @@ export type ResolvedContractLineTotals = {
 export type ResolvedContractTotals = {
   lines: ResolvedContractLineTotals[]
   totals: ContractTotals
-  /** Sum of the invoice amounts that took over a line, at the stored amount scale. */
+  /** Sum of the invoice amounts that took over a line, at the amount scale (2 decimals). */
   invoiceCoveredTotal: string
 }
 
 export function resolveContractTotals(input: {
   lines: ContractLineForTotals[]
   invoiceLines: ConfirmedInvoiceLineRef[]
-  currencyScale: number
 }): ResolvedContractTotals {
   const amountsByContractLine = new Map<string, string[]>()
   for (const invoiceLine of input.invoiceLines) {
@@ -57,7 +56,6 @@ export function resolveContractTotals(input: {
     const computed = computeLineAmounts({
       quantity: line.quantity,
       unitPrice: line.unitPrice,
-      currencyScale: input.currencyScale,
     })
     const invoiced = amountsByContractLine.get(line.id)
     if (!invoiced || invoiced.length === 0) {

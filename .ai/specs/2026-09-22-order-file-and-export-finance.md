@@ -54,13 +54,13 @@ Requirements are grouped A–F; each maps to a phase, a test, and an acceptance 
 - **REQ-C2** — `EXPORT_DOC_TYPES` gains `so`, `telex_release`, `domestic_freight_receipt`, `booking_charges_receipt`; the existing document command/route keep working unchanged and the new types appear in the shipment UI.
 - **REQ-D1** — `trade_docs_contracts` gains `attachment_id` (the **signed/stamped scan**; the generated XLSX keeps `generated_attachment_id`), bound through a new `trade_docs.contracts.attach` command and `PUT /api/trade_docs/contracts/attach` route gated by `trade_docs.contracts.manage`.
 - **REQ-E1** — `export_finance_collections` is unique per `(tenant, organization, purchase_order_id)` and carries `collection_status` ∈ `received` | `not_received` | `unknown`, plus `purchase_order_number` and `currency_code` snapshots; `PUT /api/export_finance/collections` upserts it (create when absent, optimistic-locked update when present).
-- **REQ-E2** — `export_finance_refunds` is unique per `(tenant, organization, shipment_id)` and carries `tax_refund_status` ∈ `completed` | `applied` | `not_started` | `unknown`, `tax_refund_amount` (numeric(18,4), hand-entered, ≤2 decimals accepted) and `tax_refund_note`; the save command rejects a `shipment_id` that is missing or `cancelled` in `cross_border_shipments` with 409 and creates no row.
+- **REQ-E2** — `export_finance_refunds` is unique per `(tenant, organization, shipment_id)` and carries `tax_refund_status` ∈ `completed` | `applied` | `not_started` | `unknown`, `tax_refund_amount` (numeric(18,2), hand-entered, ≤2 decimals accepted) and `tax_refund_note`; the save command rejects a `shipment_id` that is missing or `cancelled` in `cross_border_shipments` with 409 and creates no row.
 - **REQ-E3** — `export_finance_collection_documents` (`foreign_income_certificate` | `other`) hangs on the order-level collection, `export_finance_refund_documents` (`tax_refund_package` | `report_draft` | `other`) hangs on the container-level refund; both are one row per file, CRUD through registered commands and `makeCrudRoute` actions.
 - **REQ-E4** — **Allocation rule (single authoritative definition):** `share_i = HALF_UP(refundAmount × orderTotal_i / Σ orderTotal, 2)`; the rounding remainder lands on the order with the largest share (ties → the lowest `number`, then lowest id); when `Σ orderTotal = 0` every order's allocation is `null`; the allocations always sum to the container amount.
 - **REQ-E5** — **Order refund status** is the *least advanced* status of the order's containers: `unknown(0) < not_started(1) < applied(2) < completed(3)`; an order with no container record reads `unknown`.
 - **REQ-F1** — A read-only projection serves `/api/export_finance/order-files` (business + finance views of one order: derived business status, dates, container facts, the five finance amounts, collection status, aggregated refund status, allocated refund amount, `containers[]`, and a 12-item checklist) and `/api/export_finance/container-files` (the container as the refund unit: container facts, its orders with allocated refunds, refund status/amount/note, and a 7-item checklist). Both honour tenant + organization scope and support `format=csv`.
 - **REQ-F2** — **Derived business status** (no new stored column): `cancelled` > `closed` > `received` > `shipped` (order `shipped` or shipment departed) > `factory_pickup` (order `placed` and at least one container has the `picked_up` milestone) > `placed` > `draft`.
-- **REQ-F3** — Money is read through `src/modules/trade_docs/lib/money.ts` (`quantizeExactDecimal` / `subtractExactDecimal` / `sumAmounts`) with the currency scale from `readCurrencyScaleInfo`; `Number.toFixed` is not used anywhere in this slice.
+- **REQ-F3** — Money is read through `src/modules/trade_docs/lib/money.ts` (`quantizeExactDecimal` / `subtractExactDecimal` / `sumAmounts`) at the fixed amount scale (`AMOUNT_SCALE = 2`, currency-independent); `Number.toFixed` is not used anywhere in this slice.
 - **REQ-F4** — `KC订单价格` is the most recent non-cancelled `direction='sales'`, `source_kind='purchase_order'`, `source_id=<order>` contract's `finance_total`; `USD` is the most recent non-void `direction='outbound'` invoice of that contract (`issued_at desc nulls last, updated_at desc`) with its currency code; both are `null` when absent.
 - **REQ-G1** — Four backend pages ship under `/backend/export-finance/...` (orders list with business/finance tabs, order detail with the two tabs + collection form + collection documents, containers list, container detail with the refund form and the reverse order table whose allocations and total reconcile to the container amount), each with `page.meta.ts`, ACL features, zh/en strings, loading/empty/error/conflict/permission-denied states.
 - **REQ-G2** — The new module owns features `export_finance.orders.view`, `export_finance.cabinets.view`, `export_finance.manage`; `setup.ts` grants them to `superadmin`/`admin` only; `yarn mercato auth sync-role-acls` is run after they are added.
@@ -157,7 +157,7 @@ Trusted scope: `tenantId` and `organizationId` always come from the authenticate
 | Attachments (files) | reuse | installed `attachments` | `attachment_id` + `/api/attachments/file/<id>` | the platform already stores and serves files |
 | Dictionaries | reuse | installed `dictionaries` | `Dictionary`/`DictionaryEntry` seeds | single- and multi-select option source |
 | Auth / ACL / scope / CRUD factory / commands / events / openapi | reuse | platform | `makeCrudRoute`, `registerCommand`, `createModuleEvents`, `createCrudOpenApiFactory` | platform-native by rule |
-| Money arithmetic | reuse | `trade_docs/lib/money.ts`, `trade_docs/lib/currencyScale.ts` | direct import (pure functions) | one rounding authority |
+| Money arithmetic | reuse | `trade_docs/lib/money.ts` | direct import (pure functions) | one rounding authority (`AMOUNT_SCALE=2`; `lib/currencyScale.ts` deleted, see the unification spec) |
 | CSV serialization | reuse | `@open-mercato/shared/lib/crud/exporters` | `serializeExport` | platform already hardens formula injection |
 
 ## Architecture and Data Flow
@@ -320,7 +320,7 @@ Reference implementations inspected: `src/modules/cross_border/components/Shipme
 | `shipment_id` | uuid, required | unique `(tenant, org, shipment_id)` | no | the save command rejects a missing/cancelled shipment (409) |
 | `shipment_number` | text, null | — | no | snapshot at save time |
 | `tax_refund_status` | text, not null default `unknown` | — | no | `completed` \| `applied` \| `not_started` \| `unknown` |
-| `tax_refund_amount` | numeric(18,4), null | — | no | hand-entered, ≤2 decimals accepted, quantized to 4 on store |
+| `tax_refund_amount` | numeric(18,2), null | — | no | hand-entered, ≤2 decimals accepted, stored at 2 |
 | `tax_refund_note` | text, null | — | no | ≤500 |
 | `updated_at` | timestamp | optimistic-lock version | no | as above |
 
@@ -536,5 +536,6 @@ The owner's plan resolved the open questions before implementation; recorded her
 
 | Date | Change |
 |---|---|
+| 2026-09-28 | 金额口径统一：金额 2 位/单价 4 位，HALF_UP，引擎单点；金额列 numeric(18,2)、单价列 numeric(18,4)（见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](2026-09-28-money-scale-2dp-unification.md)）。本 spec：`tax_refund_amount` 18,4→18,2；REQ-F3 金额改按 `AMOUNT_SCALE=2`（不再读 `readCurrencyScaleInfo`）；REQ-E4 分摊 2 位口径不变。 |
 | 2026-09-22 | Initial draft from the approved implementation plan (35-field inventory, two finance anchors, allocation rule) |
 | 2026-09-23 | Status → `Implemented (Phases 1–5)`; integration-test backfill recorded as an open follow-up (only the projection unit test exists; TEST-001…TEST-012/TEST-014 are oracles, not artifacts). |

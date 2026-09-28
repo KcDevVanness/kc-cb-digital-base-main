@@ -87,13 +87,13 @@ export class PlatformOpsOrderMirror {
   @Property({ name: 'currency_code', type: 'text', default: 'USD' })
   currencyCode: string = 'USD'
 
-  @Property({ name: 'gross_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'gross_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   grossAmount: string = '0'
 
-  @Property({ name: 'fee_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'fee_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   feeAmount: string = '0'
 
-  @Property({ name: 'net_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'net_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   netAmount: string = '0'
 
   @Property({ name: 'placed_at', type: Date, nullable: true })
@@ -153,13 +153,13 @@ export class PlatformOpsSettlement {
   @Property({ name: 'currency_code', type: 'text', default: 'USD' })
   currencyCode: string = 'USD'
 
-  @Property({ name: 'gross_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'gross_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   grossAmount: string = '0'
 
-  @Property({ name: 'fee_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'fee_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   feeAmount: string = '0'
 
-  @Property({ name: 'net_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'net_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   netAmount: string = '0'
 
   @Property({ type: 'text', default: 'imported' })
@@ -201,13 +201,13 @@ export class PlatformOpsSettlementLine {
   @Property({ name: 'order_mirror_id', type: 'uuid', nullable: true })
   orderMirrorId?: string | null
 
-  @Property({ name: 'gross_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'gross_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   grossAmount: string = '0'
 
-  @Property({ name: 'fee_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'fee_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   feeAmount: string = '0'
 
-  @Property({ name: 'net_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'net_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   netAmount: string = '0'
 
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
@@ -249,10 +249,10 @@ export class PlatformOpsReconciliationItem {
   @Property({ name: 'order_mirror_id', type: 'uuid', nullable: true })
   orderMirrorId?: string | null
 
-  @Property({ name: 'expected_amount', type: 'numeric', precision: 18, scale: 4, nullable: true })
+  @Property({ name: 'expected_amount', type: 'numeric', precision: 18, scale: 2, nullable: true })
   expectedAmount?: string | null
 
-  @Property({ name: 'actual_amount', type: 'numeric', precision: 18, scale: 4, nullable: true })
+  @Property({ name: 'actual_amount', type: 'numeric', precision: 18, scale: 2, nullable: true })
   actualAmount?: string | null
 
   @Property({ name: 'currency_code', type: 'text', nullable: true })

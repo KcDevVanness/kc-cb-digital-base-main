@@ -240,10 +240,12 @@ export const enabledModules: ModuleEntry[] = [
 enabledModules.push({
   id: 'purchasing',
   from: '@app',
-  // Sidebar group order is a single app-wide decision: the six business-role groups come first,
-  // then the 基础数据 vocabulary group (the dictionary library's main-menu entry), and every
-  // installed group keeps its existing position after them.
-  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group', 'export_finance.nav.group', 'products.nav.group', 'parties.nav.group', 'platform_ops.nav.group', 'master_data.nav.group'] } },
+  // Sidebar group order is a single app-wide decision: the business-role groups come first —
+  // 采购 / 出口业务 / 经营概览 (boss-facing results) / 财务 (finance-desk work and ledgers) /
+  // 数据同步 (the RU pipeline's maintenance pages) / 商品主数据 / 交易对手 / 平台运营 — then the
+  // 基础数据 vocabulary group (the dictionary library's main-menu entry), and every installed
+  // group keeps its existing position after them.
+  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group', 'executive_overview.nav.group', 'export_finance.nav.group', 'ru_sync.nav.group', 'products.nav.group', 'parties.nav.group', 'platform_ops.nav.group', 'master_data.nav.group'] } },
 })
 
 // App-owned cross-border module — consignments (shipments) that combine purchase orders, their

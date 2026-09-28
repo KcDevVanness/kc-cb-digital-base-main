@@ -485,8 +485,8 @@ test.describe.serial('purchasing — supplier product library', () => {
     const replaced = await staffRequest('PUT', pricesUrl, {
       supplierProductId: rowId,
       rows: [
-        { priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '12.500000' },
-        { priceKind: 'company_offer', currencyCode: 'USD', minQuantity: 1, unitPrice: '3.200000' },
+        { priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '12.5000' },
+        { priceKind: 'company_offer', currencyCode: 'USD', minQuantity: 1, unitPrice: '3.2000' },
       ],
     })
     expect(replaced.status(), `PUT …/prices answered ${await replaced.text()}`).toBe(200)
@@ -528,7 +528,7 @@ test.describe.serial('purchasing — supplier product library', () => {
     // Submitting a set without the offer deactivates it instead of deleting it.
     const withoutOffer = await staffRequest('PUT', pricesUrl, {
       supplierProductId: rowId,
-      rows: [{ priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '12.500000' }],
+      rows: [{ priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '12.5000' }],
     })
     expect(withoutOffer.status()).toBe(200)
     const afterRemoval = await staffRequest('GET', `${pricesUrl}?supplierProductId=${encodeURIComponent(rowId)}`)
@@ -794,9 +794,9 @@ test.describe.serial('purchasing — supplier product library', () => {
     const replaced = await staffRequest('PUT', masterPricesUrl, {
       productId: syncProductId,
       rows: [
-        { priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 1, unitPrice: '10.000000' },
-        { priceTier: 'internal', currencyCode: 'CNY', minQuantity: 1, unitPrice: '20.000000' },
-        { priceTier: 'export', currencyCode: 'CNY', minQuantity: 1, unitPrice: '30.000000' },
+        { priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 1, unitPrice: '10.0000' },
+        { priceTier: 'internal', currencyCode: 'CNY', minQuantity: 1, unitPrice: '20.0000' },
+        { priceTier: 'export', currencyCode: 'CNY', minQuantity: 1, unitPrice: '30.0000' },
       ],
     })
     expect(replaced.status(), `PUT ${masterPricesUrl} answered ${await replaced.text()}`).toBe(200)
@@ -837,7 +837,7 @@ test.describe.serial('purchasing — supplier product library', () => {
     // The row's own confirmed supplier cost is the price the `purchase` tier follows.
     const rowPrices = await staffRequest('PUT', `${LIBRARY_URL}/prices`, {
       supplierProductId: syncRowId,
-      rows: [{ priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '18.500000' }],
+      rows: [{ priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '18.5000' }],
     })
     expect(rowPrices.status(), `PUT ${LIBRARY_URL}/prices answered ${await rowPrices.text()}`).toBe(200)
 
@@ -1040,7 +1040,7 @@ test.describe.serial('purchasing — supplier product library', () => {
 
     const priced = await staffRequest('PUT', `${LIBRARY_URL}/prices`, {
       supplierProductId: rowId,
-      rows: [{ priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '100.000000' }],
+      rows: [{ priceKind: 'supplier_cost', currencyCode: 'CNY', minQuantity: 1, unitPrice: '100.0000' }],
     })
     expect(priced.status(), `PUT …/prices answered ${await priced.text()}`).toBe(200)
 
@@ -1062,7 +1062,7 @@ test.describe.serial('purchasing — supplier product library', () => {
     expect(Number(discounted?.discountPercent), 'the discount round-trips').toBe(5)
     expect(discounted?.discountPercent, 'a whole percent reads back without a padded fraction').toBe('5')
     expect(Number(discounted?.supplierCostPrice?.unitPrice), 'the printed supply price is kept').toBe(100)
-    expect(discounted?.supplierCostPrice?.netUnitPrice, 'the net amount is derived, not stored').toBe('95.000000')
+    expect(discounted?.supplierCostPrice?.netUnitPrice, 'the net amount is derived, not stored').toBe('95.0000')
 
     const promote = await staffRequest('POST', `${LIBRARY_URL}/promote`, { id: rowId })
     const promoted = await readJsonSafe<{ productId?: string; action?: string }>(promote)
@@ -1092,8 +1092,8 @@ test.describe.serial('purchasing — supplier product library', () => {
     const internal = await staffRequest('PUT', '/api/products/prices', {
       productId,
       rows: [
-        { priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 1, unitPrice: '95.000000' },
-        { priceTier: 'internal', currencyCode: 'USD', minQuantity: 1, unitPrice: '21.500000' },
+        { priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 1, unitPrice: '95.0000' },
+        { priceTier: 'internal', currencyCode: 'USD', minQuantity: 1, unitPrice: '21.5000' },
       ],
     })
     expect(internal.status(), `PUT /api/products/prices answered ${await internal.text()}`).toBe(200)
@@ -1113,7 +1113,7 @@ test.describe.serial('purchasing — supplier product library', () => {
     const afterClear = await readRow()
     expect(afterClear?.discountPercent, 'a cleared discount reads back as none').toBeNull()
     expect(afterClear?.supplierCostPrice?.netUnitPrice, 'with no discount the net is the list price').toBe(
-      '100.000000',
+      '100.0000',
     )
   })
 })

@@ -1,3 +1,6 @@
+import { parseExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
+import { PRICE_SCALE, divideHalfUp, toAmountString, toScaledUnits } from '../../trade_docs/lib/money'
+
 /**
  * The two prices a supplier library item can list side by side.
  *
@@ -83,9 +86,10 @@ export function trimDecimalText(value: string): string {
  * 折后价 — the supply price after the item's supplier discount.
  *
  * One implementation for the three places that have to agree: the form's live preview, the list
- * column and the promotion's write into the product master's `purchase` tier. `unit_price` is
- * `numeric(18,6)`, so the result keeps six decimals — the same rounding rule the module already uses
- * for money (`Number(...).toFixed(6)`, cf. `orderTotals.ts`).
+ * column and the promotion's write into the product master's `purchase` tier. `unit_price` carries the
+ * system-wide **4-decimal** price caliber, so the result is `HALF_UP(price × (100 − discount) ÷ 100, 4)`
+ * computed in the BigInt money engine (`trade_docs/lib/money.ts`) — never a float, and never a second
+ * rounding after the price was entered.
  *
  * A blank discount reads as 0 %. A blank or unparseable price has **no** net (`null`, never `0`), so
  * a caller can tell "no price yet" from "free" — the same distinction the price payload builder makes
@@ -96,15 +100,15 @@ export function netUnitPrice(
   discountPercent: string | number | null | undefined,
 ): string | null {
   const priceText = unitPrice === null || unitPrice === undefined ? '' : `${unitPrice}`.trim()
-  if (priceText.length === 0) return null
-  const price = Number.parseFloat(priceText)
-  if (!Number.isFinite(price)) return null
+  if (!parseExactDecimal(priceText)) return null
 
   const discountText = discountPercent === null || discountPercent === undefined ? '' : `${discountPercent}`.trim()
-  const parsedDiscount = discountText.length === 0 ? 0 : Number.parseFloat(discountText)
-  const discount = Number.isFinite(parsedDiscount) ? parsedDiscount : 0
+  const discountUnits = toScaledUnits(discountText.length === 0 ? '0' : discountText, PRICE_SCALE)
 
-  const net = price * (1 - discount / 100)
-  if (!Number.isFinite(net)) return null
-  return Number.parseFloat(net.toFixed(6)).toFixed(6)
+  // price × (100 − discount), with both factors lifted to `PRICE_SCALE` so `(100 − discount)` is a
+  // scaled integer; dividing by `100 × 10^PRICE_SCALE` lands the result back on the price scale.
+  const priceUnits = toScaledUnits(priceText, PRICE_SCALE)
+  const hundredUnits = 100n * 10n ** BigInt(PRICE_SCALE)
+  const netUnits = divideHalfUp(priceUnits * (hundredUnits - discountUnits), hundredUnits)
+  return toAmountString({ units: netUnits, scale: PRICE_SCALE }, PRICE_SCALE)
 }

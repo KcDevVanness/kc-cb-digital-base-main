@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals'
 import {
   NULL_TOKENS,
+  extractNumberToken,
   isNullToken,
   normalizeWhitespace,
   parseDimensionsCell,
@@ -40,6 +41,16 @@ describe('valueNormalization', () => {
     expect(parseNumberCell('￥ 68')).toBe(68)
     expect(parseIntegerCell('10 pallets')).toBe(10)
     expect(parseIntegerCell('19.6')).toBe(20)
+  })
+
+  it('hands the digits of a cell on as written, so a price never meets a float', () => {
+    expect(extractNumberToken('341.2382')).toBe('341.2382')
+    expect(extractNumberToken('￥ 68')).toBe('68')
+    expect(extractNumberToken('1,276.8 kg')).toBe('1276.8')
+    expect(extractNumberToken(0.405)).toBe('0.405')
+    expect(extractNumberToken('/')).toBeNull()
+    expect(extractNumberToken('Material: ABS')).toBeNull()
+    expect(extractNumberToken(null)).toBeNull()
   })
 
   it('normalizes packing sizes to centimetres across both reference files', () => {

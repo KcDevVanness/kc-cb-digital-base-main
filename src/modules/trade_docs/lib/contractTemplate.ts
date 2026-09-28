@@ -1,6 +1,8 @@
 import type { XlsxSheet } from '@open-mercato/core/modules/staff/lib/timesheets-reports/xlsx'
+import { parseExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
 import type { TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { amountInWords } from './amountInWords'
+import { AMOUNT_SCALE, PRICE_SCALE, toAmountString } from './money'
 
 /**
  * The printed contract, as data.
@@ -39,6 +41,7 @@ function contractLabels(t: TranslateFn) {
     deliveryDate: t('trade_docs.contracts.print.deliveryDate', 'Delivery date'),
     paymentTerms: t('trade_docs.contracts.print.paymentTerms', 'Payment terms'),
     shippingMethod: t('trade_docs.contracts.print.shippingMethod', 'Shipping method'),
+    incoterms: t('trade_docs.contracts.print.incoterms', 'Incoterms'),
     destination: t('trade_docs.contracts.print.destination', 'Destination'),
     marks: t('trade_docs.contracts.print.marks', 'Marks'),
     notes: t('trade_docs.contracts.print.notes', 'Notes'),
@@ -84,6 +87,7 @@ export type ContractSheetInput = {
   deliveryDate: string | null
   paymentTerms: string | null
   shippingMethod: string | null
+  incoterms?: string | null
   destination: string | null
   marks: string | null
   notes: string | null
@@ -108,16 +112,21 @@ function partyBlock(party: ContractSheetParty): string {
 }
 
 /**
- * A number for the amount columns, so Excel can sum them.
- *
- * The strings handed in are already quantized by the money engine (`3601.2000`), so the conversion
- * here is a presentation step, not a rounding step: the printed cell and the stored value agree.
+ * A fixed-decimal string for the money columns, so the printed contract carries the agreed caliber:
+ * amount at 2 decimals, unit price at 4. Values arrive already quantized by the money engine, so
+ * this is a presentation step; the cell is text on purpose — a numeric cell drops trailing zeros
+ * (`1188.25` where the paper contract reads `1188.2500`).
  */
-function amountCell(value: string): number | string {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : value
+function moneyCell(value: string, scale: number): string {
+  const parsed = parseExactDecimal(value)
+  return parsed ? toAmountString(parsed, scale) : value
 }
 
+/**
+ * Display-only: a quantity is written as a spreadsheet *number* so a reader can sum the column,
+ * which is why it goes through `Number`. It is never an amount — every money column is rendered by
+ * `moneyCell` above and stays an exact decimal string.
+ */
 function quantityCell(value: string): number | string {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : value
@@ -134,6 +143,7 @@ export function buildContractSheet(input: ContractSheetInput, t: TranslateFn): X
   rows.push([labels.partyB, partyBlock(input.counterparty)])
   rows.push([labels.currency, input.currencyCode, labels.priceTier, input.priceTier ?? ''])
   rows.push([labels.deliveryDate, input.deliveryDate ?? '', labels.paymentTerms, input.paymentTerms ?? ''])
+  rows.push([labels.incoterms, input.incoterms ?? ''])
   rows.push([labels.shippingMethod, input.shippingMethod ?? '', labels.destination, input.destination ?? ''])
   rows.push([labels.marks, input.marks ?? ''])
   rows.push([labels.notes, input.notes ?? ''])
@@ -159,16 +169,16 @@ export function buildContractSheet(input: ContractSheetInput, t: TranslateFn): X
       line.spec ?? '',
       line.unit ?? '',
       quantityCell(line.quantity),
-      quantityCell(line.unitPrice),
-      amountCell(line.contractAmount),
+      moneyCell(line.unitPrice, PRICE_SCALE),
+      moneyCell(line.contractAmount, AMOUNT_SCALE),
       line.note ?? '',
     ])
   }
 
   rows.push([])
-  rows.push(['', '', '', '', '', '', labels.contractTotal, amountCell(input.contractTotal), ''])
-  rows.push(['', '', '', '', '', '', labels.financeTotal, amountCell(input.financeTotal), ''])
-  rows.push(['', '', '', '', '', '', labels.differenceTotal, amountCell(input.differenceTotal), ''])
+  rows.push(['', '', '', '', '', '', labels.contractTotal, moneyCell(input.contractTotal, AMOUNT_SCALE), ''])
+  rows.push(['', '', '', '', '', '', labels.financeTotal, moneyCell(input.financeTotal, AMOUNT_SCALE), ''])
+  rows.push(['', '', '', '', '', '', labels.differenceTotal, moneyCell(input.differenceTotal, AMOUNT_SCALE), ''])
   // Both word forms are the bank/customs convention for the amount (人民币大写 + SAY …), not a
   // language pairing: the Chinese line is the amount in words, the second line its FX wording.
   rows.push([labels.inWords, words.chinese])

@@ -3,9 +3,9 @@ export const metadata = {
   requireFeatures: ['ru_sync.view'],
   pageTitle: 'RU sync health',
   pageTitleKey: 'ru_sync.health.page.title',
-  pageGroup: 'Finance',
-  pageGroupKey: 'export_finance.nav.group',
-  pageOrder: 438,
+  pageGroup: 'Data sync',
+  pageGroupKey: 'ru_sync.nav.group',
+  pageOrder: 510,
   icon: 'refresh-cw',
   breadcrumb: [
     { label: 'RU sync health', labelKey: 'ru_sync.health.page.title' },

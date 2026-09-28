@@ -78,13 +78,13 @@ export class TradeDocsContract {
   @Property({ name: 'source_snapshot', type: 'jsonb', nullable: true })
   sourceSnapshot?: Record<string, unknown> | null
 
-  @Property({ name: 'contract_total', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'contract_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
   contractTotal: string = '0'
 
-  @Property({ name: 'finance_total', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'finance_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
   financeTotal: string = '0'
 
-  @Property({ name: 'difference_total', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'difference_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
   differenceTotal: string = '0'
 
   @Property({ name: 'signed_at', type: 'date', nullable: true })
@@ -98,6 +98,10 @@ export class TradeDocsContract {
 
   @Property({ name: 'shipping_method', type: 'text', nullable: true })
   shippingMethod?: string | null
+
+  /** Trade term (贸易术语) printed beside the payment terms: `EXW`, `FOB`, `CIF`, … — a dictionary value, free text is allowed. */
+  @Property({ type: 'text', nullable: true })
+  incoterms?: string | null
 
   @Property({ name: 'destination', type: 'text', nullable: true })
   destination?: string | null
@@ -192,13 +196,13 @@ export class TradeDocsContractLine {
   @Property({ type: 'numeric', precision: 18, scale: 6, default: '0' })
   quantity: string = '0'
 
-  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 6, default: '0' })
+  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 4, default: '0' })
   unitPrice: string = '0'
 
-  @Property({ name: 'contract_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'contract_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   contractAmount: string = '0'
 
-  @Property({ name: 'finance_amount', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ name: 'finance_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
   financeAmount: string = '0'
 
   @Property({ type: 'text', nullable: true })
@@ -225,6 +229,7 @@ export class TradeDocsContractLine {
 @Entity({ tableName: 'trade_docs_invoices' })
 @Index({ name: 'trade_docs_invoices_scope_idx', properties: ['organizationId', 'tenantId'] })
 @Index({ name: 'trade_docs_invoices_number_idx', properties: ['tenantId', 'organizationId', 'number'] })
+@Unique({ name: 'trade_docs_invoices_our_number_uniq', properties: ['tenantId', 'organizationId', 'ourNumber'] })
 export class TradeDocsInvoice {
   [OptionalProps]?: 'createdAt' | 'updatedAt' | 'deletedAt'
 
@@ -239,6 +244,23 @@ export class TradeDocsInvoice {
 
   @Property({ type: 'text', nullable: true })
   number?: string | null
+
+  /**
+   * Tax invoice kind: `vat_special` (增值税专用) | `vat_general` (增值税普通) | `export` (出口发票).
+   *
+   * `null` means a historical, uncategorized ledger row — it keeps every behavior it had before
+   * this column existed and never receives `ourNumber`.
+   */
+  @Property({ name: 'invoice_kind', type: 'text', nullable: true })
+  invoiceKind?: string | null
+
+  /**
+   * Our own `TI-<year>-<4 digits>` sequence, assigned at `confirm` for an *outbound* invoice that
+   * carries a kind. Inbound, kind-less and historical rows stay `null`; the unique index allows
+   * many nulls.
+   */
+  @Property({ name: 'our_number', type: 'text', nullable: true })
+  ourNumber?: string | null
 
   @Property({ type: 'text', default: 'inbound' })
   direction: string = 'inbound'
@@ -270,11 +292,22 @@ export class TradeDocsInvoice {
   @Property({ name: 'currency_code', type: 'text', default: 'CNY' })
   currencyCode: string = 'CNY'
 
-  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
   subtotal: string = '0'
 
-  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
   total: string = '0'
+
+  /** Σ line `tax_amount`; recomputed by the command layer, never posted by a client. */
+  @Property({ name: 'tax_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
+  taxTotal: string = '0'
+
+  /**
+   * 价税合计 — Σ of each line's tax-inclusive amount (`amount` when the price includes tax,
+   * `amount + taxAmount` otherwise). Recomputed by the command layer, never posted.
+   */
+  @Property({ name: 'gross_total', type: 'numeric', precision: 18, scale: 2, default: '0' })
+  grossTotal: string = '0'
 
   @Property({ name: 'issued_at', type: 'date', nullable: true })
   issuedAt?: Date | null
@@ -346,11 +379,30 @@ export class TradeDocsInvoiceLine {
   @Property({ type: 'numeric', precision: 18, scale: 6, default: '0' })
   quantity: string = '0'
 
-  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 6, default: '0' })
+  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 4, default: '0' })
   unitPrice: string = '0'
 
-  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
   amount: string = '0'
+
+  /**
+   * Tax rate as a **percentage** (`13` = 13%, `0` = an export invoice), same caliber as
+   * `purchasing_purchase_order_lines.tax_rate`.
+   */
+  @Property({ name: 'tax_rate', type: 'numeric', precision: 6, scale: 3, default: '0' })
+  taxRate: string = '0'
+
+  /** Whether `amount` already includes tax — decides which side the tax is extracted from. */
+  @Property({ name: 'price_includes_tax', type: 'boolean', default: true })
+  priceIncludesTax: boolean = true
+
+  /**
+   * The tax on this line, always **computed server-side** from `amount`/`taxRate` (never accepted
+   * from a payload): inclusive `amount − round(amount/(1+rate/100), 2)`, exclusive
+   * `round(amount×rate/100, 2)`.
+   */
+  @Property({ name: 'tax_amount', type: 'numeric', precision: 18, scale: 2, default: '0' })
+  taxAmount: string = '0'
 
   @ManyToOne(() => TradeDocsContractLine, {
     fieldName: 'contract_line_id',
@@ -358,6 +410,221 @@ export class TradeDocsInvoiceLine {
     deleteRule: 'set null',
   })
   contractLine?: TradeDocsContractLine | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}
+
+/**
+ * A PI (proforma invoice) or CI (commercial invoice) — the document *we* issue and number.
+ *
+ * **PI and CI share this one table via `kind`** (`proforma`: the pre-shipment payment basis handed
+ * to the buyer; `commercial`: the customs/clearing invoice). The two are the same shape — our
+ * party + bank snapshot, a counterparty snapshot, money, trade terms, lines and a generated
+ * XLSX — and differ only in which optional blocks they print (a CI also carries consignee and
+ * notify party), so one table, one command set and one page body carry both instead of two
+ * parallel document families with identical audit, event and ACL surfaces (see the spec's Design
+ * Decisions).
+ *
+ * **`number` is assigned at `issue`** (`PI-<year>-<4 digits>` / `CI-<year>-<4 digits>`, per
+ * `(tenant, organization)`), so a draft consumes **no** sequence slot and can be thrown away
+ * without leaving a gap — the same caliber as the contract's `issue` and the shipment's `depart`.
+ *
+ * Cross-module references (counterparty, source order/shipment) are a scalar id **plus** a jsonb
+ * snapshot (the platform's durable-reference rule — no cross-module ORM relation); the snapshot is
+ * what a reprint shows after the master record changes. Files: `generatedAttachmentId` is the
+ * XLSX we rendered (regeneration moves the pointer), `attachmentId` is the uploaded replacement
+ * (stamped/re-signed/customs copy); the two are independent.
+ */
+@Entity({ tableName: 'trade_docs_documents' })
+@Index({ name: 'trade_docs_documents_scope_idx', properties: ['organizationId', 'tenantId'] })
+@Index({ name: 'trade_docs_documents_kind_status_idx', properties: ['tenantId', 'organizationId', 'kind', 'status'] })
+@Unique({ name: 'trade_docs_documents_scope_number_uniq', properties: ['tenantId', 'organizationId', 'number'] })
+export class TradeDocsDocument {
+  [OptionalProps]?: 'createdAt' | 'updatedAt' | 'deletedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  /** `proforma` (PI) | `commercial` (CI) — which document family this row belongs to. */
+  @Property({ type: 'text', default: 'proforma' })
+  kind: string = 'proforma'
+
+  /** `sales` (to a subsidiary/buyer) | `purchase` (to a supplier); PI is issued on both sides. */
+  @Property({ type: 'text', default: 'sales' })
+  direction: string = 'sales'
+
+  /** Assigned at `issue`: `PI-<year>-<4 digits>` / `CI-<year>-<4 digits>`; null while drafting. */
+  @Property({ type: 'text', nullable: true })
+  number?: string | null
+
+  @Property({ type: 'text', default: 'draft' })
+  status: string = 'draft'
+
+  @Property({ name: 'counterparty_kind', type: 'text', default: 'customer' })
+  counterpartyKind: string = 'customer'
+
+  @Property({ name: 'counterparty_id', type: 'uuid', nullable: true })
+  counterpartyId?: string | null
+
+  @Property({ name: 'counterparty_snapshot', type: 'jsonb', nullable: true })
+  counterpartySnapshot?: Record<string, unknown> | null
+
+  /** Our own side (seller) as printed, including the beneficiary bank the PI is paid into. */
+  @Property({ name: 'our_party_snapshot', type: 'jsonb', nullable: true })
+  ourPartySnapshot?: Record<string, unknown> | null
+
+  /** CI only: the consignee named on the customs invoice. */
+  @Property({ name: 'consignee_snapshot', type: 'jsonb', nullable: true })
+  consigneeSnapshot?: Record<string, unknown> | null
+
+  /** CI only: the notify party named on the customs invoice. */
+  @Property({ name: 'notify_party_snapshot', type: 'jsonb', nullable: true })
+  notifyPartySnapshot?: Record<string, unknown> | null
+
+  @Property({ name: 'currency_code', type: 'text', default: 'CNY' })
+  currencyCode: string = 'CNY'
+
+  /** Cross-currency records store the rate as a snapshot only; nothing is auto-converted. */
+  @Property({ name: 'exchange_rate', type: 'numeric', precision: 18, scale: 8, nullable: true })
+  exchangeRate?: string | null
+
+  /** Σ line `amount`; derived by the command layer (the only writer). */
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
+  subtotal: string = '0'
+
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
+  total: string = '0'
+
+  @Property({ name: 'payment_terms', type: 'text', nullable: true })
+  paymentTerms?: string | null
+
+  /** Trade term (贸易术语) printed on PI/CI: `EXW`, `FOB`, `CIF`, … — a dictionary value. */
+  @Property({ type: 'text', nullable: true })
+  incoterms?: string | null
+
+  /** PI only: the date the offer stands until. */
+  @Property({ name: 'valid_until', type: 'date', nullable: true })
+  validUntil?: Date | null
+
+  @Property({ name: 'delivery_date', type: 'date', nullable: true })
+  deliveryDate?: Date | null
+
+  /** 唛头 — printed shipping marks. */
+  @Property({ type: 'text', nullable: true })
+  marks?: string | null
+
+  /** `sales_order` | `purchase_order` | `shipment` | `manual` — what the document was raised from. */
+  @Property({ name: 'source_kind', type: 'text', nullable: true })
+  sourceKind?: string | null
+
+  @Property({ name: 'source_id', type: 'uuid', nullable: true })
+  sourceId?: string | null
+
+  @Property({ name: 'source_snapshot', type: 'jsonb', nullable: true })
+  sourceSnapshot?: Record<string, unknown> | null
+
+  @Property({ name: 'issued_at', type: 'date', nullable: true })
+  issuedAt?: Date | null
+
+  /** The XLSX we rendered; regenerating moves the pointer to a fresh attachment (old file kept). */
+  @Property({ name: 'generated_attachment_id', type: 'uuid', nullable: true })
+  generatedAttachmentId?: string | null
+
+  @Property({ name: 'generated_at', type: Date, nullable: true })
+  generatedAt?: Date | null
+
+  /** Uploaded replacement (stamped/re-signed/customs copy); independent of the generated XLSX. */
+  @Property({ name: 'attachment_id', type: 'uuid', nullable: true })
+  attachmentId?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  notes?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+
+  @Property({ name: 'deleted_at', type: Date, nullable: true })
+  deletedAt?: Date | null
+}
+
+/**
+ * One line of a PI/CI document.
+ *
+ * `amount` is the **face amount**: it defaults to `round(quantity × unitPrice)` at 2 decimal places
+ * (HALF_UP) but may be hand-overridden, because a real invoice rounds or carries a freight line the
+ * source order does not — so it is stored, not derived. `productSnapshot` and `sourceSnapshot`
+ * freeze what the line was copied/raised from (a product, a shipment allocation, …) so a later
+ * change to the master never rewrites an issued document.
+ */
+@Entity({ tableName: 'trade_docs_document_lines' })
+@Index({ name: 'trade_docs_document_lines_scope_idx', properties: ['organizationId', 'tenantId'] })
+@Unique({ name: 'trade_docs_document_lines_document_line_uniq', properties: ['document', 'lineNumber'] })
+export class TradeDocsDocumentLine {
+  [OptionalProps]?: 'createdAt' | 'updatedAt' | 'quantity' | 'unitPrice' | 'amount'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @ManyToOne(() => TradeDocsDocument, { fieldName: 'document_id', deleteRule: 'cascade' })
+  document!: TradeDocsDocument
+
+  @Property({ name: 'line_number', type: 'integer' })
+  lineNumber!: number
+
+  @Property({ name: 'product_id', type: 'uuid', nullable: true })
+  productId?: string | null
+
+  @Property({ name: 'product_snapshot', type: 'jsonb', nullable: true })
+  productSnapshot?: Record<string, unknown> | null
+
+  @Property({ type: 'text', nullable: true })
+  name?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  sku?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  model?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  spec?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  unit?: string | null
+
+  @Property({ type: 'numeric', precision: 18, scale: 6, default: '0' })
+  quantity: string = '0'
+
+  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 4, default: '0' })
+  unitPrice: string = '0'
+
+  @Property({ type: 'numeric', precision: 18, scale: 2, default: '0' })
+  amount: string = '0'
+
+  @Property({ name: 'source_snapshot', type: 'jsonb', nullable: true })
+  sourceSnapshot?: Record<string, unknown> | null
+
+  @Property({ type: 'text', nullable: true })
+  note?: string | null
 
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()

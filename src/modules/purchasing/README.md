@@ -77,13 +77,14 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 - **库存只由 `wms` 变更，采购模块不写库存**：`apply-receipt` 只回写采购单行 `receivedQty` 与订单状态；真正入库的是 `cross_border.shipments.receive` → `wms.inventory.receive`（发运单收货时调用，见 `cross_border` README）。已收数量不允许超过订购数量。
 - **付款凭证先建后绑**：付款先 `record` 拿到 `id`，再上传附件（`attachments`）并 `attach` 绑定；上传失败不回滚付款，行内可重试。
 - **单证一行一个文件**：`purchasing_purchase_order_documents` 挂在**订单**上（不挂发运单：这些纸件在发运前就存在），一行 = 一个文件，文件本体走 `attachments`，行里只存 `attachment_id`（可空：允许先登记纸件、后补扫描件）；`docType` 是 `supplier_invoice` / `packing_list` / `purchase_payment_receipt` / `other`，同类型多份就是多行；非法类型由命令返回 **400**。
-- **产品库的金额是 decimal 字符串**：`unit_price` 是 `numeric(18,6)`，整组最多 24 行；提交前校验重复键（400）与未知币种（400，报错信息里带编码——与供应商/订单表单同一约定）。
+- **产品库的金额是 decimal 字符串**：`unit_price` 是 `numeric(18,4)`（单价 4 位；金额一律 2 位）、整组最多 24 行；提交前校验重复键（400）与未知币种（400，报错信息里带编码——与供应商/订单表单同一约定）。
 - **价格组是"替换"不是"补丁"**：`replace-prices` 对载荷里缺失的行做停用；它**故意不加乐观锁**——整组提交不是局部编辑，拒绝其中一次完整提交只会让操作员无法保存（与商品主数据价格路由同一决定）。
 - **价格组进主列（2026-09-23 修"布局很局促"，2026-09-24 组内只剩三个控件）**：`CrudFormGroup.column` 只有 `1 | 2`，没有"整行"分组；`column: 2` 会被画进 `3fr` 侧栏——1440px 视口下实测 389px，价格行的五个控件只剩 73/73/45/45/45px，「供应商供货价」被截成「供应」。价格组因此进主列（本 app 的行编辑器一律如此：采购单行、合同行、发票行、内销行、发运分摊），行内栅格用**容器查询**而非视口断点：`@md` 两组控件配对、`@3xl` 恢复单行 12 列，表单在 `lg` 以下退回单列时同样成立。修复后实测：1440px 卡片 907px（当时五个控件 203/203/131/131/131）、1024px 616px（两列配对）、390px 358px（选择器上下叠、数字并排）。2026-09-24 起组内是 `币种 / 单价 / 折扣（%）` 三个控件（多行编辑器已删，见上一节「价格」），仍留主列。
 - **单位字典是 insert-only**：重复播种不覆盖操作员改过的条目，字段也接受字典外的编码，字典缺口永远不是写入失败。
 - **产品库不跨模块 ORM 关联**：对 `wms`、`catalog`、`products`、`sourcing` 只存 ID/快照；报价行只经 `lib/quoteLineReads.ts` 的只读投影读取。
 - **不跨模块 ORM 关联**：对 `wms`、`catalog`、`products` 只存 ID/快照，靠命令与事件联动（商品主数据优先，catalog 只作历史与收货变体桥接）。
 - **界面文案单一语言（2026-09-23）**：`i18n/zh.json` 只写中文、`en.json` 只写英文；组件里 `t()` 的兜底一律用英文（见 [`docs/dev/i18n.md`](../../../docs/dev/i18n.md)）。此前的"中文 + 英文并列"标签（如「供应商货号 Supplier code」）已清掉，`HS CODE`/`MOQ` 这类业务缩写保留；2026-09-24 又把「PK 单价」「KC 单价」两个 PetKit 时代的列名去掉了——那是单个供应商的说法，不是价格类型的名字。
+- **附件可预览（2026-09-24）**：付款水单、采购单证与产品照片的「预览」都打开同一个 app 级查看器（`src/lib/attachments/AttachmentPreview.tsx`），「下载」入口与 `?download=1` 行为不变。图片按容器等比显示；**PDF 用 Mozilla PDF.js（`pdfjs-dist`，Apache-2.0，本 app 已声明的依赖）渲染到 canvas**（`src/lib/attachments/PdfPreview.tsx`，最多 30 页、按舞台宽度缩放、`PDFDocumentLoadingTask.destroy()` 释放）——平台按安全策略把 PDF 当二进制附件下发（`SAFE_INLINE_MIME_TYPES` 只有图片），因此不能把 URL 交给浏览器；PDF.js 自己解析字节，渲染结果是与页面同源的 canvas（可被断言），不依赖任何浏览器插件、也不改平台策略。非图片/PDF 的类型给出说明并保留下载，超过 25 MiB 的文件在读取正文前放弃预览。
 - **选项加载器不得超过列表路由的 `pageSize` 上限**：上限是每个路由自己声明的（供应商 100、产品库/商品/报价行 200、合同行 500），超了是 **400 且下拉框空白且无报错**；规则与清单见 `.ai/lessons/option-loaders-must-respect-page-size-caps.md`。
 
 ## 验证
@@ -93,6 +94,8 @@ yarn generate && yarn typecheck
 yarn test src/modules/purchasing
 yarn test:integration:ephemeral   # 含 purchasing/__integration__/supplier-products.spec.ts（产品库 CRUD/导入/同步/价格/字段/图片）与 supplier-code-issuance.spec.ts（供应商编码发号：连续、不复用、按组织独立、显式码不变）
 # 冒烟（dev server 在跑时）：供应商 201 → 采购单 201 → 付款 201 → 附件 200 → 绑定 200 → 列表 attachment: yes
+# 附件预览冒烟（2026-09-24）：采购单详情 → 单证行「预览」→ 图片在对话框内等比显示 / PDF 由 PDF.js 渲染到 canvas（3 页 PDF 实测 3 个 canvas、每页 960×1358、蓝色块像素数吻合、无控制台报错）/
+#   文本文件显示「此文件类型不支持预览，请下载后用本地程序打开。」+「下载」；行操作菜单与单证表单字段同样有「预览」；产品照片缩略图（aria-label 预览这张照片）点击放大
 # 产品库冒烟：/backend/purchasing/supplier-products 建行（单位下拉、供货价 + 折扣）→ 列表显示中英品名、折后价与商品的内部结算价
 # 折扣冒烟（2026-09-24）：新建页价格组填 折扣 5 + 单价 100 → 行下实时显示「折后价 ¥95.00」→ 保存 → 列表「供应商供货价」显示 ¥95.00、副行「报价 ¥100.00 − 5%」→
 #   建商品档案 → 商品价格档的 purchase（成本价）= 95.000000；本公司报价不再在本页录入，列表该列读商品的 internal 档

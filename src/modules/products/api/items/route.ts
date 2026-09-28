@@ -86,6 +86,7 @@ const listFields = [
   'status',
   'catalog_product_id',
   'catalog_snapshot',
+  'source_product_id',
   'notes',
   'tenant_id',
   'organization_id',
@@ -199,6 +200,8 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       catalogProductId: asNullableString(item.catalog_product_id),
       catalogSnapshot: item.catalog_snapshot ?? null,
       notes: asNullableString(item.notes),
+      // Provenance of a distributed copy; `null` for rows built in this organization.
+      sourceProductId: asNullableString(item.source_product_id),
       tenant_id: asNullableString(item.tenant_id),
       organization_id: asNullableString(item.organization_id),
       created_at: toIsoTimestamp(item.created_at),

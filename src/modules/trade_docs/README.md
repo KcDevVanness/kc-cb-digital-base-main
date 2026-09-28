@@ -1,4 +1,4 @@
-# `trade_docs` — 购销合同、发票与双口径金额
+# `trade_docs` — 购销合同、发票与统一金额口径（金额 2 位 / 单价 4 位）
 
 app 自有模块。**合同的唯一台账**：采购/销售两个方向的购销合同（含行、商品快照）→ 进项/销项发票
 （可绑定合同行、扫描件归档）→ 合同头三列金额（合同金额 / 财务金额 / 差额）。需求与验收见
@@ -11,22 +11,90 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 | 实体（`data/entities.ts`） | `TradeDocsContract` / `TradeDocsContractLine` / `TradeDocsInvoice` / `TradeDocsInvoiceLine` → 表 `trade_docs_contracts` / `trade_docs_contract_lines` / `trade_docs_invoices` / `trade_docs_invoice_lines` |
 | API | `GET|POST|PUT|DELETE /api/trade_docs/contracts`、`/invoices`；`GET /contracts/lines`、`/invoices/lines`（只读行面，行只经合同 / 发票命令写入）；`POST /contracts/transitions`、`/invoices/transitions`（状态流转：同路径的 GET 列表只为 CRUD 工厂解析作用域，不是 UI 契约）；`PUT /contracts/attach`（绑定盖章扫描件，`attachmentId: null` 解绑）、`PUT /invoices/attach`；`POST|GET /contracts/[id]/document`（生成 / 下载合同 Excel） |
 | 命令 | `trade_docs.contracts.{create,update,delete,transition,attach,generate-document}`、`trade_docs.invoices.{create,update,delete,transition,attach}` |
-| 后台页面 | `/backend/trade-docs/contracts`（列表/新建/详情/编辑）、`/backend/trade-docs/invoices`（列表/新建/编辑+确认/作废/附件） |
+| 后台页面 | `/backend/trade-docs/contracts`（列表/新建/详情/编辑）、`/backend/trade-docs/invoices`（列表/新建/编辑+确认/作废/附件）。**2026-09-28**：发票页标题改「税务发票台账」/ "Tax invoice ledger"，`pageGroupKey` 由 `cross_border.nav.group` 移入 `export_finance.nav.group`（「财务」组，`pageOrder 420`），create/edit 页同组嵌套（`pageOrder 421/422`），导航里不再出现在出口业务组 |
 | 事件 | `trade_docs.contract.{created,updated,deleted,issued,signed,closed,cancelled,document.generated}`、`trade_docs.invoice.{created,updated,deleted,confirmed,voided,attached}` |
 | 权限 | `trade_docs.contracts.view|manage`、`trade_docs.invoices.view|manage` |
 | 迁移 | `migrations/Migration*_trade_docs.ts`（`yarn db:generate` 生成，审阅后应用） |
+
+### PI（形式发票）— 2026-09-28 Phase 1
+
+`trade_docs_documents` + `trade_docs_document_lines`（`kind='proforma'`/`'commercial'` 共用一张表；CI 的字段与页面在 Phase 2 接上）。
+规格：[`.ai/specs/2026-09-24-pi-ci-tax-invoice-documents.md`](../../../.ai/specs/2026-09-24-pi-ci-tax-invoice-documents.md)。
+
+| 层 | 内容 |
+|---|---|
+| 实体 | `TradeDocsDocument` / `TradeDocsDocumentLine` → `trade_docs_documents` / `trade_docs_document_lines`；迁移 `Migration20260928021830_trade_docs.ts`（两张新表 + `trade_docs_contracts.incoterms` 追加列） |
+| API | `GET\|POST\|PUT\|DELETE /api/trade_docs/documents`（列表按 `kind/status/direction/counterpartyId/sourceKind/sourceId/search` 过滤，`transformItem` 回传抬头快照与 `counterpartyName`）；`GET\|PUT /documents/lines`（只读行面 + 整组替换）；`POST /documents/transitions`；`PUT /documents/attach`；`POST /documents/[id]/generate`；`GET /documents/[id]/document`（按我方附件流式下发 XLSX） |
+| 命令 | `trade_docs.documents.{create,update,delete,lines.replace,transition,generate-document,attach}`（`RESOURCE_KIND = trade_docs.document`） |
+| 后台页面 | `/backend/trade-docs/proformas`（列表/新建/详情/编辑；`pageOrder 350/351/352/353`，出口业务组） |
+| 事件 | `trade_docs.document.{created,updated,deleted,issued,voided,document.generated}` |
+| 权限 | `trade_docs.documents.view\|manage`（既有租户需 `yarn mercato auth sync-role-acls`） |
+
+**口径（与合同同构，别写第二套）**
+
+- **发号在签发时**：`draft → issued` 才取 `PI-<年>-<4位>`（按 `(tenant, organization)` 独立），草稿先写 `PENDING-<id8>` 占位再解析真号；唯一索引 `trade_docs_documents_scope_number_uniq` 兜底，撞号 → **409** 重试（与 `nextContractNumber` / `nextOrderNumber` 同一口径）。
+- **签发后冻结**：`update` 只允许 `draft`（否则 409）；`delete` 拒绝 `issued`（改作废）；行与头金额由命令重算——`amount` 缺省时 = `数量 × 单价` 按 **2 位** HALF_UP 量化，显式传入则以票面为准（`lib/money.ts` 的 `computeLineAmounts`）。
+- **文件两条指针互不覆盖**：`generated_attachment_id`（我方渲染的 XLSX，重复生成前移指针、旧件保留）与 `attachment_id`（上传的盖章/回签/报关件）。
+- **字典**：`setup.ts` 新增 `incoterms` 种子（EXW/FCA/FOB/CFR/CIF/CPT/CIP/DAP/DPU/DDP，单语言显示名）；合同的 `incoterms` 列与打印同步接上（F-005）。
+- **收款要素**：`our_party_snapshot` 用 `lib/partySnapshot.ts` 的同一 shape（含 `partyId`/`bankAccountId`），合同表单（`OurPartyPicker`）与 PI 表单共用主体 + 银行账户选择器（F-004）。
+
+### CI（商业发票）— 2026-09-28 Phase 2
+
+与 PI 共用 `trade_docs_documents`（`kind='commercial'`）与全部命令/页面体；增量只有三处：
+
+| 层 | 内容 |
+|---|---|
+| 页面 | `/backend/trade-docs/commercial-invoices`（列表/新建/详情/编辑，`pageOrder 360–363`，出口业务组）；头部另有收货人/通知方（快照）与发运单锚点选择器 |
+| 汇总 | `trade_docs.documents.aggregate-lines` + `POST /api/trade_docs/documents/[id]/aggregate-lines`：按「该发运单的销售分摊 → 采购分摊」优先级复制成行（一次性，不自动同步），逐行写 `source_snapshot`（`sales_allocation` / `purchase_allocation` + 分摊行 id、数量、单价、覆盖标记）；仅 `draft` 且 `kind='commercial'` 可汇总 |
+| 来源 | 发运单侧的 `cross_border_shipment_sales_allocations`（见 `cross_border` README）；`direction` 固定 `sales` |
+
+### 税务发票 — 2026-09-28 Phase 3
+
+仍是 `trade_docs_invoices`（**没有**并入 `trade_docs_documents`），追加列与原状态机不变：
+
+| 层 | 内容 |
+|---|---|
+| 列 | `invoice_kind`（`vat_special`/`vat_general`/`export`，null=历史行「未分类」）、`our_number`（`TI-<年>-<4位>`，唯一索引）、`tax_total`、`gross_total`；行上 `tax_rate`（百分数）/`price_includes_tax`/`tax_amount` |
+| 税额 | 唯一实现在 `lib/invoiceTax.ts`：含税 `税额 = 金额 − HALF_UP(金额/(1+税率), 2)`、不含税 `税额 = HALF_UP(金额×税率, 2)`、`价税合计 = Σ(含税行金额 或 不含税行金额+税额)`；`subtotal`/`total` 仍是票面行金额之和，含义未变 |
+| 发号 | `confirm` 时对**销项 + 有票种**发票发 `TI-` 号（`PENDING` 占位 + 唯一索引 + 409 重试）；进项、无票种与历史行永不发号 |
+| 口径隔离 | `lib/contractRecalc.ts` 的已确认发票查询排除 `invoice_kind='export'`（历史 NULL 行逐字节不变）：出口发票是退税凭证（0%），不参与合同「财务金额」 |
+| 联动 | 详情按 `source_kind='shipment'` + `source_id` 给出柜（退税锚点）只读链接；`F-305` 的发票生成/打印未做（规格中标为可选，留待后续） |
+
+## 单据间复制（Phase 4）
+
+- 命令 `trade_docs.documents.copy-from`（PI → CI）与 `trade_docs.invoices.copy-from`（CI → 税务发票），路由 `POST /api/trade_docs/{documents,invoices}/[id]/copy-from`（`{ sourceDocumentId }` → `{ ok, lineCount }`）。
+- **一次性**：复制抬头与明细后两张单据各自独立（重跑整组替换、不追加），明细行写 `source_snapshot = { kind: 'trade_document', documentId, number, lineNumber, copiedAt }`，抬头写 `source_kind='trade_document'` + `source_id` + 快照（`{ kind, id, number, documentKind }`）。
+- 目标必须是 `draft`（已签发 409）；来源可在任何状态（已签发的 PI 正是常见来源）；来源必须同组织。
+- 复制进发票时**不搬税**：`tax_rate` 保持 0 由业务补，也不动合同绑定；头部金额走 `applyInvoiceTotals` 重算。
+- 界面：CI 详情「从形式发票复制」、发票详情「从商业发票复制」（共享搜索选择器对话框），来源以 `形式发票（PI） PI-2026-0002` 链回源单据详情。
+
+## 列表缓存失效（2026-09-28）
+
+平台的 CRUD 列表在 `ENABLE_CRUD_API_CACHE=true` 时按「资源 + 租户 + 组织」缓存，`makeCrudRoute` 只失效
+**本路由自己那个资源**。本模块的三类写因此各自显式失效（`lib/cacheInvalidation.ts`，在
+`runWithCacheTenant` 内调 `invalidateCrudCache`）：
+
+| 命令族 | 失效的集合 |
+|---|---|
+| `trade_docs.contracts.*` | `trade_docs.contract` + `trade_docs.contract.line` |
+| `trade_docs.invoices.*`（含确认/作废/撤销） | 发票与发票行 **+ 合同与合同行**（确认会改写合同 `finance_total`） |
+| `trade_docs.documents.*`（含生成/汇总/复制等 `[id]/…` 动作路由） | `trade_docs.document` + `trade_docs.document.line` |
+
+回归口径：`__integration__/crud-cache-freshness.spec.ts` 用**无缓存击穿**的原始 URL 断言「写后即新」；
+集成环境默认开着该开关（`ENABLE_CRUD_API_CACHE=true`），本地 `.env` 关着——只见于线上/集成，见
+[lesson](../../../.ai/lessons/crud-cache-invalidation-spans-resources.md)。
 
 ## 金额口径（唯一权威定义在 `lib/money.ts`）
 
 ```text
 行：数量 × 单价
-   ├─ quantize(币种小数位)        → 财务金额（行绑定「已确认」发票行时取该发票行金额）
+   ├─ quantize(2)                → 财务金额（行绑定「已确认」发票行时取该发票行金额）
    └─ quantize(2)                → 合同金额（合同上打印的数字）
 头：Σ 财务金额 = finance_total ；Σ 合同金额 = contract_total ；contract − finance = difference_total
 ```
 
 - 量化是 BigInt 半进位（远离零），**禁止 `toFixed`**：`(1.005).toFixed(2) === '1.00'`。
-- 币种小数位来自 `currencies.decimal_places`（读不到/非法 → 2，钳制 0..8）。
+- **金额恒 2 位、与币种无关**（JPY 也是 2 位），单价恒 4 位（`AMOUNT_SCALE=2`、`PRICE_SCALE=4`）；`currencies.decimal_places` 只是展示元数据，不再驱动舍入（`lib/currencyScale.ts` 已删除，见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](../../../.ai/specs/2026-09-28-money-scale-2dp-unification.md)）。合同与财务两个口径同为 2 位，唯一差异来自「已确认发票覆盖」。
 - 发票优先是**逐行**、且只认 `confirmed`：草稿/作废发票不影响合同；作废后自动回退为按单价计算。
 - 合同头的三列由 `lib/contractRecalc.ts` 在写入行的同一事务内重算，命令层不自己写算术。
 
@@ -53,6 +121,8 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 - **合同表头跟随语言，不是硬编码双语**：模板的每个标题都是一个 `trade_docs.contracts.print.*` key，命令用 `resolveTranslations()` 取**生成者当前语言**的字典，再交给 `buildContractSheet(input, t)`；文件归档时语言就冻结了（重新生成是换新文件，不会改旧的）。中文语系生成的中文合同、英文语系生成的英文合同——不再出现「合同号 Contract No.」这种同一格里两种语言。金额的两个词形（人民币大写 + `SAY …`）保留：那是银行/报关对金额的固定双写，不是语言并列。
 - **读写作用域**：读（列表）展开到下级组织，写（命令）只在当前选定组织生效 —— 下级组织的单据要切换组织后再操作，服务端会明确提示。
 
+- **附件可预览（2026-09-24）**：合同盖章件、发票归档件与合同列表的「查看文件 / 预览」走 app 级共享查看器（`src/lib/attachments/AttachmentPreview.tsx`）：图片对话框内等比显示，PDF 由 Mozilla PDF.js（`pdfjs-dist`，已声明依赖）渲染到 canvas（`src/lib/attachments/PdfPreview.tsx`），其它类型给出说明；「下载」入口与 `?download=1` 不变。
+
 ## 验证
 
 ```bash
@@ -61,6 +131,7 @@ yarn jest --config jest.config.cjs src/modules/trade_docs
 # 冒烟（dev server 在跑时）：建合同 201 → 非法流转 422 → issue 得 PC-<年>-0001 → 换币种 0 位小数时
 # 合同金额与财务金额分离 → 发票 confirm 后财务金额取票面、void 回退 → 上传+绑定附件 200 →
 # POST/GET [id]/document 生成并下载 XLSX（内容类型为 xlsx，金额列可求和）
+# 附件预览冒烟（2026-09-24）：合同详情「盖章件」与发票表单/列表的「查看文件」→ 图片等比显示 / PDF 由 PDF.js 渲染到 canvas / 其它类型说明 + 下载（同一组件，见 purchasing README）
 ```
 
 ## 回滚

@@ -1,4 +1,5 @@
 {
+  "executive_overview.nav.group": "经营概览",
   "boss_cockpit.page.title": "老板驾驶舱",
   "boss_cockpit.page.description": "俄方供应侧与中方资金侧的关键数字：每个数字带快照日期与来源；跨币种不加总，缺数据如实标注。",
   "boss_cockpit.loading": "正在汇总驾驶舱数据…",
