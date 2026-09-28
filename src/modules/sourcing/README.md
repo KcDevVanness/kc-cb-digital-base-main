@@ -61,7 +61,7 @@ See [`purchasing/README.md`](../purchasing/README.md) for the library's own rule
 ## Rules that are easy to get wrong
 
 - **Money is a decimal string.** `unit_cost` and `suggested_rsp` are validated as fixed-scale decimal
-  strings and passed through untouched; nothing here does float arithmetic on a price.
+  strings (unit price scale, 4 decimals — `PRICE_SCALE`) and passed through untouched; nothing here does float arithmetic on a price.
 - **Promotion never blanks a product field.** Only non-empty, changed values reach
   `products.items.update`, and the price write submits the product's whole price set (the
   `products.prices.replace` contract deactivates rows missing from the payload), so `internal`
