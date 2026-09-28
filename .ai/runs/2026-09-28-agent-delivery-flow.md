@@ -73,3 +73,11 @@ tracker has no issues.
 
 - [x] 3.1 lessons check + YAML/JSON parse — `node scripts/check-lessons.mjs` valid; workflow parses with `pull_request:` unfiltered and the `lessons` step present; CI run 36402727338 `validate` pass (5m28s)
 - [x] 3.2 PR draft → ready with `validate` green — #10 opened as a draft, flipped ready after the green run
+
+## Notes
+
+- 2026-09-28, after the ERP umbrella merge (`b42887b`) landed on `main`: rebased onto it. The only
+  conflict was `.ai/lessons.md` (the merge's 37-row catalog vs this unit's row) — resolved by keeping
+  main's catalog, re-appending this unit's row, and moving the declared count to 38. The two catalog
+  defects the merge carried (an 8-topic record and a front-matter title that drifted from its H1) are
+  repaired in the gate commit so the new `lessons` step starts green.
