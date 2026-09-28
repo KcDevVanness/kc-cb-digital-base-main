@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 37 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 38 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -41,7 +41,7 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [Hiding an installed page needs the routes.pages override domain](lessons/module-override-page-hide-needs-routes-domain.md) — area:umes,framework-context,architecture; module:platform; topic:module-overrides,route-overrides,nav-hidden,notifications,deep-links,stale-override-warning
 - [Shipping and stock receipt are variant-level, so a product needs a catalog link](lessons/stock-receipt-needs-variant-resolution.md) — area:module-data,architecture; module:purchasing,cross_border,products,wms; topic:product-reference,variants,inventory-receive,allocation,catalog-link,data-scoping
 - [A module's API path segment is its directory name, not its page path](lessons/module-api-path-is-directory-name.md) — area:module-data,framework-context; module:products,trade_docs,purchasing,parties; topic:api-routes,route-generation,generated-files,module-registry,path-naming,debugging
-- [Reads expand to descendant organizations; writes act in the selected one](lessons/read-expands-writes-are-selected-org.md) — area:module-data,architecture,backend-ui; module:products,trade_docs,purchasing; topic:data-scoping,organization-tree,pickers,option-sources,write-scope,crud-factory,maintenance-list,first-paint
+- [Reads expand to descendant organizations; writes act in the selected one](lessons/read-expands-writes-are-selected-org.md) — area:module-data,architecture,backend-ui; module:products,trade_docs,purchasing; topic:data-scoping,organization-tree,pickers,write-scope,crud-factory,first-paint
 - [A spreadsheet reader is app-owned, and a legacy .xls never resolves from MIME_BY_EXTENSION](lessons/spreadsheet-reader-and-xls-mime.md) — area:integration,module-data; module:sourcing,attachments; topic:spreadsheet,xls,mime-detection,attachment-upload,external-parser-dependency
 - [A new module's features reach existing roles only after auth sync-role-acls](lessons/module-features-need-role-acl-sync.md) — area:architecture,framework-context; module:auth,sourcing,export_finance; topic:acl,roles,seed-defaults,feature-gates,tenant-setup
 - [A derived status column is only as reachable as its writers' ordering](lessons/derived-status-needs-a-reachable-write-path.md) — area:module-data,debugging; module:export_finance,cross_border,purchasing; topic:derived-columns,status-vocabulary,cross-module-reads,acceptance-criteria,milestones,projection
@@ -65,3 +65,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [DataTable truncates every cell at 150px, and a right-aligned child's overflow hides without a tooltip](lessons/datatable-cell-truncates-at-150px.md) — area:backend-ui,framework-context; module:purchasing,platform; topic:data-table,column-width,truncation,tooltip,table-cell,column-meta
 - [「不需要小数点」 is a column-scale decision, not a display format](lessons/no-decimals-means-narrow-the-column-scale.md) — area:module-data,backend-ui,architecture; module:purchasing,products,sourcing; topic:numeric-scale,column-precision,form-input,owner-feedback,validators,migrations
 - [A picker whose only remaining option is one value is a defect: delete the entry point, not the data model](lessons/one-option-picker-is-a-defect.md) — area:backend-ui,module-data; module:purchasing; topic:form-affordance,price-list,round-trip-submission,base-row,owner-feedback
+- [A PR whose base is a feature branch runs no CI at all](lessons/gate-must-cover-every-pr-target.md) — area:spec-pr; module:platform; topic:ci,gate,branch-protection,pull-request,worktree,parallel-development
