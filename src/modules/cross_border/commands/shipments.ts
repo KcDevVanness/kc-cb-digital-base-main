@@ -23,6 +23,7 @@ import {
   type ShipmentCreateInput,
   type ShipmentMilestone,
 } from '../data/validators'
+import { invalidatePeerCaches, invalidateShipmentCaches, PEER_CACHE_RESOURCES } from '../lib/cacheInvalidation'
 import { ensureScope, type Scope } from '../lib/scope'
 import {
   loadAllocatedQuantities,
@@ -460,6 +461,17 @@ const departShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
       await dispatchPeerCommand(ctx, 'purchasing.purchase-orders.transition', { id: orderId, action: 'mark_shipped' })
     }
 
+    await invalidateShipmentCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(updated.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'departed',
+    )
+    await invalidatePeerCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      [PEER_CACHE_RESOURCES.purchaseOrder],
+      'departed',
+    )
+
     await eventsConfig.emit('cross_border.shipment.departed', {
       id: String(updated.id),
       tenantId: scope.tenantId,
@@ -621,6 +633,17 @@ const receiveShipmentCommand: CommandHandler<
     shipment.receivedAt = now
     shipment.destinationWarehouseId = parsed.warehouseId
     shipment.destinationLocationId = parsed.locationId
+
+    await invalidateShipmentCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(shipment.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'received',
+    )
+    await invalidatePeerCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      [PEER_CACHE_RESOURCES.purchaseOrder, PEER_CACHE_RESOURCES.purchaseOrderLine, PEER_CACHE_RESOURCES.inventoryBalance],
+      'received',
+    )
 
     await eventsConfig.emit('cross_border.shipment.received', {
       id: String(shipment.id),

@@ -1,0 +1,31 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 2,
+  "items": [
+    {
+      "sku": "PK44",
+      "own_warehouse_qty": "14",
+      "fbo_qty": "24",
+      "total_qty": "38",
+      "days_until_oos": 92,
+      "coverage_days": 41,
+      "stock_value": {
+        "amount": "1100000.00",
+        "currency": "RUB"
+      },
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    },
+    {
+      "sku": "PK39_2",
+      "own_warehouse_qty": "3",
+      "fbo_qty": "0",
+      "total_qty": "3",
+      "days_until_oos": null,
+      "coverage_days": null,
+      "stock_value": null,
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    }
+  ]
+}

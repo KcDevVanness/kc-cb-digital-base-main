@@ -1,0 +1,75 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 4,
+  "items": [
+    {
+      "channel": "total",
+      "month": "2026-09",
+      "view": "opiu",
+      "is_closed": false,
+      "metric": "sales",
+      "value_amount": {
+        "amount": "5006199.00",
+        "currency": "RUB"
+      },
+      "value_percent": null,
+      "value_qty": null,
+      "drr_accrued": null,
+      "drr_accrued_percent": null,
+      "updated_at": "2026-09-28T03:00:00+03:00"
+    },
+    {
+      "channel": "total",
+      "month": "2026-09",
+      "view": "opiu",
+      "is_closed": false,
+      "metric": "marketplace_costs",
+      "value_amount": {
+        "amount": "1849273.00",
+        "currency": "RUB"
+      },
+      "value_percent": null,
+      "value_qty": null,
+      "drr_accrued": null,
+      "drr_accrued_percent": null,
+      "updated_at": "2026-09-28T03:00:00+03:00"
+    },
+    {
+      "channel": "total",
+      "month": "2026-09",
+      "view": "opiu",
+      "is_closed": false,
+      "metric": "ads",
+      "value_amount": {
+        "amount": "376307.00",
+        "currency": "RUB"
+      },
+      "value_percent": null,
+      "value_qty": null,
+      "drr_accrued": {
+        "amount": "376307.00",
+        "currency": "RUB"
+      },
+      "drr_accrued_percent": 4.6,
+      "updated_at": "2026-09-28T03:00:00+03:00"
+    },
+    {
+      "channel": "total",
+      "month": "2026-09",
+      "view": "opiu",
+      "is_closed": false,
+      "metric": "marginal_profit",
+      "value_amount": {
+        "amount": "2777619.00",
+        "currency": "RUB"
+      },
+      "value_percent": 55.5,
+      "value_qty": null,
+      "drr_accrued": null,
+      "drr_accrued_percent": null,
+      "updated_at": "2026-09-28T03:00:00+03:00"
+    }
+  ]
+}

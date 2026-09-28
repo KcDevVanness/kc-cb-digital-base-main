@@ -1,0 +1,17 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 1,
+  "items": [
+    {
+      "sku": "PK44",
+      "in_transit_qty": "228",
+      "eta": "2026-10-05",
+      "shipment_numbers": [
+        "PK26H07P248SJ"
+      ],
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    }
+  ]
+}
