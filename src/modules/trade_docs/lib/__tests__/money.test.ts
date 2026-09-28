@@ -5,7 +5,6 @@ import {
   isAmountGreaterThan,
   multiplyExactDecimal,
   quantizeExactDecimal,
-  resolveCurrencyScale,
   subtractExactDecimal,
   sumAmounts,
   toAmountString,
@@ -17,6 +16,18 @@ describe('quantizeExactDecimal', () => {
     expect(toAmountString({ units: 25n, scale: 3 }, 2)).toBe('0.03')
     expect(toAmountString({ units: 35n, scale: 3 }, 2)).toBe('0.04')
     expect(toAmountString({ units: -15n, scale: 3 }, 2)).toBe('-0.02')
+  })
+
+  it('rounds a half away from zero in both directions', () => {
+    expect(toAmountString({ units: 5n, scale: 3 }, 2)).toBe('0.01')
+    expect(toAmountString({ units: -5n, scale: 3 }, 2)).toBe('-0.01')
+  })
+
+  it('truncates a finer value and still half-rounds the remainder', () => {
+    // The fourth decimal of 12.3456 is dropped and then rounds the second up.
+    expect(toAmountString({ units: 123456n, scale: 4 }, 2)).toBe('12.35')
+    // 0.3125 has exactly the half at the third decimal: 0.31, never banker's 0.31/0.32 drift.
+    expect(toAmountString({ units: 3125n, scale: 4 }, 2)).toBe('0.31')
   })
 
   it('leaves a value below the half step unchanged', () => {
@@ -45,9 +56,9 @@ describe('exact decimal primitives', () => {
     })
   })
 
-  it('sums at the stored amount scale', () => {
-    expect(sumAmounts(['0.01', '0.02'])).toBe('0.0300')
-    expect(sumAmounts(['100.0000', '0.0050'])).toBe('100.0050')
+  it('sums at the amount scale (2 decimals)', () => {
+    expect(sumAmounts(['0.01', '0.02'])).toBe('0.03')
+    expect(sumAmounts(['100.0000', '0.0050'])).toBe('100.01')
   })
 
   it('refuses a value that is not a finite decimal instead of dropping the line', () => {
@@ -60,24 +71,9 @@ describe('exact decimal primitives', () => {
   })
 })
 
-describe('resolveCurrencyScale', () => {
-  it('falls back to two decimals for a missing or non-numeric value', () => {
-    expect(resolveCurrencyScale(null)).toBe(2)
-    expect(resolveCurrencyScale(undefined)).toBe(2)
-    expect(resolveCurrencyScale(Number.NaN)).toBe(2)
-  })
-
-  it('honours a zero-decimal currency and clamps the extremes', () => {
-    expect(resolveCurrencyScale(0)).toBe(0)
-    expect(resolveCurrencyScale(3)).toBe(3)
-    expect(resolveCurrencyScale(99)).toBe(8)
-    expect(resolveCurrencyScale(-4)).toBe(0)
-  })
-})
-
 describe('computeLineAmounts', () => {
   it('rounds a half-cent up in both calibers', () => {
-    const amounts = computeLineAmounts({ quantity: '1', unitPrice: '0.005', currencyScale: 2 })
+    const amounts = computeLineAmounts({ quantity: '1', unitPrice: '0.005' })
     expect(amounts.contractAmount).toBe('0.01')
     expect(amounts.financeAmount).toBe('0.01')
   })
@@ -85,31 +81,25 @@ describe('computeLineAmounts', () => {
   it('does not inherit the binary floating point error that toFixed would produce', () => {
     // The reason this engine exists: the float path loses the cent.
     expect((1.005).toFixed(2)).toBe('1.00')
-    expect(computeLineAmounts({ quantity: '1', unitPrice: '1.005', currencyScale: 2 }).contractAmount).toBe('1.01')
+    expect(computeLineAmounts({ quantity: '1', unitPrice: '1.005' }).contractAmount).toBe('1.01')
   })
 
   it('truncates the fourth decimal with a half-up rule, never banker’s rounding', () => {
-    const amounts = computeLineAmounts({ quantity: '2.5', unitPrice: '0.125', currencyScale: 2 })
+    const amounts = computeLineAmounts({ quantity: '2.5', unitPrice: '0.125' })
     expect(amounts.contractAmount).toBe('0.31')
     expect(amounts.financeAmount).toBe('0.31')
   })
 
-  it('keeps the two calibers independent on a finer unit price', () => {
-    const amounts = computeLineAmounts({ quantity: '3', unitPrice: '12.3456', currencyScale: 2 })
+  it('quantizes a four-decimal unit price to a two-decimal amount', () => {
+    const amounts = computeLineAmounts({ quantity: '3', unitPrice: '12.3456' })
     expect(amounts.contractAmount).toBe('37.04')
     expect(amounts.financeAmount).toBe('37.04')
   })
 
-  it('quantizes the financial caliber to a zero-decimal currency while the contract keeps two', () => {
-    const amounts = computeLineAmounts({ quantity: '3', unitPrice: '1200.4', currencyScale: 0 })
-    expect(amounts.financeAmount).toBe('3601')
+  it('gives both calibers the same amount scale whatever the currency', () => {
+    const amounts = computeLineAmounts({ quantity: '3', unitPrice: '1200.4' })
+    expect(amounts.financeAmount).toBe('3601.20')
     expect(amounts.contractAmount).toBe('3601.20')
-  })
-
-  it('quantizes a three-decimal currency at three places', () => {
-    const amounts = computeLineAmounts({ quantity: '2', unitPrice: '1.0005', currencyScale: 3 })
-    expect(amounts.financeAmount).toBe('2.001')
-    expect(amounts.contractAmount).toBe('2.00')
   })
 })
 
@@ -119,28 +109,28 @@ describe('computeContractTotals', () => {
       { contractAmount: '0.01', financeAmount: '0.01' },
       { contractAmount: '0.02', financeAmount: '0.02' },
     ])
-    expect(totals.contractTotal).toBe('0.0300')
-    expect(totals.financeTotal).toBe('0.0300')
-    expect(totals.differenceTotal).toBe('0.0000')
+    expect(totals.contractTotal).toBe('0.03')
+    expect(totals.financeTotal).toBe('0.03')
+    expect(totals.differenceTotal).toBe('0.00')
   })
 
   it('reports the discrepancy once an invoice line takes over the financial caliber', () => {
     const totals = computeContractTotals([{ contractAmount: '100.01', financeAmount: '100.00' }])
-    expect(totals.contractTotal).toBe('100.0100')
-    expect(totals.financeTotal).toBe('100.0000')
-    expect(totals.differenceTotal).toBe('0.0100')
+    expect(totals.contractTotal).toBe('100.01')
+    expect(totals.financeTotal).toBe('100.00')
+    expect(totals.differenceTotal).toBe('0.01')
   })
 
   it('signs the difference when finance exceeds the contract', () => {
     const totals = computeContractTotals([{ contractAmount: '3601.20', financeAmount: '3620.00' }])
-    expect(totals.differenceTotal).toBe('-18.8000')
+    expect(totals.differenceTotal).toBe('-18.80')
   })
 
   it('renders zero totals for a contract without lines', () => {
     expect(computeContractTotals([])).toEqual({
-      contractTotal: '0.0000',
-      financeTotal: '0.0000',
-      differenceTotal: '0.0000',
+      contractTotal: '0.00',
+      financeTotal: '0.00',
+      differenceTotal: '0.00',
     })
   })
 })
