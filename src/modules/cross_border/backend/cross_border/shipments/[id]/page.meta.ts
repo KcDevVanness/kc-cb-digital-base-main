@@ -3,8 +3,8 @@ export const metadata = {
   requireFeatures: ['cross_border.shipments.view'],
   pageTitle: 'Shipment',
   pageTitleKey: 'cross_border.shipments.page.title',
-  pageGroup: 'Cross-Border',
-  pageGroupKey: 'cross_border.nav.group',
+  pageGroup: 'Export operations — Shipping',
+  pageGroupKey: 'cross_border.nav.group.shipping',
   pageOrder: 342,
   breadcrumb: [
     { label: 'Shipments', labelKey: 'cross_border.shipments.page.title', href: '/backend/cross_border/shipments' },
