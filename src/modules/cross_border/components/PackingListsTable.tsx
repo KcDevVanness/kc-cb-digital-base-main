@@ -6,26 +6,13 @@ import { useQuery } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
-import {
-  CrudForm,
-  type CrudField,
-  type CrudFormGroup,
-} from '@open-mercato/ui/backend/CrudForm'
 import { ListEmptyState } from '@open-mercato/ui/backend/filters/ListEmptyState'
 import { RowActions } from '@open-mercato/ui/backend/RowActions'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
-import { createCrud, deleteCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
+import { deleteCrud, fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { Button } from '@open-mercato/ui/primitives/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@open-mercato/ui/primitives/dialog'
-import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { hasFeature } from '@open-mercato/shared/security/features'
 import { useBackendChrome } from '@open-mercato/ui/backend/BackendChromeProvider'
@@ -33,17 +20,16 @@ import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n
 import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import { toShipmentDocumentRecord, type ShipmentDocumentRecord } from './ShipmentDetail'
 import {
+  PACKING_LISTS_LIST_HREF,
   SHIPMENTS_API_PATH,
   SHIPMENTS_LIST_HREF,
   SHIPMENT_DOCUMENTS_API_PATH,
-  buildDocumentPayload,
   formatShipmentDate,
   shipmentDisplayLabel,
   shipmentErrorMessage,
   toShipmentRecord,
   type ShipmentRecord,
 } from './ShipmentForm'
-import { ShipmentDocumentAttachmentField } from './shipmentDocumentAttachmentField'
 
 /**
  * The packing-list (PL) ledger: every `packing_list` export document across shipments, with the
@@ -57,28 +43,11 @@ import { ShipmentDocumentAttachmentField } from './shipmentDocumentAttachmentFie
  */
 
 const PAGE_SIZE = 50
-const SHIPMENT_OPTION_PAGE_SIZE = 20
 const DEFAULT_PACKING_LIST_TYPE = 'packing_list'
-
-type PackingListValues = {
-  shipmentId: string
-  documentNumber: string
-  issuedAt: string
-  attachmentId: string
-  note: string
-}
 
 /** A ledger row: the document projection plus the shipment it points at. */
 type PackingListRow = ShipmentDocumentRecord & {
   shipment: ShipmentRecord | null
-}
-
-const EMPTY_VALUES: PackingListValues = {
-  shipmentId: '',
-  documentNumber: '',
-  issuedAt: '',
-  attachmentId: '',
-  note: '',
 }
 
 function EmptyCell() {
@@ -167,8 +136,6 @@ export default function PackingListsTable() {
   const scopeVersion = useOrganizationScopeVersion()
   const [page, setPage] = React.useState(1)
   const [search, setSearch] = React.useState('')
-  const [dialog, setDialog] = React.useState<{ mode: 'create' } | { mode: 'edit'; row: PackingListRow } | null>(null)
-  const dialogContentRef = React.useRef<HTMLDivElement | null>(null)
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   // Write actions follow the role the server gates them by; nothing is hidden while the chrome
   // payload loads, so a permitted operator never sees flicker (same pattern as the sibling lists).
@@ -234,134 +201,6 @@ export default function PackingListsTable() {
 
   const columns = React.useMemo(() => buildColumns(t, locale), [locale, t])
 
-  const loadShipmentOptions = React.useCallback(async (query?: string) => {
-    const params: Record<string, string> = {
-      page: '1',
-      pageSize: String(SHIPMENT_OPTION_PAGE_SIZE),
-      sortField: 'created_at',
-      sortDir: 'desc',
-    }
-    const term = query?.trim()
-    if (term) params.search = term
-    const payload = await fetchCrudList<Record<string, unknown>>(SHIPMENTS_API_PATH, params)
-    return (payload.items ?? []).map(toShipmentRecord).map((shipment) => ({
-      value: shipment.id,
-      label: shipmentDisplayLabel(t, shipment),
-    }))
-  }, [t])
-
-  const dialogValues = React.useMemo<PackingListValues>(() => {
-    if (!dialog || dialog.mode === 'create') return EMPTY_VALUES
-    return {
-      shipmentId: dialog.row.shipmentId,
-      documentNumber: dialog.row.documentNumber ?? '',
-      issuedAt: dialog.row.issuedAt ? dialog.row.issuedAt.slice(0, 10) : '',
-      attachmentId: dialog.row.attachmentId ?? '',
-      note: dialog.row.note ?? '',
-    }
-  }, [dialog])
-
-  const dialogFields = React.useMemo<CrudField[]>(() => {
-    // A document is filed against the shipment whose attachments it belongs to, so the shipment is
-    // picked once, at registration, and never re-parented afterwards (the command would accept a
-    // new id and strand the file); the edit form states the shipment instead of offering it.
-    const shipmentField: CrudField = {
-      id: 'shipmentId',
-      label: t('cross_border.packingLists.form.field.shipment'),
-      description: t('cross_border.packingLists.form.help.shipment'),
-      type: 'combobox',
-      required: true,
-      allowCustomValues: false,
-      loadOptions: loadShipmentOptions,
-    }
-    const attachmentField: CrudField = {
-      id: 'attachmentId',
-      label: t('cross_border.shipments.documents.field.attachment'),
-      type: 'custom',
-      rendersOwnError: true,
-      component: (props) => (
-        <ShipmentDocumentAttachmentField
-          {...props}
-          shipmentId={
-            dialog?.mode === 'edit'
-              ? dialog.row.shipmentId
-              : (values) => (typeof values?.shipmentId === 'string' ? values.shipmentId : '')
-          }
-        />
-      ),
-    }
-    const fields: CrudField[] = dialog?.mode === 'edit'
-      ? [attachmentField]
-      : [shipmentField, attachmentField]
-    return [
-      ...fields,
-      {
-        id: 'documentNumber',
-        label: t('cross_border.shipments.documents.field.documentNumber'),
-        type: 'text',
-      },
-      {
-        id: 'issuedAt',
-        label: t('cross_border.shipments.documents.field.issuedAt'),
-        type: 'date',
-      },
-      {
-        id: 'note',
-        label: t('cross_border.shipments.documents.field.note'),
-        type: 'textarea',
-      },
-    ]
-  }, [dialog, loadShipmentOptions, t])
-
-  const dialogGroups = React.useMemo<CrudFormGroup[]>(() => [
-    {
-      id: 'packingListDetails',
-      column: 1,
-      fields: dialog?.mode === 'edit'
-        ? ['documentNumber', 'attachmentId']
-        : ['shipmentId', 'documentNumber', 'attachmentId'],
-    },
-    { id: 'packingListStamp', column: 2, fields: ['issuedAt', 'note'] },
-  ], [dialog])
-
-  const handleSubmit = React.useCallback(async (values: PackingListValues) => {
-    const shipmentId = dialog?.mode === 'edit' ? dialog.row.shipmentId : values.shipmentId
-    const payload = buildDocumentPayload(shipmentId, {
-      docType: DEFAULT_PACKING_LIST_TYPE,
-      documentNumber: values.documentNumber,
-      issuedAt: values.issuedAt,
-      attachmentId: values.attachmentId,
-      note: values.note,
-    })
-    try {
-      if (dialog?.mode === 'edit') {
-        await updateCrud(
-          SHIPMENT_DOCUMENTS_API_PATH,
-          { id: dialog.row.id, ...payload },
-          { errorMessage: t('cross_border.shipments.documents.saveFailed') },
-        )
-      } else {
-        await createCrud(
-          SHIPMENT_DOCUMENTS_API_PATH,
-          payload,
-          { errorMessage: t('cross_border.shipments.documents.saveFailed') },
-        )
-      }
-    } catch (cause) {
-      // A stale version surfaces as a conflict with a refresh affordance instead of a dead form.
-      surfaceRecordConflict(cause, t, { onRefresh: () => void refetch() })
-      throw cause
-    }
-    flash(
-      dialog?.mode === 'edit'
-        ? t('cross_border.packingLists.form.updated')
-        : t('cross_border.shipments.documents.saved'),
-      'success',
-    )
-    setDialog(null)
-    await refetch()
-  }, [dialog, refetch, t])
-
   const handleRemove = React.useCallback(async (row: PackingListRow) => {
     const confirmed = await confirm({
       title: t('cross_border.shipments.documents.remove'),
@@ -382,14 +221,6 @@ export default function PackingListsTable() {
     }
   }, [confirm, refetch, t])
 
-  const handleSubmitForm = React.useCallback(() => {
-    dialogContentRef.current?.querySelector('form')?.requestSubmit()
-  }, [])
-  const handleDialogKeyDown = useDialogKeyHandler({
-    onConfirm: handleSubmitForm,
-    onCancel: () => setDialog(null),
-  })
-
   const listError = error
     ? (error instanceof Error && error.message ? error.message : t('cross_border.packingLists.list.loadFailed'))
     : null
@@ -408,9 +239,11 @@ export default function PackingListsTable() {
         columns={columns}
         data={rows}
         actions={canManage ? (
-          <Button type="button" onClick={() => setDialog({ mode: 'create' })}>
-            <Plus className="size-4" aria-hidden="true" />
-            {t('cross_border.packingLists.actions.create')}
+          <Button asChild>
+            <Link href={`${PACKING_LISTS_LIST_HREF}/create`}>
+              <Plus className="size-4" aria-hidden="true" />
+              {t('cross_border.packingLists.actions.create')}
+            </Link>
           </Button>
         ) : null}
         searchValue={search}
@@ -425,26 +258,35 @@ export default function PackingListsTable() {
             title={t('cross_border.packingLists.list.empty')}
             description={t('cross_border.packingLists.list.emptyHint')}
             createLabel={canManage ? t('cross_border.packingLists.actions.create') : undefined}
-            onCreate={canManage ? () => setDialog({ mode: 'create' }) : undefined}
+            createHref={canManage ? `${PACKING_LISTS_LIST_HREF}/create` : undefined}
           />
         )}
-        rowActions={canManage ? (row) => (
+        rowActions={(row) => (
           <RowActions
             items={[
               {
-                id: 'edit',
-                label: t('cross_border.packingLists.actions.edit'),
-                onSelect: () => setDialog({ mode: 'edit', row }),
+                id: 'open',
+                label: t('cross_border.packingLists.actions.open'),
+                href: `${PACKING_LISTS_LIST_HREF}/${row.id}`,
               },
-              {
-                id: 'remove',
-                label: t('cross_border.shipments.documents.remove'),
-                destructive: true,
-                onSelect: () => { void handleRemove(row) },
-              },
+              ...(canManage
+                ? [
+                    {
+                      id: 'edit',
+                      label: t('cross_border.packingLists.actions.edit'),
+                      href: `${PACKING_LISTS_LIST_HREF}/${row.id}/edit`,
+                    },
+                    {
+                      id: 'remove',
+                      label: t('cross_border.shipments.documents.remove'),
+                      destructive: true,
+                      onSelect: () => { void handleRemove(row) },
+                    },
+                  ]
+                : []),
             ]}
           />
-        ) : undefined}
+        )}
         pagination={{
           page,
           pageSize: PAGE_SIZE,
@@ -455,34 +297,6 @@ export default function PackingListsTable() {
         isLoading={isLoading}
         error={listError}
       />
-
-      <Dialog open={dialog !== null} onOpenChange={(open) => { if (!open) setDialog(null) }}>
-        <DialogContent ref={dialogContentRef} onKeyDown={handleDialogKeyDown}>
-          <DialogHeader>
-            <DialogTitle>
-              {dialog?.mode === 'edit'
-                ? t('cross_border.packingLists.form.editTitle')
-                : t('cross_border.packingLists.form.createTitle')}
-            </DialogTitle>
-            <DialogDescription>
-              {dialog?.mode === 'edit'
-                ? t('cross_border.packingLists.form.editDescription', { shipment: shipmentLinkLabel(t, dialog.row) })
-                : t('cross_border.packingLists.page.description')}
-            </DialogDescription>
-          </DialogHeader>
-          <CrudForm<PackingListValues>
-            // A fresh form per target: reusing one instance across two rows (or create → edit)
-            // would keep the previous session's values, since `initialValues` only seed a mount.
-            key={dialog?.mode === 'edit' ? dialog.row.id : 'create'}
-            embedded
-            fields={dialogFields}
-            groups={dialogGroups}
-            initialValues={dialogValues}
-            submitLabel={t('cross_border.shipments.form.save')}
-            onSubmit={handleSubmit}
-          />
-        </DialogContent>
-      </Dialog>
 
       {ConfirmDialogElement}
     </>

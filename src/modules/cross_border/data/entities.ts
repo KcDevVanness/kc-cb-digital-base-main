@@ -301,3 +301,128 @@ export class CrossBorderExportDocument {
   @Property({ name: 'deleted_at', type: Date, nullable: true })
   deletedAt?: Date | null
 }
+
+/**
+ * One purchase/sales contract a shipment travels under.
+ *
+ * The relation is deliberately many-to-many: a consolidated container (拼柜) may carry goods
+ * belonging to several contracts, and one contract is usually fulfilled by several shipments.
+ * The contract itself lives in `trade_docs`; this module only stores its id plus the
+ * `contractNumber`/`contractDirection` display snapshot frozen at write time, so a renamed or
+ * re-signed contract never rewrites what a shipment already recorded.
+ */
+@Entity({ tableName: 'cross_border_shipment_contracts' })
+@Index({ name: 'cross_border_shipment_contracts_scope_idx', properties: ['organizationId', 'tenantId'] })
+@Index({ name: 'cross_border_shipment_contracts_contract_idx', properties: ['organizationId', 'tenantId', 'contractId'] })
+@Unique({ name: 'cross_border_shipment_contracts_shipment_contract_uniq', properties: ['shipment', 'contractId'] })
+export class CrossBorderShipmentContract {
+  [OptionalProps]?: 'createdAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @ManyToOne(() => CrossBorderShipment, { fieldName: 'shipment_id', deleteRule: 'cascade' })
+  shipment!: CrossBorderShipment
+
+  /** Scalar reference into `trade_docs` — never a cross-module ORM relation. */
+  @Property({ name: 'contract_id', type: 'uuid' })
+  contractId!: string
+
+  @Property({ name: 'contract_number', type: 'text', nullable: true })
+  contractNumber?: string | null
+
+  /** `purchase` | `sales` as printed on the contract, frozen at write time. */
+  @Property({ name: 'contract_direction', type: 'text', nullable: true })
+  contractDirection?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+}
+
+/**
+ * One line of a packing list.
+ *
+ * Only `packing_list` documents carry lines — the validator refuses a `lines` payload on any other
+ * export-document kind, because measured cartons and weights belong to the packing list and to no
+ * other export paper. Every measurement is nullable on purpose: a line may be registered before
+ * the packing is finished, and the operator keeps editing it (数量/箱数/毛重/净重/体积/备注).
+ * Lines are replaced wholesale by the document command, exactly like shipment allocations.
+ */
+@Entity({ tableName: 'cross_border_export_document_lines' })
+@Index({ name: 'cross_border_export_document_lines_scope_idx', properties: ['organizationId', 'tenantId'] })
+@Unique({ name: 'cross_border_export_document_lines_document_line_uniq', properties: ['document', 'lineNumber'] })
+export class CrossBorderExportDocumentLine {
+  [OptionalProps]?: 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @ManyToOne(() => CrossBorderExportDocument, { fieldName: 'document_id', deleteRule: 'cascade' })
+  document!: CrossBorderExportDocument
+
+  /** Assigned by the command as 1..n; the unique key is `(document, lineNumber)`. */
+  @Property({ name: 'line_number', type: 'integer' })
+  lineNumber!: number
+
+  /** App-owned product master id (scalar); a free-text line may carry none. */
+  @Property({ name: 'product_id', type: 'uuid', nullable: true })
+  productId?: string | null
+
+  @Property({ name: 'product_snapshot', type: 'jsonb', nullable: true })
+  productSnapshot?: Record<string, unknown> | null
+
+  @Property({ type: 'text', nullable: true })
+  name?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  sku?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  unit?: string | null
+
+  @Property({ type: 'numeric', precision: 18, scale: 4, nullable: true })
+  quantity?: string | null
+
+  /** 箱数 — whole cartons, hence scale 0. */
+  @Property({ type: 'numeric', precision: 18, scale: 0, nullable: true })
+  cartons?: string | null
+
+  @Property({ name: 'gross_weight', type: 'numeric', precision: 18, scale: 4, nullable: true })
+  grossWeight?: string | null
+
+  @Property({ name: 'net_weight', type: 'numeric', precision: 18, scale: 4, nullable: true })
+  netWeight?: string | null
+
+  /** 体积 in cm³ — integer, the same caliber as `products.volume`. */
+  @Property({ type: 'numeric', precision: 18, scale: 0, nullable: true })
+  volume?: string | null
+
+  /** Where the line came from: a contract line (`contract_line`) or the operator (`manual`). */
+  @Property({ name: 'source_snapshot', type: 'jsonb', nullable: true })
+  sourceSnapshot?: Record<string, unknown> | null
+
+  @Property({ type: 'text', nullable: true })
+  note?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+
+  /** Set when the owning document is deleted, so a deleted list's lines stop being readable. */
+  @Property({ name: 'deleted_at', type: Date, nullable: true })
+  deletedAt?: Date | null
+}

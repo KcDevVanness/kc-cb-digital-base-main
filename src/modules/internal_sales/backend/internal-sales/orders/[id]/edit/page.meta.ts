@@ -6,8 +6,8 @@ export const metadata = {
   requireFeatures: ['sales.orders.manage'],
   pageTitle: 'Edit Internal Sales Order (PO)',
   pageTitleKey: 'internal_sales.form.order.editTitle',
-  pageGroup: 'Cross-Border',
-  pageGroupKey: 'cross_border.nav.group',
+  pageGroup: 'Export operations — Internal sales',
+  pageGroupKey: 'cross_border.nav.group.internal',
   pageOrder: 312,
   icon: 'shopping-cart',
   breadcrumb: [

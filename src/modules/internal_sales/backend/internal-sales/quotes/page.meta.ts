@@ -7,8 +7,8 @@ export const metadata = {
   requireFeatures: ['sales.quote.view'],
   pageTitle: 'Internal sales quotes',
   pageTitleKey: 'internal_sales.list.quote.title',
-  pageGroup: 'Cross-Border',
-  pageGroupKey: 'cross_border.nav.group',
+  pageGroup: 'Export operations — Internal sales',
+  pageGroupKey: 'cross_border.nav.group.internal',
   pageOrder: 300,
   icon: 'file-text',
   breadcrumb: [
