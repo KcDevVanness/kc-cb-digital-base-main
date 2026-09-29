@@ -91,6 +91,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
     buildFilters: async (query: SupplierListQuery) => {
       const filters: Record<string, unknown> = {}
       if (query.id) filters.id = query.id
+      if (query.organizationId) filters.organization_id = query.organizationId
       if (query.isActive !== undefined) filters.is_active = query.isActive
       if (query.search && query.search.trim().length > 0) {
         // `name`/`code` are plaintext columns, so an escaped LIKE is safe here; the

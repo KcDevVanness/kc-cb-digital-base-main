@@ -208,6 +208,14 @@ export class TradeDocsContractLine {
   @Property({ type: 'text', nullable: true })
   note?: string | null
 
+  /**
+   * Frozen provenance of a line copied from an order/quote
+   * (`{kind:'order_line', id, orderKind, copiedAt}`). The copy is one-shot: the snapshot names where
+   * the row came from after the fact, and nothing syncs it back.
+   */
+  @Property({ name: 'source_snapshot', type: 'jsonb', nullable: true })
+  sourceSnapshot?: Record<string, unknown> | null
+
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()
 

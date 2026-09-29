@@ -99,6 +99,17 @@ export async function GET(request: Request) {
 
   try {
     const em = container.resolve('em') as EntityManager
+    // Roles travel with each option: a merged picker labels a group branch (role `branch`) and an
+    // external customer (role `buyer`) differently, and a party itself carries no single kind.
+    const rolesByParty: Record<string, string[]> = {}
+    const collectRoles = (roleRows: PartyRole[]) => {
+      for (const row of roleRows) {
+        const partyId = String(row.party.id)
+        const existing = rolesByParty[partyId]
+        if (existing) existing.push(row.role)
+        else rolesByParty[partyId] = [row.role]
+      }
+    }
     if (requestedRoles.length > 0) {
       // `role` and the scope columns are plaintext, so the id set can come straight from the role
       // rows; the party read below still applies the encrypted-column helper and the same scope.
@@ -110,8 +121,9 @@ export async function GET(request: Request) {
           role: { $in: requestedRoles },
         } as FilterQuery<PartyRole>,
       )
+      collectRoles(roleRows)
       // Dynamic membership over runtime rows — a Set, not a table.
-      const roleHolderIds = new Set(roleRows.map((row) => String(row.party.id)))
+      const roleHolderIds = new Set(Object.keys(rolesByParty))
       const explicitIds = (where.id as { $in: string[] } | undefined)?.$in
       const candidateIds = explicitIds
         ? explicitIds.filter((id) => roleHolderIds.has(id))
@@ -128,9 +140,22 @@ export async function GET(request: Request) {
       { orderBy: { code: 'asc' }, limit: MAX_OPTIONS },
       { tenantId: auth.tenantId, organizationId: scopeIds[0] },
     )
+    if (requestedRoles.length === 0 && rows.length > 0) {
+      const scopedRoleRows = await em.find(
+        PartyRole,
+        {
+          tenantId: auth.tenantId,
+          organizationId: { $in: scopeIds },
+          party: { $in: rows.map((row) => String(row.id)) },
+        } as FilterQuery<PartyRole>,
+      )
+      collectRoles(scopedRoleRows)
+    }
     const items = rows.map((row) => ({
       value: String(row.id),
       label: `${row.code} — ${row.name}`,
+      // Additive: existing consumers read `value`/`label` only.
+      roles: [...(rolesByParty[String(row.id)] ?? [])].sort(),
     }))
     return NextResponse.json({ items })
   } catch (err) {

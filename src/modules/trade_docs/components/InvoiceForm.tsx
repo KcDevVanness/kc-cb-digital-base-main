@@ -43,13 +43,14 @@ import { DocumentCopyFromDialog } from './DocumentDetail'
 import {
   loadContractLineOptions,
   loadContractOptions,
-  loadCounterpartyOptions,
   loadCurrencyOptions,
   loadProductOptions,
   readText,
   snapshotText,
   type ProductOption,
 } from './formOptions'
+import { CounterpartyPicker } from './CounterpartyPicker'
+import { COUNTERPARTY_KIND_BY_INVOICE_DIRECTION } from '../data/validators'
 
 const INVOICES_API_PATH = 'trade_docs/invoices'
 const INVOICE_LINES_API_PATH = 'trade_docs/invoices/lines'
@@ -86,7 +87,6 @@ export type InvoiceFormValues = {
   direction: string
   /** `''` until chosen, a real kind, or `INVOICE_KIND_UNCLASSIFIED` for a row without one. */
   invoiceKind: string
-  counterpartyKind: string
   counterpartyId: string
   counterpartyName: string
   contractId: string
@@ -115,7 +115,6 @@ const EMPTY_INVOICE_VALUES: InvoiceFormValues = {
   number: '',
   direction: 'inbound',
   invoiceKind: '',
-  counterpartyKind: 'supplier',
   counterpartyId: '',
   counterpartyName: '',
   contractId: '',
@@ -164,7 +163,6 @@ export function toInvoiceFormValues(
     number: readText(item, 'number'),
     direction: readText(item, 'direction') || 'inbound',
     invoiceKind: asInvoiceKind(item.invoiceKind ?? item.invoice_kind) ?? INVOICE_KIND_UNCLASSIFIED,
-    counterpartyKind: readText(item, 'counterpartyKind', 'counterparty_kind') || 'supplier',
     counterpartyId: readText(item, 'counterpartyId', 'counterparty_id'),
     counterpartyName: readText(item, 'counterpartyName', 'counterparty_name'),
     contractId: readText(item, 'contractId', 'contract_id'),
@@ -213,7 +211,8 @@ export function buildInvoicePayload(values: InvoiceFormValues): Record<string, u
     number: trimmedOrNull(values.number),
     direction: values.direction,
     invoiceKind: invoiceKindPayload(values.invoiceKind),
-    counterpartyKind: values.counterpartyKind,
+    // Derived, never a separate operator choice: the direction decides the namespace.
+    counterpartyKind: COUNTERPARTY_KIND_BY_INVOICE_DIRECTION[values.direction as keyof typeof COUNTERPARTY_KIND_BY_INVOICE_DIRECTION],
     counterpartyId: values.counterpartyId.trim() ? values.counterpartyId.trim() : null,
     counterpartySnapshot: values.counterpartyName.trim() ? { name: values.counterpartyName.trim() } : null,
     contractId: values.contractId.trim() ? values.contractId.trim() : null,
@@ -458,29 +457,6 @@ function useInvoiceFields(t: TranslateFn, mode: 'create' | 'edit'): CrudField[] 
       layout: 'half',
     },
     {
-      id: 'counterpartyKind',
-      label: t('trade_docs.invoices.form.field.counterpartyKind'),
-      type: 'select',
-      options: [
-        { value: 'supplier', label: t('trade_docs.contracts.form.counterpartyKind.supplier') },
-        { value: 'customer', label: t('trade_docs.contracts.form.counterpartyKind.customer') },
-      ],
-      layout: 'half',
-    },
-    {
-      id: 'counterpartyId',
-      label: t('trade_docs.invoices.form.field.counterpartyId'),
-      type: 'select',
-      layout: 'half',
-      loadOptions: () =>
-        loadCounterpartyOptions({
-          supplierLabel: t('trade_docs.contracts.form.counterpartyKind.supplier'),
-          customerLabel: t('trade_docs.contracts.form.counterpartyKind.customer'),
-          errorMessage: t('trade_docs.contracts.form.counterpartyLoadFailed'),
-          organizationId,
-        }),
-    },
-    {
       id: 'counterpartyName',
       label: t('trade_docs.invoices.form.field.counterpartyName'),
       type: 'text',
@@ -511,7 +487,16 @@ function useInvoiceGroups(t: TranslateFn): CrudFormGroup[] {
     {
       id: 'header',
       column: 1,
-      fields: ['number', 'direction', 'invoiceKind', 'counterpartyKind', 'counterpartyId', 'counterpartyName', 'contractId', 'currencyCode', 'issuedAt', 'notes'],
+      fields: ['number', 'direction', 'invoiceKind', 'counterpartyName', 'contractId', 'currencyCode', 'issuedAt', 'notes'],
+    },
+    {
+      id: 'counterpartyPicker',
+      column: 1,
+      bare: true,
+      component: (context) => (
+        // An invoice prints the counterparty's name only — no bank block on this document.
+        <CounterpartyPicker {...context} t={t} directionKind="invoice" idPrefix="invoice" showBankAccount={false} />
+      ),
     },
     {
       id: 'lines',

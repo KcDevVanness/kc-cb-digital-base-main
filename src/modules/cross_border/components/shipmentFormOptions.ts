@@ -1,6 +1,8 @@
 import type { CrudFieldOption } from '@open-mercato/ui/backend/CrudForm'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionaries/lib/clientEntries'
+import { channelIdForTradeType } from '../../internal_sales/lib/tradeType'
+import { loadTradeTypeChannelIds } from '../../internal_sales/lib/tradeTypeChannels'
 
 /**
  * Option loaders for the shipment form.
@@ -52,21 +54,47 @@ function readOptionText(source: Record<string, unknown>, ...keys: string[]): str
 }
 
 /**
+ * The list query a shipment's sales-order picker sends.
+ *
+ * `channelId` is the whole point: a shipment's sales allocation is an **internal** (总部 → 分公司)
+ * sale, so the marker is mandatory. `null` means the organization has no `INTERNAL_SALES` channel
+ * yet — the caller must offer nothing rather than fall back to every order, or an external sale
+ * could be allocated onto a shipment. Pure so the param contract is testable without a network.
+ */
+export function buildSalesOrderListParams(
+  channelId: string | null,
+  term: string,
+): Record<string, string | number> | null {
+  if (!channelId) return null
+  return {
+    channelId,
+    pageSize: SALES_OPTION_PAGE_SIZE,
+    sortField: 'created_at',
+    sortDir: 'desc',
+    ...(term ? { search: term } : {}),
+  }
+}
+
+/**
  * Internal sales orders a shipment's sales allocation may draw from.
  *
  * Read from the installed `sales` list — the module that owns the order resolves it, and the label
  * carries the order number so an operator can pick without memorizing ids. The route's own scope
  * rules apply, so an order outside the caller's organization is never offered.
+ *
+ * Only the organization's **internal** trade-type channel is offered (`channelId`): an external
+ * order has no 总部 → 分公司 pricing link behind it. When that channel is missing the picker stays
+ * empty and the caller's localized message is surfaced, never a widened list.
  */
 export async function loadSalesOrderOptions(errorMessage: string, query?: string): Promise<CrudFieldOption[]> {
-  const term = query?.trim()
+  const term = query?.trim() ?? ''
+  const channelIds = await loadTradeTypeChannelIds('order', errorMessage)
+  const params = buildSalesOrderListParams(channelIdForTradeType('internal', channelIds), term)
+  // No `INTERNAL_SALES` channel: no request, no options, and the caller's own message (the channel
+  // loader already localized it the same way) instead of a picker that quietly lists everything.
+  if (!params) throw new Error(errorMessage)
   try {
-    const payload = await fetchCrudList<Record<string, unknown>>(SALES_ORDERS_API_PATH, {
-      pageSize: SALES_OPTION_PAGE_SIZE,
-      sortField: 'created_at',
-      sortDir: 'desc',
-      ...(term ? { search: term } : {}),
-    })
+    const payload = await fetchCrudList<Record<string, unknown>>(SALES_ORDERS_API_PATH, params)
     return (payload.items ?? [])
       .map((item) => {
         const value = String(item.id ?? '')

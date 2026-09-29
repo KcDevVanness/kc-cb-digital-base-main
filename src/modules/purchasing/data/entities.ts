@@ -73,6 +73,67 @@ export class PurchasingSupplier {
 }
 
 /**
+ * The bank block of a supplier: 银行 (Beneficiary Bank) / 银行账号 / SWIFT CODE / 银行地址 — the
+ * account our payments go to, so the columns are encrypted at rest through this module's
+ * `encryption.ts` and never searched, sorted or indexed.
+ *
+ * A child table rather than four columns on the supplier because a supplier changes banks and a
+ * second account is a normal event; exactly one row is the default — enforced by the command and by
+ * the partial unique index declared below and in the reviewed migration.
+ */
+@Entity({ tableName: 'purchasing_supplier_bank_accounts' })
+@Index({ name: 'purchasing_supplier_bank_accounts_supplier_idx', properties: ['supplier'] })
+@Index({ name: 'purchasing_supplier_bank_accounts_scope_idx', properties: ['organizationId', 'tenantId'] })
+@Index({
+  name: 'purchasing_supplier_bank_accounts_default_unique_idx',
+  // One default account per supplier. A partial unique index is the only shape that expresses this:
+  // the command checks the payload, but two concurrent edits could still both mark a row default,
+  // and a plain unique on (supplier_id, is_default) would also forbid two non-default rows.
+  expression:
+    'create unique index "purchasing_supplier_bank_accounts_default_unique_idx" on "purchasing_supplier_bank_accounts" ("supplier_id") where is_default',
+})
+export class PurchasingSupplierBankAccount {
+  [OptionalProps]?: 'isDefault' | 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @ManyToOne(() => PurchasingSupplier, { fieldName: 'supplier_id', deleteRule: 'cascade' })
+  supplier!: PurchasingSupplier
+
+  /** Beneficiary Bank — 银行. */
+  @Property({ name: 'beneficiary_bank', type: 'text' })
+  beneficiaryBank!: string
+
+  /** Beneficiary Number — 银行账号. No format assumption: IBAN and local numbering both occur. */
+  @Property({ name: 'account_number', type: 'text' })
+  accountNumber!: string
+
+  /** SWIFT CODE. */
+  @Property({ name: 'swift_code', type: 'text', nullable: true })
+  swiftCode?: string | null
+
+  /** Bank add — 银行地址. */
+  @Property({ name: 'bank_address', type: 'text', nullable: true })
+  bankAddress?: string | null
+
+  @Property({ name: 'is_default', type: 'boolean', default: false })
+  isDefault: boolean = false
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}
+
+/**
  * Purchase order placed on a domestic agent. Goods ship straight from the supplier to the
  * overseas warehouse, so this record owns the commercial terms and the derived payment
  * state — never a domestic stock balance.

@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, X } from 'lucide-react'
 import {
   CrudForm,
   type CrudField,
@@ -27,9 +27,14 @@ import {
 } from '@open-mercato/ui/primitives/select'
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
-import { CONTRACT_DIRECTIONS, CONTRACT_STATUSES, directionLabel } from './contractLabels'
 import {
-  loadCounterpartyOptions,
+  appendContractLines,
+  buildContractSourceAnchorPayload,
+  type ContractLineDraft,
+} from '../lib/contractLineSource'
+import { CONTRACT_DIRECTIONS, CONTRACT_STATUSES, directionLabel } from './contractLabels'
+import { ContractLineSourceDialog, type ContractLineSourceHead } from './ContractLineSourceDialog'
+import {
   loadCurrencyOptions,
   loadIncotermOptions,
   loadPartyBankAccountOptions,
@@ -46,6 +51,9 @@ import {
   type PartyDetail,
   type ProductOption,
 } from './formOptions'
+import { CounterpartyPicker } from './CounterpartyPicker'
+// The direction→kind map is the single source of "who may stand on this side of the document".
+import { COUNTERPARTY_KIND_BY_DIRECTION } from '../data/validators'
 
 const CONTRACTS_API_PATH = 'trade_docs/contracts'
 const CONTRACT_LINES_API_PATH = 'trade_docs/contracts/lines'
@@ -62,13 +70,16 @@ export type ContractLineValues = {
   quantity: string
   unitPrice: string
   note: string
+  /** Frozen provenance of a line copied from an order/quote; `null` on a typed row. */
+  sourceSnapshot: Record<string, unknown> | null
 }
 
 export type ContractFormValues = {
   id?: string
   direction: string
-  counterpartyKind: string
   counterpartyId: string
+  /** Bank account id the counterparty bank text was filled from; carried into the snapshot. */
+  counterpartyBankAccountId: string
   counterpartyName: string
   counterpartyAddress: string
   counterpartyContact: string
@@ -92,6 +103,12 @@ export type ContractFormValues = {
   destination: string
   marks: string
   notes: string
+  /** Source anchor: `manual` (nothing picked), `purchase_order` or `sales_order`. */
+  sourceKind: string
+  sourceId: string
+  /** Display fields of the picked source; they become the head `sourceSnapshot`. */
+  sourceNumber: string
+  sourceCounterparty: string
   lines: ContractLineValues[]
   /** Optimistic-lock version; `CrudForm` derives the expected-version header from it. */
   updatedAt?: string | null
@@ -109,12 +126,13 @@ const EMPTY_LINE: ContractLineValues = {
   quantity: '1',
   unitPrice: '0',
   note: '',
+  sourceSnapshot: null,
 }
 
 const EMPTY_CONTRACT_VALUES: ContractFormValues = {
   direction: 'purchase',
-  counterpartyKind: 'supplier',
   counterpartyId: '',
+  counterpartyBankAccountId: '',
   counterpartyName: '',
   counterpartyAddress: '',
   counterpartyContact: '',
@@ -136,6 +154,10 @@ const EMPTY_CONTRACT_VALUES: ContractFormValues = {
   destination: '',
   marks: '',
   notes: '',
+  sourceKind: 'manual',
+  sourceId: '',
+  sourceNumber: '',
+  sourceCounterparty: '',
   lines: [{ ...EMPTY_LINE }],
 }
 
@@ -155,8 +177,8 @@ export function toContractFormValues(
   return {
     id: readText(item, 'id'),
     direction: readText(item, 'direction') || 'purchase',
-    counterpartyKind: readText(item, 'counterpartyKind', 'counterparty_kind') || 'supplier',
     counterpartyId: readText(item, 'counterpartyId', 'counterparty_id'),
+    counterpartyBankAccountId: snapshotText(counterpartySnapshot, 'bankAccountId'),
     counterpartyName: snapshotText(counterpartySnapshot, 'name'),
     counterpartyAddress: snapshotText(counterpartySnapshot, 'address'),
     counterpartyContact: snapshotText(counterpartySnapshot, 'contact'),
@@ -178,6 +200,10 @@ export function toContractFormValues(
     destination: readText(item, 'destination'),
     marks: readText(item, 'marks'),
     notes: readText(item, 'notes'),
+    sourceKind: readText(item, 'sourceKind', 'source_kind') || 'manual',
+    sourceId: readText(item, 'sourceId', 'source_id'),
+    sourceNumber: snapshotText(item.sourceSnapshot ?? item.source_snapshot, 'number'),
+    sourceCounterparty: snapshotText(item.sourceSnapshot ?? item.source_snapshot, 'counterparty'),
     lines: lines.length > 0 ? lines : [{ ...EMPTY_LINE }],
     updatedAt: typeof updatedAt === 'string' ? updatedAt : null,
   }
@@ -194,6 +220,8 @@ export function toContractLineValues(item: Record<string, unknown>): ContractLin
     quantity: readText(item, 'quantity') || '0',
     unitPrice: readText(item, 'unitPrice', 'unit_price') || '0',
     note: readText(item, 'note'),
+    sourceSnapshot:
+      (item.sourceSnapshot ?? item.source_snapshot ?? null) as Record<string, unknown> | null,
   }
 }
 
@@ -234,6 +262,7 @@ export function buildContractPayload(values: ContractFormValues): Record<string,
       quantity: line.quantity.trim() ? line.quantity.trim() : '0',
       unitPrice: line.unitPrice.trim() ? line.unitPrice.trim() : '0',
       note: trimmedOrNull(line.note),
+      sourceSnapshot: line.sourceSnapshot ?? null,
     }))
 
   const ourParty = partySnapshot({
@@ -247,16 +276,25 @@ export function buildContractPayload(values: ContractFormValues): Record<string,
   if (values.ourPartyId.trim()) ourParty.partyId = values.ourPartyId.trim()
   if (values.ourPartyBankAccountId.trim()) ourParty.bankAccountId = values.ourPartyBankAccountId.trim()
 
+  const counterparty = partySnapshot({
+    name: values.counterpartyName,
+    address: values.counterpartyAddress,
+    contact: values.counterpartyContact,
+    bank: values.counterpartyBank,
+  })
+  // The bank account id rides inside the snapshot, like the "our party" side: the command validator
+  // accepts any object, and the printed bank text is what the template reads.
+  if (counterparty && values.counterpartyBankAccountId.trim()) {
+    counterparty.bankAccountId = values.counterpartyBankAccountId.trim()
+  }
+
   return {
     direction: values.direction,
-    counterpartyKind: values.counterpartyKind,
+    // Derived, never a separate operator choice: the contract's direction decides who the
+    // counterparty can be (the command re-derives and rejects a contradicting explicit value).
+    counterpartyKind: COUNTERPARTY_KIND_BY_DIRECTION[values.direction as keyof typeof COUNTERPARTY_KIND_BY_DIRECTION],
     counterpartyId: values.counterpartyId.trim() ? values.counterpartyId.trim() : null,
-    counterpartySnapshot: partySnapshot({
-      name: values.counterpartyName,
-      address: values.counterpartyAddress,
-      contact: values.counterpartyContact,
-      bank: values.counterpartyBank,
-    }),
+    counterpartySnapshot: counterparty,
     ourPartySnapshot: Object.keys(ourParty).length > 0 ? ourParty : null,
     priceTier: values.priceTier.trim() ? values.priceTier.trim() : null,
     currencyCode: values.currencyCode.trim().toUpperCase(),
@@ -269,6 +307,12 @@ export function buildContractPayload(values: ContractFormValues): Record<string,
     destination: trimmedOrNull(values.destination),
     marks: trimmedOrNull(values.marks),
     notes: trimmedOrNull(values.notes),
+    ...buildContractSourceAnchorPayload({
+      sourceKind: values.sourceKind,
+      sourceId: values.sourceId,
+      sourceNumber: values.sourceNumber,
+      sourceCounterparty: values.sourceCounterparty,
+    }),
     lines,
   }
 }
@@ -292,6 +336,40 @@ function ContractLinesEditor(
    */
   const linesRef = React.useRef(lines)
   linesRef.current = lines
+
+  const [copyOpen, setCopyOpen] = React.useState(false)
+  const direction = typeof values.direction === 'string' ? values.direction : 'purchase'
+  const counterpartyId = typeof values.counterpartyId === 'string' ? values.counterpartyId : ''
+  const anchorId = typeof values.sourceId === 'string' ? values.sourceId : ''
+  const anchorNumber = typeof values.sourceNumber === 'string' ? values.sourceNumber : ''
+  const anchorCounterparty = typeof values.sourceCounterparty === 'string' ? values.sourceCounterparty : ''
+  const anchorLabel = [anchorNumber || anchorId.slice(0, 8), anchorCounterparty]
+    .filter((part) => part.length > 0)
+    .join(' — ')
+
+  /**
+   * Appends a copied batch and, when the contract has no anchor yet, records where it came from.
+   * The copy is one-shot: rows are added, never replaced, and the anchor's clear action is the only
+   * way to re-point a contract that already has one.
+   */
+  const handleAppendLines = React.useCallback(
+    (rows: ContractLineDraft[], head: ContractLineSourceHead) => {
+      setValue('lines', appendContractLines(linesRef.current, rows))
+      if (anchorId.trim()) return
+      setValue('sourceKind', head.kind === 'purchase_order' ? 'purchase_order' : 'sales_order')
+      setValue('sourceId', head.id)
+      setValue('sourceNumber', head.number)
+      setValue('sourceCounterparty', head.counterparty)
+    },
+    [anchorId, setValue],
+  )
+
+  const handleClearAnchor = React.useCallback(() => {
+    setValue('sourceKind', 'manual')
+    setValue('sourceId', '')
+    setValue('sourceNumber', '')
+    setValue('sourceCounterparty', '')
+  }, [setValue])
 
   const cacheProducts = React.useCallback((options: ProductOption[]) => {
     for (const option of options) productCache.current.set(option.value, option)
@@ -515,10 +593,38 @@ function ContractLinesEditor(
           </div>
         )
       })}
-      <Button type="button" variant="outline" onClick={addLine}>
-        <Plus className="size-4" aria-hidden="true" />
-        {t('trade_docs.contracts.form.lines.add')}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" onClick={addLine}>
+          <Plus className="size-4" aria-hidden="true" />
+          {t('trade_docs.contracts.form.lines.add')}
+        </Button>
+        <Button type="button" variant="outline" onClick={() => setCopyOpen(true)}>
+          {t('trade_docs.contracts.form.lines.copy.action')}
+        </Button>
+        {anchorId ? (
+          <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+            {t('trade_docs.contracts.form.lines.copy.anchor')}
+            {': '}
+            {anchorLabel}
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={t('trade_docs.contracts.form.lines.copy.anchorClear')}
+              onClick={handleClearAnchor}
+            >
+              <X className="size-3.5" aria-hidden="true" />
+            </IconButton>
+          </span>
+        ) : null}
+      </div>
+      <ContractLineSourceDialog
+        open={copyOpen}
+        onOpenChange={setCopyOpen}
+        direction={direction}
+        counterpartyId={counterpartyId}
+        onAppend={handleAppendLines}
+      />
     </div>
   )
 }
@@ -648,7 +754,6 @@ export function OurPartyPicker({
 }
 
 function useContractFields(t: TranslateFn): CrudField[] {
-  const { organizationId } = useOrganizationScopeDetail()
   return React.useMemo<CrudField[]>(() => [
     {
       id: 'direction',
@@ -657,30 +762,6 @@ function useContractFields(t: TranslateFn): CrudField[] {
       required: true,
       options: CONTRACT_DIRECTIONS.map((value) => ({ value, label: directionLabel(t, value) })),
       layout: 'half',
-    },
-    {
-      id: 'counterpartyKind',
-      label: t('trade_docs.contracts.form.field.counterpartyKind'),
-      type: 'select',
-      options: [
-        { value: 'supplier', label: t('trade_docs.contracts.form.counterpartyKind.supplier') },
-        { value: 'customer', label: t('trade_docs.contracts.form.counterpartyKind.customer') },
-      ],
-      layout: 'half',
-    },
-    {
-      id: 'counterpartyId',
-      label: t('trade_docs.contracts.form.field.counterpartyId'),
-      type: 'select',
-      placeholder: t('trade_docs.contracts.form.field.counterpartyName'),
-      layout: 'half',
-      loadOptions: () =>
-        loadCounterpartyOptions({
-          supplierLabel: t('trade_docs.contracts.form.counterpartyKind.supplier'),
-          customerLabel: t('trade_docs.contracts.form.counterpartyKind.customer'),
-          errorMessage: t('trade_docs.contracts.form.counterpartyLoadFailed'),
-          organizationId,
-        }),
     },
     {
       id: 'priceTier',
@@ -825,7 +906,7 @@ function useContractFields(t: TranslateFn): CrudField[] {
       type: 'textarea',
       layout: 'half',
     },
-  ], [t, organizationId])
+  ], [t])
 }
 
 export default function ContractForm({ mode, contractId }: { mode: 'create' | 'edit'; contractId?: string }) {
@@ -837,7 +918,13 @@ export default function ContractForm({ mode, contractId }: { mode: 'create' | 'e
     {
       id: 'header',
       column: 1,
-      fields: ['direction', 'counterpartyKind', 'counterpartyId', 'priceTier', 'currencyCode', 'exchangeRate', 'signedAt', 'deliveryDate'],
+      fields: ['direction', 'priceTier', 'currencyCode', 'exchangeRate', 'signedAt', 'deliveryDate'],
+    },
+    {
+      id: 'counterpartyPicker',
+      column: 1,
+      bare: true,
+      component: (context) => <CounterpartyPicker {...context} t={t} directionKind="trade" />,
     },
     {
       id: 'terms',

@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 53 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 55 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -61,6 +61,7 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [A migration that alters a renamed table must live where it runs after the rename](lessons/cross-module-rename-migration-ordering.md) — area:architecture,framework-context,module-data; module:purchasing,sourcing,platform; topic:migrations,migration-ordering,fresh-database,module-order,table-rename,integration-environment
 - [A new entity property needs a dev-runtime restart; until then the API accepts the write and silently drops it](lessons/entity-property-needs-dev-runtime-restart.md) — area:module-data,debugging,framework-context; module:purchasing,sourcing,products,platform; topic:entity-properties,mikro-orm-metadata,dev-runtime,restart-action,silent-write-drop,migrations
 - [A partial update must not read "field absent" as "field cleared"](lessons/partial-update-must-not-clear-absent-fields.md) — area:module-data,debugging,architecture; module:products,purchasing,sourcing,platform; topic:validators,nullable-fields,partial-update,data-loss,supplier-mapping,zod
+- [A `.partial()` update schema must not inherit create defaults](lessons/partial-update-schema-must-not-inherit-create-defaults.md) — area:module-data,debugging; module:trade_docs; topic:validators,partial-update,data-loss,zod,defaults
 - [A module's seeded dictionaries reach existing orgs only after seed:defaults](lessons/module-seeded-dictionaries-need-seed-defaults.md) — area:module-data,debugging; module:product_codes,purchasing,dictionaries; topic:dictionary,seeding,seed-defaults,existing-tenant,pickers,empty-dropdown
 - [DataTable truncates every cell at 150px, and a right-aligned child's overflow hides without a tooltip](lessons/datatable-cell-truncates-at-150px.md) — area:backend-ui,framework-context; module:purchasing,platform; topic:data-table,column-width,truncation,tooltip,table-cell,column-meta
 - [「不需要小数点」 is a column-scale decision, not a display format](lessons/no-decimals-means-narrow-the-column-scale.md) — area:module-data,backend-ui,architecture; module:purchasing,products,sourcing; topic:numeric-scale,column-precision,form-input,owner-feedback,validators,migrations
@@ -81,3 +82,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [A permanent integration trunk survives only on a reset after each landing and a loud drift report](lessons/permanent-trunk-needs-reset-and-drift-report.md) — area:spec-pr; module:platform; topic:integration-branch,trunk,branch-hygiene,reset,force-with-lease,parallel-development
 - [A page that is the record's own surface is never its own back/cancel target](lessons/edit-page-is-not-its-own-back-target.md) — area:backend-ui,debugging; module:internal_sales,platform; topic:navigation,back-link,cancel-link,dead-link,crud-form,href-helpers
 - [An installed sales single-document read returns metadata only for `id`, never for `ids`](lessons/sales-single-doc-read-id-vs-ids-projection.md) — area:framework-context,module-data,backend-ui; module:internal_sales,sales; topic:sales-documents,list-projection,metadata,single-document-read,read-after-write,field-vs-projection
+- [A picker whose value comes from a record needs resolveLabel, not the component's fallback](lessons/preselected-picker-value-needs-a-label-resolver.md) — area:backend-ui,debugging,framework-context; module:platform,internal_sales,products; topic:combobox-input,preselected-value,resolve-label,strict-mode,effect-cancellation,raw-uuid
