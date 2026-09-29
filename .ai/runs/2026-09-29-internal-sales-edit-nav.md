@@ -91,9 +91,10 @@ PR: #29
 - [x] 1.2 Point the edit page's back/cancel at the list href — b04123c
 - [x] 1.3 Rename `documentDetailHref` → `documentEditHref` — b04123c
 - [x] 1.4 README note + lesson record + catalog row — b04123c
+- [x] 1.5 Route the table's hrefs through the shared helpers — bdf148c
 
 ### Phase 2: verify
 
 - [x] 2.1 Targeted checks (generate, lessons, typecheck, lint, ds:check, jest) — b04123c
 - [x] 2.2 Live smoke: rendered hrefs + click-through on the worktree dev server — b04123c
-- [x] 2.3 Broad gate (`yarn test`, `yarn build`)
+- [x] 2.3 Broad gate (`yarn test`, `yarn build`) — bdf148c
