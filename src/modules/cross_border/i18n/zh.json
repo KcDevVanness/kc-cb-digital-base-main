@@ -1,7 +1,7 @@
 {
   "cross_border.nav.group": "出口业务",
   "cross_border.shipments.page.title": "发运单",
-  "cross_border.shipments.page.description": "从国内代理商发往海外仓的货运批次。",
+  "cross_border.shipments.page.description": "从国内代理商发往海外仓的货运批次；装箱单（PL）、报关单、提单等出口单证在详情页的单证区登记。",
   "cross_border.shipments.list.empty": "还没有发运单。",
   "cross_border.shipments.list.searchPlaceholder": "按发运单号、承运人或箱号搜索",
   "cross_border.shipments.list.columns.number": "发运单号",
@@ -98,7 +98,7 @@
   "cross_border.shipments.documents.field.attachment": "文件",
   "cross_border.shipments.documents.field.note": "备注",
   "cross_border.shipments.documents.docType.customs_declaration": "报关单",
-  "cross_border.shipments.documents.docType.packing_list": "装箱单",
+  "cross_border.shipments.documents.docType.packing_list": "装箱单（PL）",
   "cross_border.shipments.documents.docType.commercial_invoice": "商业发票",
   "cross_border.shipments.documents.docType.bill_of_lading": "提单",
   "cross_border.shipments.documents.docType.so": "SO",

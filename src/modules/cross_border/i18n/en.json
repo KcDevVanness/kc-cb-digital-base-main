@@ -1,7 +1,7 @@
 {
   "cross_border.nav.group": "Export operations",
   "cross_border.shipments.page.title": "Shipments",
-  "cross_border.shipments.page.description": "Consignments from the domestic supplier to the overseas warehouse.",
+  "cross_border.shipments.page.description": "Consignments from the domestic supplier to the overseas warehouse; export documents — the packing list (PL), the customs declaration, the bill of lading — are registered in the document section of the detail page.",
   "cross_border.shipments.list.empty": "No shipments yet.",
   "cross_border.shipments.list.searchPlaceholder": "Search by shipment number, carrier or container no.",
   "cross_border.shipments.list.columns.number": "Shipment no.",
@@ -98,7 +98,7 @@
   "cross_border.shipments.documents.field.attachment": "File",
   "cross_border.shipments.documents.field.note": "Note",
   "cross_border.shipments.documents.docType.customs_declaration": "Customs declaration",
-  "cross_border.shipments.documents.docType.packing_list": "Packing list",
+  "cross_border.shipments.documents.docType.packing_list": "Packing list (PL)",
   "cross_border.shipments.documents.docType.commercial_invoice": "Commercial invoice",
   "cross_border.shipments.documents.docType.bill_of_lading": "Bill of lading",
   "cross_border.shipments.documents.docType.so": "SO",
