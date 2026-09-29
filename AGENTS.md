@@ -179,7 +179,8 @@ Load `.ai/guides/modules/<id>/index.md` only for a targeted installed module/hos
 
 `docs/` is the human documentation home — Markdown, one folder per type: `dev/` setup and
 architecture, `deploy/` build and ops, `prd/` requirements, `plans/` phased plans,
-`pitfalls/` post-mortems. Each folder's `README.md` is its contract; `docs/README.md` indexes
+`pitfalls/` post-mortems, `ru-petkit/` the RU PETKIT integration contract, field mapping and
+evidence. Each folder's `README.md` is its contract; `docs/README.md` indexes
 them and states the `.ai/` vs `docs/` split — a pitfall belongs in exactly one of them.
 
 A change that alters behavior, setup, a contract, or an operational step MUST update the
@@ -218,16 +219,21 @@ layer/engine for the same subjects, so load their facts for host/extension quest
 | Subject | App module | Bridge to installed |
 |---|---|---|
 | product master, categories, variants/SKU, three price tiers | `products` | `catalog` via the optional `catalog_product_id` link only |
+| product code rules, the issuance ledger and the code parser (generate/parse/sequences) | `product_codes` | `dictionaries` (seeds `product_brand`/`product_category`); drives `purchasing`'s 生成 button |
 | trading parties (buyer / branch / service provider) + bank block | `parties` | — (installed `customers` still serves the installed chain) |
 | purchase/sales contracts, inbound/outbound invoices, dual-caliber amounts | `trade_docs` | — |
 | supplier master, purchase orders, stage payments, order documents | `purchasing` | receipt write-back arrives from `cross_border` |
 | supplier quotations + workbook import, supplier product library | `sourcing` | promotes through `products` commands |
 | shipments, in-transit milestones, export documents | `cross_border` | `wms.inventory.receive`, `purchasing…apply-receipt` |
 | collections per purchase order, tax refunds per container, order/container files | `export_finance` | read-only over `purchasing`/`cross_border`/`trade_docs` |
+| shipment costs, landed-cost allocation, period expenses, payable/receivable/inventory-value/profit ledgers | `finance` | read-only over `purchasing`/`cross_border`/`trade_docs`/`products`/`sales`/`platform_ops` |
 | internal quote/order screens | `internal_sales` | engine stays installed `sales` |
 | marketplace channels, order mirrors, settlements, reconciliation | `platform_ops` | `integrations` + `data_sync` |
+| the RU PETKIT contract as a `data_sync` provider: snapshot projection, per-endpoint cursors, RU-code → product map | `ru_sync` | `data_sync` provider `ru_petkit` + `integrations` credentials |
+| read-only executive cockpit page + four dashboard widgets | `boss_cockpit` | reads the RU projections and CN ledgers read-only; no entity, no write path |
 | currency dictionary route, FX/currency-policy reconciliation | `currency_policy` | `dictionaries`, `currencies` |
 | auth-admin write-scope guards | `scope_guards` | `auth` command interceptors |
+| attachment storage operations CLI (`audit`/`migrate`/`verify`/`rollback`/`prune-local`) | `storage_ops` | drives the installed `attachments` driver factory |
 
 Installed admin pages for the ERP modules are `navHidden`: URLs stay resolvable, nothing is
 authorized by hiding, and dropping a route with `null` breaks already-stored notification links

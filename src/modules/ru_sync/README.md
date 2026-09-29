@@ -1,7 +1,8 @@
 # ru_sync
 
-The RU PETKIT supply contract as a `data_sync` provider: eight endpoints, one snapshot projection,
-one cursor per endpoint, and the RU-code → product map.
+The RU PETKIT supply contract as a `data_sync` provider: seventeen endpoints (the eight supply ones
+plus the nine `ads_*` ones), one snapshot projection, one cursor per endpoint, and the RU-code →
+product map.
 
 Spec: [`.ai/specs/2026-09-28-finance-ledger-and-cockpit-data.md`](../../../.ai/specs/2026-09-28-finance-ledger-and-cockpit-data.md)
 (Phase 3). The contract it implements is frozen in
@@ -55,8 +56,9 @@ key for it, so the row's own `sku` (verbatim, it may be an unparseable factory c
 |---|---|
 | `/backend/ru-sync/sku-map` | the RU code registry: bind a code to a product, or ignore it |
 | `/backend/ru-sync/health` | per endpoint: snapshot date, cursor, its age, the last run's outcome |
-| `GET/PUT /api/ru-sync/sku-map` | the same list (derived) and the decision command `ru_sync.sku-map.update` |
-| `GET /api/ru-sync/health` | the health projection |
+| `GET/PUT /api/ru_sync/sku-map` | the same list (derived) and the decision command `ru_sync.sku-map.update` |
+| `GET /api/ru_sync/health` | the health projection |
+| `POST /api/ru_sync/plan/draft-pos` | the command `ru_sync.plan.draft-pos`: turn plan gaps into **draft** purchase orders (drafts only — placing still goes through the existing purchasing path) |
 | `notifications: ru_sync.pull_failed` | raised through `ru_sync.pull.failed` when a walk fails |
 | `notifications: ru_sync.alert.*` (4) | 断货 / 超储 / ДРР 破线 / 未识别在途, evaluated after the endpoint whose data decides them (`lib/alerts.ts`) |
 
@@ -79,13 +81,13 @@ a `groupKey` and the notification service refreshes the active notification with
 
 ## Verification
 
-- `yarn test src/modules/ru_sync` — 33 cases over four suites: the SKU normalization and the
-  single-match rule, the cursor codec and watermark math, the eight contract schemas against the
-  fixture payloads (including the negative cases: no `as_of`, money as a number, a three-decimal
-  amount, a Russian enum value, a withdrawn `_label` key), and a full pull against a mock contract
-  server with an in-memory projection: one row per fixture row, replay of the same `as_of` creating
-  nothing, a failing page leaving the cursor untouched, RU codes registered, and an envelope without
-  `as_of` rejected without storing anything.
+- `yarn test src/modules/ru_sync` — 43 cases over five suites: the SKU normalization and the
+  single-match rule, the cursor codec and watermark math, the eight supply contract schemas and the
+  nine ads schemas against the fixture payloads (including the negative cases: no `as_of`, money as
+  a number, a three-decimal amount, a Russian enum value, a withdrawn `_label` key), and a full pull
+  against a mock contract server with an in-memory projection: one row per fixture row, replay of
+  the same `as_of` creating nothing, a failing page leaving the cursor untouched, RU codes
+  registered, and an envelope without `as_of` rejected without storing anything.
 - The boundary: those tests drive the real adapter, client, schemas and cursor rules against real
   HTTP, but with an in-memory store. The ORM store, the `data_sync` run plumbing and the notification
   path are exercised in the app (see the plan's progress table for the run evidence).

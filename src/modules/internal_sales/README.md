@@ -187,7 +187,7 @@ customerSnapshot = {
 
 ```bash
 yarn generate && yarn typecheck && yarn lint && yarn ds:check
-npx jest src/modules/internal_sales                     # 买方值协议 / 快照 / 组织选项装配 / 报价载入的单元测试（2 suites / 27 tests）
+npx jest src/modules/internal_sales                     # 买方值协议 / 快照 / 组织选项装配 / 报价载入 / 贸易类型 的单元测试（3 suites / 38 tests）
 # 冒烟（dev server 在跑时）：
 #  UI 新建报价/订单（选自建商品 + 数量 + 未税单价）→ 201；落库行 productId=products_products.id、
 #  有官方目录链接的商品 productVariantId 自动填默认变体、catalogSnapshot 有 sku/name/spec；
