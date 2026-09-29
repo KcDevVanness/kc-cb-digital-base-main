@@ -433,6 +433,12 @@ const documentBase = {
   sourceKind: z.enum(TRADE_DOCUMENT_SOURCE_KINDS).nullable().optional(),
   sourceId: z.string().uuid().nullable().optional(),
   sourceSnapshot: snapshotSchema,
+  /**
+   * The contract this document belongs to. Only the id travels: the number/direction snapshot is
+   * resolved server-side from `trade_docs_contracts`, so a tampered label cannot change what is
+   * stored, and clearing the pick (`null`) unbinds the document.
+   */
+  contractId: z.string().uuid().nullable().optional(),
   notes: nullableText(2000),
   lines: z.array(documentLineInputSchema).max(500),
 }
@@ -509,6 +515,8 @@ export const documentListSchema = z.object({
   counterpartyId: z.string().uuid().optional(),
   sourceKind: z.enum(TRADE_DOCUMENT_SOURCE_KINDS).optional(),
   sourceId: z.string().uuid().optional(),
+  /** Only documents belonging to this purchase/sales contract. */
+  contractId: z.string().uuid().optional(),
   search: z.string().max(200).optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(200).default(50),
@@ -526,11 +534,47 @@ export const documentLineListSchema = z
   })
   .passthrough()
 
+// ---------------------------------------------------------------------------------------
+// Contract ↔ order links (the 1:N relation a contract's own `source_*` pair cannot express)
+// ---------------------------------------------------------------------------------------
+
+/**
+ * `purchase_order` (供应商采购单) | `internal_sales_order` (总部 → 分公司) |
+ * `external_sales_order` (分公司 → 当地客户). The third value is accepted before its capability
+ * lands so the relation needs no migration that day.
+ */
+export const CONTRACT_ORDER_KINDS = ['purchase_order', 'internal_sales_order', 'external_sales_order'] as const
+
+/**
+ * The whole link set of one contract, replaced in one call — the same replace-all shape the
+ * shipment's allocations and the document's lines use. Only `(kind, id)` travel; the order's
+ * business number is resolved server-side from the owning module and frozen on the row.
+ */
+export const contractOrdersReplaceSchema = z.object({
+  contractId: z.string().uuid(),
+  orders: z
+    .array(z.object({ orderKind: z.enum(CONTRACT_ORDER_KINDS), orderId: z.string().uuid() }))
+    .max(200),
+  /** The contract version the caller rendered the dialog with; the aggregate lock uses it. */
+  updatedAt: z.string().trim().min(1).optional(),
+})
+
+export const contractOrderListSchema = z.object({
+  id: z.string().uuid().optional(),
+  contractId: z.string().uuid().optional(),
+  orderKind: z.enum(CONTRACT_ORDER_KINDS).optional(),
+  orderId: z.string().uuid().optional(),
+  page: z.coerce.number().min(1).default(1),
+  pageSize: z.coerce.number().min(1).max(200).default(100),
+})
+
 export type ContractCreateInput = z.infer<typeof contractCreateSchema>
 export type ContractUpdateInput = z.infer<typeof contractUpdateSchema>
 export type ContractLineInput = z.infer<typeof contractLineInputSchema>
 export type ContractTransitionInput = z.infer<typeof contractTransitionSchema>
 export type ContractListQuery = z.infer<typeof contractListSchema>
+export type ContractOrdersReplaceInput = z.infer<typeof contractOrdersReplaceSchema>
+export type ContractOrderListQuery = z.infer<typeof contractOrderListSchema>
 export type InvoiceCreateInput = z.infer<typeof invoiceCreateSchema>
 export type InvoiceUpdateInput = z.infer<typeof invoiceUpdateSchema>
 export type InvoiceLineInput = z.infer<typeof invoiceLineInputSchema>

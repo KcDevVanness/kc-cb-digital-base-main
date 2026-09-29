@@ -533,6 +533,18 @@ export class TradeDocsDocument {
   @Property({ name: 'source_snapshot', type: 'jsonb', nullable: true })
   sourceSnapshot?: Record<string, unknown> | null
 
+  /**
+   * The purchase/sales contract this PI/CI belongs to (0..1), resolved server-side and frozen as a
+   * snapshot — independent of `source_*`, which stays what the document was *raised from* (an order
+   * for a PI, a shipment for a CI). The invoice can therefore carry a contract number it prints
+   * while its lines come from the shipment.
+   */
+  @Property({ name: 'contract_id', type: 'uuid', nullable: true })
+  contractId?: string | null
+
+  @Property({ name: 'contract_snapshot', type: 'jsonb', nullable: true })
+  contractSnapshot?: Record<string, unknown> | null
+
   @Property({ name: 'issued_at', type: 'date', nullable: true })
   issuedAt?: Date | null
 
@@ -625,6 +637,63 @@ export class TradeDocsDocumentLine {
 
   @Property({ type: 'text', nullable: true })
   note?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}
+
+/**
+ * One purchase order or sales document a contract covers.
+ *
+ * The relation is 1:N from the contract — a signed contract is usually executed through several
+ * orders over time — and it is deliberately a **separate table** rather than the single
+ * `source_kind/source_id` pair: that pair records where the contract was *raised from* (one order,
+ * historical, UI-wired later) and cannot express "this contract covers these three orders". The
+ * order itself lives in `purchasing` / the installed `sales` engine; only its id, kind, number and
+ * a display snapshot are stored, and the set is replaced wholesale by
+ * `trade_docs.contracts.orders.replace` (which is why links stay editable after the contract is
+ * issued — orders are placed after the signature, while the contract's own lines stay frozen).
+ */
+@Entity({ tableName: 'trade_docs_contract_orders' })
+@Index({ name: 'trade_docs_contract_orders_scope_idx', properties: ['organizationId', 'tenantId'] })
+@Index({ name: 'trade_docs_contract_orders_order_idx', properties: ['organizationId', 'tenantId', 'orderId'] })
+@Unique({ name: 'trade_docs_contract_orders_contract_order_uniq', properties: ['contract', 'orderKind', 'orderId'] })
+export class TradeDocsContractOrder {
+  [OptionalProps]?: 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @ManyToOne(() => TradeDocsContract, { fieldName: 'contract_id', deleteRule: 'cascade' })
+  contract!: TradeDocsContract
+
+  /**
+   * `purchase_order` (供应商采购单) | `internal_sales_order` (总公司 → 分公司) |
+   * `external_sales_order` (分公司 → 当地客户). The third value is reserved: the external-sales
+   * capability lands with `.ai/specs/2026-09-29-sales-trade-type-and-line-reuse.md`, and the kind
+   * is accepted here so the relation does not need a migration the day it does.
+   */
+  @Property({ name: 'order_kind', type: 'text' })
+  orderKind!: string
+
+  @Property({ name: 'order_id', type: 'uuid' })
+  orderId!: string
+
+  /** The order's business number, frozen at link time (the id itself never reaches the UI). */
+  @Property({ name: 'order_number', type: 'text', nullable: true })
+  orderNumber?: string | null
+
+  @Property({ name: 'order_snapshot', type: 'jsonb', nullable: true })
+  orderSnapshot?: Record<string, unknown> | null
 
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()
