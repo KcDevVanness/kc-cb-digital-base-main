@@ -66,6 +66,8 @@ pages); requirement record `.ai/specs/2026-09-22-products-and-trade-docs.md` Pha
 
 ## Progress
 
+PR: #29
+
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not
 > rename step titles.
 
