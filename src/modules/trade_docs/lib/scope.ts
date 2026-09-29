@@ -71,6 +71,24 @@ export async function loadContract(
   return contract
 }
 
+/**
+ * Freezes the contract a PI/CI belongs to. Only the id travels from the client — the number and
+ * direction are read here so a tampered label cannot change what the document prints — and `null`
+ * unbinds. The snapshot shape mirrors the shipment's contract link (`number` / `direction`).
+ */
+export async function resolveContractLink(
+  em: EntityManager,
+  scope: TradeDocsScope,
+  contractId: string | null | undefined,
+): Promise<{ contractId: string | null; contractSnapshot: Record<string, unknown> | null }> {
+  if (!contractId) return { contractId: null, contractSnapshot: null }
+  const contract = await loadContract(em, scope, contractId)
+  return {
+    contractId: String(contract.id),
+    contractSnapshot: { number: contract.number ?? null, direction: contract.direction },
+  }
+}
+
 export async function loadInvoice(
   em: EntityManager,
   scope: TradeDocsScope,

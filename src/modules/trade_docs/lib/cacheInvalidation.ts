@@ -21,6 +21,7 @@ import { runWithCacheTenant } from '@open-mercato/cache'
 /** Resource strings match the factory's own derivation (`<module>.<entity>`, canonicalized). */
 const CONTRACT = 'trade_docs.contract'
 const CONTRACT_LINE = 'trade_docs.contract.line'
+const CONTRACT_ORDER = 'trade_docs.contract.order'
 const INVOICE = 'trade_docs.invoice'
 const INVOICE_LINE = 'trade_docs.invoice.line'
 const DOCUMENT = 'trade_docs.document'
@@ -62,13 +63,13 @@ async function invalidate(
   })
 }
 
-/** Contracts: the contract list and its line surface. */
+/** Contracts: the contract list, its line surface and the order-link collection. */
 export async function invalidateContractCaches(
   scope: CacheScope,
   identifiers: CacheIdentifiers,
   reason: string,
 ): Promise<void> {
-  await invalidate(scope, [CONTRACT, CONTRACT_LINE], identifiers, reason)
+  await invalidate(scope, [CONTRACT, CONTRACT_LINE, CONTRACT_ORDER], identifiers, reason)
 }
 
 /** Invoices: their own collections **and** the contract money columns a confirmation rewrites. */

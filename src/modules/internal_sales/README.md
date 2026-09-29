@@ -1,8 +1,8 @@
-# `internal_sales` — 内部销售单据（自建界面，官方 sales 引擎）
+# `internal_sales` — 销售单据（自建界面，官方 sales 引擎）
 
-app 自有**界面层**模块：为「总部 → 分公司」的内部销售提供自建的报价单/订单**列表、新建与编辑**页，
-**行引用自建商品主数据**（`products_products.id`）。单据本体仍由官方 `sales` 链承载
-（编号、状态、金额引擎、发货、发票、退货、收款），本模块只通过其公开 API 驱动，不重写引擎。
+app 自有**界面层**模块：为**对内（总部 → 分公司）与对外（分公司 → 当地客户）两种贸易类型**的销售提供自建的
+报价单/订单**列表、新建与编辑**页，**行引用自建商品主数据**（`products_products.id`）。单据本体仍由官方
+`sales` 链承载（编号、状态、金额引擎、发货、发票、退货、收款），本模块只通过其公开 API 驱动，不重写引擎。
 
 需求与证据见 [`.ai/specs/2026-09-22-products-and-trade-docs.md`](../../../.ai/specs/2026-09-22-products-and-trade-docs.md) 的 Phase 6。
 
@@ -10,7 +10,7 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
 
 | 层 | 内容 |
 |---|---|
-| 页面 | `/backend/internal-sales/quotes`、`/quotes/create`、`/quotes/[id]/edit`；`/backend/internal-sales/orders`、`/orders/create`、`/orders/[id]/edit`（六个页面的 `pageGroupKey` 都是 `cross_border.nav.group`，即侧边栏「出口业务」组——2026-09-28 由「外贸」改名，只改 label；本模块没有自己的导航分组）。订单页标题带业务缩写「内部销售订单（PO）」（N-1）：**2026-09-29 起真正落到界面**——`internal_sales.list.order.title` 与 `form.order.{create,edit}Title` 两个语言的字典都带「（PO）」/「(PO)」，`backend/internal-sales/orders/**/page.meta.ts` 的 `pageTitle` 兜底串同步（此前只有 page.meta 的兜底串带 PO，字典仍是「内部销售订单」，而侧边栏/页面标题取的是 `pageTitleKey` → 字典值）。报价单按 N-1 **不挂缩写**，改由页面描述说明它不是 PI（`internal_sales.list.quote.description`：「总部对分公司的报价单据，不是对外收款依据的形式发票（PI）…」） |
+| 页面 | `/backend/internal-sales/quotes`、`/quotes/create`、`/quotes/[id]/edit`；`/backend/internal-sales/orders`、`/orders/create`、`/orders/[id]/edit`（六个页面的 `pageGroupKey` 是 `cross_border.nav.group.sales`（侧边栏「出口业务-销售」组，菜单项「销售报价单」/「销售订单（PO）」）；对外入口的六个页面是同批 `page.tsx` 的 re-export，`pageGroupKey` 是 `cross_border.nav.group.externalSales`（「出口业务-对外销售」组，菜单项「对外销售报价单」/「对外销售订单」）。2026-09-29 之前这两组叫「出口业务-内部销售」与 `cross_border.nav.group`（后者没有字典键，中文界面渲染出英文裸串「Cross-Border」、也不在 `nav.groupOrder` 里）。订单页标题带业务缩写「销售订单（PO）」（N-1）：**2026-09-29 起真正落到界面**——`internal_sales.list.order.title` 与 `form.order.{create,edit}Title` 两个语言的字典都带「（PO）」/「(PO)」，`backend/internal-sales/orders/**/page.meta.ts` 的 `pageTitle` 兜底串同步（此前只有 page.meta 的兜底串带 PO，字典仍是「内部销售订单」，而侧边栏/页面标题取的是 `pageTitleKey` → 字典值）。报价单按 N-1 **不挂缩写**，改由页面描述说明它不是 PI（`internal_sales.list.quote.description`：「总部对分公司的报价单据，不是对外收款依据的形式发票（PI）…」） |
 | 列表状态列（2026-09-28；表头文案 2026-09-29 补齐） | 列表新增「状态」列：读官方 `GET /api/sales/{quotes,orders}` 的 `status`（字典**值**，可为 null），经租户字典 `sales.order_status`（`loadDictionaryEntriesByKey` + `createDictionaryMap` + `DictionaryValue`）渲染标签与字典色点；无状态渲染 `—`，字典读不到时保留原值。报价与订单共用该字典（引擎口径）。**表头字段的 i18n key 当时漏了 zh/en 两份字典**（`internal_sales.list.columns.status`），列头渲染出裸 key；2026-09-29 已补「状态」/「Status」 |
 | 组件 | `components/InternalSalesTable.tsx`（列表）、`components/InternalSalesForm.tsx`（抬头 + 行编辑器 + 买方选择器 + 报价载入面板挂载，一次提交整单）、`components/QuoteLoadPanel.tsx`（从报价单载入的按钮/对话框/来源行 + 来源报价预览抽屉）、`lib/buyer.ts`（买方值协议与快照编解码）、`lib/documentValues.ts`（单据 ↔ 表单值编解码，纯函数）、`lib/quoteLoad.ts`（报价载入 loader，纯函数 + 两次读请求；预览映射 `sourceQuotePreviewFromDraft`）、`lib/salesStatus.ts`（列表状态列与预览抽屉共用的状态字典键） |
 | 买方选项 | 关联组织：`GET /api/directory/organization-switcher`（requireAuth，无额外功能位）；外部客户：`GET /api/parties/options?roles=buyer` 与 `GET /api/parties/{id}`（均需 `parties.view`） |
@@ -69,14 +69,18 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
 - **权限与失败**：读报价要安装层复数功能位 `sales.quotes.view`；缺位/读失败 → 面板行内提示（+ 自动载入时 flash），
   表单内容不变，**载入不发任何写请求**。
 
-## 贸易类型：内部 / 对外（2026-09-29）
+## 贸易类型：对内 / 对外（2026-09-29）
 
-- **类型由买方来源决定，不单独选**：贸易类型控件（`internal` 内部＝总部→分公司；`external` 对外＝分公司→当地客户）决定买方选择器给哪一半（关联组织 vs 外部客户），切换类型会清空已选买方；`lib/tradeType.ts` 是纯函数单点（`tradeTypeFromBuyerKind` / `tradeTypeFromSnapshot` / `resolveRowTradeType`）。
+- **类型由买方来源决定，不单独选**：贸易类型控件（`internal` 对内＝总部→分公司；`external` 对外＝分公司→当地客户）决定买方选择器给哪一半（关联组织 vs 外部客户），切换类型会清空已选买方；`lib/tradeType.ts` 是纯函数单点（`tradeTypeFromBuyerKind` / `tradeTypeFromSnapshot` / `resolveRowTradeType`）。界面上的类型标签是「对内」/「对外」；两条系统通道行本身的显示名仍是「内部销售」/「对外销售」（已落库的数据，改了会与新组织不一致）。
 - **写入引擎原生标记**：单据的 `channel_id` 指向本组织的两条系统通道 `INTERNAL_SALES` / `EXTERNAL_SALES`（`setup.ts` 的 `onTenantCreated` + `seedDefaults` 幂等播种；已有组织跑 `yarn mercato seed:defaults --module internal_sales`）。`sales_channels.code` 上 `(organization, tenant, code)` 唯一，重复播种不会产生第二条。通道缺失时**保存被拦截**并给出可执行提示——不带标记的单据会从两个筛选列表里同时消失。
 - **解析通道不走官方渠道页**：本模块自带 `GET /api/internal_sales/trade-type-channels/{quotes,orders}`（门禁是单据自己的 `sales.quotes.view` / `sales.orders.view`），因为分公司业务员通常没有 `sales.channels.view`；该路由只读，写入只发生在播种与回填。
-- **两个入口，一套实现**：`/backend/internal-sales/**` 与 `/backend/external-sales/**` 是同一批页面（后者 re-export 前者的 `page.tsx`，只换 `page.meta.ts`）；`tradeTypeFromPathname` 让组件知道自己在哪个入口，对外入口的贸易类型控件锁定为「对外」。列表按解析出的通道服务端过滤；通道解析不到时不加过滤并显示「类型」列（未播种的组织仍可只读）。
+- **两个入口，一套实现（2026-09-29 定稿口径）**：`/backend/internal-sales/**`（「出口业务-销售」）与 `/backend/external-sales/**`（「出口业务-对外销售」）是同一批页面（后者 re-export 前者的 `page.tsx`，只换 `page.meta.ts`）；`lib/tradeType.ts` 的 `salesEntryFromPathname` 让组件知道自己在哪个入口。
+  - **销售入口 = 两种类型同表**：列表**不按类型过滤**（既不传 `channelId`，也不按快照筛行），一屏列出对内与对外，靠常显的「类型」列区分；这也是「类型」列不再按需出现的原因（此前只在有未标记历史单据时才显示）。
+  - **对外入口 = 只看对外**：列表固定传 `channelId=<EXTERNAL_SALES>`，对内单据永不出现；贸易类型控件锁定为「对外」（只读展示，不是单选项下拉）。
+  - **未标记的历史单据**：早于通道标记、`channel_id` 为空且买方没有链接的单据，销售入口照常列出（类型列显示「—」）并在表头给出归类提示；对外入口无法把它们归到对外，因此不列出，只提示「本组织有 N 张单据早于贸易类型标记」（`internal_sales.list.unmarkedHintFiltered`）——回填命令把 N 变成 0。
+  - **报价载入跟着类型走**：订单新建页「从报价单载入」的选择器按**表单当前类型**过滤（`loadQuoteOptions(query, channelId)`）；载入时订单**继承报价的类型**（`applyQuoteDraftToForm` 的 `adoptQuoteType`），只有锁定入口传 `false`——否则一份对外报价能载进一张对内订单，买方链接与通道互相矛盾。
 - **回填历史单据**：`yarn mercato internal_sales backfill-trade-type`（默认 dry-run，`--apply` 才写，需 owner 批准）。分类规则＝快照链接（`internalSales.organizationId` → internal；`partyId` → external），**不做猜测**：没有链接的单据只报数（`skipped`），不会被打标。`customer_snapshot` 是加密列，所以 CLI 走官方实体 + 解密读取助手，而不是裸 SQL。
-- **下游**：发运单的销售分摊选择器只列**内部**订单（`cross_border/components/shipmentFormOptions.ts` 传 `channelId=<internal>`）；对外订单不进出口分摊链。
+- **下游**：发运单的销售分摊选择器只列**对内**订单（`cross_border/components/shipmentFormOptions.ts` 传 `channelId=<internal>`）；对外订单不进出口分摊链。
 
 ## 买方：关联组织 + 外部客户（2026-09-28）
 
@@ -167,8 +171,10 @@ customerSnapshot = {
 `backHref`/`cancelHref` 指向**列表**（`listHrefFor`，与新建页一致）。此前两处取的是
 `documentDetailHref`——它返回的正是编辑页自身（`${listHref}/${id}/edit`），于是页头「← 返回」与页头/页脚的
 「取消」三个链接全部指回当前地址栏的 URL，点击没有任何反应（2026-09-29 真机报告）。该 helper 同时更名为
-`documentEditHref`，避免下一个作者再按「详情页」去拼返回目标；教训见
+编辑页专用名，避免下一个作者再按「详情页」去拼返回目标；教训见
 [`.ai/lessons/edit-page-is-not-its-own-back-target.md`](../../../.ai/lessons/edit-page-is-not-its-own-back-target.md)。
+**2026-09-29 起**：入口化的跳转统一走 `documentEditHrefForTradeType(kind, id, tradeType)`（哪个入口的编辑页
+由单据自己的类型决定），不带类型的 `documentEditHref` 已删除——它只会算出对内那一条路径。
 
 **四个 create/edit 页的面包屑（2026-09-29 修正）**：`quotes|orders/create` 与 `quotes|orders/[id]/edit` 的
 面包屑此前是 `{ labelKey: 'internal_sales.page.title', href: '/backend/sales/{quotes,orders}' }`——标签是

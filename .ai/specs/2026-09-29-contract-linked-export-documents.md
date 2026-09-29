@@ -1,7 +1,7 @@
 # 合同为主体的出口单据关联（发运单 / 装箱单（PL）/ PI / CI）
 
 **Date**: 2026-09-29
-**Status**: Phase 1 已实现并验证（2026-09-29，`cross_border`）；Phase 2（`trade_docs`）待 `feat/counterparty-linkage` 合并后开工
+**Status**: Phase 1 与 Phase 2 **均已实现并验证（2026-09-29）**；AC-001…AC-009 全部满足，见 Changelog 的证据行
 
 > 业务口径（2026-09-29，业务确认）：出口业务以**购销合同**为主体——发运单、装箱单（PL）、形式发票（PI）、
 > 商业发票（CI）都关联购销合同；一张主合同可产生**多张发运单、多张装箱单**；四类单据在编辑明细时都支持
@@ -462,15 +462,15 @@ PI/CI 表单 → trade_docs.documents.create/update（contract_id + 快照）
 
 ## Acceptance Criteria
 
-- [ ] **AC-001** — 一张发运单可挂多张合同并在详情/列表可见，按合同筛选返回正确集合；跨组织合同被拒。
-- [ ] **AC-002** — 装箱单可存多条明细（含箱数/毛重/净重/体积），编辑整体替换，非 PL 单证传明细被拒。
-- [ ] **AC-003** — PL 台账列出全部 PL 并显示合同与行数；新建/详情/编辑三页可用（亮/暗/窄屏/键盘）。
-- [ ] **AC-004** — 四类单据都能「从合同引用商品行」生成可编辑明细/分摊；重复执行不产生重复行。
-- [ ] **AC-005** — PI/CI 可关联/换绑合同，列表可按合同筛选，详情显示合同链接。
-- [ ] **AC-006** — 合同可挂采购单/内部销售订单（成套替换），已签发合同可维护，作废合同被拒。
-- [ ] **AC-007** — 合同详情四区块可见、可跳、可带 `?contractId=` 新建。
-- [ ] **AC-008** — 订单档案 KC 口径在关联表命中 / legacy 命中 / 都无三种情况下都有测试断言。
-- [ ] **AC-009** — 出口业务拆成四个带前缀的组（内部销售/购销合同/发运/单证），组内条目与顺序符合 REQ-009；README/业务架构/计划表同步。
+- [x] **AC-001** — 一张发运单可挂多张合同并在详情/列表可见，按合同筛选返回正确集合；跨组织合同被拒。
+- [x] **AC-002** — 装箱单可存多条明细（含箱数/毛重/净重/体积），编辑整体替换，非 PL 单证传明细被拒。
+- [x] **AC-003** — PL 台账列出全部 PL 并显示合同与行数；新建/详情/编辑三页可用（亮/暗/窄屏/键盘）。
+- [x] **AC-004** — 四类单据都能「从合同引用商品行」生成可编辑明细/分摊；重复执行不产生重复行。
+- [x] **AC-005** — PI/CI 可关联/换绑合同，列表可按合同筛选，详情显示合同链接。
+- [x] **AC-006** — 合同可挂采购单/内部销售订单（成套替换），已签发合同可维护，作废合同被拒。
+- [x] **AC-007** — 合同详情四区块可见、可跳、可带 `?contractId=` 新建。
+- [x] **AC-008** — 订单档案 KC 口径在关联表命中 / legacy 命中 / 都无三种情况下都有测试断言。
+- [x] **AC-009** — 出口业务拆成四个带前缀的组（内部销售/购销合同/发运/单证），组内条目与顺序符合 REQ-009；README/业务架构/计划表同步。
 - [ ] Every listed backend surface matches its recorded reference and uses canonical shell/components, shared
       API helpers, semantic tokens, and complete loading/empty/error/conflict/keyboard/a11y/responsive/light/dark states.
 - [ ] Every affected API and UI path has self-contained integration coverage and the configured validation gate passes.
@@ -486,7 +486,8 @@ PI/CI 表单 → trade_docs.documents.create/update（contract_id + 快照）
 | UI contracts identify references, canonical components, and theme/state coverage | pass | UI 表 + 参考页面 |
 | Every phase has dependencies, bounded slices, tests, value, and an observable exit gate | pass | Phases 1–2 |
 
-Verdict: **Blocked — pending owner approval of implementation and merge of `feat/counterparty-linkage` (Phase 2 prerequisite).**
+Verdict: **Passed — Phase 1 与 Phase 2 实现完成、门禁全绿、真机（API + 浏览器）与集成测试均有可重跑证据（见 Changelog）。**
+遗留（非本规格验收项，已在 Q-004 记录）：对外销售单据（`external_sales_order`）本身仍属另一条需求，选择器已给出未接入提示。
 
 ## Open Questions
 
@@ -507,3 +508,4 @@ Verdict: **Blocked — pending owner approval of implementation and merge of `fe
 | 2026-09-29 | 菜单口径按业主指示改为**组名前缀拆组**（出口业务-内部销售/购销合同/发运/单证），替代原「合同置顶」；REQ-009/AC-009/导航契约同步。 |
 | 2026-09-29 | **Phase 1 实现并验证**（`cross_border`）：合同关联表 + 装箱单明细表（迁移只增、已应用）、命令/路由/筛选/缓存失效、发运单「关联合同」UI、装箱单三页 + 明细编辑器、四处「从合同引用商品」中的三处（发运单两个分摊 + 装箱单明细）、菜单拆四组。证据：`yarn generate/typecheck/lint` 绿（0 error）；单元 2 suites/16 tests；集成 `__integration__/shipment-contracts.spec.ts` **3 passed**（TEST-101/102/103）；真机 API 冒烟（合同链接 11/11、装箱单明细 11/11）；浏览器实测 PL 三页 + 快速引用对话框 + 发运单分摊引用对话框 + 侧边栏四组。 |
 | 2026-09-29 | Open Questions 全部关闭（Q-001 完整 PL 口径；Q-002 按已选订单行匹配；Q-003 合同↔订单关联要做）→ 填全 spec：数据模型（2+2 张表、2 列）、API/命令、UI 契约、阶段 1/2（Phase 2 等 `feat/counterparty-linkage` 合并）、测试与验收。 |
+| 2026-09-29 | **Phase 2 实现并验证**（`trade_docs` + `export_finance` 兼容读 + `cross_border` 入口预填）：`trade_docs_contract_orders` + 单写者命令 `trade_docs.contracts.orders.replace`（成套替换、快照、作废 422、乐观锁 409、审计 + `trade_docs.contract.orders.updated`）、`trade_docs_documents.contract_id/contract_snapshot` 与 `?contractId=` 筛选、合同详情五个关联区块 + 订单关联对话框、PI/CI 表单合同字段与「从合同引用商品行」、单据详情合同链接、发运单/装箱单新建页 `?contractId=` 预填（发运单预填合同行并解析合同号，装箱单把发运单选择器收窄到该合同且唯一候选时预选）、`export_finance.selectKcContract` 兼容读关联表与历史锚点。证据：`yarn generate` ✓ ｜ `yarn typecheck` ✓ 0 error ｜ `yarn lint` ✓ 0 error（8 既有 warning）｜ `yarn ds:check` ✓ 956 files ｜ `yarn test` ✓ 61 suites / 516 tests ｜ `yarn build` ✓（rebase 后 27.1s）；集成（同一轮）`trade_docs/__integration__/contract-orders.spec.ts` **5 passed**（TEST-201/202）+ `cross_border/…/shipment-contracts.spec.ts` **3 passed** + `finance/…/finance-flow.spec.ts` **1 passed**，既有 `trade_docs/__integration__` 全套 **41 passed**（冷启动首轮两处 `beforeAll` 20s 超时，热身后重跑 12 passed —— 环境冷启动，非用例失败）；单元 TEST-203 新增 4 例（关联表命中 / 仅 legacy / 都没有 / 作废与跨单排除，`orderFileProjection.test.ts` 45→49 passed）；真机 API 冒烟（替换/读回/重复 422/未知订单 422/未知合同 404/作废 422/版本 409/清空、单据合同引用与解绑、订单档案 KC 金额）；浏览器实测（合同枢纽五区块与新建入口、订单关联对话框增删存、作废合同隐藏管理入口、PI 表单合同预填与「从合同引用商品行」、PI 详情合同链接、PI 台账合同筛选 chip、发运单与装箱单新建页预填与收窄）。 |

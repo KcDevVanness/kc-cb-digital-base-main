@@ -3,8 +3,8 @@ export const metadata = {
   requireFeatures: ['sales.orders.manage'],
   pageTitle: 'Edit external sales order',
   pageTitleKey: 'internal_sales.form.externalOrder.editTitle',
-  pageGroup: 'Cross-Border',
-  pageGroupKey: 'cross_border.nav.group',
+  pageGroup: 'Export operations — External sales',
+  pageGroupKey: 'cross_border.nav.group.externalSales',
   pageOrder: 322,
   icon: 'globe',
   breadcrumb: [
