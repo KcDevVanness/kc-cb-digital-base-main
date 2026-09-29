@@ -8,7 +8,7 @@ import {
   tradeTypeFromPathname,
   tradeTypeFromSnapshot,
 } from '../tradeType'
-import { classifyDocument } from '../../cli'
+import { classifyDocument, toDocumentRow } from '../../cli'
 
 const CHANNELS = { internal: 'channel-internal', external: 'channel-external' }
 
@@ -77,5 +77,36 @@ describe('backfill classification', () => {
     expect(
       classifyDocument(row({ channel_id: 'channel-external', customer_snapshot: { internalSales: { organizationId: 'org-9' } } })),
     ).toMatchObject({ reason: 'already-marked', tradeType: null })
+  })
+})
+
+describe('backfill row mapping', () => {
+  it('reads the scalar channel column, so a marked document is never re-listed', () => {
+    const row = toDocumentRow({
+      kind: 'order',
+      id: 'doc-9',
+      number: 'ORDER-9',
+      tenantId: 't1',
+      organizationId: 'org-1',
+      channelId: 'channel-internal',
+      customerSnapshot: { internalSales: { organizationId: 'org-9' } },
+    })
+    expect(row.channel_id).toBe('channel-internal')
+    expect(classifyDocument(row)).toMatchObject({ reason: 'already-marked' })
+  })
+
+  it('treats a missing channel as unmarked and keeps the snapshot', () => {
+    const row = toDocumentRow({
+      kind: 'quote',
+      id: 'doc-10',
+      number: undefined,
+      tenantId: 't1',
+      organizationId: 'org-1',
+      channelId: undefined,
+      customerSnapshot: undefined,
+    })
+    expect(row.channel_id).toBeNull()
+    expect(row.number).toBeNull()
+    expect(row.customer_snapshot).toBeNull()
   })
 })

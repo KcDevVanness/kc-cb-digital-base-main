@@ -54,6 +54,34 @@ type DocumentRow = {
   customer_snapshot: unknown
 }
 
+/**
+ * One installed document as the classifier reads it.
+ *
+ * The **scalar** `channelId` column is what marks a document: the `channel` relation is not
+ * populated by these reads, and reading it would make every marked document look unmarked (the
+ * marker write is guarded by `channel_id is null`, so nothing breaks, but the report would list the
+ * same documents forever).
+ */
+export function toDocumentRow(input: {
+  kind: 'order' | 'quote'
+  id: string
+  number: string | null | undefined
+  tenantId: string
+  organizationId: string
+  channelId: string | null | undefined
+  customerSnapshot: unknown
+}): DocumentRow {
+  return {
+    kind: input.kind,
+    id: input.id,
+    number: input.number ?? null,
+    tenant_id: input.tenantId,
+    organization_id: input.organizationId,
+    channel_id: input.channelId ?? null,
+    customer_snapshot: input.customerSnapshot ?? null,
+  }
+}
+
 type Classification = {
   row: DocumentRow
   tradeType: SalesTradeType | null
@@ -115,26 +143,26 @@ async function loadDocuments(
       ),
     ])
     for (const order of orders) {
-      rows.push({
+      rows.push(toDocumentRow({
         kind: 'order',
         id: String(order.id),
-        number: order.orderNumber ?? null,
-        tenant_id: scope.tenantId,
-        organization_id: scope.organizationId,
-        channel_id: order.channel?.id ? String(order.channel.id) : null,
-        customer_snapshot: order.customerSnapshot ?? null,
-      })
+        number: order.orderNumber,
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        channelId: order.channelId,
+        customerSnapshot: order.customerSnapshot,
+      }))
     }
     for (const quote of quotes) {
-      rows.push({
+      rows.push(toDocumentRow({
         kind: 'quote',
         id: String(quote.id),
-        number: quote.quoteNumber ?? null,
-        tenant_id: scope.tenantId,
-        organization_id: scope.organizationId,
-        channel_id: quote.channel?.id ? String(quote.channel.id) : null,
-        customer_snapshot: quote.customerSnapshot ?? null,
-      })
+        number: quote.quoteNumber,
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        channelId: quote.channelId,
+        customerSnapshot: quote.customerSnapshot,
+      }))
     }
   }
   return rows
