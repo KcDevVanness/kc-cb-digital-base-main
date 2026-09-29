@@ -148,6 +148,16 @@ export function documentEditHref(kind: InternalSalesKind, documentId: string): s
   return `${listHrefFor(kind)}/${documentId}/edit`
 }
 
+/**
+ * The edit page an entry owns: `/backend/external-sales/**` for an external document, the internal
+ * pair otherwise. Used wherever the module navigates by the document's own trade type rather than by
+ * the entry the operator happens to be standing in.
+ */
+export function documentEditHrefForTradeType(kind: InternalSalesKind, documentId: string, tradeType: SalesTradeType): string {
+  const base = tradeType === 'external' ? listHrefFor(kind).replace('/internal-sales/', '/external-sales/') : listHrefFor(kind)
+  return `${base}/${documentId}/edit`
+}
+
 function toLinePayload(
   kind: InternalSalesKind,
   documentId: string,
@@ -909,7 +919,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       const id = typeof created.result?.id === 'string' ? created.result.id : null
       pushWithFlash(
         router,
-        id ? documentEditHref(kind, id) : listHrefFor(kind),
+        id ? documentEditHrefForTradeType(kind, id, values.tradeType) : listHrefFor(kind),
         t('internal_sales.form.saved'),
         'success',
       )
@@ -921,7 +931,11 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
 
   return (
     <CrudForm<InternalSalesFormValues>
-      title={t(kind === 'quote' ? 'internal_sales.form.quote.createTitle' : 'internal_sales.form.order.createTitle')}
+      title={t(
+        fixedTradeType === 'external'
+          ? (kind === 'quote' ? 'internal_sales.form.externalQuote.createTitle' : 'internal_sales.form.externalOrder.createTitle')
+          : (kind === 'quote' ? 'internal_sales.form.quote.createTitle' : 'internal_sales.form.order.createTitle'),
+      )}
       titleHeadingLevel={1}
       backHref={listHrefFor(kind)}
       fields={fields}
@@ -1056,7 +1070,11 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
 
   return (
     <CrudForm<InternalSalesFormValues>
-      title={t(kind === 'quote' ? 'internal_sales.form.quote.editTitle' : 'internal_sales.form.order.editTitle')}
+      title={t(
+        (fixedTradeType ?? initial?.tradeType) === 'external'
+          ? (kind === 'quote' ? 'internal_sales.form.externalQuote.editTitle' : 'internal_sales.form.externalOrder.editTitle')
+          : (kind === 'quote' ? 'internal_sales.form.quote.editTitle' : 'internal_sales.form.order.editTitle'),
+      )}
       titleHeadingLevel={1}
       // This module has no per-document detail view — the edit page *is* the document's page.
       // Back/cancel must therefore leave for the list; built from `documentEditHref` they

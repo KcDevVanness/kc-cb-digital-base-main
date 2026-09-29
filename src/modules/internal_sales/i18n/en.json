@@ -94,5 +94,9 @@
   "internal_sales.form.externalQuote.createTitle": "New external sales quote",
   "internal_sales.form.externalQuote.editTitle": "Edit external sales quote",
   "internal_sales.form.externalOrder.createTitle": "New external sales order",
-  "internal_sales.form.externalOrder.editTitle": "Edit external sales order"
+  "internal_sales.form.externalOrder.editTitle": "Edit external sales order",
+  "internal_sales.list.externalQuote.description": "Quotes a branch issues to local customers; the buyer is one of this organization's external customers.",
+  "internal_sales.list.externalOrder.description": "Sales orders a branch issues to local customers; the buyer is one of this organization's external customers.",
+  "internal_sales.list.externalQuote.empty": "No external sales quotes yet",
+  "internal_sales.list.externalOrder.empty": "No external sales orders yet"
 }

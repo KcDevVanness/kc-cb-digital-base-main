@@ -180,7 +180,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
     && canManage
     && (!chromeReady || hasFeature(chromePayload?.grantedFeatures, 'sales.orders.manage'))
 
-  const listHref = listHrefFor(kind)
+  const listHref = tradeType === 'external' ? listHrefFor(kind).replace('/internal-sales/', '/external-sales/') : listHrefFor(kind)
   const apiPath = kind === 'quote' ? 'sales/quotes' : 'sales/orders'
 
   const queryKey = React.useMemo(
@@ -269,16 +269,31 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
     [channels, kind, locale, statusMap, t, tradeType],
   )
 
+  // The same implementation serves both menus: every label follows the entry's trade type.
+  const external = tradeType === 'external'
+  const titleKey = kind === 'quote'
+    ? (external ? 'internal_sales.list.externalQuote.title' : 'internal_sales.list.quote.title')
+    : (external ? 'internal_sales.list.externalOrder.title' : 'internal_sales.list.order.title')
+  const descriptionKey = kind === 'quote'
+    ? (external ? 'internal_sales.list.externalQuote.description' : 'internal_sales.list.quote.description')
+    : (external ? 'internal_sales.list.externalOrder.description' : 'internal_sales.list.order.description')
+  const createTitleKey = kind === 'quote'
+    ? (external ? 'internal_sales.form.externalQuote.createTitle' : 'internal_sales.form.quote.createTitle')
+    : (external ? 'internal_sales.form.externalOrder.createTitle' : 'internal_sales.form.order.createTitle')
+  const emptyKey = kind === 'quote'
+    ? (external ? 'internal_sales.list.externalQuote.empty' : 'internal_sales.list.quote.empty')
+    : (external ? 'internal_sales.list.externalOrder.empty' : 'internal_sales.list.order.empty')
+
   return (
     <>
       <DataTable<DocumentRecord>
         title={(
           <div className="flex flex-col gap-1">
             <h1 className="text-base font-semibold leading-tight">
-              {t(kind === 'quote' ? 'internal_sales.list.quote.title' : 'internal_sales.list.order.title')}
+              {t(titleKey)}
             </h1>
             <p className="text-sm font-normal text-muted-foreground">
-              {t(kind === 'quote' ? 'internal_sales.list.quote.description' : 'internal_sales.list.order.description')}
+              {t(descriptionKey)}
             </p>
           </div>
         )}
@@ -288,7 +303,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
           canManage ? (
             <Button asChild>
               <Link href={`${listHref}/create`}>
-                {t(kind === 'quote' ? 'internal_sales.form.quote.createTitle' : 'internal_sales.form.order.createTitle')}
+                {t(createTitleKey)}
               </Link>
             </Button>
           ) : null
@@ -302,11 +317,11 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
         searchAlign="right"
         emptyState={(
           <ListEmptyState
-            title={t(kind === 'quote' ? 'internal_sales.list.quote.empty' : 'internal_sales.list.order.empty')}
+            title={t(emptyKey)}
             {...(canManage
               ? {
                   createHref: `${listHref}/create`,
-                  createLabel: t(kind === 'quote' ? 'internal_sales.form.quote.createTitle' : 'internal_sales.form.order.createTitle'),
+                  createLabel: t(createTitleKey),
                 }
               : {})}
           />
@@ -322,7 +337,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
                   {
                     id: 'new-order-from-quote',
                     label: t('internal_sales.list.actions.newOrderFromQuote'),
-                    href: `/backend/internal-sales/orders/create?fromQuote=${row.id}`,
+                    href: `${tradeType === 'external' ? '/backend/external-sales' : '/backend/internal-sales'}/orders/create?fromQuote=${row.id}`,
                   },
                   {
                     id: 'convert-to-order',
