@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { makeCrudRoute } from '@open-mercato/shared/lib/crud/factory'
+import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern'
 import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
 import { CrossBorderExportDocument } from '../../../data/entities'
 import { documentCreateSchema, documentListSchema, documentUpdateSchema, EXPORT_DOC_TYPES } from '../../../data/validators'
@@ -55,6 +56,9 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
   list: {
     schema: documentListSchema,
     entityId: ENTITY_ID,
+    // Newest first, so the shipment's document section and the packing-list ledger both show the
+    // document just registered on top; `id` (the platform's fallback) is a random uuid.
+    defaultSort: { field: 'created_at', dir: 'desc' },
     fields: [
       'id',
       'shipment_id',
@@ -73,6 +77,14 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       if (query.id) filters.id = query.id
       if (query.shipmentId) filters.shipment_id = query.shipmentId
       if (query.docType) filters.doc_type = query.docType
+      if (query.search && query.search.trim().length > 0) {
+        // `document_number` and `note` are plaintext columns; the escape keeps a typed `%` literal.
+        const term = `%${escapeLikePattern(query.search.trim())}%`
+        filters.$or = [
+          { document_number: { $ilike: term } },
+          { note: { $ilike: term } },
+        ]
+      }
       return filters
     },
     transformItem: (item: Record<string, unknown>) => ({

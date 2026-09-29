@@ -10,7 +10,7 @@ app 自有模块。把多张采购单**拼柜**成一张发运单，跟踪在途
 | 实体（`data/entities.ts`） | `CrossBorderShipment` / `CrossBorderShipmentAllocation` / `CrossBorderShipmentMilestone` / `CrossBorderExportDocument` → 表 `cross_border_shipments` / `cross_border_shipment_allocations` / `cross_border_shipment_milestones` / `cross_border_export_documents`；**2026-09-28（Phase 2）** 新增 `CrossBorderShipmentSalesAllocation` → `cross_border_shipment_sales_allocations`（发运单 ↔ 内部销售订单**分摊到行**：`sales_order_id`/`sales_order_line_id`/`sales_order_number` 快照、`catalog_product_id`、`product_snapshot`、`quantity`、`unit_price`/`currency_code` 快照；唯一键 `(shipment_id, sales_order_line_id)`） |
 | API | `GET|POST|PUT|DELETE /api/cross_border/shipments`、`/shipments/documents`；`GET /shipments/allocations`（只读：分摊只经发运单 create/update 写入，超发校验在那里）；**新增** `GET /shipments/sales-allocations?shipmentId=`（只读，同样只经发运单命令写入）；`GET|POST /shipments/milestones`（POST = 前进里程碑）；动作路由 `POST /shipments/{depart,receive,cancel}`（同路径的 GET 列表只为 CRUD 工厂解析作用域，不是 UI 契约） |
 | 命令 | `cross_border.shipments.{create,update,delete,depart,receive,cancel,advance-milestone}`、`cross_border.documents.{create,update,delete}`（`create`/`update` 的载荷新增可选 `salesAllocations`：**整体替换**语义，与采购分摊同构；解析走 `lib/shipmentSalesReads.ts` 的 `loadSalesOrderLines`，销售行必须能经商品主数据的 `catalog_product_id` 桥接到官方目录，否则 422） |
-| 后台页面 | `/backend/cross_border/shipments`（列表/新建/详情：采购分摊、**销售分摊**、节点时间线、单证） |
+| 后台页面 | `/backend/cross_border/shipments`（列表/新建/详情：采购分摊、**销售分摊**、节点时间线、单证）；**`/backend/cross_border/packing-lists`（装箱单（PL）台账，2026-09-29）**：跨发运单列出全部 `packing_list` 单证（单号/发运单/签发日/文件/备注），登记与编辑在同一对话框内先选发运单、文件按该发运单归档（`components/PackingListsTable.tsx` + `components/shipmentDocumentAttachmentField.tsx`） |
 | 读缝（跨模块） | `lib/shipmentSalesReads.ts`：`readShipmentSalesAllocations` / `readShipmentPurchaseAllocations` / `loadSalesOrderLines`（其他模块读分摊只走这里，不直接碰本模块实体） |
 | 事件 | `cross_border.shipment.{created,updated,departed,received,cancelled,deleted,milestone_recorded}`、`cross_border.export_document.{created,updated,deleted}` |
 | 权限 | `cross_border.shipments.view|manage`、`cross_border.shipments.receive`、`cross_border.documents.manage` |
@@ -25,7 +25,7 @@ app 自有模块。把多张采购单**拼柜**成一张发运单，跟踪在途
 - **里程碑单调**：`advance-milestone` 只允许前进，回退返回 **422**；历史节点保留可查。
 - **收货幂等**：`receive` 写 `wms` 余额并回写采购单行已收数量，重复收货不重复计数（按采购单行累加）。
 - **单证是弱类型集合**：类型枚举校验（`customs_declaration` / `packing_list` / `commercial_invoice` / `bill_of_lading` / `so` / `telex_release` / `domestic_freight_receipt` / `booking_charges_receipt` / `other`），非法类型返回 **400**；`so` 与 `telex_release` 的单号落在单头 `booking_number`、不写单证行，两种 receipt 一类收多份就是多行；单证文件走 `attachments`，行里只存 `attachment_id`。
-- **PL 是单证、发运单不是 PL（2026-09-29）**：外贸口径的 **PL（装箱单）在本模块是一类出口单证**（`packing_list`，登记单号/签发日/附件，界面标签「装箱单（PL）」/ "Packing list (PL)"），不独立成页；发运单是**这批货的承运批次**（拼柜来源 + 销售分摊 + 柜型/箱号/封签 + 里程碑 + 单证区），列表页描述已点名「装箱单（PL）…在详情页的单证区登记」。CI（商业发票）同样不再走单证槽位（`commercial_invoice` 枚举只读保留，见下条）。
+- **PL 是单证、发运单不是 PL（2026-09-29）**：外贸口径的 **PL（装箱单）在本模块是一类出口单证**（`packing_list`，登记单号/签发日/附件，界面标签「装箱单（PL）」/ "Packing list (PL)"）；发运单是**这批货的承运批次**（拼柜来源 + 销售分摊 + 柜型/箱号/封签 + 里程碑 + 单证区）。同日起 PL 有自己的**台账页**（`/backend/cross_border/packing-lists`，出口业务组 `pageOrder 345`）——它只换了个列表视角，**写入路径没变**：仍是发运单单证命令（`cross_border.documents.*`），登记时在表单里选发运单、文件按该发运单归档，编辑不允许改挂（改挂会把附件留在旧发运单上）。CI（商业发票）同样不再走单证槽位（`commercial_invoice` 枚举只读保留，见下条）。
 - **货柜型号读字典**：单头 `container_type` 的选项来自本模块播种的 `container_type` 字典（`setup.ts` 幂等写入七种型号），字典里没有的型号存不进单据；字典缺失或不可读时选择器给空列表（字段可空，不挡发运）。柜号 / 封签号 / 订舱号是自由文本。
 - **港口与承运人读字典、允许例外**：单头 `departurePort` / `carrierName` 的选项来自本模块播种的 `port` / `carrier`
   字典（`setup.ts` 幂等写入，`yarn mercato seed:defaults --module cross_border`），界面是带建议的下拉——
@@ -43,6 +43,8 @@ yarn generate && yarn typecheck
 yarn test src/modules/cross_border
 # 冒烟：两张采购单合并一张发运单 201 → 超发 422 → depart 后两张采购单转 shipped →
 #       里程碑前进 201 / 回退 422 → receive 后 wms 余额与采购单行已收数量一致
+# PL 台账冒烟（2026-09-29）：登记（选发运单 + 上传文件）201 → 列表即时出现该行（无需刷新）→ 编辑补签发日（日期选择器点「应用」）→
+#       删除（二次确认）后行消失、空态回归；发运单详情的「添加单证」对话框在附件字段抽出后行为不变（类型下拉含「装箱单（PL）」、上传按钮直接可用）
 # 附件预览冒烟（2026-09-24）：出口单证行「预览」→ 图片等比显示 / PDF 由 PDF.js 渲染到 canvas / 其它类型说明 + 下载（同一组件，见 purchasing README）
 ```
 

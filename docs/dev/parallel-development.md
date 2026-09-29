@@ -47,24 +47,57 @@ ORCA worktree rm --worktree <selector> --force --json
 **纯 git 等价（没装 Orca / CI 机器上）**
 
 ```bash
-git worktree add ../kc-cb-digital-base-min-<slug> -b feat/<slug> origin/main
+git worktree add ../kc-cb-digital-base-min-<slug> -b feat/<slug> origin/dev
 cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 ```
 
-分支命名：新能力 `feat/<slug>`，修缺陷 `fix/<slug>`，纯流程/工具改动 `chore/<slug>`，纯文档 `docs/<slug>`。**不要**在共享的 `main` 上直接提交。
+分支命名：新能力 `feat/<slug>`，修缺陷 `fix/<slug>`，纯流程/工具改动 `chore/<slug>`，纯文档 `docs/<slug>`。**不要**在共享的 `main` / `dev` 上直接提交；常规单元的 base 是 `origin/dev`（见下一节），只有紧急修复和必须先落 `main` 的自举类流程改动才 base `origin/main`。
 
 **分支只做加法**：一次性装好本地钩子 `git config core.hooksPath .githooks`（仓库级配置，所有工作树共用），
 之后每次 push 都会用 `scripts/guards/guard-tree.mjs` 检查被推的那棵树——空工作树里 `git add -A` 的产物
 （整仓变成删除）会在离开本机前被挡住。
 
+## `dev` 集成分支（常驻）
+
+`origin/dev` 是并行的**集成分支**：常规单元从它切出、把 PR 开回它，一个**波次**结束时整条 dev 落回
+`main`。`.ai/agentic.config.json` 的 `baseBranch: "dev"` 让流水线技能（`om-auto-create-pr`、`om-open-pr`
+等）自动这么做——它们读的是 config，不是写死的 `main`。
+
+**唯一要守住的不变式**：`dev` 不持有 `main` 拿不到的内容，而且它的漂移必须显眼。破坏它，就是重演
+`feat/cross-border-erp` 的 270 个路径滞留（`.ai/lessons/squash-merged-base-strands-later-prs.md`）。
+
+| 动作 | 命令 / 判定 |
+|---|---|
+| 切单元 | `git worktree add ../kc-cb-digital-base-min-<slug> -b feat/<slug> origin/dev` |
+| 合单元 | PR 的目标是 `dev`（squash；仓库只允许 squash 合并） |
+| 看漂移 | `yarn branches:cleanup` 的 trunk 段：`in-sync` / `carrying` / `behind` / `diverged` |
+| 收波次 | trunk 段出现 `carrying` → 开 `dev → main` 的 PR（`gh pr create --base main --head dev`），body 列出本波包含哪些单元 |
+| 落地后重置 | `git push --force-with-lease origin origin/main:dev`——内容已经在 `main`，重置是内容保持操作，也是 `dev` 上唯一允许的强制 push |
+| `behind` | dev 相对 `main` 没有独有内容（例如 `main` 被别的 PR 直接推进）→ 同一条重置命令 |
+| `diverged` | 两边各有对方没有的文件 → 先 `git diff --name-status origin/main origin/dev` 看清，再把 `main` 并/rebase 进 dev，然后收波次 |
+
+- **波次** = 一个 spec 切片 / 一批相关单元，越小越好。`main` 只允许 squash，整条 `dev` 会落成**一个**
+  提交（各单元自己的 subject 不进 `main` 历史），所以别把几周的活攒在 dev 上。
+- **紧急修复**可以 base `origin/main`、PR 到 `main`（在 `## Assumptions` 写明为什么不进 dev）；`main`
+  前进后 trunk 段会告诉你是 `behind` 还是 `diverged`。
+- **不允许**直接 push 到 `dev`；唯一例外是上面那条重置（源是 `origin/main`、带 `--force-with-lease`）。
+  重置走的是管理员 bypass（`enforce_admins=false`），GitHub 会在输出里提示 `Bypassed rule violations`
+  —— 那是这条重置的预期行为，不是绕过评审的通道。
+- **`dev` 是 cover ref**：`branch-cleanup` 把 config 里的 `baseBranch` 当作"内容已保住的地方"，所以单元
+  分支一合进 `dev` 就能被 `yarn branches:cleanup --apply` 清理；否则它们会被判 `STRANDED` 而永远留在报告里。
+- **`dev` 永不在删除候选里**（`DEFAULT_KEEP`）；trunk 段每次运行都报，`--apply` 也不碰它。
+- 注：`.ai/skills/**` 的 override 文档仍写 `baseBranch` 是 `"auto"`（harness 生成，不手改）；以
+  `.ai/agentic.config.json` 为准。
+
 ## 分支生命周期与清理
 
 一条分支只在"内容还没进 `main`"的这段时间里是资产；内容一落地，它就只剩删除这一步。
 2026-09-29 审计时的 12 条本地分支里 11 条属于这种状态，而且集成分支还把 270 个文件留在了 `main` 之外
-（`.ai/lessons/squash-merged-base-branch-strands-later-prs.md`）。
+（`.ai/lessons/squash-merged-base-strands-later-prs.md`）。
 
-1. **一个工作单元一个分支，base 一律 `origin/main`。** 唯一例外是 PR body 的 `## Assumptions` 里写明
-   父子关系的堆叠：子 PR 的 base 是父分支，父 PR 一合并就 `gh pr edit <child> --base main` 并 rebase
+1. **一个工作单元一个分支，base 一律 `origin/dev`**（紧急修复和必须先落 `main` 的自举类流程改动走
+   `origin/main`，在 PR body 的 `## Assumptions` 写明理由）。另一个例外是 `## Assumptions` 里写明
+   父子关系的堆叠：子 PR 的 base 是父分支，父 PR 一合并就 `gh pr edit <child> --base dev` 并 rebase
    （GitHub 在父分支被删除时也会自动改 base）。**永远不要**把已经合进 `main` 的分支当 base 继续收 PR：
    那条分支之后收到的每个 commit 都不在 `main` 的历史里，`main` 也不会再自动拿到它们。
 2. **文档跟着功能走。** 实现单元的 `docs/**`、`.ai/specs/**`、模块 README 改动放进同一个分支与 PR，
@@ -84,8 +117,9 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
    一起查（处理"文件后来被改名/重写"的旧版本），`--cover <ref>` 把某个长期集成分支也算作"内容已保住
    的地方"，`--keep <name>` 保护正在开发的分支。**cover ref 自身永远不会被删**；被删掉的分支头仍可从
    GitHub 的 pull ref 取回：`git fetch origin pull/<n>/head`。
-4. **集成分支只有一个出口。** 长期集成分支（曾经的 `feat/cross-border-erp`）要么在合并窗口内把内容
-   全部并回 `main` 后删除，要么就别把它当 trunk。收尾前先跑
+4. **集成分支只有一个出口。** 常驻集成分支只有 `dev` 一条，它靠"每次落地后重置"收尾（见上一节），
+   **不是**靠删除；`production` 是部署分支，不是收单元的地方。其它任何集成分支（曾经的
+   `feat/cross-border-erp`）要么在合并窗口内把内容全部并回 `main` 后删除，要么就别把它当 trunk。收尾前先跑
    `git diff --diff-filter=A --name-only origin/main <branch> | wc -l`，**必须为 0 才能删**；
    不为 0 说明还有内容只在分支上，那是"并回 `main`"的工作，不是删除。
 
@@ -130,7 +164,7 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 
 ## PR 与合并
 
-1. 一个工作单元一个 PR，**base 一律 `main`**（堆叠例外见"分支生命周期与清理"），**先以 draft 打开**
+1. 一个工作单元一个 PR，**base 一律 `dev`**（紧急修复/自举走 `main`；堆叠例外见"分支生命周期与清理"），**先以 draft 打开**
    （第一次 push 就有 PR，进度可见），标题 `feat(<area>): …` / `fix(<area>): …`；门禁全绿且 Progress
    全勾后 `gh pr ready` 转 ready。
 2. **PR body 必含**：`Tracking plan:` + `Source doc:`（本仓没有 issue 体系，spec / run 路径就是需求单；
@@ -141,10 +175,24 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 3. 合并前：rebase 到最新 `main`，门禁全绿（`.ai/agentic.config.json` 的 `validation.commands`）。
 4. **squash 合并**，保持 `main` 线性；合并后删除远端分支（仓库 `delete_branch_on_merge=true` 自动做），
    本地分支与工作树紧接着 `yarn branches:cleanup --apply` 收尾。
-5. **CI**：`.github/workflows/validate.yml` 在**所有 PR**（不限目标分支）与 `main` 上按顺序跑同一组
-   门禁命令（`generate` / `typecheck` / `lint` / `lessons` / `ds:check` / `test` / `build`），检查名
-   **`validate`**；docs / 部署侧改动的 PR 由 job 内的 scope 步骤跳过重步骤，检查照常报告（required
-   check 不会卡在 "Expected — Waiting"）。本地复现同一结论，就按同一顺序跑同一份命令。
+5. **CI**：`.github/workflows/validate.yml` 在**所有 PR**（不限目标分支）与 `main` 上跑同一组门禁命令
+   （`generate` / `typecheck` / `lint` / `lessons` / `ds:check` / `test` / `build`），检查名 **`validate`**。
+   结构是「先判定、再并行两半、最后汇总」：
+
+   - `scope`：从 diff 判定这套命令是否**可能**失败（白名单，见下）；
+   - `checks`：install → generate → typecheck → lint → lessons → ds:check → test；
+   - `build`：install → build（`yarn build` 本身就是 `yarn generate && next build`，不重复 generate）；
+   - `validate`：汇总 job，**名字就是分支保护要求的那个检查名**，只在两半都通过（或按范围跳过）时报绿。
+
+   `checks` 与 `build` 同时起跑，所以 app 源码改动的墙钟时间约等于 `install + build` 这条最长路径，
+   而不是所有步骤相加（2026-09-29 之前是单 job 串行：每次 4:49–6:06）。**必需检查按 job 名匹配**，
+   所以汇总 job 不能改名、也不能换成 matrix——名字一旦不存在，每个 PR 会永久卡在 "Expected — Waiting"。
+   docs / 部署侧改动的 PR 由 `scope` 判定 `needed=false`：两个 job 直接 skipped，汇总 job 照常上报成功。
+   跨运行复用的缓存三份：yarn 缓存、`tsconfig.tsbuildinfo`、`next build` 自己那份
+   `.mercato/next/cache/.tsbuildinfo`（`next build` 内部还会再做一次类型检查，只是记录文件不同）。
+   缓存的是**增量记录**而不是结果：类型检查照跑，TypeScript 按文件内容与编译选项失效，陈旧条目只花
+   时间、不漏错误。本地复现同一结论：按 `.ai/agentic.config.json` 的 `validation.commands` 顺序跑同一份
+   命令（CI 只是把它拆开并行，命令本身没变）。
    **结构守卫**：另有 `.github/workflows/guard-tree.yml`（检查名 **`guard-tree`**），判定只看两棵树：
    head 里缺 `package.json` / `yarn.lock` / `src/modules.ts` / `.github/workflows/validate.yml` 之一，
    或保留文件数低于基线的 50%，即失败（PR #12 的 `1543 files changed, 593482 deletions(-)` 会被判红）。
@@ -156,11 +204,18 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
    `.ai/trackers/github.md` 的 `ensure-label-taxonomy` 建好 `review`/`changes-requested`/`qa`/
    `qa-failed`/`merge-queue`/`blocked`/`do-not-merge`/`needs-qa`/`skip-qa`/`in-progress`/
    `priority-*`/`risk-*` 等标签；流水线技能按状态自动打标，N 个 PR 卡在哪一步可以直接筛出来。
-7. **分支保护现状**：`main` 要求走 PR、要求 `validate` + `guard-tree` 通过、要求线性历史，禁止 force push 与
-   删除分支；必需评审数 0（单人仓不会把自己锁死），`enforce_admins=false`（管理员可应急绕过）。
-   仓库只允许 **squash** 合并，合并后自动删远端分支。**直推 `main` / `production` 一律禁止**：
+7. **分支保护现状**：`main` 与 `production` 从 2026-09-29 起套用**同一套**——要求走 PR、要求
+   `validate` + `guard-tree` 通过、要求线性历史，禁止 force push 与删除分支；必需评审数 0（单人仓
+   不会把自己锁死），`enforce_admins=false`（管理员可应急绕过，`docs/deploy/cicd.md` 的 force push
+   回滚路径因此仍然可用）。`dev`（集成分支）同样要求走 PR、要求同样两个必需检查、要求线性历史、
+   禁止删除分支，但**允许 force push**——只为落地后的重置，不是给单元分支用的。
+   仓库只允许 **squash** 合并，合并后自动删远端分支。**直推 `main` / `production` / `dev` 一律禁止**：
    `main` 的 admin bypass 是应急口子、不是日常通道，`production` 是部署分支（`deploy.yml` 由它的
-   push 触发），两者都只接受 PR。
+   push 触发），`dev` 只收 PR、只在波次落地后被重置。
+   特例要当心 **head 就是 `production` 的 PR**（`production` → `main` 的同步 PR，PR #21 的形状）：
+   `delete_branch_on_merge` 会把 head 当成合并后要删的分支，所以合并前先确认删除保护生效
+   （`allow_deletions=false`），或按 2026-09-29 的先例临时关掉该设置、合并后立刻恢复——当时
+   `production` 还没有保护，处置就是后者（`.ai/runs/2026-09-29-production-sync.md`）。
 8. **CI 偶发**：`Install dependencies` 步骤见过一次 Yarn 4 的 `onCancel handler was attached after
    the promise settled`（网络抖动，非代码问题）。先 `gh run rerun <run-id> --failed` 重跑一次再改代码。
 
@@ -175,17 +230,20 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 
 编码可以并行，**评审与 QA 是串行环节**：每个 PR 都要过一遍 review（涉及界面再加 UI QA）。
 建议按"波次"推进——一波并行实现 → 集中评审与合并 → 下一波——而不是无限开分支。
+波次还有一个串行出口：`dev → main` 的落地 PR（整条 dev squash 成一条），所以一波别攒太大——一个
+spec 切片一波最稳；`yarn branches:cleanup` 的 trunk 段是"这波该收了"的信号灯。
 
 ## 自查
 
 ```bash
 git worktree list                  # 每个工作单元一棵树
 git -C ../<worktree> branch --show-current
-git diff --stat origin/main        # 相对目标分支只应出现自己的新增 / 修改
-node scripts/guards/guard-tree.mjs --base origin/main --head HEAD   # 同一判定，本地先跑一遍
+git diff --stat origin/dev         # 相对目标分支只应出现自己的新增 / 修改（base 为 main 的单元用 origin/main）
+node scripts/guards/guard-tree.mjs --base origin/dev --head HEAD   # 同一判定，本地先跑一遍
 gh pr list --state open            # 每个工作单元一个 PR
 gh pr checks <n>                   # validate / guard-tree 检查的门禁结论
 gh pr ready <n>                    # 门禁绿 + Progress 全勾后把 draft 转 ready
-yarn branches:cleanup              # 合并后：本地分叉该不该删，逐条给理由
-git diff --diff-filter=A --name-only origin/main origin/feat/<branch> | wc -l   # 集成分支收尾必须为 0
+yarn branches:cleanup              # 合并后：本地分叉该不该删 + trunk 段（dev 报 carrying 就该收波次）
+yarn branches:cleanup --remote     # 远端残留（dev / production 永不在候选里）
+git diff --diff-filter=A --name-only origin/main origin/feat/<branch> | wc -l   # 其它集成分支收尾必须为 0
 ```
