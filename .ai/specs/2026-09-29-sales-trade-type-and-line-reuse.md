@@ -1,7 +1,7 @@
 # 对内 / 对外销售贸易类型与合同行复用（sales trade type & line reuse）
 
 **Date**: 2026-09-29
-**Status**: Implemented — Phases 1–4 shipped and verified (2026-09-29); PR #40
+**Status**: Implemented — Phases 1–4 shipped and verified (2026-09-29); PR #40。界面口径同日按 owner 决策修订（销售入口两种类型同表、术语改「对内 / 对外」、菜单改名），见文末 Changelog
 
 > Route: `module-data`（`internal_sales` 界面 + `cross_border` / `trade_docs` 消费方）+ `backend-ui`。
 > 决策来源：owner 2026-09-29 对本调研第三点的答复——「一个实现 + 两种贸易类型 + 菜单/分组分开」。
@@ -28,7 +28,7 @@
 
 - **REQ-001** — 销售单据（报价单/订单）带**贸易类型** `internal | external`；类型由买方来源唯一决定（关联组织 ⇒ internal；外部客户档案 ⇒ external），界面不再让两半混选。
 - **REQ-002** — 类型写入引擎原生标记：每个组织两个通道（`INTERNAL_SALES` / `EXTERNAL_SALES`），单据的 `channelId` 指向其中一个；通道缺失时按需播种（幂等）。
-- **REQ-003** — 列表按类型过滤：`/backend/internal-sales/**` 只显示内部；新增 `/backend/external-sales/**` 只显示对外；两者共用同一实现与同一套权限位。
+- **REQ-003** — 列表口径（**2026-09-29 界面修订**）：`/backend/internal-sales/**`（销售入口）**两种类型同表**——不按类型过滤，用常显的「类型」列区分；`/backend/external-sales/**` 只显示对外（服务端 `channelId`）；两者共用同一实现与同一套权限位。
 - **REQ-004** — 发运单的销售分摊选择器只列**内部**销售订单；外部订单不能进出口分摊。
 - **REQ-005** — 合同行支持「从订单/报价单复制行」：采购方向 → 采购单；销售方向 → 销售单据，且来源按合同的**对方类型/贸易类型**过滤（分公司 → 内部单据；外部客户 → 对外单据），复制一次性、逐行写 `source_snapshot`，头部接上 `source_kind/source_id/source_snapshot`（C-4）。
 - **REQ-006** — 存量回填：提供一条只读优先（默认 dry-run）的 CLI 命令，按快照键把历史单据挂到对应通道；执行需 owner 批准。
@@ -272,7 +272,7 @@ internal_sales CLI → 回填命令（dry-run 默认）
 
 - [x] **AC-001** — 新建内部/对外单据分别落 `channel_id` 为对应通道（浏览器实测：对外单落 `EXTERNAL_SALES`，DB 复核 `ORDER-20260929-00011`）；类型与买方来源由同一控件推导。
 - [x] **AC-002** — `seedDefaults` 幂等（dev 库连跑两次仍各组织一条 `INTERNAL_SALES`/`EXTERNAL_SALES`；并发撞唯一索引时采纳既有行）。
-- [x] **AC-003** — 内部入口不含对外单据、对外入口不含内部单据（浏览器实测 + 集成按 `channelId` 过滤断言）；存在未标记历史单据时列表退化为「不过滤 + 类型列 + 提示」，不会假装为空。
+- [x] **AC-003** — 销售入口列出两种类型（不按类型过滤，未标记的历史单据照常列出、类型列显示「—」并可归类）；对外入口只列对外单据（浏览器实测 + 集成按 `channelId` 过滤断言），存在未标记历史单据时以计数提示说明它们不在本列表中。
 - [x] **AC-004** — 发运分摊的可选销售订单只有内部单据；未标记但买方是关联组织的历史单据仍在列（按快照判定），外部或手填买方的不会被列出（单测覆盖两桶合并）。
 - [x] **AC-005** — 合同「从订单/报价单复制行」对话框按方向给出来源类型（浏览器实测打开正常），来源按对方侧过滤、复制行与头部锚点落库（单测覆盖纯函数；集成/浏览器为 smoke）。
 - [x] **AC-006** — 回填命令 dry-run 给出清单（dev 库：6 单据 → 3 可分类 / 3 无链接）；`--apply` 标记 3 单，再跑 dry-run 为「4 already marked · 2 without a buyer link · 0 to write」；`--organization/--org/--organizationId` 别名均可收窄。
@@ -308,3 +308,4 @@ Verdict: **Ready for implementation**。
 | 2026-09-29 | Initial draft（依据 owner 2026-09-29 决策：一个实现 + 两种贸易类型 + 菜单/分组分开；下游对齐与合同行复用一并纳入） |
 | 2026-09-29 | **交付并验证**：Phases 1–4 实现完成（PR #40），并在 dev 库实跑种子与回填（3 单打标、2 单无买方链接保持未标记）。代码评审后又修：①编辑页加载 effect 依赖每次渲染都新建的通道 map（读失败会无限重拉）→ hook 内 memo + 依赖原始值；②发运分摊选择器漏掉未标记的历史内部订单 → 改为「已标记 + 未标记且买方是关联组织」两桶合并；③外部入口把加载到的单据强行改写成入口类型 → 类型不匹配时跳转到该单据所属入口，锁定类型改为只读展示而非单选项下拉；④买方清空改为按「已选买方命名空间与类型不符」判定，避免加载后误清；⑤返回/取消/来源链接与「按报价新建订单」跳转全部按入口派生；⑥新增路由补 `openApi` 与错误日志；⑦CLI 支持文档里的 `--organization` 并提示缓存；⑧种子撞唯一索引时采纳既有行。 |
 | 2026-09-29 | 实现期修订：①通道解析走模块自建只读路由（`GET /api/internal_sales/trade-type-channels/{quotes,orders}`），因为分公司业务员通常没有 `sales.channels.view`；②通道缺失时**保存被拦截**并给出 `seed:defaults` 提示，列表退化为「不过滤 + 显示类型列」（未播种的组织仍可只读）；③回填 CLI 走官方实体 + 解密读取助手（`customer_snapshot` 是加密列），分类不做猜测，`--apply` 逐单幂等；④合同时的「从订单/报价单复制行」由 `ContractLineSourceDialog` 提供，来源按合同方向与对方侧过滤（无档案链接时两来源都列但每项带贸易类型标签）。 |
+| 2026-09-29 | **界面口径修订（owner 当日反馈：菜单名与列表显示都没跟上贸易类型）**：①菜单——`cross_border.nav.group.internal` → `cross_border.nav.group.sales`（「出口业务-内部销售」→「出口业务-销售」，因为该入口能建两种类型），对外入口从**没有字典键**的 `cross_border.nav.group` 收到 `cross_border.nav.group.externalSales`（「出口业务-对外销售」，并进 `nav.groupOrder`，此前它渲染英文裸串「Cross-Border」且掉在侧边栏末尾）；12 个 `page.meta.ts` 的标题/分组/面包屑与两份字典同步（销售入口：「销售报价单」/「销售订单（PO）」）。②列表——销售入口**不再按类型过滤**（对内 + 对外同表），对外入口固定传 `channelId=<EXTERNAL_SALES>`；「类型」列改为**常显**（`buildColumns` 去掉 `showTradeType`）；未标记历史单据在销售入口照常列出（类型列「—」+ 归类提示），在对外入口以计数提示说明未列出（`internal_sales.list.unmarkedHintFiltered`）。③表单——`salesEntryFromPathname` 取代 `tradeTypeFromPathname`；类型标签/帮助文案改「对内 / 对外」；报价选择器按表单类型过滤（`loadQuoteOptions(query, channelId)`）、载入继承报价类型（`applyQuoteDraftToForm` 的 `adoptQuoteType`，锁定入口传 `false`）；无类型参数的 `documentEditHref` 删除，入口化跳转统一走 `documentEditHrefForTradeType`。④其他页面文案：`cross_border` / `finance` / `trade_docs` 的「内部销售」→「对内销售」、合同行复用类型标签 →「对内 / 对外」。 |
