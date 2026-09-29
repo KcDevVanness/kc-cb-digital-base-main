@@ -57,7 +57,7 @@ type HeadReading = { option: ComboboxOption; number: string; counterparty: strin
  * Reads one list row as a picker option.
  *
  * For a sales source whose trade type could not be resolved from the counterparty, every option is
- * suffixed with its own type (`内部销售`/`对外销售`) — read off the document's `channelId` — so the
+ * suffixed with its own type (`对内`/`对外`) — read off the document's `channelId` — so the
  * operator cannot confuse the two families even though both are listed.
  */
 function readHead(

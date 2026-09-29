@@ -304,7 +304,7 @@
   "trade_docs.documents.direction.sales": "销售",
   "trade_docs.documents.direction.purchase": "采购",
   "trade_docs.documents.sourceKind.manual": "手工录入",
-  "trade_docs.documents.sourceKind.salesOrder": "内部销售订单",
+  "trade_docs.documents.sourceKind.salesOrder": "对内销售订单",
   "trade_docs.documents.sourceKind.purchaseOrder": "采购订单",
   "trade_docs.documents.sourceKind.shipment": "发运单",
   "trade_docs.documents.sourceKind.tradeDocument": "单据复制",
@@ -504,7 +504,7 @@
   "trade_docs.contracts.form.lines.copy.kind.purchase_order": "采购订单",
   "trade_docs.contracts.form.lines.copy.kind.sales_order": "销售订单",
   "trade_docs.contracts.form.lines.copy.kind.sales_quote": "销售报价单",
-  "trade_docs.contracts.form.lines.copy.tradeType.internal": "内部销售",
-  "trade_docs.contracts.form.lines.copy.tradeType.external": "对外销售",
+  "trade_docs.contracts.form.lines.copy.tradeType.internal": "对内",
+  "trade_docs.contracts.form.lines.copy.tradeType.external": "对外",
   "trade_docs.counterparty.picker.organizationRequired": "请先在顶栏选择组织，再选择对方。"
 }
