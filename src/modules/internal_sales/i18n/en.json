@@ -98,5 +98,6 @@
   "internal_sales.list.externalQuote.description": "Quotes a branch issues to local customers; the buyer is one of this organization's external customers.",
   "internal_sales.list.externalOrder.description": "Sales orders a branch issues to local customers; the buyer is one of this organization's external customers.",
   "internal_sales.list.externalQuote.empty": "No external sales quotes yet",
-  "internal_sales.list.externalOrder.empty": "No external sales orders yet"
+  "internal_sales.list.externalOrder.empty": "No external sales orders yet",
+  "internal_sales.list.unmarkedHint": "{{count}} document(s) here predate the trade-type marker, so this list is not filtered. Run: yarn mercato internal_sales backfill-trade-type --apply"
 }

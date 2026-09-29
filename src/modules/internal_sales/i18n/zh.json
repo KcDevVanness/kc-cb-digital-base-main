@@ -94,5 +94,6 @@
   "internal_sales.form.externalQuote.createTitle": "新建对外销售报价单",
   "internal_sales.form.externalQuote.editTitle": "编辑对外销售报价单",
   "internal_sales.form.externalOrder.createTitle": "新建对外销售订单",
-  "internal_sales.form.externalOrder.editTitle": "编辑对外销售订单"
+  "internal_sales.form.externalOrder.editTitle": "编辑对外销售订单",
+  "internal_sales.list.unmarkedHint": "这里有 {{count}} 张单据早于贸易类型标记，列表因此未按类型过滤。请运行：yarn mercato internal_sales backfill-trade-type --apply"
 }
