@@ -3,12 +3,11 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { z } from 'zod'
-import { Loader2, Plus, Upload } from 'lucide-react'
+import { Loader2, Plus } from 'lucide-react'
 import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
 import {
   CrudForm,
-  type CrudCustomFieldRenderProps,
   type CrudField,
   type CrudFormGroup,
 } from '@open-mercato/ui/backend/CrudForm'
@@ -20,7 +19,6 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuardedMutation'
-import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { createCrud, deleteCrud, fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { Button } from '@open-mercato/ui/primitives/button'
 import {
@@ -39,7 +37,6 @@ import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n
 import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import {
   SHIPMENT_ALLOCATIONS_API_PATH,
-  SHIPMENT_ATTACHMENT_ENTITY_ID,
   SHIPMENT_CANCEL_API_PATH,
   SHIPMENT_COMMERCIAL_INVOICE_HREF,
   SHIPMENT_DEPART_API_PATH,
@@ -70,6 +67,7 @@ import {
   type ShipmentRecord,
   type ShipmentStatus,
 } from './ShipmentForm'
+import { ShipmentDocumentAttachmentField } from './shipmentDocumentAttachmentField'
 
 const ALLOCATION_PAGE_SIZE = 200
 const MILESTONE_PAGE_SIZE = 100
@@ -201,7 +199,8 @@ function toShipmentMilestoneRecord(item: Record<string, unknown>): ShipmentMiles
   }
 }
 
-function toShipmentDocumentRecord(item: Record<string, unknown>): ShipmentDocumentRecord {
+/** Shared with the packing-list ledger, which lists the same projection across shipments. */
+export function toShipmentDocumentRecord(item: Record<string, unknown>): ShipmentDocumentRecord {
   const docType = item.docType ?? item.doc_type
   return {
     id: readRecordText(item, 'id'),
@@ -323,98 +322,6 @@ function buildSalesAllocationColumns(t: TranslateFn): ColumnDef<ShipmentSalesAll
       },
     },
   ]
-}
-
-/**
- * The upload control for a document's file. It talks to the shared attachments endpoint
- * (`POST /api/attachments`, multipart) exactly as the installed attachment surfaces do, and hands
- * the returned id back to the form — the document command stores that id, never a byte of file.
- */
-function ShipmentDocumentAttachmentField({
-  value,
-  setValue,
-  disabled,
-  shipmentId,
-}: CrudCustomFieldRenderProps & { shipmentId: string }) {
-  const t = useT()
-  const inputRef = React.useRef<HTMLInputElement | null>(null)
-  const [fileName, setFileName] = React.useState<string | null>(null)
-  const [isUploading, setIsUploading] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
-  const attachmentId = typeof value === 'string' ? value : ''
-
-  const acceptFile = React.useCallback(async (files: FileList | null) => {
-    const file = files?.[0]
-    if (!file) return
-    setError(null)
-    setIsUploading(true)
-    try {
-      const body = new FormData()
-      body.set('entityId', SHIPMENT_ATTACHMENT_ENTITY_ID)
-      body.set('recordId', shipmentId)
-      body.set('file', file)
-      const call = await apiCall<{ item?: { id?: string }; error?: string }>(
-        '/api/attachments',
-        { method: 'POST', body },
-        { fallback: null },
-      )
-      const uploadedId = call.ok && typeof call.result?.item?.id === 'string' ? call.result.item.id : ''
-      if (!uploadedId) {
-        throw new Error(call.result?.error || t('cross_border.shipments.documents.saveFailed'))
-      }
-      setValue(uploadedId)
-      setFileName(file.name)
-    } catch (cause) {
-      setError(shipmentErrorMessage(cause, t('cross_border.shipments.documents.saveFailed')))
-    } finally {
-      setIsUploading(false)
-      if (inputRef.current) inputRef.current.value = ''
-    }
-  }, [setValue, shipmentId, t])
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          disabled={disabled || isUploading}
-          onClick={() => inputRef.current?.click()}
-        >
-          {isUploading ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Upload className="size-4" aria-hidden="true" />}
-          {t('cross_border.shipments.documents.field.attachment')}
-        </Button>
-        {attachmentId ? (
-          <>
-            <AttachmentPreviewLink
-              attachmentId={attachmentId}
-              fileName={fileName}
-              label={t('cross_border.shipments.documents.preview')}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={disabled}
-              onClick={() => {
-                setValue('')
-                setFileName(null)
-              }}
-            >
-              {t('cross_border.shipments.documents.remove')}
-            </Button>
-          </>
-        ) : null}
-      </div>
-      {fileName ? <p className="text-xs text-muted-foreground">{fileName}</p> : null}
-      {error ? <p className="text-xs font-medium text-status-error-text" role="alert">{error}</p> : null}
-      <input
-        ref={inputRef}
-        type="file"
-        className="hidden"
-        onChange={(event) => { void acceptFile(event.target.files) }}
-      />
-    </div>
-  )
 }
 
 function ShipmentMilestonesSection({

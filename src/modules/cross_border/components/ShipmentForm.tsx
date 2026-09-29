@@ -154,6 +154,13 @@ export const SHIPMENT_SELECTABLE_DOCUMENT_TYPES = SHIPMENT_DOCUMENT_TYPES.filter
 export const SHIPMENT_COMMERCIAL_INVOICE_HREF = '/backend/trade-docs/commercial-invoices'
 
 /**
+ * The packing-list ledger (`/backend/packing-lists`) — the PL its own menu entry in the 出口业务
+ * group, next to the PI/CI pages. The rows are the shipment's `packing_list` documents; the write
+ * path stays the shipment document command, which is why the dialog picks a shipment first.
+ */
+export const PACKING_LISTS_LIST_HREF = '/backend/cross_border/packing-lists'
+
+/**
  * Attachments are uploaded before the document row exists (the row stores the returned id), so
  * the file is filed against the shipment it belongs to rather than against a missing document.
  */
@@ -215,6 +222,19 @@ export function trimShipmentQuantity(value: string): string {
 export function shipmentErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim().length) return error.message
   return fallback
+}
+
+/**
+ * How a shipment is named wherever another screen has to point at it: its business number once it
+ * has one, and otherwise the status plus whatever identifies the row meanwhile (a draft has no
+ * number until it departs) — container number, then carrier, then the id's first eight characters.
+ */
+export function shipmentDisplayLabel(t: TranslateFn, shipment: ShipmentRecord): string {
+  const parts = [shipment.number ?? shipmentStatusLabel(t, shipment.status)]
+  const secondary = shipment.containerNumber ?? shipment.carrierName
+  if (secondary) parts.push(secondary)
+  else if (!shipment.number) parts.push(shipment.id.slice(0, 8))
+  return parts.join(' · ')
 }
 
 export function toShipmentRecord(item: Record<string, unknown>): ShipmentRecord {
