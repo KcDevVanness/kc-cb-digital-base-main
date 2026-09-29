@@ -77,6 +77,6 @@ owner decision. This file is the requirement record; the tracker has no issues.
 
 ### Phase 2: evidence
 
-- [ ] 2.1 gate (`validation.commands`) on the merged tree
-- [ ] 2.2 push + draft PR against `production`, CI green, flip ready
-- [ ] 2.3 PR #21 state reported
+- [x] 2.1 gate (`validation.commands`) on the merged tree — `generate` ✓ (known OpenAPI bundle fallback, pre-existing) / `typecheck` 0 error / `lint` 0 error (8 pre-existing warnings) / `check-lessons` 「Lessons catalog is valid」 / `ds:check` 900 files / `test` 54 suites · 439 tests (same counts as #20) / `build` ✓ Compiled successfully; `git status --short` empty afterwards, so `generate` is idempotent on this tree — commit `fd24e4a`
+- [x] 2.2 push + draft PR against `production` (PR #22), CI `validate` run [36517824218](https://github.com/KcDevVanness/kc-cb-digital-base-main/actions/runs/36517824218) pass (5m45s) + `guard-tree` run [36517824236](https://github.com/KcDevVanness/kc-cb-digital-base-main/actions/runs/36517824236) pass, flipped ready
+- [x] 2.3 PR #21 state reported — `production` contains `main` (`git merge-base --is-ancestor` holds after this lands); PR #21 is conflict-free and its only content is this file
