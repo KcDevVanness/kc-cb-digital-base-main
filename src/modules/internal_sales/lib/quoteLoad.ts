@@ -60,6 +60,24 @@ export async function loadQuoteOptions(query?: string): Promise<ComboboxOption[]
 }
 
 /**
+ * The picker label for one quote, resolved by id — `QUOTE-… — 买方`.
+ *
+ * The panel's picker value is set programmatically (the loaded quote, or the `?fromQuote=` entry),
+ * and `ComboboxInput`'s own eager fallback only recovers a label while its mount is stable: under
+ * React StrictMode's double-invoked effects the fallback's fetch is cancelled, its ref guard blocks
+ * the retry, and the field renders the raw uuid instead. `resolveLabel` is the component's
+ * documented path for a pre-selected value, so the picker passes this.
+ */
+export async function resolveQuoteLabel(quoteId: string): Promise<string> {
+  const payload = await fetchCrudList<Record<string, unknown>>(QUOTES_API_PATH, {
+    id: quoteId,
+    pageSize: 1,
+  })
+  const item = payload.items?.[0]
+  return item ? quoteOptionFromRecord(item)?.label ?? '' : ''
+}
+
+/**
  * Re-keys loaded lines with local keys.
  *
  * The mapping keeps the source line's id as the key (that is what makes the edit form update rows
