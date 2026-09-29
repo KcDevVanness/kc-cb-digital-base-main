@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 48 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 49 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -76,3 +76,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [A combobox that re-fires onChange with the same value must not clear derived state first](lessons/combobox-same-value-refire-must-not-clear-derived-state.md) — area:backend-ui,module-data; module:internal_sales; topic:combobox-input,async-derivation,save-race,data-loss,sales-lines,variant-bridge
 - [A PR whose base is a feature branch runs no CI at all](lessons/gate-must-cover-every-pr-target.md) — area:spec-pr; module:platform; topic:ci,gate,branch-protection,pull-request,worktree,parallel-development
 - [An evidence branch is cut from its target branch and only adds files](lessons/evidence-branch-is-cut-from-its-target.md) — area:spec-pr; module:platform; topic:git,worktree,branch-hygiene,ci,repo-wipe,screenshots
+- [A branch that keeps taking PRs after its squash merge strands that work](lessons/squash-merged-base-strands-later-prs.md) — area:spec-pr; module:platform; topic:branch-hygiene,squash-merge,stacked-pull-requests,integration-branch,catch-up,worktree

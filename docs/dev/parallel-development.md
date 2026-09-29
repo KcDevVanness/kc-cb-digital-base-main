@@ -51,12 +51,43 @@ git worktree add ../kc-cb-digital-base-min-<slug> -b feat/<slug> origin/main
 cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 ```
 
-分支命名：新能力 `feat/<slug>`，修缺陷 `fix/<slug>`。**不要**在共享的 `main` 上直接提交。
+分支命名：新能力 `feat/<slug>`，修缺陷 `fix/<slug>`，纯流程/工具改动 `chore/<slug>`，纯文档 `docs/<slug>`。**不要**在共享的 `main` 上直接提交。
 
 **分支只做加法**：一次性装好本地钩子 `git config core.hooksPath .githooks`（仓库级配置，所有工作树共用），
 之后每次 push 都会用 `scripts/guards/guard-tree.mjs` 检查被推的那棵树——空工作树里 `git add -A` 的产物
-（整仓变成删除）会在离开本机前被挡住。分支一律从**目标分支**切（`origin/main` 或
-`origin/feat/cross-border-erp`），开 PR 前先看 `git diff --stat origin/<目标分支>`：只应列出你自己的新增。
+（整仓变成删除）会在离开本机前被挡住。
+
+## 分支生命周期与清理
+
+一条分支只在"内容还没进 `main`"的这段时间里是资产；内容一落地，它就只剩删除这一步。
+2026-09-29 审计时的 12 条本地分支里 11 条属于这种状态，而且集成分支还把 270 个文件留在了 `main` 之外
+（`.ai/lessons/squash-merged-base-branch-strands-later-prs.md`）。
+
+1. **一个工作单元一个分支，base 一律 `origin/main`。** 唯一例外是 PR body 的 `## Assumptions` 里写明
+   父子关系的堆叠：子 PR 的 base 是父分支，父 PR 一合并就 `gh pr edit <child> --base main` 并 rebase
+   （GitHub 在父分支被删除时也会自动改 base）。**永远不要**把已经合进 `main` 的分支当 base 继续收 PR：
+   那条分支之后收到的每个 commit 都不在 `main` 的历史里，`main` 也不会再自动拿到它们。
+2. **文档跟着功能走。** 实现单元的 `docs/**`、`.ai/specs/**`、模块 README 改动放进同一个分支与 PR，
+   不要为同一件事另开 `docs/*` 分支——`docs/erp-doc-catchup` 就是这样变成第二条分叉、PR #16 的内容
+   从此停在分支上（`main` 上完全没有）。只有确实没有功能归属的纯文档单元才单开 `docs/<slug>` 分支，
+   同样合并后立即删除。
+3. **合并即清理。** 远端分支由仓库设置 `delete_branch_on_merge=true` 自动删除；本地分叉与工作树用：
+
+   ```bash
+   yarn branches:cleanup                    # 只报告：每条分支的判定与理由
+   yarn branches:cleanup --apply            # 删可删的本地分支，并移除它们干净的工作树
+   yarn branches:cleanup --apply --remote   # 连远端残留一起删（默认不碰远端）
+   ```
+
+   判定标准是"内容已在 cover ref 里"：分支 tip 是 `origin/main` 的祖先，或它的 PR 已合并且相对
+   `origin/main` 没有独有文件；命中不了的一律列进报告、**绝不自动删**。`--deep` 连 cover ref 的历史
+   一起查（处理"文件后来被改名/重写"的旧版本），`--cover <ref>` 把某个长期集成分支也算作"内容已保住
+   的地方"，`--keep <name>` 保护正在开发的分支。**cover ref 自身永远不会被删**；被删掉的分支头仍可从
+   GitHub 的 pull ref 取回：`git fetch origin pull/<n>/head`。
+4. **集成分支只有一个出口。** 长期集成分支（曾经的 `feat/cross-border-erp`）要么在合并窗口内把内容
+   全部并回 `main` 后删除，要么就别把它当 trunk。收尾前先跑
+   `git diff --diff-filter=A --name-only origin/main <branch> | wc -l`，**必须为 0 才能删**；
+   不为 0 说明还有内容只在分支上，那是"并回 `main`"的工作，不是删除。
 
 ## 共享脊柱文件（冲突清单）
 
@@ -99,15 +130,17 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 
 ## PR 与合并
 
-1. 一个工作单元一个 PR，**先以 draft 打开**（第一次 push 就有 PR，进度可见），标题
-   `feat(<area>): …` / `fix(<area>): …`；门禁全绿且 Progress 全勾后 `gh pr ready` 转 ready。
+1. 一个工作单元一个 PR，**base 一律 `main`**（堆叠例外见"分支生命周期与清理"），**先以 draft 打开**
+   （第一次 push 就有 PR，进度可见），标题 `feat(<area>): …` / `fix(<area>): …`；门禁全绿且 Progress
+   全勾后 `gh pr ready` 转 ready。
 2. **PR body 必含**：`Tracking plan:` + `Source doc:`（本仓没有 issue 体系，spec / run 路径就是需求单；
    tracker 开了 issue 之后补 `Closes #N` / `Refs #N`）、`## Goal`（问题 + 根因）、`## What Changed`、
    `## Assumptions`、`## 🧪 Tests`（命令 + 结果计数）、`## 💥 Breaking Changes`、`## Rollback`
    （怎么撤回：迁移 / 开关 / revert，或 None）、`## 📋 Progress`。AI 参与生成的提交在 body 里带
    `[AI-Generated]` trailer（不要写进 subject）；流水线评论以 `🤖` 开头。
 3. 合并前：rebase 到最新 `main`，门禁全绿（`.ai/agentic.config.json` 的 `validation.commands`）。
-4. **squash 合并**，保持 `main` 线性；合并后删远端分支。
+4. **squash 合并**，保持 `main` 线性；合并后删除远端分支（仓库 `delete_branch_on_merge=true` 自动做），
+   本地分支与工作树紧接着 `yarn branches:cleanup --apply` 收尾。
 5. **CI**：`.github/workflows/validate.yml` 在**所有 PR**（不限目标分支）与 `main` 上按顺序跑同一组
    门禁命令（`generate` / `typecheck` / `lint` / `lessons` / `ds:check` / `test` / `build`），检查名
    **`validate`**；docs / 部署侧改动的 PR 由 job 内的 scope 步骤跳过重步骤，检查照常报告（required
@@ -153,4 +186,6 @@ node scripts/guards/guard-tree.mjs --base origin/main --head HEAD   # 同一判�
 gh pr list --state open            # 每个工作单元一个 PR
 gh pr checks <n>                   # validate / guard-tree 检查的门禁结论
 gh pr ready <n>                    # 门禁绿 + Progress 全勾后把 draft 转 ready
+yarn branches:cleanup              # 合并后：本地分叉该不该删，逐条给理由
+git diff --diff-filter=A --name-only origin/main origin/feat/<branch> | wc -l   # 集成分支收尾必须为 0
 ```
