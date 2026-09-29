@@ -306,3 +306,4 @@ Verdict: **Ready for implementation**。
 | Date | Change |
 |---|---|
 | 2026-09-29 | Initial draft（依据 owner 2026-09-29 决策：一个实现 + 两种贸易类型 + 菜单/分组分开；下游对齐与合同行复用一并纳入） |
+| 2026-09-29 | 实现期修订：①通道解析走模块自建只读路由（`GET /api/internal_sales/trade-type-channels/{quotes,orders}`），因为分公司业务员通常没有 `sales.channels.view`；②通道缺失时**保存被拦截**并给出 `seed:defaults` 提示，列表退化为「不过滤 + 显示类型列」（未播种的组织仍可只读）；③回填 CLI 走官方实体 + 解密读取助手（`customer_snapshot` 是加密列），分类不做猜测，`--apply` 逐单幂等；④合同时的「从订单/报价单复制行」由 `ContractLineSourceDialog` 提供，来源按合同方向与对方侧过滤（无档案链接时两来源都列但每项带贸易类型标签）。 |
