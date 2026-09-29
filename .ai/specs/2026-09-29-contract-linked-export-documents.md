@@ -64,7 +64,9 @@
   （列表 + 新建入口，新建带 `?contractId=` 预填），与现有税务发票区同构。
 - **REQ-008** — 订单档案的 KC 销售合同口径在合同改走订单关联表后**不回归**：只读投影同时认
   合同↔订单关联表与历史 `source_kind/source_id`。
-- **REQ-009** — 菜单与文档收口：「购销合同」排到出口业务组第一位（纯 `pageOrder`，不动组 key）；
+- **REQ-009** — 菜单与文档收口：「出口业务」组按**组名前缀**拆成四个组——
+  `出口业务-内部销售`（内部销售报价/订单）、`出口业务-购销合同`（购销合同）、`出口业务-发运`（发运单/装箱单）、
+  `出口业务-单证`（形式发票/商业发票）；组顺序在 `src/modules.ts` 的 `nav.groupOrder` 声明一次；
   `docs/dev/business-architecture.md`、两份模块 README 与计划进度表同步。
 
 ## Non-goals
@@ -74,7 +76,7 @@
 - 不给 PL/PI/CI/发运单新增权限位，不新增角色名判断。
 - 不迁移既有数据（新列/新表全部可空/新增；历史行语义不变）。
 - 不做菜单组层级（平台主侧边栏只有「组 → 条目 → 条目子项（一层，URL 前缀推导）」，组不能嵌套；
-  详见 Q-005 的结论），不做跨模块 URL 迁移。
+  详见 Q-005 的结论）——用**组名前缀拆组**代替；不做跨模块 URL 迁移。
 - 不实现「对外销售单据」本身（另一条需求；本规格只把订单关联的 `order_kind` 留出 `external_sales_order`）。
 
 ## Proposed Solution
@@ -96,7 +98,10 @@
    - 发运单分摊：列出合同行，按商品在**本次发运单已选订单行**里匹配，匹配到的可一键生成分摊行，
      匹配不到的给出提示（引导在下方按采购单/销售订单添加），全部仍可手工调整。
 6. **枢纽与导航**：合同详情加「关联单据」区块（发运单/PL/PI/CI 列表 + `?contractId=` 新建入口，
-   与现有税务发票区同构）；合同 → 订单用详情页的「订单关联」对话框管理；「购销合同」`pageOrder` 置顶。
+   与现有税务发票区同构）；合同 → 订单用详情页的「订单关联」对话框管理；
+   **菜单不做层级**（平台不支持组嵌套），改用**组名前缀划分**：把「出口业务」拆成
+   `出口业务-内部销售` / `出口业务-购销合同` / `出口业务-发运` / `出口业务-单证` 四个组（新 group key +
+   `nav.groupOrder` 一次声明），用组名读出一层"伪层级"。
 
 ### Design Decisions and Alternatives
 
@@ -111,7 +116,7 @@
 | 快速引用一律**一次性复制**、逐行记 `source_snapshot`，不做实时同步 | 与既有「从订单复制行」「CI 从发运单汇总」同口径；业务要「可编辑、留弹性」 | 触发式实时重算 | 会覆盖人工改动；跨单据事务与失败语义复杂 |
 | 发运单快速引用按**本次发运单已选订单行**匹配商品 | 业务选定（Q-002）；不依赖合同↔订单关联的完整性，先可用 | 从合同关联订单行匹配 | 需要合同 ↔ 订单关联覆盖齐全，且仍可能一商品多行 |
 | 合同详情的订单关联**只在详情页对话框**管理 | 合同表单已很长；详情页创建后即到，一次点击即挂 | 合同 create 表单内置订单编辑器 | 表单复杂度与校验面翻倍，收益只是少一次点击 |
-| 菜单：**不新增层级**，只把「购销合同」置顶 | 平台主侧边栏只有「组 → 条目 → 条目子项」一层；子项由 URL 前缀推导、只在进入该条目时显示；组不可嵌套（Q-005） | 新建一个「合同」菜单组或迁 URL | 拆组破坏「一组 = 一个角色」与用户侧边栏偏好；跨模块搬 URL 会断已存链接 |
+| 菜单：**不新增层级**，改用**组名前缀**拆组 | 平台主侧边栏只有「组 → 条目 → 条目子项」一层，组不可嵌套（Q-005）；业务 2026-09-29 拍板以组名前缀划分 | 新建一个「合同」子组；把子单据收进合同页 | 子组仍是独立组、无父子语义（与拆组同效但命名不清）；收进详情页会让跨合同的列表/筛选无入口 |
 | 装箱单关联合同**经发运单推导**，不新增列 | 单一真相源：PL 属于发运单，发运单属于合同；避免第二份关联 | PL 自己存 `contract_id` | 双份关联会漂移 |
 
 ## Domain Vocabulary and Business Rules
@@ -245,7 +250,7 @@ PI/CI 表单 → trade_docs.documents.create/update（contract_id + 快照）
 
 | Role | Navigation groups in order | Dashboard / injected widgets | Login-to-primary-task flow |
 |---|---|---|---|
-| 出口单证/业务 | 出口业务：**购销合同(290)** → 内部销售报价(300) → 内部销售订单(310) → 发运单(340) → 装箱单(345) → 形式发票(350) → 商业发票(360) | 无新增 | 合同列表 → 详情 → 新建子单据（≤3 次点击） |
+| 出口单证/业务 | 出口业务-内部销售：内部销售报价(300) → 内部销售订单(310) ｜ 出口业务-购销合同：购销合同(320) ｜ 出口业务-发运：发运单(340) → 装箱单(345) ｜ 出口业务-单证：形式发票(350) → 商业发票(360) | 无新增 | 合同列表 → 详情 → 新建子单据（≤3 次点击） |
 
 | Surface / widget | Empty state guidance and action | Responsive behavior | Keyboard / focus behavior |
 |---|---|---|---|
@@ -411,9 +416,10 @@ PI/CI 表单 → trade_docs.documents.create/update（contract_id + 快照）
   `data/validators.ts`、`commands/documents.ts`、新 `commands/contractOrders.ts`、`api/documents/**`（筛选）、
   新 `api/contracts/orders/route.ts`、`events.ts`、`lib/cacheInvalidation.ts`、`components/DocumentsForm.tsx`（合同选择器 +
   从合同引用行）、`ContractDetail.tsx`（四区块 + 订单对话框）、`export_finance/lib/fileRules.ts`（兼容读）、
-  菜单 `pageOrder`、i18n zh/en、迁移、两份 README、`docs/dev/business-architecture.md`、计划进度表、集成测试。
+  菜单四组拆分（page.meta group key + `src/modules.ts` 的 `nav.groupOrder` + i18n）、迁移、两份 README、
+  `docs/dev/business-architecture.md`、计划进度表、集成测试。
 - **Independent slices / estimated commits:** ①实体/迁移/命令/路由（1 commit）；②PI/CI 表单与行引用（1 commit）；
-  ③合同枢纽 + 订单对话框 + 菜单 + 文档（1 commit）；④export_finance 兼容读 + 集成测试（1 commit）。
+  ③合同枢纽 + 订单对话框 + 菜单四组拆分 + 文档（1 commit）；④export_finance 兼容读 + 集成测试（1 commit）。
 - **Requirements closed:** REQ-004（PI/CI 部分）、REQ-005、REQ-006、REQ-007、REQ-008、REQ-009
 - **Tests:** TEST-201、TEST-202、TEST-203、TEST-401（trade_docs 部分）、TEST-901
 - **Validation:** 同 Phase 1 + `yarn mercato test:integration trade-docs` / `export-finance`
@@ -432,7 +438,7 @@ PI/CI 表单 → trade_docs.documents.create/update（contract_id + 快照）
 | REQ-006 | J-003、合同详情 | `trade_docs_contract_orders`、`contracts.orders.replace`、`trade_docs.contract.orders.updated` | 2 | TEST-201 | AC-006 |
 | REQ-007 | J-001…003、合同详情 | 四个跨模块只读列表 + `?contractId=` 预填 | 2 | TEST-202、TEST-401 | AC-007 |
 | REQ-008 | 订单档案 | `export_finance/lib/fileRules.ts` 兼容读 | 2 | TEST-203 | AC-008 |
-| REQ-009 | 菜单/文档 | `pageOrder` 290（合同）、README/业务架构/计划表 | 2 | TEST-401 | AC-009 |
+| REQ-009 | 菜单/文档 | 四个组 key + `nav.groupOrder`（一次声明）+ README/业务架构/计划表 | 1（发运/内部销售页）+ 2（合同/单证页） | TEST-401 | AC-009 |
 
 ## Rollout, Migration, and Rollback
 
@@ -464,7 +470,7 @@ PI/CI 表单 → trade_docs.documents.create/update（contract_id + 快照）
 - [ ] **AC-006** — 合同可挂采购单/内部销售订单（成套替换），已签发合同可维护，作废合同被拒。
 - [ ] **AC-007** — 合同详情四区块可见、可跳、可带 `?contractId=` 新建。
 - [ ] **AC-008** — 订单档案 KC 口径在关联表命中 / legacy 命中 / 都无三种情况下都有测试断言。
-- [ ] **AC-009** — 「购销合同」在出口业务组第一位；README/业务架构/计划表同步。
+- [ ] **AC-009** — 出口业务拆成四个带前缀的组（内部销售/购销合同/发运/单证），组内条目与顺序符合 REQ-009；README/业务架构/计划表同步。
 - [ ] Every listed backend surface matches its recorded reference and uses canonical shell/components, shared
       API helpers, semantic tokens, and complete loading/empty/error/conflict/keyboard/a11y/responsive/light/dark states.
 - [ ] Every affected API and UI path has self-contained integration coverage and the configured validation gate passes.
@@ -490,7 +496,7 @@ Verdict: **Blocked — pending owner approval of implementation and merge of `fe
 | Q-002 | 发运单「引用合同商品」如何落分摊 | 业务 | yes | **已决 2026-09-29**：从本次发运单已选订单行按商品匹配，匹配不到给提示 + 手工挑选 |
 | Q-003 | 合同 ↔ 订单关联是否一并补 | 业务+技术 | yes | **已决 2026-09-29**：要做——关联采购单与销售单（对内 / 对外销售单据都要挂；见 Q-004） |
 | Q-004 | 「对外销售单据」的另一条需求细节（本仓暂无 spec/实现） | 业务 | no | 待其落地后把 `order_kind='external_sales_order'` 接上选择器；本规格已预留该值，不需要再加表 |
-| Q-005 | 菜单能否加一个层级 | 业务 | no | **已决 2026-09-29**：主侧边栏只有「组 → 条目 → 条目子项（一层，URL 前缀推导）」，组不可嵌套；本规格改为「合同置顶 + 合同详情枢纽」 |
+| Q-005 | 菜单能否加一个层级 | 业务 | no | **已决 2026-09-29**：主侧边栏只有「组 → 条目 → 条目子项（一层，URL 前缀推导）」，组不可嵌套；改为**组名前缀拆组**（出口业务-内部销售/购销合同/发运/单证，REQ-009） |
 | Q-006 | 单据上的合同关联是否必填 | 业务 | no | 先可空（不强制）；稳定后可另立收紧决定 |
 
 ## Changelog
@@ -498,4 +504,5 @@ Verdict: **Blocked — pending owner approval of implementation and merge of `fe
 | Date | Change |
 |---|---|
 | 2026-09-29 | 骨架：问题陈述 + 方案轮廓 + 3 个阻塞 Open Questions。 |
+| 2026-09-29 | 菜单口径按业主指示改为**组名前缀拆组**（出口业务-内部销售/购销合同/发运/单证），替代原「合同置顶」；REQ-009/AC-009/导航契约同步。 |
 | 2026-09-29 | Open Questions 全部关闭（Q-001 完整 PL 口径；Q-002 按已选订单行匹配；Q-003 合同↔订单关联要做）→ 填全 spec：数据模型（2+2 张表、2 列）、API/命令、UI 契约、阶段 1/2（Phase 2 等 `feat/counterparty-linkage` 合并）、测试与验收。 |
