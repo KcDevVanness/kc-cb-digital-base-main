@@ -10,7 +10,7 @@ import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 
 /**
- * 应收台账 — the three sources (出口收汇 / 平台结算 / 内部销售) in one row shape. Receipt is judged
+ * 应收台账 — the three sources (出口收汇 / 平台结算 / 对内销售) in one row shape. Receipt is judged
  * by the receipt date, and the totals stay per currency: three currencies are not one number.
  */
 

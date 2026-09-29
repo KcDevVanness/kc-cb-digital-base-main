@@ -160,7 +160,7 @@ export class CrossBorderShipmentAllocation {
  * One **internal sales-order line** travelling in one shipment.
  *
  * The mirror image of `CrossBorderShipmentAllocation`, on the sales side of the chain
- * (内部销售订单 → 拣货装箱 → 报关 → 发运): a container may carry goods ordered on several sales
+ * (对内销售订单 → 拣货装箱 → 报关 → 发运): a container may carry goods ordered on several sales
  * orders, and one order may be split across shipments. The sales side is referenced by scalar
  * ids plus frozen display/price snapshots — no cross-module ORM relation, and no cross-module
  * write from here. Rows are replaced wholesale with the shipment they belong to, exactly like

@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import type { SortingState } from '@tanstack/react-table'
@@ -24,6 +24,7 @@ import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 
 const DOCUMENTS_API_PATH = 'trade_docs/documents'
+const CONTRACTS_API_PATH = 'trade_docs/contracts'
 const PAGE_SIZE = 50
 const QUERY_KEY_ROOT = 'trade-docs-documents'
 const ALL = 'all'
@@ -77,7 +78,7 @@ export function documentDirectionLabel(t: TranslateFn, direction: string): strin
 export function documentSourceKindLabel(t: TranslateFn, kind: string | null | undefined): string {
   switch (kind) {
     case 'sales_order':
-      return t('trade_docs.documents.sourceKind.salesOrder', '内部销售订单')
+      return t('trade_docs.documents.sourceKind.salesOrder', '对内销售订单')
     case 'purchase_order':
       return t('trade_docs.documents.sourceKind.purchaseOrder', '采购订单')
     case 'shipment':
@@ -219,6 +220,9 @@ export default function DocumentsTable({ kind }: { kind: DocumentKind }) {
   const [direction, setDirection] = React.useState<string>(ALL)
   const [sorting, setSorting] = React.useState<SortingState>([{ id: 'issued_at', desc: true }])
   const [page, setPage] = React.useState(1)
+  const searchParams = useSearchParams()
+  // Arriving from a contract's hub (`?contractId=`) narrows the ledger to that contract.
+  const contractId = searchParams.get('contractId')?.trim() ?? ''
 
   const queryParams = React.useMemo(() => {
     const params = new URLSearchParams({
@@ -232,14 +236,30 @@ export default function DocumentsTable({ kind }: { kind: DocumentKind }) {
     if (trimmed) params.set('search', trimmed)
     if (status !== ALL) params.set('status', status)
     if (direction !== ALL) params.set('direction', direction)
+    if (contractId) params.set('contractId', contractId)
     return params
-  }, [direction, kind, page, search, sorting, status])
+  }, [contractId, direction, kind, page, search, sorting, status])
 
   const queryKey = React.useMemo(
     () => [QUERY_KEY_ROOT, kind, queryParams.toString(), scopeVersion],
     [kind, queryParams, scopeVersion],
   )
   const columns = React.useMemo(() => buildColumns(t, locale), [locale, t])
+
+  // Names the contract the banner pins, so the operator sees which one the list is filtered by.
+  const contractLabel = useQuery({
+    queryKey: ['trade-docs-contract-label', contractId],
+    enabled: contractId.length > 0,
+    queryFn: async () => {
+      const payload = await fetchCrudList<Record<string, unknown>>(CONTRACTS_API_PATH, {
+        ids: contractId,
+        pageSize: 1,
+      })
+      const item = payload.items?.[0]
+      const number = item ? String(item.number ?? '').trim() : ''
+      return number || contractId.slice(0, 8)
+    },
+  })
 
   const { data, isLoading, error } = useQuery({
     queryKey,
@@ -295,6 +315,17 @@ export default function DocumentsTable({ kind }: { kind: DocumentKind }) {
 
   return (
     <>
+      {contractId ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">
+            {t('trade_docs.documents.list.contractFilter', '按合同筛选')}
+          </span>
+          <span className="font-medium">{contractLabel.data ?? contractId.slice(0, 8)}</span>
+          <Button type="button" variant="ghost" size="sm" onClick={() => router.replace(listHref)}>
+            {t('trade_docs.documents.list.contractFilterClear', '清除合同筛选')}
+          </Button>
+        </div>
+      ) : null}
       <DataTable<DocumentRecord>
         entityId="trade_docs:trade_docs_documents"
         extensionTableId="trade-docs.documents"

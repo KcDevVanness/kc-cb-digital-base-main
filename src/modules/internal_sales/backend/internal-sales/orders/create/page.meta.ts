@@ -4,14 +4,14 @@ export const metadata = {
   // `/api/sales/{quotes,orders}`, which checks the same id, so declaring a second one here
   // would only create a permission that does not actually gate anything.
   requireFeatures: ['sales.orders.manage'],
-  pageTitle: 'New Internal Sales Order (PO)',
+  pageTitle: 'New sales order (PO)',
   pageTitleKey: 'internal_sales.form.order.createTitle',
-  pageGroup: 'Export operations — Internal sales',
-  pageGroupKey: 'cross_border.nav.group.internal',
+  pageGroup: 'Export operations — Sales',
+  pageGroupKey: 'cross_border.nav.group.sales',
   pageOrder: 311,
   icon: 'shopping-cart',
   breadcrumb: [
-    { label: 'Internal sales orders (PO)', labelKey: 'internal_sales.list.order.title', href: '/backend/internal-sales/orders' },
+    { label: 'Sales orders (PO)', labelKey: 'internal_sales.list.order.title', href: '/backend/internal-sales/orders' },
     { label: 'Create', labelKey: 'internal_sales.form.order.createTitle' },
   ],
 }

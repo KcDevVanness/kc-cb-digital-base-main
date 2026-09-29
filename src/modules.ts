@@ -245,7 +245,7 @@ enabledModules.push({
   // 数据同步 (the RU pipeline's maintenance pages) / 商品主数据 / 交易对手 / 平台运营 — then the
   // 基础数据 vocabulary group (the dictionary library's main-menu entry), and every installed
   // group keeps its existing position after them.
-  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group.internal', 'cross_border.nav.group.contracts', 'cross_border.nav.group.shipping', 'cross_border.nav.group.documents', 'executive_overview.nav.group', 'export_finance.nav.group', 'ru_sync.nav.group', 'products.nav.group', 'parties.nav.group', 'platform_ops.nav.group', 'master_data.nav.group'] } },
+  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group.sales', 'cross_border.nav.group.externalSales', 'cross_border.nav.group.contracts', 'cross_border.nav.group.shipping', 'cross_border.nav.group.documents', 'executive_overview.nav.group', 'export_finance.nav.group', 'ru_sync.nav.group', 'products.nav.group', 'parties.nav.group', 'platform_ops.nav.group', 'master_data.nav.group'] } },
 })
 
 // App-owned cross-border module — consignments (shipments) that combine purchase orders, their

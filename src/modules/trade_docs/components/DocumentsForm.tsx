@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Trash2 } from 'lucide-react'
 import {
   CrudForm,
@@ -48,6 +48,7 @@ import {
   type DocumentKind,
 } from './DocumentsTable'
 import {
+  loadContractOptions,
   loadCurrencyOptions,
   loadIncotermOptions,
   loadPaymentTermOptions,
@@ -62,11 +63,14 @@ import {
   withCurrentUnit,
   type ProductOption,
 } from './formOptions'
+import { directionLabel } from './contractLabels'
 import { CounterpartyPicker } from './CounterpartyPicker'
 import { COUNTERPARTY_KIND_BY_DIRECTION } from '../data/validators'
 
 const DOCUMENTS_API_PATH = 'trade_docs/documents'
 const DOCUMENT_LINES_API_PATH = 'trade_docs/documents/lines'
+const CONTRACTS_API_PATH = 'trade_docs/contracts'
+const CONTRACT_LINES_API_PATH = 'trade_docs/contracts/lines'
 const SALES_ORDER_LINES_API_PATH = 'sales/order-lines'
 const PURCHASE_ORDER_LINES_API_PATH = 'purchasing/purchase-orders/lines'
 
@@ -118,6 +122,8 @@ export type DocumentFormValues = {
   /** Display fields of the picked anchor record; they become `sourceSnapshot`. */
   sourceNumber: string
   sourceCounterparty: string
+  /** The contract this document belongs to (0..1); only the id travels, the server resolves the snapshot. */
+  contractId: string
   /** CI-only head: consignee and notify party are frozen snapshots, not master-data references. */
   consigneeName: string
   consigneeAddress: string
@@ -172,6 +178,7 @@ function emptyDocumentValues(): DocumentFormValues {
     sourceId: '',
     sourceNumber: '',
     sourceCounterparty: '',
+    contractId: '',
     consigneeName: '',
     consigneeAddress: '',
     notifyPartyName: '',
@@ -246,6 +253,7 @@ export function toDocumentFormValues(
     sourceId: readText(item, 'sourceId', 'source_id'),
     sourceNumber: snapshotText(sourceSnapshot, 'number'),
     sourceCounterparty: snapshotText(sourceSnapshot, 'counterparty'),
+    contractId: readText(item, 'contractId', 'contract_id'),
     consigneeName: snapshotText(consigneeSnapshot, 'name'),
     consigneeAddress: snapshotText(consigneeSnapshot, 'address'),
     notifyPartyName: snapshotText(notifyPartySnapshot, 'name'),
@@ -328,6 +336,8 @@ export function buildDocumentPayload(values: DocumentFormValues): Record<string,
     sourceKind: hasAnchor ? values.sourceKind : 'manual',
     sourceId: hasAnchor ? values.sourceId.trim() : null,
     sourceSnapshot: hasAnchor && Object.keys(sourceSnapshot).length > 0 ? sourceSnapshot : null,
+    // `null` unbinds the document; the server resolves the number/direction snapshot from the id.
+    contractId: values.contractId.trim() ? values.contractId.trim() : null,
   }
 }
 
@@ -498,6 +508,10 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
   const [copyOrderId, setCopyOrderId] = React.useState('')
   const [copyOrderLabel, setCopyOrderLabel] = React.useState('')
   const [isCopying, setIsCopying] = React.useState(false)
+  const [refOpen, setRefOpen] = React.useState(false)
+  const [refContractId, setRefContractId] = React.useState('')
+  const [isReferencing, setIsReferencing] = React.useState(false)
+  const formContractId = typeof values.contractId === 'string' ? values.contractId.trim() : ''
 
   const cacheProducts = React.useCallback((options: ProductOption[]) => {
     for (const option of options) productCache.current.set(option.value, option)
@@ -638,6 +652,90 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
       setIsCopying(false)
     }
   }, [copyKind, copyOrderId, setValue, t])
+
+  /**
+   * 「从合同引用商品行」: one-shot copy of a contract's lines into editable document lines. Re-running
+   * replaces the previously contract-copied batch (identified by `sourceSnapshot.kind === 'contract_line'`)
+   * instead of appending duplicates, and never touches hand-typed or order-copied rows.
+   */
+  const copyContractLines = React.useCallback(
+    async (targetContractId: string) => {
+      const scopedContractId = targetContractId.trim()
+      if (!scopedContractId) {
+        flash(t('trade_docs.documents.form.lines.contractRefRequired', '请先选择一张合同'), 'error')
+        return
+      }
+      setIsReferencing(true)
+      try {
+        const [linePayload, contractPayload] = await Promise.all([
+          fetchCrudList<Record<string, unknown>>(CONTRACT_LINES_API_PATH, {
+            contractId: scopedContractId,
+            pageSize: 500,
+          }),
+          fetchCrudList<Record<string, unknown>>(CONTRACTS_API_PATH, { ids: scopedContractId, pageSize: 1 }),
+        ])
+        const contractNumber = readText(contractPayload.items?.[0] ?? {}, 'number')
+        const copiedAt = new Date().toISOString()
+        const copied: DocumentLineValues[] = (linePayload.items ?? []).map((item) => {
+          const quantity = readText(item, 'quantity') || '0'
+          const unitPrice = readText(item, 'unitPrice', 'unit_price') || '0'
+          return {
+            productId: readText(item, 'productId', 'product_id'),
+            name: readText(item, 'name'),
+            sku: readText(item, 'sku'),
+            model: readText(item, 'model'),
+            spec: readText(item, 'spec'),
+            unit: readText(item, 'unit') || 'PCS',
+            quantity,
+            unitPrice,
+            amount: defaultLineAmount(quantity, unitPrice),
+            note: '',
+            amountTouched: false,
+            // Freeze the contract-line origin per row, like the order copy does.
+            sourceSnapshot: {
+              kind: 'contract_line',
+              contractId: scopedContractId,
+              lineId: readText(item, 'id'),
+              number: contractNumber,
+              copiedAt,
+            },
+          }
+        })
+        if (copied.length === 0) {
+          flash(t('trade_docs.documents.form.lines.contractRefEmpty', '该合同没有可引用的商品行'), 'error')
+          return
+        }
+        const kept = linesRef.current.filter(
+          (line) =>
+            (line.productId.trim() || line.name.trim()) &&
+            (line.sourceSnapshot?.kind ?? '') !== 'contract_line',
+        )
+        setValue('lines', kept.length > 0 ? [...kept, ...copied] : copied)
+        flash(t('trade_docs.documents.form.lines.contractRefCopied', '已从合同引用商品行'), 'success')
+        setRefOpen(false)
+      } catch (error) {
+        flash(
+          error instanceof Error && error.message
+            ? error.message
+            : t('trade_docs.documents.form.lines.contractRefFailed', '引用商品行失败'),
+          'error',
+        )
+      } finally {
+        setIsReferencing(false)
+      }
+    },
+    [setValue, t],
+  )
+
+  // With a contract already on the form, copy straight from it; otherwise ask which contract first.
+  const openContractReference = React.useCallback(() => {
+    if (formContractId) {
+      void copyContractLines(formContractId)
+      return
+    }
+    setRefContractId('')
+    setRefOpen(true)
+  }, [copyContractLines, formContractId])
 
   return (
     <div className="space-y-4">
@@ -797,6 +895,9 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
         <Button type="button" variant="outline" onClick={openCopyDialog}>
           {t('trade_docs.documents.form.lines.copyFromOrder', '从订单复制行')}
         </Button>
+        <Button type="button" variant="outline" onClick={openContractReference} disabled={isReferencing}>
+          {t('trade_docs.documents.form.lines.copyFromContract', '从合同引用商品行')}
+        </Button>
       </div>
 
       <Dialog open={copyOpen} onOpenChange={setCopyOpen}>
@@ -868,11 +969,60 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={refOpen} onOpenChange={setRefOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('trade_docs.documents.form.lines.contractRefTitle', '从合同引用商品行')}</DialogTitle>
+            <DialogDescription>
+              {t(
+                'trade_docs.documents.form.lines.contractRefBody',
+                '选择一张合同，把它现有的商品行复制成可编辑明细；再次执行会替换上一次复制的行，手工与订单行不受影响。',
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <FieldLabel htmlFor="document-contract-reference">
+              {t('trade_docs.documents.form.field.contractId', '所属合同')}
+            </FieldLabel>
+            <ComboboxInput
+              value={refContractId}
+              onChange={setRefContractId}
+              placeholder={t('trade_docs.documents.form.field.contractIdPlaceholder', '搜索并选择合同')}
+              loadSuggestions={async (query) => {
+                const options = await loadContractOptions(
+                  t('trade_docs.documents.form.contractLoadFailed', '合同列表加载失败'),
+                  organizationId,
+                )
+                const term = (query ?? '').trim().toLowerCase()
+                return options
+                  .filter((option) => (term ? option.label.toLowerCase().includes(term) : true))
+                  .map<ComboboxOption>((option) => ({ value: option.value, label: option.label }))
+              }}
+              allowCustomValues={false}
+              clearable
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setRefOpen(false)} disabled={isReferencing}>
+              {t('ui.actions.cancel')}
+            </Button>
+            <Button
+              type="button"
+              disabled={isReferencing || refContractId.trim().length === 0}
+              onClick={() => void copyContractLines(refContractId)}
+            >
+              {t('trade_docs.documents.form.lines.contractRefConfirm', '引用商品行')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
 function useDocumentFields(t: TranslateFn, kind: DocumentKind): CrudField[] {
+  const { organizationId } = useOrganizationScopeDetail()
   return React.useMemo<CrudField[]>(() => {
     const directionOptions = (kind === 'commercial' ? ['sales'] : DOCUMENT_DIRECTIONS).map((value) => ({
       value,
@@ -886,6 +1036,28 @@ function useDocumentFields(t: TranslateFn, kind: DocumentKind): CrudField[] {
         required: true,
         options: directionOptions,
         layout: 'half',
+      },
+      {
+        id: 'contractId',
+        label: t('trade_docs.documents.form.field.contractId', '所属合同'),
+        type: 'combobox',
+        layout: 'half',
+        placeholder: t('trade_docs.documents.form.field.contractIdPlaceholder', '搜索并选择合同'),
+        description: t('trade_docs.documents.form.field.contractIdHelp', '该单据属于哪张购销合同；留空表示不关联。'),
+        allowCustomValues: false,
+        loadOptions: () =>
+          loadContractOptions(t('trade_docs.documents.form.contractLoadFailed', '合同列表加载失败'), organizationId),
+        // A contract outside the loaded page (an older one) still renders its number/direction via
+        // the contract's list route, exactly like the option label `loadContractOptions` builds.
+        resolveLabel: async (value) => {
+          const payload = await fetchCrudList<Record<string, unknown>>(CONTRACTS_API_PATH, { ids: value, pageSize: 1 })
+          const item = payload.items?.[0]
+          if (!item) return value
+          const number = readText(item, 'number') || value.slice(0, 8)
+          const counterparty = readText(item, 'counterpartyName')
+          const label = [number, counterparty].filter((part) => part.length > 0).join(' · ')
+          return readText(item, 'direction') === 'sales' ? `${label} (${directionLabel(t, 'sales')})` : label
+        },
       },
       {
         id: 'currencyCode',
@@ -1016,7 +1188,7 @@ function useDocumentFields(t: TranslateFn, kind: DocumentKind): CrudField[] {
           ] as CrudField[])
         : []),
     ]
-  }, [kind, t])
+  }, [kind, organizationId, t])
 }
 
 export default function DocumentsForm({
@@ -1049,6 +1221,11 @@ export default function DocumentsForm({
         column: 1,
         bare: true,
         component: (context) => <CounterpartyPicker {...context} t={t} directionKind="trade" idPrefix="document" />,
+      },
+      {
+        id: 'contract',
+        column: 1,
+        fields: ['contractId'],
       },
       {
         id: 'terms',
@@ -1111,6 +1288,14 @@ type FormWiring = { kind: DocumentKind; listHref: string; fields: CrudField[]; g
 function DocumentCreateForm({ kind, listHref, fields, groups }: FormWiring) {
   const t = useT()
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Arriving from a contract's hub (`?contractId=`) starts the document bound to that contract;
+  // the picker still lets the operator change or clear it.
+  const initialValues = React.useMemo<DocumentFormValues>(
+    () => ({ ...emptyDocumentValues(), contractId: searchParams.get('contractId')?.trim() ?? '' }),
+    [searchParams],
+  )
 
   const handleSubmit = React.useCallback(
     async (values: DocumentFormValues) => {
@@ -1142,7 +1327,7 @@ function DocumentCreateForm({ kind, listHref, fields, groups }: FormWiring) {
       backHref={listHref}
       fields={fields}
       groups={groups}
-      initialValues={emptyDocumentValues()}
+      initialValues={initialValues}
       submitLabel={t('trade_docs.documents.form.save', '保存')}
       cancelHref={listHref}
       injectionSpotId="crud-form:trade_docs.documents"
