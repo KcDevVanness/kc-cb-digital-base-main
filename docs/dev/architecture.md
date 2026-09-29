@@ -21,12 +21,13 @@
 | `node_modules/**` | 框架包 | ❌ 只读 |
 
 `.mercato/` 不进 git（被忽略），`yarn generate` 可以重建；`src/official-modules.generated.ts`
-是刻意的例外——它是**版本化**生成物（随仓库提交），来源是 `official-modules.json`
-（+ `official-modules.local.json` 覆盖），不要手工编辑，也不要当成可丢弃的生成物删掉。
+是刻意的例外——它是**版本化**生成物（随仓库提交），但本仓当前没有 `official-modules.json`
+（也没有 `official-modules.local.json`）可作来源，文件是一份**空清单桩**（`officialModuleEntries` 为空数组）；
+启用清单的唯一权威仍是 `src/modules.ts`。不要手工编辑它，也不要当成可丢弃的生成物删掉。
 
 ## 启用中的模块
 
-`src/modules.ts` 当前启用 32 个 = 官方 21 + app 自有 11：
+`src/modules.ts` 当前启用 39 个 = 官方 23 + app 自有 16：
 
 - **平台基础（12，官方）**：`auth`、`directory`、`configs`、`entities`、`query_index`、
   `api_docs`、`audit_logs`、`notifications`、`dashboards`、`attachments`（`@open-mercato/core`）、
@@ -34,16 +35,19 @@
 - **ERP 业务（7，官方 `@open-mercato/core`）**：`catalog`、`customers`、`sales`、`wms`、
   `currencies`、`dictionaries`、`feature_toggles`——见
   [`.ai/specs/2026-09-21-erp-core-module-activation.md`](../../.ai/specs/2026-09-21-erp-core-module-activation.md)
-- **集成底座（2，官方 `@open-mercato/core`）**：`integrations`（外部 id 映射与 provider 注册）、
-  `data_sync`（流式导入导出运行、游标、进度）——Phase 4 传输层的接入点
-- **app 自有（11，`from: '@app'`）**：`products`（产品主数据：类型/类目/商品/三档价）、
+- **集成底座（3，官方 `@open-mercato/core`）**：`integrations`（外部 id 映射与 provider 注册）、
+  `data_sync`（流式导入导出运行、游标、进度）、`progress`（`data_sync` 起 run 时解析 `progressService` 的服务）——Phase 4 传输层的接入点
+- **可选存储（1，官方包）**：`storage_s3`（`@open-mercato/storage-s3`，仅 `OM_ENABLE_STORAGE_S3=true` 时启用）
+- **app 自有（16，`from: '@app'`）**：`products`（产品主数据：类型/类目/商品/三档价）、
   `purchasing`（供应商/采购单/阶段付款）、`sourcing`（供应商报价与导入映射）、
   `trade_docs`（采购销售合同、进出口发票）、`cross_border`（发运/在途/出口单证）、
   `export_finance`（收汇按订单 / 出口退税按柜 + 订单档案与柜档案只读投影）、
   `internal_sales`（对分公司内部销售的自建界面，引擎仍是官方 `sales`）、
   `parties`（交易对手方主数据：买方/分公司/服务方 + 银行信息）、
-  `platform_ops`（平台渠道/订单镜像/结算/对账）、`currency_policy`（汇率主数据与币种字典对账，
-  无页面）、`scope_guards`（auth 管理命令越权写入拦截，无页面）——见
+  `platform_ops`（平台渠道/订单镜像/结算/对账）、`product_codes`（商品编码规则与发号台账）、
+  `finance`（柜费用/到岸成本/期间费用 + 应付/应收只读台账）、`ru_sync`（俄方 PETKIT 供应链数据同步）、
+  `boss_cockpit`（老板驾驶舱只读聚合）、`storage_ops`（附件存储运维 CLI：audit/migrate/verify/rollback/prune-local）、
+  `currency_policy`（汇率主数据与币种字典对账，无页面）、`scope_guards`（auth 管理命令越权写入拦截，无页面）——见
   [`business-architecture.md`](./business-architecture.md)；每个模块的实现契约、验证命令与回滚方式
   写在 `src/modules/<id>/README.md`
 
