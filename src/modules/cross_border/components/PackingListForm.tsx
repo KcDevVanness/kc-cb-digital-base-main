@@ -41,7 +41,7 @@ import {
 } from './ShipmentForm'
 import { toShipmentDocumentRecord, type ShipmentDocumentRecord } from './ShipmentDetail'
 import { ShipmentDocumentAttachmentField } from './shipmentDocumentAttachmentField'
-import { loadContractOptions } from './shipmentFormOptions'
+import { loadContractLines, loadContractOptions, type ContractLineOption } from './shipmentFormOptions'
 
 /**
  * The packing-list form: the document head, the optional file, and the **line items** that make a
@@ -53,7 +53,6 @@ import { loadContractOptions } from './shipmentFormOptions'
  */
 
 const PAGE_SIZE = 50
-const CONTRACT_LINE_PAGE_SIZE = 200
 const SHIPMENT_OPTION_PAGE_SIZE = 50
 
 export type PackingListLineValues = {
@@ -182,27 +181,6 @@ export async function loadShipmentOptions(t: TranslateFn, query?: string): Promi
 type ShipmentContractLink = {
   contractId: string
   contractNumber: string | null
-}
-
-/** One contract line as `/api/trade_docs/contracts/lines` projects it. */
-type ContractLineOption = {
-  id: string
-  productId: string
-  name: string
-  sku: string
-  unit: string
-  quantity: string
-}
-
-function toContractLineOption(item: Record<string, unknown>): ContractLineOption {
-  return {
-    id: readText(item, 'id'),
-    productId: readText(item, 'productId', 'product_id'),
-    name: readText(item, 'name'),
-    sku: readText(item, 'sku'),
-    unit: readText(item, 'unit'),
-    quantity: readText(item, 'quantity'),
-  }
 }
 
 /**
@@ -529,11 +507,7 @@ function ContractReferenceDialog({
     setIsLoading(true)
     setError(null)
     try {
-      const payload = await fetchCrudList<Record<string, unknown>>('trade_docs/contracts/lines', {
-        contractId: scopedContractId,
-        pageSize: String(CONTRACT_LINE_PAGE_SIZE),
-      })
-      setLines((payload.items ?? []).map(toContractLineOption))
+      setLines(await loadContractLines(t('cross_border.packingLists.form.reference.loadFailed'), scopedContractId))
     } catch {
       setLines([])
       setError(t('cross_border.packingLists.form.reference.loadFailed'))

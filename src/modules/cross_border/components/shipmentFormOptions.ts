@@ -127,7 +127,45 @@ export async function loadSalesOrderLineOptions(
 }
 
 const CONTRACTS_API_PATH = 'trade_docs/contracts'
+const CONTRACT_LINES_API_PATH = 'trade_docs/contracts/lines'
 const CONTRACT_OPTION_PAGE_SIZE = 50
+const CONTRACT_LINE_PAGE_SIZE = 200
+
+/** One contract line as `/api/trade_docs/contracts/lines` projects it. */
+export type ContractLineOption = {
+  id: string
+  productId: string
+  name: string
+  sku: string
+  unit: string
+  quantity: string
+}
+
+/**
+ * The line items of one contract — what the packing-list reference copies and what the shipment
+ * allocation reference matches against the shipment's own order lines. Read-only, scoped by the
+ * owning module's route.
+ */
+export async function loadContractLines(errorMessage: string, contractId: string): Promise<ContractLineOption[]> {
+  const scopedContractId = contractId.trim()
+  if (!scopedContractId) return []
+  try {
+    const payload = await fetchCrudList<Record<string, unknown>>(CONTRACT_LINES_API_PATH, {
+      contractId: scopedContractId,
+      pageSize: CONTRACT_LINE_PAGE_SIZE,
+    })
+    return (payload.items ?? []).map((item) => ({
+      id: readOptionText(item, 'id'),
+      productId: readOptionText(item, 'productId', 'product_id'),
+      name: readOptionText(item, 'name'),
+      sku: readOptionText(item, 'sku'),
+      unit: readOptionText(item, 'unit'),
+      quantity: readOptionText(item, 'quantity'),
+    })).filter((line) => line.id.length > 0)
+  } catch {
+    throw new Error(errorMessage)
+  }
+}
 
 /**
  * Purchase/sales contracts a shipment can be linked to.
