@@ -103,7 +103,6 @@ test.describe.serial('trade_docs — one-shot copy flow', () => {
       currencyCode: 'USD',
       paymentTerms: '30% deposit',
       incoterms: 'FOB',
-      marks: 'CTN/1-10',
       lines: [
         { name: 'Copied line A', quantity: '2', unitPrice: '10', amount: '20' },
         { name: 'Copied line B', quantity: '3', unitPrice: '30', amount: '90' },

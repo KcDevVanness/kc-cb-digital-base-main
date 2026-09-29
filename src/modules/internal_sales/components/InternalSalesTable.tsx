@@ -194,13 +194,24 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
       const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE), sortField: 'created_at', sortDir: 'desc' })
       const term = search.trim()
       if (term) params.set('search', term)
-      // Server-side filtering on the engine's own channel marker; without a resolved channel the
-      // list stays unfiltered and the 类型 column tells the two apart (the form blocks a write in
-      // that state, so an unseeded organization can still read its documents).
+      // Server-side filtering on the engine's own channel marker. Two states fall back to the
+      // unfiltered list *with* the 类型 column: no channel resolved (an unseeded organization), and
+      // documents that predate the marker — hiding those would make the entry look empty while the
+      // backfill has not run yet. The hint under the table says which state it is.
       const channelId = channelIdForTradeType(tradeType, channels)
-      if (channelId) params.set('channelId', channelId)
+      const probe = await fetchCrudList<Record<string, unknown>>(apiPath, {
+        channelIdsEmpty: 'true',
+        pageSize: 1,
+      })
+      const unmarkedCount = Number((probe as { total?: unknown }).total ?? 0)
+      const hasUnmarked = Number.isFinite(unmarkedCount) && unmarkedCount > 0
+      if (channelId && !hasUnmarked) params.set('channelId', channelId)
       const payload = await fetchCrudList<Record<string, unknown>>(apiPath, Object.fromEntries(params))
-      return { ...payload, items: (payload.items ?? []).map((item) => toDocumentRecord(item, kind, channels)) }
+      return {
+        ...payload,
+        unmarkedCount,
+        items: (payload.items ?? []).map((item) => toDocumentRecord(item, kind, channels)),
+      }
     },
   })
 
@@ -264,9 +275,10 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
   )
   // The column only earns its width when the rows can be of more than one type: a filtered list is
   // single-type by construction, an unseeded organization's list is not.
+  const unmarkedCount = data?.unmarkedCount ?? 0
   const columns = React.useMemo(
-    () => buildColumns(t, locale, kind, statusMap, !channelIdForTradeType(tradeType, channels)),
-    [channels, kind, locale, statusMap, t, tradeType],
+    () => buildColumns(t, locale, kind, statusMap, unmarkedCount > 0 || !channelIdForTradeType(tradeType, channels)),
+    [channels, kind, locale, statusMap, t, tradeType, unmarkedCount],
   )
 
   // The same implementation serves both menus: every label follows the entry's trade type.
@@ -286,6 +298,15 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
 
   return (
     <>
+      {unmarkedCount > 0 ? (
+        <p className="mb-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          {t(
+            'internal_sales.list.unmarkedHint',
+            '{{count}} document(s) here predate the trade-type marker, so this list is not filtered. Run: yarn mercato internal_sales backfill-trade-type --apply',
+            { count: unmarkedCount },
+          )}
+        </p>
+      ) : null}
       <DataTable<DocumentRecord>
         title={(
           <div className="flex flex-col gap-1">

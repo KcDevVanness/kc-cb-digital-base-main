@@ -112,7 +112,6 @@ export type DocumentFormValues = {
   incoterms: string
   validUntil: string
   deliveryDate: string
-  marks: string
   notes: string
   sourceKind: string
   sourceId: string
@@ -168,7 +167,6 @@ function emptyDocumentValues(): DocumentFormValues {
     incoterms: '',
     validUntil: '',
     deliveryDate: '',
-    marks: '',
     notes: '',
     sourceKind: 'manual',
     sourceId: '',
@@ -243,7 +241,6 @@ export function toDocumentFormValues(
     incoterms: readText(item, 'incoterms'),
     validUntil: (item.validUntil ?? item.valid_until ?? '') as string,
     deliveryDate: (item.deliveryDate ?? item.delivery_date ?? '') as string,
-    marks: readText(item, 'marks'),
     notes: readText(item, 'notes'),
     sourceKind: readText(item, 'sourceKind', 'source_kind') || 'manual',
     sourceId: readText(item, 'sourceId', 'source_id'),
@@ -327,7 +324,6 @@ export function buildDocumentPayload(values: DocumentFormValues): Record<string,
     incoterms: trimmedOrNull(values.incoterms),
     validUntil: trimmedOrNull(values.validUntil),
     deliveryDate: trimmedOrNull(values.deliveryDate),
-    marks: trimmedOrNull(values.marks),
     notes: trimmedOrNull(values.notes),
     sourceKind: hasAnchor ? values.sourceKind : 'manual',
     sourceId: hasAnchor ? values.sourceId.trim() : null,
@@ -938,12 +934,6 @@ function useDocumentFields(t: TranslateFn, kind: DocumentKind): CrudField[] {
         layout: 'half',
       },
       {
-        id: 'marks',
-        label: t('trade_docs.documents.form.field.marks', '唛头'),
-        type: 'text',
-        layout: 'half',
-      },
-      {
         id: 'notes',
         label: t('trade_docs.documents.form.field.notes', '备注'),
         type: 'textarea',
@@ -1063,7 +1053,7 @@ export default function DocumentsForm({
       {
         id: 'terms',
         column: 2,
-        fields: ['paymentTerms', 'incoterms', 'marks', 'notes'],
+        fields: ['paymentTerms', 'incoterms', 'notes'],
       },
       {
         id: 'anchor',

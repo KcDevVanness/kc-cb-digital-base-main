@@ -36,7 +36,6 @@ function documentLabels(t: TranslateFn) {
     paymentTerms: t('trade_docs.documents.print.paymentTerms', 'Payment terms'),
     validUntil: t('trade_docs.documents.print.validUntil', 'Valid until'),
     deliveryDate: t('trade_docs.documents.print.deliveryDate', 'Delivery date'),
-    marks: t('trade_docs.documents.print.marks', 'Shipping marks'),
     notes: t('trade_docs.documents.print.notes', 'Notes'),
     ourParty: t('trade_docs.documents.print.ourParty', 'Seller'),
     bank: t('trade_docs.documents.print.bank', 'Beneficiary bank'),
@@ -82,7 +81,6 @@ export type DocumentSheetInput = {
   paymentTerms: string | null
   validUntil: string | null
   deliveryDate: string | null
-  marks: string | null
   notes: string | null
   ourParty: DocumentSheetParty
   counterparty: DocumentSheetParty
@@ -147,7 +145,6 @@ export function buildDocumentSheet(input: DocumentSheetInput, t: TranslateFn): X
   rows.push([labels.currency, input.currencyCode, labels.incoterms, input.incoterms ?? ''])
   rows.push([labels.paymentTerms, input.paymentTerms ?? '', labels.validUntil, input.validUntil ?? ''])
   rows.push([labels.deliveryDate, input.deliveryDate ?? ''])
-  rows.push([labels.marks, input.marks ?? ''])
   rows.push([labels.notes, input.notes ?? ''])
   rows.push([])
 

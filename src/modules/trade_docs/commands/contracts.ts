@@ -78,7 +78,6 @@ type SerializedContract = {
   incoterms: string | null
   shippingMethod: string | null
   destination: string | null
-  marks: string | null
   notes: string | null
   tenantId: string
   organizationId: string
@@ -114,7 +113,6 @@ function serializeContract(entity: TradeDocsContract): SerializedContract {
     incoterms: entity.incoterms ?? null,
     shippingMethod: entity.shippingMethod ?? null,
     destination: entity.destination ?? null,
-    marks: entity.marks ?? null,
     notes: entity.notes ?? null,
     tenantId: String(entity.tenantId),
     organizationId: String(entity.organizationId),
@@ -321,7 +319,6 @@ const createContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
               incoterms: parsed.incoterms,
               shippingMethod: parsed.shippingMethod,
               destination: parsed.destination,
-              marks: parsed.marks,
               notes: parsed.notes,
             },
           })
@@ -458,7 +455,6 @@ const updateContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
               if (parsed.incoterms !== undefined) entity.incoterms = parsed.incoterms
               if (parsed.shippingMethod !== undefined) entity.shippingMethod = parsed.shippingMethod
               if (parsed.destination !== undefined) entity.destination = parsed.destination
-              if (parsed.marks !== undefined) entity.marks = parsed.marks
               if (parsed.notes !== undefined) entity.notes = parsed.notes
             },
           })
@@ -507,7 +503,7 @@ const updateContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
       changes: buildChanges(
         (before ?? null) as unknown as Record<string, unknown> | null,
         after as unknown as Record<string, unknown>,
-        ['direction', 'counterpartyKind', 'priceTier', 'currencyCode', 'deliveryDate', 'paymentTerms', 'shippingMethod', 'destination', 'marks', 'notes'],
+        ['direction', 'counterpartyKind', 'priceTier', 'currencyCode', 'deliveryDate', 'paymentTerms', 'shippingMethod', 'destination', 'notes'],
       ),
       snapshotBefore: before ?? null,
       snapshotAfter: after,
@@ -712,7 +708,6 @@ const generateContractDocumentCommand: CommandHandler<
       incoterms: contract.incoterms ?? null,
       shippingMethod: contract.shippingMethod ?? null,
       destination: contract.destination ?? null,
-      marks: contract.marks ?? null,
       notes: contract.notes ?? null,
       counterparty: contract.counterpartySnapshot ?? null,
       ourParty: contract.ourPartySnapshot ?? null,

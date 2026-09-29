@@ -76,7 +76,6 @@ type DocumentHead = {
   incoterms: string | null
   validUntil: string | null
   deliveryDate: string | null
-  marks: string | null
   notes: string | null
   sourceKind: string | null
   sourceId: string | null
@@ -145,7 +144,6 @@ function toHead(item: Record<string, unknown>): DocumentHead {
     incoterms: (item.incoterms ?? null) as string | null,
     validUntil: (item.validUntil ?? null) as string | null,
     deliveryDate: (item.deliveryDate ?? null) as string | null,
-    marks: (item.marks ?? null) as string | null,
     notes: (item.notes ?? null) as string | null,
     sourceKind: (item.sourceKind ?? item.source_kind ?? null) as string | null,
     sourceId: (item.sourceId ?? item.source_id ?? null) as string | null,
@@ -864,7 +862,7 @@ export default function DocumentDetail({ kind, documentId }: { kind: DocumentKin
       </section>
 
       <section className="space-y-3">
-        <SectionHeader title={t('trade_docs.documents.detail.terms.title', '条款与唛头')} />
+        <SectionHeader title={t('trade_docs.documents.detail.terms.title', '条款')} />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <SummaryField label={t('trade_docs.documents.form.field.paymentTerms', '付款方式')}>
             {head.paymentTerms ?? '—'}
@@ -878,7 +876,6 @@ export default function DocumentDetail({ kind, documentId }: { kind: DocumentKin
           <SummaryField label={t('trade_docs.documents.form.field.deliveryDate', '交期')}>
             {head.deliveryDate ?? '—'}
           </SummaryField>
-          <SummaryField label={t('trade_docs.documents.form.field.marks', '唛头')}>{head.marks ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.documents.form.field.notes', '备注')}>{head.notes ?? '—'}</SummaryField>
         </div>
       </section>

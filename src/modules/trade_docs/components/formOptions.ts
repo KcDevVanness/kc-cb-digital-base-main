@@ -125,6 +125,10 @@ export async function loadSupplierCounterpartyOptions(
   query?: string,
   organizationId?: string | null,
 ): Promise<CrudFieldOption[]> {
+  // With the "All organizations" selection there is no write scope to offer from: the command
+  // resolves one (the caller's home organization) and would reject a record from anywhere else, so
+  // the picker offers nothing and the component explains why.
+  if (!organizationId) return []
   const term = query?.trim()
   const payload = await fetchCrudList<Record<string, unknown>>(SUPPLIERS_API_PATH, {
     pageSize: 100,
@@ -155,8 +159,9 @@ export async function loadCustomerCounterpartyOptions(
   query?: string,
   organizationId?: string | null,
 ): Promise<CustomerCounterpartyOption[]> {
+  if (!organizationId) return []
   const params = new URLSearchParams({ roles: CUSTOMER_COUNTERPARTY_ROLES.join(',') })
-  if (organizationId) params.set('organizationId', organizationId)
+  params.set('organizationId', organizationId)
   const term = query?.trim()
   if (term) params.set('search', term)
   const payload = await readApiResultOrThrow<{

@@ -218,7 +218,6 @@ const contractBase = {
   shippingMethod: nullableText(200),
   incoterms: nullableText(200),
   destination: nullableText(200),
-  marks: nullableText(500),
   notes: nullableText(2000),
   lines: z.array(contractLineInputSchema).max(500),
 }
@@ -431,7 +430,6 @@ const documentBase = {
   incoterms: nullableText(200),
   validUntil: dateOnlySchema,
   deliveryDate: dateOnlySchema,
-  marks: nullableText(500),
   sourceKind: z.enum(TRADE_DOCUMENT_SOURCE_KINDS).nullable().optional(),
   sourceId: z.string().uuid().nullable().optional(),
   sourceSnapshot: snapshotSchema,
