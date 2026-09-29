@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 42 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 43 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -66,6 +66,7 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [「不需要小数点」 is a column-scale decision, not a display format](lessons/no-decimals-means-narrow-the-column-scale.md) — area:module-data,backend-ui,architecture; module:purchasing,products,sourcing; topic:numeric-scale,column-precision,form-input,owner-feedback,validators,migrations
 - [A picker whose only remaining option is one value is a defect: delete the entry point, not the data model](lessons/one-option-picker-is-a-defect.md) — area:backend-ui,module-data; module:purchasing; topic:form-affordance,price-list,round-trip-submission,base-row,owner-feedback
 - [A PR whose base is a feature branch runs no CI at all](lessons/gate-must-cover-every-pr-target.md) — area:spec-pr; module:platform; topic:ci,gate,branch-protection,pull-request,worktree,parallel-development
+- [A branch that keeps taking PRs after its squash merge strands that work](lessons/squash-merged-base-strands-later-prs.md) — area:spec-pr; module:platform; topic:branch-hygiene,squash-merge,stacked-pull-requests,integration-branch,catch-up,worktree
 - [An organization-linked counterparty lives in the document snapshot, not the customer FK](lessons/org-linked-counterparty-lives-in-the-snapshot.md) — area:module-data,backend-ui,architecture; module:internal_sales,sales,parties,directory; topic:counterparty,snapshot,organization-tree,pickers,sales-documents,option-sources
 - [A cross-organization copy needs an explicit field whitelist and a source link](lessons/cross-org-copy-needs-whitelist-and-source-link.md) — area:module-data,architecture; module:products,internal_sales,parties; topic:cross-organization,master-data,distribution,idempotency,data-scoping
 - [A combobox that re-fires onChange with the same value must not clear derived state first](lessons/combobox-same-value-refire-must-not-clear-derived-state.md) — area:backend-ui,module-data; module:internal_sales; topic:combobox-input,async-derivation,save-race,data-loss,sales-lines,variant-bridge
