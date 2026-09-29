@@ -101,7 +101,6 @@ export type ContractFormValues = {
   incoterms: string
   shippingMethod: string
   destination: string
-  marks: string
   notes: string
   /** Source anchor: `manual` (nothing picked), `purchase_order` or `sales_order`. */
   sourceKind: string
@@ -152,7 +151,6 @@ const EMPTY_CONTRACT_VALUES: ContractFormValues = {
   incoterms: '',
   shippingMethod: '',
   destination: '',
-  marks: '',
   notes: '',
   sourceKind: 'manual',
   sourceId: '',
@@ -198,7 +196,6 @@ export function toContractFormValues(
     incoterms: readText(item, 'incoterms'),
     shippingMethod: readText(item, 'shippingMethod', 'shipping_method'),
     destination: readText(item, 'destination'),
-    marks: readText(item, 'marks'),
     notes: readText(item, 'notes'),
     sourceKind: readText(item, 'sourceKind', 'source_kind') || 'manual',
     sourceId: readText(item, 'sourceId', 'source_id'),
@@ -305,7 +302,6 @@ export function buildContractPayload(values: ContractFormValues): Record<string,
     incoterms: trimmedOrNull(values.incoterms),
     shippingMethod: trimmedOrNull(values.shippingMethod),
     destination: trimmedOrNull(values.destination),
-    marks: trimmedOrNull(values.marks),
     notes: trimmedOrNull(values.notes),
     ...buildContractSourceAnchorPayload({
       sourceKind: values.sourceKind,
@@ -847,12 +843,6 @@ function useContractFields(t: TranslateFn): CrudField[] {
       loadOptions: (query) => loadPortOptions(query),
     },
     {
-      id: 'marks',
-      label: t('trade_docs.contracts.form.field.marks'),
-      type: 'text',
-      layout: 'half',
-    },
-    {
       id: 'counterpartyName',
       label: t('trade_docs.contracts.form.field.counterpartyName'),
       type: 'text',
@@ -929,7 +919,7 @@ export default function ContractForm({ mode, contractId }: { mode: 'create' | 'e
     {
       id: 'terms',
       column: 2,
-      fields: ['paymentTerms', 'incoterms', 'shippingMethod', 'destination', 'marks', 'notes'],
+      fields: ['paymentTerms', 'incoterms', 'shippingMethod', 'destination', 'notes'],
     },
     {
       id: 'ourPartyMaster',
