@@ -61,6 +61,11 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
   不能带源行 id）；空报价只载抬头并提示补明细；表单已有输入时先弹覆盖确认。
 - **读路径**：编辑页的单文档读由 `?ids=` 改为 `?id=`——安装层工厂只有 `id`（单数）返回**含 `metadata`** 的完整
   投影，`ids` 走的是去掉 metadata 的 grid 投影（安装源 `api/documents/factory.ts` 的 `resolveListFields`）。
+- **选择器的标签（2026-09-29 修正）**：载入对话框里的报价选择器对**已载入**的报价单走
+  `resolveQuoteLabel(id)`（`GET /api/sales/quotes?id=` → 与选项列表同一个 `quoteOptionFromRecord`），
+  行选品器对缺快照标签的行走 `loadProductOption`（按 id 读自建商品）。此前两者都依赖 `ComboboxInput`
+  的兜底解析：该兜底在 dev 的 StrictMode 双调用 effect 下会取消自己的请求、再被 ref 拦住重试，于是重开
+  对话框只显示裸 uuid。教训见 [`.ai/lessons/preselected-picker-value-needs-a-label-resolver.md`](../../../.ai/lessons/preselected-picker-value-needs-a-label-resolver.md)。
 - **权限与失败**：读报价要安装层复数功能位 `sales.quotes.view`；缺位/读失败 → 面板行内提示（+ 自动载入时 flash），
   表单内容不变，**载入不发任何写请求**。
 

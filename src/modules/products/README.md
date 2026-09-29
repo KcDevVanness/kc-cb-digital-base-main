@@ -107,6 +107,9 @@ app 自有模块。业务商品主数据的**唯一来源**：产品线 → 产�
 ## 官方目录链接（选填，收货必需）
 
 `基本/出口步` 上的「官方目录链接」指向官方 `catalog_products`（只读选择器，仅调用其列表 API，不引用其组件或实体）。
+选择器对**已保存**的链接值走 `resolveCatalogLinkLabel(id)`（`/api/catalog/products?id=` → `catalogLinkLabel`，
+与选项列表同一个 `SKU — title` 形状）；否则编辑一个带链接的商品时，字段里显示的是裸 uuid（2026-09-29 修正；
+教训见 [`.ai/lessons/preselected-picker-value-needs-a-label-resolver.md`](../../../.ai/lessons/preselected-picker-value-needs-a-label-resolver.md)）。
 它不是装饰：**发货与海外仓收货按商品变体入账**（`wms.inventory.receive`），变体经官方目录解析，
 所以没链接的商品只能下单、不能发运/收货（分摊命令会明确报错）。链接可清空；指向不存在/跨组织的目录商品会被 400 拒绝。
 
