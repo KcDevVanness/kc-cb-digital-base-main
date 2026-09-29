@@ -215,6 +215,7 @@ export const documentListSchema = z.object({
   id: uuid().optional(),
   shipmentId: uuid().optional(),
   docType: z.enum(EXPORT_DOC_TYPES).optional(),
+  search: z.string().max(200).optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(200).default(100),
 })

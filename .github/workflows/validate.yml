@@ -3,8 +3,23 @@ name: validate
 # The same gate every agent runs locally (.ai/agentic.config.json → validation.commands),
 # executed on every PR and on main so a green check means "the gate passed", not "someone said so".
 #
-# The job always runs so the required check always reports. The heavy steps are
-# skipped when the diff touches nothing the gate can fail on — see the scope step.
+# Shape — decide, run the two halves at the same time, report once:
+#
+#   scope    reads the diff and publishes `needed` (docs / deploy-side diffs cannot fail the gate)
+#   checks   install → generate → typecheck → lint → lessons → ds:check → test
+#   build    install → build (`yarn build` runs `yarn generate` itself)
+#   validate the fan-in: green only when scope passed and every slice passed or was skipped as
+#            out of scope. This job is the required check `main` waits for.
+#
+# Why it is split rather than one job: serializing all seven commands made the run ~5:45 end to
+# end, and parallel development pays that wall clock once per PR in flight. The critical path is
+# now `install + build` instead of the sum of every step. Extra runners are free on this public
+# repository, so the trade is minutes of wall clock for minutes of concurrency.
+#
+# `validate` has to stay a job *name*: branch protection matches a check by name (`main` requires
+# `validate` + `guard-tree`), and a required context that never reports leaves every PR on
+# "Expected — Waiting" (`.ai/lessons/gate-must-cover-every-pr-target.md`). Renaming the fan-in, or
+# replacing it with a matrix, breaks that.
 on:
   # Every PR target, not only `main`: unit PRs land on integration branches first, and a gate that
   # skipped them merged a unit with `no checks reported` (2026-09-28). The docs/deploy scope step
@@ -18,28 +33,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: validate
+  scope:
+    name: scope
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    outputs:
+      # `needed=false` is the only thing that lets the slices skip; anything else runs the gate.
+      needed: ${{ steps.decide.outputs.needed }}
     steps:
       - uses: actions/checkout@v4
         with:
-          # The scope check diffs against a base commit the default depth-1
-          # checkout does not have.
+          # The scope check diffs against a base commit the default depth-1 checkout does not have.
           fetch-depth: 0
 
       - name: Decide whether the gate can be skipped
-        id: scope
+        id: decide
         run: |
           # Changes confined to these paths cannot fail
           # generate / typecheck / lint / ds:check / test / build. The test is an
           # allow-list: anything not listed runs the full gate, so a new source
           # directory can only cost time, never skip a real check.
           #
-          # This lives inside the job rather than in `paths-ignore` on purpose:
-          # main requires the `validate` check, and a check that is filtered out
-          # never reports, leaving the PR stuck on "Expected — Waiting".
+          # This is deliberately not `paths-ignore` on the workflow: a check that is
+          # filtered out never reports, and `main` requires `validate`.
           #
           # Run plans and analysis notes are pure metadata, so they join the allow-list.
           # A lesson edit is NOT listed: the lessons step must run for it.
@@ -73,8 +89,16 @@ jobs:
             echo "app sources changed — running the gate"
           fi
 
+  checks:
+    name: checks
+    needs: scope
+    if: needs.scope.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
-        if: steps.scope.outputs.needed == 'true'
         with:
           node-version: 24
 
@@ -82,60 +106,157 @@ jobs:
       # runs the runner's global yarn 1 before corepack exists, which aborts on that
       # field — so corepack comes first, with shims in a writable directory.
       - name: Enable corepack
-        if: steps.scope.outputs.needed == 'true'
         run: |
           mkdir -p "$HOME/.local/bin"
           corepack enable --install-directory "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Resolve the Yarn cache folder
-        if: steps.scope.outputs.needed == 'true'
         id: yarn-cache
         run: echo "dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@v4
-        if: steps.scope.outputs.needed == 'true'
         with:
           path: ${{ steps.yarn-cache.outputs.dir }}
           key: yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           restore-keys: yarn-${{ runner.os }}-
 
+      # tsconfig.json sets `incremental`, so `tsc --noEmit` only re-checks what the recorded
+      # program does not already cover — but a fresh runner starts with no record and pays the
+      # full-project check (~75s) on every PR. Restoring the record is what keeps that step
+      # incremental; TypeScript invalidates it by file content and compiler options, so a stale
+      # entry costs time, never a missed error.
+      - name: Cache the incremental type-check state
+        uses: actions/cache@v4
+        with:
+          path: tsconfig.tsbuildinfo
+          key: tsc-${{ runner.os }}-${{ hashFiles('yarn.lock', 'tsconfig.json') }}-${{ github.sha }}
+          restore-keys: tsc-${{ runner.os }}-${{ hashFiles('yarn.lock', 'tsconfig.json') }}-
+
       - name: Install dependencies
-        if: steps.scope.outputs.needed == 'true'
         run: yarn install --immutable
 
       # The app reads its configuration from .env; CI only needs syntactically valid
       # placeholders — no service (Postgres/Redis/Meilisearch) is contacted by the gate.
       - name: Prepare environment
-        if: steps.scope.outputs.needed == 'true'
         run: cp .env.example .env
 
       - name: generate
-        if: steps.scope.outputs.needed == 'true'
         run: yarn generate
 
       - name: typecheck
-        if: steps.scope.outputs.needed == 'true'
         run: yarn typecheck
 
       - name: lint
-        if: steps.scope.outputs.needed == 'true'
         run: yarn lint
 
       # The lessons catalog is the durable-rule store every session routes through; it fails closed
       # on a malformed record, a missing index row, or prose that belongs in `.ai/lessons/`.
       - name: lessons
-        if: steps.scope.outputs.needed == 'true'
         run: node scripts/check-lessons.mjs
 
       - name: ds:check
-        if: steps.scope.outputs.needed == 'true'
         run: yarn ds:check
 
       - name: test
-        if: steps.scope.outputs.needed == 'true'
         run: yarn test
 
+  build:
+    name: build
+    needs: scope
+    if: needs.scope.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable corepack
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          corepack enable --install-directory "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve the Yarn cache folder
+        id: yarn-cache
+        run: echo "dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-${{ runner.os }}-
+
+      # `next build` type-checks the project itself, with its own incremental record under
+      # `distDir/cache` (next/dist/lib/typescript/runTypeCheck.js) — a separate file from the one
+      # `yarn typecheck` writes, so it needs its own cache or the build pays a second full check.
+      # Same reasoning as the `checks` job: a stale record costs time, never a missed error.
+      - name: Cache the build's type-check state
+        uses: actions/cache@v4
+        with:
+          path: .mercato/next/cache/.tsbuildinfo
+          key: next-tsc-${{ runner.os }}-${{ hashFiles('yarn.lock', 'tsconfig.json') }}-${{ github.sha }}
+          restore-keys: next-tsc-${{ runner.os }}-${{ hashFiles('yarn.lock', 'tsconfig.json') }}-
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Prepare environment
+        run: cp .env.example .env
+
+      # `yarn build` is `yarn generate && next build`, so the generate step is not repeated here.
       - name: build
-        if: steps.scope.outputs.needed == 'true'
         run: yarn build
+
+  validate:
+    name: validate
+    needs: [scope, checks, build]
+    # `always()`: this is the check branch protection waits for, so it has to report even when a
+    # needed job failed or was skipped.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report the gate result
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          SCOPE_NEEDED: ${{ needs.scope.outputs.needed }}
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          # `skipped` is only meaningful for a slice the scope step sent home; a slice that
+          # skipped while it was needed would be a silent hole, so it fails here instead.
+          failed=0
+          report() {
+            name="$1"; result="$2"
+            case "${result}" in
+              success)
+                echo "✔ ${name}"
+                ;;
+              skipped)
+                if [ "${SCOPE_NEEDED}" = 'true' ]; then
+                  echo "::error::${name} was skipped although the scope step asked for it"
+                  echo "✘ ${name} (skipped while needed)"
+                  failed=1
+                else
+                  echo "· ${name} (out of scope)"
+                fi
+                ;;
+              *)
+                echo "::error::${name} did not pass (${result})"
+                echo "✘ ${name} (${result})"
+                failed=1
+                ;;
+            esac
+          }
+          report scope "${SCOPE_RESULT}"
+          report checks "${CHECKS_RESULT}"
+          report build "${BUILD_RESULT}"
+
+          if [ "${failed}" -ne 0 ]; then
+            exit 1
+          fi
+          echo "gate passed"
