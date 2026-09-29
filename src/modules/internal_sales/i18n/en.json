@@ -67,5 +67,12 @@
   "internal_sales.form.quoteLoad.forbidden": "You do not have permission to read quotes.",
   "internal_sales.form.quoteLoad.emptyLines": "That quote has no lines — add them here.",
   "internal_sales.form.sourceQuote.label": "Source quote",
+  "internal_sales.form.sourceQuote.previewAria": "Preview source quote {number}",
+  "internal_sales.form.sourceQuote.previewLoading": "Loading the quote…",
+  "internal_sales.form.sourceQuote.previewFailed": "Could not load the quote preview.",
+  "internal_sales.form.sourceQuote.previewMissing": "That quote is no longer there.",
+  "internal_sales.form.sourceQuote.previewLines": "Quote lines",
+  "internal_sales.form.sourceQuote.previewOpen": "Open the quote",
+  "internal_sales.form.sourceQuote.noLines": "This quote has no lines.",
   "internal_sales.list.actions.newOrderFromQuote": "New order from this quote"
 }

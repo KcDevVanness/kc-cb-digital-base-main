@@ -42,8 +42,9 @@
   一次性写入表单；保存前任意可改。表单已有操作员输入时，先弹**覆盖确认**（destructive），取消则不发任何请求。
 - **REQ-002** — 报价**列表**的行操作（有 `sales.orders.manage` 时显示）新增「按此报价新建订单」：跳转到
   `/backend/internal-sales/orders/create?fromQuote=<quoteId>`，页面进入后自动载入该报价（同一 loader）；载入失败只提示，不阻塞表单。
-- **REQ-003** — **来源记录**：经载入（且未清空买方）保存成功的订单写入 `metadata.internalSales.sourceQuote = { id, number }`；
-  订单**编辑页**显示「来源报价单 QUOTE-…」并可跳到该报价的编辑页。报价单本身不被修改、不被删除。
+- **REQ-003** — **来源记录与预览**：经载入（且未清空买方）保存成功的订单写入 `metadata.internalSales.sourceQuote = { id, number }`；
+  订单新建/编辑页显示「来源报价单：QUOTE-…」，点单号在**当前页**打开右侧预览抽屉（只读，读同一个 loader：抬头 + 明细），
+  抽屉页脚的「打开报价单」才跳转到该报价的编辑页；预览不发写请求，报价单本身不被修改、不被删除。
 - **REQ-004** — 载入是**只读**行为：不产生任何写请求；读报价被拒（缺 `sales.quotes.view`）或读失败时给出可读提示，
   表单当前内容不变；载入不改变页面权限声明（订单页仍是 `sales.orders.manage`）。
 - **REQ-005** — 「转为订单」保留且行为不变；两个报价行操作的文案要让操作员看懂区别（转换=报价即最终版、不可逆；载入=以报价为模板、报价保留）。
@@ -152,8 +153,10 @@
 ### Journey J-003 — 复查订单的来源
 
 1. 打开已载入生成的订单编辑页 → 头部上方显示「来源报价单：QUOTE-…」。
-2. 点链接跳到该报价编辑页（只读回溯；报价未被修改）。
-3. 报价已被删除/无权限 → 链接仍显示（快照文本），失败由目标页自行处理。
+2. 点该单号 → 右侧滑出**预览抽屉**（`Drawer`）：报价单号/买方/币种/状态/金额（未税）/行数 + 报价单明细（名称、SKU·规格、数量 × 未税单价），
+   数据走同一个 `loadQuoteDraft`（只读），**当前订单表单不离开、已填内容不丢**。
+3. 需要真正打开那张报价时才点抽屉页脚的「打开报价单」→ 跳到报价编辑页（脏表单仍由 `CrudForm` 的离开确认拦截）。
+4. 报价已被删除/无权限 → 抽屉内给出可读提示（404「该报价单已不存在。」/403 权限提示），表单不受影响。
 
 ## UI and Interaction Contracts
 
@@ -162,9 +165,9 @@
 
 | Surface / route | Purpose and primary actions | Data source / mutations | Closest installed reference | Canonical shell / components | Required states | Requirement IDs |
 |---|---|---|---|---|---|---|
-| `/backend/internal-sales/orders/create`（订单新建） | 顶部新增「从报价单载入」面板：按钮 → 对话框（报价选择器 + 载入/取消） | 读 `GET /api/sales/quotes`、`?id=`、`GET /api/sales/quote-lines`；保存走既有 `POST /api/sales/orders` | 本模块订单新建页（买方选择器）；`trade_docs` 复制行对话框 | `CrudForm`(bare 分组)、`Button`、`Dialog`、`ComboboxInput`、`FieldLabel` | 选择器 loading/empty/403/error；载入中禁用重复提交；覆盖确认；成功 flash；来源行 | REQ-001, REQ-004 |
+| `/backend/internal-sales/orders/create`（订单新建） | 顶部新增「从报价单载入」面板：按钮 → 对话框（报价选择器 + 载入/取消）；来源行单号可点开**预览抽屉** | 读 `GET /api/sales/quotes`、`?id=`、`GET /api/sales/quote-lines`；保存走既有 `POST /api/sales/orders` | 本模块订单新建页（买方选择器）；`trade_docs` 复制行对话框 | `CrudForm`(bare 分组)、`Button`、`Dialog`、`Drawer`、`ComboboxInput`、`FieldLabel`、`MoneyAmount`、`DictionaryValue` | 选择器 loading/empty/403/error；载入中禁用重复提交；覆盖确认；成功 flash；来源行；抽屉 loading/error/空明细 | REQ-001, REQ-003, REQ-004 |
 | `/backend/internal-sales/quotes`（报价列表） | 行操作新增「按此报价新建订单」 | 纯导航（`?fromQuote=`） | 同表既有「转为订单」行操作 | `DataTable`/`RowActions`/`Link` | 只在持 `sales.orders.manage` 时出现 | REQ-002 |
-| `/backend/internal-sales/orders/[id]/edit`（订单编辑） | 头部上方显示「来源报价单：QUOTE-…」（链接） | 读 `GET /api/sales/orders?id=` 的 `metadata` | 本模块编辑页 | `CrudForm`(bare 分组) | 无来源时不渲染；长单号换行不溢出 | REQ-003 |
+| `/backend/internal-sales/orders/[id]/edit`（订单编辑） | 头部上方显示「来源报价单：QUOTE-…」；点单号打开**预览抽屉**（只读），页脚「打开报价单」才是跳转 | 读 `GET /api/sales/orders?id=` 的 `metadata` + 抽屉内 `loadQuoteDraft`（`GET /api/sales/quotes?id=`、`GET /api/sales/quote-lines`） | 本模块编辑页 | `CrudForm`(bare 分组)、`Drawer`、`LoadingMessage`/`ErrorMessage`、`MoneyAmount`、`DictionaryValue` | 无来源时不渲染；长单号换行不溢出；抽屉 loading/error/空明细；窄屏抽屉占满宽度 | REQ-003 |
 
 ### `/backend/internal-sales/orders/create`
 
@@ -172,7 +175,7 @@
 ┌──────────────────────────────────────────────────────────────┐
 │ 新建内部销售订单（PO）                                        │
 │ ┌ 从报价单载入 ────────────────────────────────────────────┐  │
-│ │ [从报价单载入]  来源报价单：QUOTE-20260929-00003（链接）   │  │
+│ │ [从报价单载入]  来源报价单：QUOTE-20260929-00003（可点预览）│  │
 │ └──────────────────────────────────────────────────────────┘  │
 │ 买方（分公司/客户） [Combobox]   买方名称 [Input]             │
 │ 币种 [Combobox] 客户参考号 [Input] 备注 [Input]               │
@@ -181,15 +184,26 @@
 └──────────────────────────────────────────────────────────────┘
 对话框：报价单 [Combobox: QUOTE-… — 买方名] [取消] [载入]
          已有输入时：覆盖确认（destructive，说明会替换当前抬头与行）
+预览抽屉（右侧 400px，点来源单号打开；表单留在背后，不丢已填内容）：
+┌──────────────────────────────┐
+│ 来源报价单  QUOTE-20260929-00003
+│ 报价单号 …   买方 …
+│ 币种 …       状态 …
+│ 金额（未税）… 行数 …
+│ 报价单明细：名称 / SKU·规格 / 数量 × 未税单价
+│ [关闭]              [打开报价单]
+└──────────────────────────────┘
 ```
 
 - **Behavior:** 选择器输入即搜索（服务端 `search`，按单号）；载入一次性替换；重复载入同一张只是重放；保存仍走既有校验
-  （≥1 行、数量/单价 ≤4 位小数、买方必填）。
-- **Responsive and accessibility:** 对话框由平台 `Dialog` 提供焦点陷阱、Esc 取消与 Cmd/Ctrl+Enter 提交；选择器为可键盘操作的 Combobox；
-  错误用 `Alert`/行内提示（`role` 由平台组件提供）；窄屏面板换行不横向溢出；来源行链接有可见文本而非裸 URL。
+  （≥1 行、数量/单价 ≤4 位小数、买方必填）。**来源单号是预览按钮而非链接**：点它只读同一 loader 并渲染抽屉，
+  表单与 URL 不变；真正的跳转只在抽屉页脚（脏表单仍由 `CrudForm` 的离开确认拦截）。
+- **Responsive and accessibility:** 对话框由平台 `Dialog` 提供焦点陷阱、Esc 取消与 Cmd/Ctrl+Enter 提交；抽屉由平台 `Drawer`（Radix Dialog）提供焦点陷阱、Esc 关闭与关闭按钮的 `aria-label`；
+  预览触发按钮带 `aria-label`（「预览来源报价单 QUOTE-…」）；选择器为可键盘操作的 Combobox；
+  错误用 `Alert`/行内提示（`role` 由平台组件提供）；窄屏面板换行不横向溢出、抽屉占满宽度。
 - **Localization:** 新增 key 前缀 `internal_sales.form.quoteLoad.*`、`internal_sales.form.sourceQuote.*`、
-  `internal_sales.list.actions.newOrderFrom*`（zh + en 各一份；字面量只写一种语言）。
-- **Design-system and theming:** 只用语义 token 与共享原语（`Button`/`Dialog`/`ComboboxInput`/`FieldLabel`/`text-muted-foreground`），无硬编码颜色、无原始 `<form>`/`fetch`；浅色/深色沿用平台 token。
+  `internal_sales.list.actions.newOrderFrom*`（zh + en 各一份；字面量只写一种语言）；抽屉标题复用 `internal_sales.form.sourceQuote.label`。
+- **Design-system and theming:** 只用语义 token 与共享原语（`Button`/`Dialog`/`Drawer`/`ComboboxInput`/`FieldLabel`/`SectionHeader`/`LoadingMessage`/`ErrorMessage`/`MoneyAmount`/`DictionaryValue`/`text-muted-foreground`），无硬编码颜色、无原始 `<form>`/`fetch`；浅色/深色沿用平台 token。
 
 ## Data Models
 
@@ -229,6 +243,7 @@ N/A — 载入是纯客户端读+预填；订单创建继续发引擎既有的 `
 |---|---|---|---|---|---|
 | TEST-001 | unit (jest) | 纯函数夹具：报价抬头（buyer 快照 org/party 两种）+ snake_case/camelCase 行 | `loadQuoteIntoValues` / `hasOperatorInput` / `readSourceQuote` / `buildDocumentMetadata` / `toInternalSalesFormValues` 读回 metadata | 抬头与行逐字段映射；行 key 为本地非 uuid；脏检测覆盖空表单与手填；来源键写读往返、脏形状降级为空 | REQ-001, REQ-003, REQ-004 |
 | TEST-002 | UI smoke（dev，记录证据） | dev server + 会话；预置一张含 1–2 行、买方=关联组织的报价（探针单，验后删除） | 订单新建 → 从报价单载入 → 改一行数量/单价 → 保存 → 打开编辑页 | 表单填入抬头与行；订单创建成功、`metadata.internalSales.sourceQuote` 落库（同 id/单号）；编辑页显示来源链接；报价单未被修改；另测 403 提示与「空报价」提示；窄屏 + 深色 | REQ-001…REQ-005 |
+| TEST-003 | unit (jest) + UI smoke | 纯函数夹具：报价投影（`quoteNumber`/`status`/`total` 有与无两种）+ 一行 snake_case 行；dev server + 会话 + 一张带行的探针报价 | ① `quoteDraftFromRecords` → `sourceQuotePreviewFromDraft`；② 订单编辑页点来源单号 → 抽屉 → 页脚「打开报价单」 | ① draft 带 `record`、预览逐字段映射、无单号时回落 `quoteNumber`、空报价不把 starter 行当明细；② 抽屉显示抬头与行、URL 与表单值不变、页脚跳转到报价编辑页（干净表单） | REQ-003 |
 
 自动化集成（`yarn test:integration:ephemeral`）未纳入：`internal_sales` 模块目前没有 `__integration__` 目录，本切片沿用其既有
 「单元测试 + 真机冒烟」验证口径；待模块整体补集成基线时一并覆盖。
@@ -265,7 +280,7 @@ N/A — 载入是纯客户端读+预填；订单创建继续发引擎既有的 `
 |---|---|---|---|---|---|
 | REQ-001 | J-001, 订单新建页 | `GET /api/sales/quotes{,?id=}`、`GET /api/sales/quote-lines`、`POST /api/sales/orders` | 1 | TEST-001, TEST-002 | AC-001 |
 | REQ-002 | J-002, 报价列表行操作 | 导航 `?fromQuote=` | 2 | TEST-002 | AC-002 |
-| REQ-003 | J-003, 订单编辑页 | `metadata.internalSales.sourceQuote`；`GET /api/sales/orders?id=` | 1 | TEST-001, TEST-002 | AC-003 |
+| REQ-003 | J-003, 订单编辑页 | `metadata.internalSales.sourceQuote`；`GET /api/sales/orders?id=`；抽屉内 `loadQuoteDraft`（`GET /api/sales/quotes?id=`、`GET /api/sales/quote-lines`） | 1 | TEST-001, TEST-002, TEST-003 | AC-003 |
 | REQ-004 | J-001 失败路径 | 403/网络错误；无写请求 | 1 | TEST-001, TEST-002 | AC-004 |
 | REQ-005 | 报价列表两个动作 | 文案 + 既有 convert 不变 | 2 | TEST-002 | AC-005 |
 
@@ -284,6 +299,7 @@ N/A — 载入是纯客户端读+预填；订单创建继续发引擎既有的 `
 | 编辑读 `ids=`→`id=` | 编辑页读取行为变化 | 同一路由、同一投影语义（安装层详情页同款）；TEST-002 覆盖报价/订单两个编辑页 | 低 |
 | 报价功能位与订单功能位不同源 | 有订单 manage 无报价 view 时载入 403 | 面板行内提示 + 重试；不隐藏页面 | 操作员可能不理解为何不能载入（提示文案解释） |
 | 空报价（0 行） | 载入后无法保存 | 提示「该报价没有明细」，保留空行由操作员补 | 接受 |
+| 预览抽屉读取失败（报价已删 / 缺 `sales.quotes.view`） | 抽屉里没有内容 | 404 →「该报价单已不存在。」、403 → 权限提示；表单与页面不受影响，来源单号仍按快照显示 | 低 |
 
 ## Acceptance Criteria
 
@@ -291,8 +307,8 @@ N/A — 载入是纯客户端读+预填；订单创建继续发引擎既有的 `
   （2026-09-29 真机：QUOTE-20260929-00022 → 载入 → 数量改 7 → 保存成功；脏表单载入先出 destructive 覆盖确认。）
 - [x] **AC-002** — 报价列表行操作进入订单新建页并自动载入该报价；失败时停在可手填的表单。
   （2026-09-29 真机：行操作 href = `/backend/internal-sales/orders/create?fromQuote=<id>`，进页自动载入并 flash。）
-- [x] **AC-003** — 载入生成的订单在 `metadata.internalSales.sourceQuote` 记录 `{id, number}`，编辑页可见且可跳回报价；报价单未被修改。
-  （ORDER-20260929-00008：`?id=` 读回来源键；编辑页「来源报价单 QUOTE-…」链接到 `/backend/internal-sales/quotes/<id>/edit`；报价仍在、行仍 12。）
+- [x] **AC-003** — 载入生成的订单在 `metadata.internalSales.sourceQuote` 记录 `{id, number}`，新建/编辑页可见；点单号在**当前页**打开只读预览抽屉（抬头 + 明细），页脚「打开报价单」才跳转；报价单未被修改。
+  （ORDER-20260929-00008：`?id=` 读回来源键。2026-09-29 真机（预览）：探针报价 QUOTE-20260929-00025 + 由其创建的订单 → 订单编辑页点单号 → 抽屉显示 报价单号/买方/币种/状态/金额（未税）/行数 + 明细「PREVIEW-PROBE-1 / PV-1 · probe spec / 3.0000 × ¥12.5000」，**URL 与表单值不变**；页脚「打开报价单」跳到 `/backend/internal-sales/quotes/<id>/edit`；探针单验后已删。）
 - [x] **AC-004** — 载入不发写请求；403/网络失败给可读提示且不改变表单内容。
   （载入只发 GET；拦截 `GET /api/sales/quotes` → 403 时面板显示「没有读取报价单的权限。」、表单保持为空。）
 - [x] **AC-005** — 「转为订单」行为与门禁不变；两个动作的文案能区分语义。
@@ -329,3 +345,4 @@ Verdict: **Ready for implementation**
 |---|---|
 | 2026-09-29 | 首版：订单从报价单载入（选择器 + 一次性预填 + 来源键 + 列表入口）；owner 答 Q-001…Q-003。 |
 | 2026-09-29 | 实现并验证（Phase 1 + Phase 2 同一 PR）：`lib/documentValues.ts`（值编解码，从组件抽出）、`lib/quoteLoad.ts`、`components/QuoteLoadPanel.tsx`、`InternalSalesForm.tsx`（面板挂载、`?fromQuote=` 自动载入、创建载荷带 metadata、编辑读 `id=`）、`InternalSalesTable.tsx`（行操作）、zh/en 字典、`lib/__tests__/quoteLoad.test.ts`（27 tests 全绿）。真机（dev，探针单已删）：QUOTE-20260929-00022 → 载入 → 改数量 7 → ORDER-20260929-00008，`metadata.internalSales.sourceQuote` 落库、编辑页显示来源链接、报价未变；行操作 `?fromQuote=` 自动载入；脏表单覆盖确认；403 拦截提示。**顺带修正两处读/记录缺口**：① 文档读回的备注键是 `comment`（安装层序列化），值编解码改为两者兼容——此前备注在编辑页永不回显；② README/quote-to-order spec 里「安装层详情页没有 Convert to order」的记录与 `@open-mercato/core@0.8.0` 不符，已更正。门禁：`yarn generate` / `typecheck` / `lint`(0 error) / `check-lessons` / `ds:check`(907 files) / `test` / `build` 全绿。 |
+| 2026-09-29 | **来源报价改为当前页预览（REQ-003 增量）**：来源单号不再是跳转链接，而是打开右侧 `Drawer` 预览抽屉（只读同一 `loadQuoteDraft`：报价单号/买方/币种/状态/金额（未税）/行数 + 明细），表单与 URL 不变；页脚「打开报价单」保留显式跳转（脏表单仍由 `CrudForm` 离开确认拦截）。实现：`lib/quoteLoad.ts` 的 draft 增加 `record` 并新增纯函数 `sourceQuotePreviewFromDraft`，`components/QuoteLoadPanel.tsx` 挂抽屉（loading/error/空明细三态），`lib/salesStatus.ts` 抽出状态字典键供列表与抽屉共用；新增 7 个 zh/en key、3 个单测（30 tests 全绿）。真机：订单编辑页点单号 → 抽屉显示 QUOTE-… 的抬头与行、表单值不变；干净表单点页脚「打开报价单」跳转成功。 |

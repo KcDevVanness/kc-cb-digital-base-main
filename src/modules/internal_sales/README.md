@@ -12,7 +12,7 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
 |---|---|
 | 页面 | `/backend/internal-sales/quotes`、`/quotes/create`、`/quotes/[id]/edit`；`/backend/internal-sales/orders`、`/orders/create`、`/orders/[id]/edit`（六个页面的 `pageGroupKey` 都是 `cross_border.nav.group`，即侧边栏「出口业务」组——2026-09-28 由「外贸」改名，只改 label；本模块没有自己的导航分组）。订单页标题带业务缩写「内部销售订单（PO）」（N-1）：**2026-09-29 起真正落到界面**——`internal_sales.list.order.title` 与 `form.order.{create,edit}Title` 两个语言的字典都带「（PO）」/「(PO)」，`backend/internal-sales/orders/**/page.meta.ts` 的 `pageTitle` 兜底串同步（此前只有 page.meta 的兜底串带 PO，字典仍是「内部销售订单」，而侧边栏/页面标题取的是 `pageTitleKey` → 字典值）。报价单按 N-1 **不挂缩写**，改由页面描述说明它不是 PI（`internal_sales.list.quote.description`：「总部对分公司的报价单据，不是对外收款依据的形式发票（PI）…」） |
 | 列表状态列（2026-09-28；表头文案 2026-09-29 补齐） | 列表新增「状态」列：读官方 `GET /api/sales/{quotes,orders}` 的 `status`（字典**值**，可为 null），经租户字典 `sales.order_status`（`loadDictionaryEntriesByKey` + `createDictionaryMap` + `DictionaryValue`）渲染标签与字典色点；无状态渲染 `—`，字典读不到时保留原值。报价与订单共用该字典（引擎口径）。**表头字段的 i18n key 当时漏了 zh/en 两份字典**（`internal_sales.list.columns.status`），列头渲染出裸 key；2026-09-29 已补「状态」/「Status」 |
-| 组件 | `components/InternalSalesTable.tsx`（列表）、`components/InternalSalesForm.tsx`（抬头 + 行编辑器 + 买方选择器 + 报价载入面板挂载，一次提交整单）、`components/QuoteLoadPanel.tsx`（从报价单载入的按钮/对话框/来源行）、`lib/buyer.ts`（买方值协议与快照编解码）、`lib/documentValues.ts`（单据 ↔ 表单值编解码，纯函数）、`lib/quoteLoad.ts`（报价载入 loader，纯函数 + 两次读请求） |
+| 组件 | `components/InternalSalesTable.tsx`（列表）、`components/InternalSalesForm.tsx`（抬头 + 行编辑器 + 买方选择器 + 报价载入面板挂载，一次提交整单）、`components/QuoteLoadPanel.tsx`（从报价单载入的按钮/对话框/来源行 + 来源报价预览抽屉）、`lib/buyer.ts`（买方值协议与快照编解码）、`lib/documentValues.ts`（单据 ↔ 表单值编解码，纯函数）、`lib/quoteLoad.ts`（报价载入 loader，纯函数 + 两次读请求；预览映射 `sourceQuotePreviewFromDraft`）、`lib/salesStatus.ts`（列表状态列与预览抽屉共用的状态字典键） |
 | 买方选项 | 关联组织：`GET /api/directory/organization-switcher`（requireAuth，无额外功能位）；外部客户：`GET /api/parties/options?roles=buyer` 与 `GET /api/parties/{id}`（均需 `parties.view`） |
 | 读 | 官方 `GET /api/sales/{quotes,orders}`（抬头）与 `GET /api/sales/{quote,order}-lines?quoteId\|orderId=`（行，**snake_case** 列名，`pageSize` 上限 **100**） |
 | 新建写 | 官方 `POST /api/sales/{quotes,orders}`（抬头 + 行一次提交；命令 `sales.quotes\|orders.create`） |
@@ -50,9 +50,12 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
 转换 = 报价即最终版、就地不可逆；载入 = 以报价为模板、报价保留、可出多张订单（owner 2026-09-29 确认的业务事实：
 一张订单可能分批发运/分多柜，多张订单也可能合一条柜）。
 
-- **来源记录**：载入后保存的订单写 `metadata.internalSales.sourceQuote = { id, number }`——引擎的 `metadata` 是
-  文档上的自由 jsonb，更新路径不携带该键时引擎「缺席不改」，所以编辑订单不会清掉它；订单编辑页显示
-  「来源报价单 QUOTE-…」并可跳回报价编辑页。载入是一次性的：之后报价与订单互不影响。
+- **来源记录与预览（2026-09-29 起为抽屉预览）**：载入后保存的订单写 `metadata.internalSales.sourceQuote = { id, number }`——
+  引擎的 `metadata` 是文档上的自由 jsonb，更新路径不携带该键时引擎「缺席不改」，所以编辑订单不会清掉它。
+  订单新建/编辑页显示「来源报价单：QUOTE-…」，**点单号在当前页打开右侧预览抽屉**（平台 `Drawer`，走同一个
+  `loadQuoteDraft` 只读：报价单号/买方/币种/状态/金额（未税）/行数 + 明细；状态用租户字典渲染、金额用 `MoneyAmount`），
+  不跳页、不丢已填内容；只有抽屉页脚的「打开报价单」才跳回报价编辑页（脏表单仍由 `CrudForm` 的离开确认兜底）。
+  此前该单号是直接跳转链接，点一下就把未保存的订单表单留在身后——这是本次改动的动机。载入是一次性的：之后报价与订单互不影响。
 - **映射**：复用编辑页同一组纯函数（`lib/documentValues.ts` 的 `toInternalSalesFormValues` /
   `toInternalSalesLineValues` + `lib/buyer.ts` 的 `readBuyerSnapshot`）；行 key 重新发为本地 `line-N`（新建载荷
   不能带源行 id）；空报价只载抬头并提示补明细；表单已有输入时先弹覆盖确认。
@@ -192,6 +195,11 @@ npx jest src/modules/internal_sales                     # 买方值协议 / 快�
 #  403 分支（拦截 GET /api/sales/quotes → 403）：面板行内提示「没有读取报价单的权限。」、表单保持为空；
 #  载入期间只发读请求。窄屏 420px 与深色模式已核对；读路径对照：同一订单 `?ids=` 返回 metadata=null、
 #  `?id=` 返回已存来源键。
+#  来源报价预览抽屉（2026-09-29 真机）：探针报价 QUOTE-20260929-00025（CNY、买方 Preview probe buyer、
+#  1 行 PREVIEW-PROBE-1 / PV-1 · probe spec / 3 × 12.5）+ 由其创建的订单 → 订单编辑页点「来源报价单：QUOTE-20260929-00025」
+#  → 右侧抽屉显示 报价单号/买方/币种/状态（—）/金额（未税）（—）/行数 1 + 明细行，**页面 URL 与表单值不变**（表单值对照
+#  「Preview probe buyer」仍在）；抽屉页脚「打开报价单」在干净表单上直接跳到 /quotes/<id>/edit；中英文两版抽屉均已核对
+#  （标题复用 `internal_sales.form.sourceQuote.label`）。探针报价与探针订单验后已删（`GET /api/sales/quotes` total 回到 2）。
 ```
 
 ## 回滚

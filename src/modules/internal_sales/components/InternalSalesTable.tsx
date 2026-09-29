@@ -21,6 +21,7 @@ import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n
 import { createDictionaryMap, DictionaryValue, type DictionaryMap } from '@open-mercato/core/modules/dictionaries/components/dictionaryAppearance'
 import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionaries/lib/clientEntries'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { SALES_STATUS_DICTIONARY_KEY } from '../lib/salesStatus'
 import type { InternalSalesKind } from './InternalSalesForm'
 import { documentEditHref, listHrefFor } from './InternalSalesForm'
 
@@ -34,9 +35,6 @@ import { documentEditHref, listHrefFor } from './InternalSalesForm'
  */
 
 const PAGE_SIZE = 50
-
-/** The installed sales chain keeps order and quote statuses in this dictionary. */
-const SALES_STATUS_DICTIONARY_KEY = 'sales.order_status'
 
 type DocumentRecord = {
   id: string
