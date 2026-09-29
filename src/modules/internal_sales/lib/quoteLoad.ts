@@ -46,13 +46,18 @@ export function quoteOptionFromRecord(item: Record<string, unknown>): ComboboxOp
 }
 
 /** Options for the picker, newest first; the search term is applied server-side (quote number). */
-export async function loadQuoteOptions(query?: string): Promise<ComboboxOption[]> {
+export async function loadQuoteOptions(query?: string, channelId?: string | null): Promise<ComboboxOption[]> {
   const term = query?.trim()
   const payload = await fetchCrudList<Record<string, unknown>>(QUOTES_API_PATH, {
     pageSize: OPTION_PAGE_SIZE,
     sortField: 'created_at',
     sortDir: 'desc',
     ...(term ? { search: term } : {}),
+    // The order being built carries a trade type, so the quotes it may be built from are the ones
+    // of that same type: loading the other type would freeze a buyer link the document's channel
+    // then contradicts. No channel resolved (an organization without seeded channels) leaves the
+    // list unfiltered rather than empty.
+    ...(channelId ? { channelId } : {}),
   })
   return (payload.items ?? [])
     .map(quoteOptionFromRecord)
@@ -205,8 +210,13 @@ export async function loadQuoteDraft(quoteId: string): Promise<QuoteDraft> {
 export async function applyQuoteDraftToForm(
   quoteId: string,
   setValue: (field: string, value: unknown) => void,
+  options: { adoptQuoteType?: boolean } = {},
 ): Promise<{ number: string; lineCount: number }> {
   const draft = await loadQuoteDraft(quoteId)
+  // The order inherits the quote's trade type — the buyer link a document freezes and the type it
+  // is filed under must agree. `adoptQuoteType: false` is the locked entry (`/backend/external-sales/**`),
+  // whose control must not leave the type it is dedicated to.
+  if (options.adoptQuoteType !== false) setValue('tradeType', draft.values.tradeType)
   setValue('buyerRef', draft.values.buyerRef)
   setValue('customerName', draft.values.customerName)
   setValue('currencyCode', draft.values.currencyCode)
