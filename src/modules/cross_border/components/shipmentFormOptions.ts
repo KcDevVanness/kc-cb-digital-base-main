@@ -1,7 +1,7 @@
 import type { CrudFieldOption } from '@open-mercato/ui/backend/CrudForm'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionaries/lib/clientEntries'
-import { channelIdForTradeType } from '../../internal_sales/lib/tradeType'
+import { channelIdForTradeType, tradeTypeFromSnapshot } from '../../internal_sales/lib/tradeType'
 import { loadTradeTypeChannelIds } from '../../internal_sales/lib/tradeTypeChannels'
 
 /**
@@ -57,22 +57,30 @@ function readOptionText(source: Record<string, unknown>, ...keys: string[]): str
  * The list query a shipment's sales-order picker sends.
  *
  * `channelId` is the whole point: a shipment's sales allocation is an **internal** (总部 → 分公司)
- * sale, so the marker is mandatory. `null` means the organization has no `INTERNAL_SALES` channel
- * yet — the caller must offer nothing rather than fall back to every order, or an external sale
- * could be allocated onto a shipment. Pure so the param contract is testable without a network.
+ * sale, so the marker decides. `null` (no `INTERNAL_SALES` channel yet) is still a valid query — the
+ * caller pairs it with the unmarked bucket below. Pure so the param contract is testable without a
+ * network.
  */
 export function buildSalesOrderListParams(
   channelId: string | null,
   term: string,
-): Record<string, string | number> | null {
-  if (!channelId) return null
+): Record<string, string | number> {
   return {
-    channelId,
+    ...(channelId ? { channelId } : {}),
     pageSize: SALES_OPTION_PAGE_SIZE,
     sortField: 'created_at',
     sortDir: 'desc',
     ...(term ? { search: term } : {}),
   }
+}
+
+/**
+ * A document written before the trade-type marker existed carries no channel. The ones whose buyer
+ * is a related organization are internal sales, and they must stay allocatable until the backfill
+ * runs — otherwise a shipment could not be built from any pre-marker order.
+ */
+export function isUnmarkedInternalOrder(item: Record<string, unknown>): boolean {
+  return tradeTypeFromSnapshot(item.customerSnapshot ?? item.customer_snapshot) === 'internal'
 }
 
 /**
@@ -82,31 +90,46 @@ export function buildSalesOrderListParams(
  * carries the order number so an operator can pick without memorizing ids. The route's own scope
  * rules apply, so an order outside the caller's organization is never offered.
  *
- * Only the organization's **internal** trade-type channel is offered (`channelId`): an external
- * order has no 总部 → 分公司 pricing link behind it. When that channel is missing the picker stays
- * empty and the caller's localized message is surfaced, never a widened list.
+ * Only **internal** trade-type orders are offered: an external order has no 总部 → 分公司 pricing
+ * link behind it. Two buckets make that complete without guessing: the orders already marked with
+ * the internal channel, plus the unmarked ones whose frozen buyer is a related organization (the
+ * backfill classifies exactly these, and until it runs a pre-marker order must stay allocatable).
  */
 export async function loadSalesOrderOptions(errorMessage: string, query?: string): Promise<CrudFieldOption[]> {
   const term = query?.trim() ?? ''
   const channelIds = await loadTradeTypeChannelIds('order', errorMessage)
-  const params = buildSalesOrderListParams(channelIdForTradeType('internal', channelIds), term)
-  // No `INTERNAL_SALES` channel: no request, no options, and the caller's own message (the channel
-  // loader already localized it the same way) instead of a picker that quietly lists everything.
-  if (!params) throw new Error(errorMessage)
+  const internalChannelId = channelIdForTradeType('internal', channelIds)
   try {
-    const payload = await fetchCrudList<Record<string, unknown>>(SALES_ORDERS_API_PATH, params)
-    return (payload.items ?? [])
-      .map((item) => {
-        const value = String(item.id ?? '')
-        const number = readOptionText(item, 'orderNumber', 'order_number') || value.slice(0, 8)
-        const customer = readOptionText(item, 'customerName', 'customer_name')
-        return { value, label: customer ? `${number} — ${customer}` : number }
-      })
-      .filter((option) => option.value.length > 0)
+    const [marked, unmarked] = await Promise.all([
+      fetchCrudList<Record<string, unknown>>(SALES_ORDERS_API_PATH, buildSalesOrderListParams(internalChannelId, term)),
+      fetchCrudList<Record<string, unknown>>(SALES_ORDERS_API_PATH, {
+        ...buildSalesOrderListParams(null, term),
+        channelIdsEmpty: 'true',
+      }),
+    ])
+    return toSalesOrderOptions([
+      ...(marked.items ?? []),
+      ...(unmarked.items ?? []).filter(isUnmarkedInternalOrder),
+    ])
   } catch {
     // A caller-localized message beats the transport error for an operator staring at a search box.
     throw new Error(errorMessage)
   }
+}
+
+/** Option shape shared by the two buckets, deduplicated by id (a row carries a channel or does not). */
+function toSalesOrderOptions(items: Array<Record<string, unknown>>): CrudFieldOption[] {
+  const seen = new Set<string>()
+  const options: CrudFieldOption[] = []
+  for (const item of items) {
+    const value = String(item.id ?? '')
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    const number = readOptionText(item, 'orderNumber', 'order_number') || value.slice(0, 8)
+    const customer = readOptionText(item, 'customerName', 'customer_name')
+    options.push({ value, label: customer ? `${number} — ${customer}` : number })
+  }
+  return options
 }
 
 /** One internal sales-order line as `/api/sales/order-lines` projects it. */

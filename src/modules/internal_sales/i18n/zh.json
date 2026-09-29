@@ -94,9 +94,5 @@
   "internal_sales.form.externalQuote.createTitle": "新建对外销售报价单",
   "internal_sales.form.externalQuote.editTitle": "编辑对外销售报价单",
   "internal_sales.form.externalOrder.createTitle": "新建对外销售订单",
-  "internal_sales.form.externalOrder.editTitle": "编辑对外销售订单",
-  "internal_sales.list.externalQuote.description": "分公司对当地客户的报价单；买方是当前组织的外部客户。",
-  "internal_sales.list.externalOrder.description": "分公司对当地客户的销售订单；买方是当前组织的外部客户。",
-  "internal_sales.list.externalQuote.empty": "还没有对外销售报价单",
-  "internal_sales.list.externalOrder.empty": "还没有对外销售订单"
+  "internal_sales.form.externalOrder.editTitle": "编辑对外销售订单"
 }
