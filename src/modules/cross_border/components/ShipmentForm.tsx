@@ -30,6 +30,7 @@ import { loadProductOption, loadProductOptions, type ProductOption } from '../..
 import {
   loadCarrierOptions,
   loadContainerTypeOptions,
+  loadContractOptions,
   loadPortOptions,
   loadSalesOrderLineOptions,
   loadSalesOrderOptions,
@@ -45,6 +46,7 @@ import {
  */
 
 export const SHIPMENTS_API_PATH = 'cross_border/shipments'
+export const SHIPMENT_CONTRACTS_API_PATH = 'cross_border/shipments/contracts'
 export const SHIPMENT_ALLOCATIONS_API_PATH = 'cross_border/shipments/allocations'
 export const SHIPMENT_SALES_ALLOCATIONS_API_PATH = 'cross_border/shipments/sales-allocations'
 export const SHIPMENT_MILESTONES_API_PATH = 'cross_border/shipments/milestones'
@@ -512,8 +514,20 @@ export type ShipmentFormValues = {
   /** Keyed by the destination picker, whose warehouse decides which locations are offered. */
   destinationWarehouseId: string
   destinationLocationId: string
+  contracts: ShipmentContractValues[]
   allocations: ShipmentAllocationValues[]
   salesAllocations: ShipmentSalesAllocationValues[]
+}
+
+/**
+ * One linked-contract row. `key` keeps React anchored to a row while rows are added and removed;
+ * `contractLabel` is display-only and never submitted — the server resolves the contract number
+ * and direction from `contractId` and freezes them on the link row.
+ */
+export type ShipmentContractValues = {
+  key: string
+  contractId: string
+  contractLabel: string
 }
 
 const EMPTY_SHIPMENT_VALUES: ShipmentFormValues = {
@@ -529,6 +543,7 @@ const EMPTY_SHIPMENT_VALUES: ShipmentFormValues = {
   notes: '',
   destinationWarehouseId: '',
   destinationLocationId: '',
+  contracts: [],
   allocations: [],
   salesAllocations: [],
 }
@@ -536,6 +551,25 @@ const EMPTY_SHIPMENT_VALUES: ShipmentFormValues = {
 function newRowKey(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   return `allocation-${Date.now()}-${Math.round(performance.now())}`
+}
+
+/**
+ * Reads the linked-contract rows out of a form value or an API payload. Only the id survives a
+ * round trip; the label is display-only and re-resolved by the picker's option source.
+ */
+export function readContracts(value: unknown): ShipmentContractValues[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap<ShipmentContractValues>((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const row = entry as Record<string, unknown>
+    const contractId = readText(row, 'contractId', 'contract_id')
+    if (!contractId) return []
+    return [{
+      key: typeof row.key === 'string' && row.key.length ? row.key : newRowKey(),
+      contractId,
+      contractLabel: readText(row, 'contractLabel', 'contractNumber', 'contract_number'),
+    }]
+  })
 }
 
 export function readAllocations(value: unknown): ShipmentAllocationValues[] {
@@ -600,6 +634,9 @@ export function buildShipmentPayload(values: ShipmentFormValues): Record<string,
     etd: toOptionalText(values.etd),
     eta: toOptionalText(values.eta),
     notes: toOptionalText(values.notes),
+    contracts: readContracts(values.contracts).map((row) => ({
+      contractId: row.contractId.trim(),
+    })),
     allocations: readAllocations(values.allocations).map((row) => ({
       purchaseOrderLineId: row.purchaseOrderLineId.trim(),
       // Decimals travel as strings on both allocation paths: the validator normalizes them onto
@@ -755,6 +792,93 @@ export function ShipmentDestinationFields({
           clearable
         />
       </div>
+    </div>
+  )
+}
+
+/**
+ * The linked-contract editor: one picker row per contract, with add and remove.
+ *
+ * A shipment carries **zero or more** contracts — a consolidated container may mix goods from
+ * several, and one contract is usually fulfilled by several shipments — so this is a repeating row
+ * editor rather than a single select. The set is replaced wholesale on save, exactly like the
+ * allocations; the number and direction are frozen server-side from `contractId`, so the picker's
+ * label is display-only and never submitted.
+ */
+export function ShipmentContractEditor({
+  t,
+  values,
+  setValue,
+}: CrudFormGroupComponentProps & { t: TranslateFn }) {
+  const contracts = readContracts(values.contracts)
+  const labelCache = React.useRef(new Map<string, string>())
+
+  const updateRow = React.useCallback((index: number, patch: Partial<ShipmentContractValues>) => {
+    setValue('contracts', contracts.map((row, position) => (position === index ? { ...row, ...patch } : row)))
+  }, [contracts, setValue])
+
+  const removeRow = React.useCallback((index: number) => {
+    setValue('contracts', contracts.filter((_, position) => position !== index))
+  }, [contracts, setValue])
+
+  const addRow = React.useCallback(() => {
+    setValue('contracts', [...contracts, { key: newRowKey(), contractId: '', contractLabel: '' }])
+  }, [contracts, setValue])
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
+      <h3 className="text-sm font-medium">{t('cross_border.shipments.contracts.title')}</h3>
+      <p className="text-xs text-muted-foreground">{t('cross_border.shipments.contracts.help')}</p>
+
+      {contracts.map((row, index) => (
+        <div key={row.key} className="grid grid-cols-1 items-end gap-3 md:grid-cols-12">
+          <div className="space-y-1.5 md:col-span-10">
+            <FieldLabel htmlFor={`shipment-contract-${index}`}>
+              {t('cross_border.shipments.contracts.contract')}
+            </FieldLabel>
+            <ComboboxInput
+              value={row.contractId}
+              onChange={(next) => {
+                updateRow(index, {
+                  contractId: next,
+                  contractLabel: next ? (labelCache.current.get(next) ?? row.contractLabel) : '',
+                })
+              }}
+              placeholder={t('cross_border.shipments.contracts.select')}
+              seedOptions={
+                row.contractId && row.contractLabel
+                  ? [{ value: row.contractId, label: row.contractLabel }]
+                  : undefined
+              }
+              loadSuggestions={async (query) => {
+                const loaded = await loadContractOptions(query)
+                for (const option of loaded) {
+                  labelCache.current.set(option.value, option.label)
+                }
+                return loaded
+              }}
+              allowCustomValues={false}
+              clearable
+            />
+          </div>
+          <div className="flex items-end justify-end md:col-span-2">
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="lg"
+              aria-label={t('cross_border.shipments.contracts.remove')}
+              onClick={() => removeRow(index)}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+            </IconButton>
+          </div>
+        </div>
+      ))}
+
+      <Button type="button" variant="outline" onClick={addRow}>
+        <Plus className="size-4" aria-hidden="true" />
+        {t('cross_border.shipments.contracts.add')}
+      </Button>
     </div>
   )
 }
@@ -1302,6 +1426,12 @@ export default function ShipmentForm() {
       column: 1,
       bare: true,
       component: (context) => <ShipmentDestinationFields {...context} t={t} />,
+    },
+    {
+      id: 'contracts',
+      column: 1,
+      bare: true,
+      component: (context) => <ShipmentContractEditor {...context} t={t} />,
     },
     {
       id: 'allocations',

@@ -125,3 +125,33 @@ export async function loadSalesOrderLineOptions(
     throw new Error(errorMessage)
   }
 }
+
+const CONTRACTS_API_PATH = 'trade_docs/contracts'
+const CONTRACT_OPTION_PAGE_SIZE = 50
+
+/**
+ * Purchase/sales contracts a shipment can be linked to.
+ *
+ * Read from the `trade_docs` contract list, so the owning module resolves the record; the label
+ * carries the contract number and its counterparty, which is what an operator picks by (the id
+ * never appears in the UI). Cancelled contracts are filtered out here for the same reason the
+ * command refuses them — a cancelled contract cannot cover a shipment.
+ */
+export async function loadContractOptions(query?: string): Promise<CrudFieldOption[]> {
+  const payload = await fetchCrudList<Record<string, unknown>>(CONTRACTS_API_PATH, {
+    search: query?.trim() || undefined,
+    pageSize: CONTRACT_OPTION_PAGE_SIZE,
+  })
+  return (payload.items ?? [])
+    .filter((item) => readOptionText(item, 'status') !== 'cancelled')
+    .map((item) => {
+      const id = readOptionText(item, 'id')
+      const number = readOptionText(item, 'number') || id.slice(0, 8)
+      const counterparty = readOptionText(item, 'counterpartyName')
+      return {
+        value: id,
+        label: counterparty ? `${number} — ${counterparty}` : number,
+      }
+    })
+    .filter((option) => option.value.length > 0)
+}
