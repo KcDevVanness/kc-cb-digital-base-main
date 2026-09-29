@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 41 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 42 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -69,3 +69,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [An organization-linked counterparty lives in the document snapshot, not the customer FK](lessons/org-linked-counterparty-lives-in-the-snapshot.md) — area:module-data,backend-ui,architecture; module:internal_sales,sales,parties,directory; topic:counterparty,snapshot,organization-tree,pickers,sales-documents,option-sources
 - [A cross-organization copy needs an explicit field whitelist and a source link](lessons/cross-org-copy-needs-whitelist-and-source-link.md) — area:module-data,architecture; module:products,internal_sales,parties; topic:cross-organization,master-data,distribution,idempotency,data-scoping
 - [A combobox that re-fires onChange with the same value must not clear derived state first](lessons/combobox-same-value-refire-must-not-clear-derived-state.md) — area:backend-ui,module-data; module:internal_sales; topic:combobox-input,async-derivation,save-race,data-loss,sales-lines,variant-bridge
+- [An evidence branch is cut from its target branch and only adds files](lessons/evidence-branch-is-cut-from-its-target.md) — area:spec-pr; module:platform; topic:git,worktree,branch-hygiene,ci,repo-wipe,screenshots
