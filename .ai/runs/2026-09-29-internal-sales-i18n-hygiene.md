@@ -63,12 +63,12 @@ value my own PR changed without claiming it, and one key that no code reads.
 
 ### Phase 1: fix
 
-- [ ] 1.1 Worktree + branch off `origin/dev`
-- [ ] 1.2 Restore the value; delete the dead key
-- [ ] 1.3 `yarn generate`
+- [x] 1.1 Worktree + branch off `origin/dev` — 5f2fa52
+- [x] 1.2 Restore the value; delete the dead key — 5f2fa52
+- [x] 1.3 `yarn generate` — 5f2fa52
 
 ### Phase 2: verify
 
-- [ ] 2.1 Targeted checks
-- [ ] 2.2 Broad gate (`yarn test`, `yarn build`)
-- [ ] 2.3 Rendered/dictionary check
+- [x] 2.1 Targeted checks — 5f2fa52
+- [x] 2.2 Broad gate (`yarn test`, `yarn build`) — 5f2fa52
+- [x] 2.3 Rendered/dictionary check — 5f2fa52
