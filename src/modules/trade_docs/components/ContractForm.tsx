@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, X } from 'lucide-react'
 import {
   CrudForm,
   type CrudField,
@@ -27,7 +27,13 @@ import {
 } from '@open-mercato/ui/primitives/select'
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import {
+  appendContractLines,
+  buildContractSourceAnchorPayload,
+  type ContractLineDraft,
+} from '../lib/contractLineSource'
 import { CONTRACT_DIRECTIONS, CONTRACT_STATUSES, directionLabel } from './contractLabels'
+import { ContractLineSourceDialog, type ContractLineSourceHead } from './ContractLineSourceDialog'
 import {
   loadCurrencyOptions,
   loadIncotermOptions,
@@ -64,6 +70,8 @@ export type ContractLineValues = {
   quantity: string
   unitPrice: string
   note: string
+  /** Frozen provenance of a line copied from an order/quote; `null` on a typed row. */
+  sourceSnapshot: Record<string, unknown> | null
 }
 
 export type ContractFormValues = {
@@ -95,6 +103,12 @@ export type ContractFormValues = {
   destination: string
   marks: string
   notes: string
+  /** Source anchor: `manual` (nothing picked), `purchase_order` or `sales_order`. */
+  sourceKind: string
+  sourceId: string
+  /** Display fields of the picked source; they become the head `sourceSnapshot`. */
+  sourceNumber: string
+  sourceCounterparty: string
   lines: ContractLineValues[]
   /** Optimistic-lock version; `CrudForm` derives the expected-version header from it. */
   updatedAt?: string | null
@@ -112,6 +126,7 @@ const EMPTY_LINE: ContractLineValues = {
   quantity: '1',
   unitPrice: '0',
   note: '',
+  sourceSnapshot: null,
 }
 
 const EMPTY_CONTRACT_VALUES: ContractFormValues = {
@@ -139,6 +154,10 @@ const EMPTY_CONTRACT_VALUES: ContractFormValues = {
   destination: '',
   marks: '',
   notes: '',
+  sourceKind: 'manual',
+  sourceId: '',
+  sourceNumber: '',
+  sourceCounterparty: '',
   lines: [{ ...EMPTY_LINE }],
 }
 
@@ -181,6 +200,10 @@ export function toContractFormValues(
     destination: readText(item, 'destination'),
     marks: readText(item, 'marks'),
     notes: readText(item, 'notes'),
+    sourceKind: readText(item, 'sourceKind', 'source_kind') || 'manual',
+    sourceId: readText(item, 'sourceId', 'source_id'),
+    sourceNumber: snapshotText(item.sourceSnapshot ?? item.source_snapshot, 'number'),
+    sourceCounterparty: snapshotText(item.sourceSnapshot ?? item.source_snapshot, 'counterparty'),
     lines: lines.length > 0 ? lines : [{ ...EMPTY_LINE }],
     updatedAt: typeof updatedAt === 'string' ? updatedAt : null,
   }
@@ -197,6 +220,8 @@ export function toContractLineValues(item: Record<string, unknown>): ContractLin
     quantity: readText(item, 'quantity') || '0',
     unitPrice: readText(item, 'unitPrice', 'unit_price') || '0',
     note: readText(item, 'note'),
+    sourceSnapshot:
+      (item.sourceSnapshot ?? item.source_snapshot ?? null) as Record<string, unknown> | null,
   }
 }
 
@@ -237,6 +262,7 @@ export function buildContractPayload(values: ContractFormValues): Record<string,
       quantity: line.quantity.trim() ? line.quantity.trim() : '0',
       unitPrice: line.unitPrice.trim() ? line.unitPrice.trim() : '0',
       note: trimmedOrNull(line.note),
+      sourceSnapshot: line.sourceSnapshot ?? null,
     }))
 
   const ourParty = partySnapshot({
@@ -281,6 +307,12 @@ export function buildContractPayload(values: ContractFormValues): Record<string,
     destination: trimmedOrNull(values.destination),
     marks: trimmedOrNull(values.marks),
     notes: trimmedOrNull(values.notes),
+    ...buildContractSourceAnchorPayload({
+      sourceKind: values.sourceKind,
+      sourceId: values.sourceId,
+      sourceNumber: values.sourceNumber,
+      sourceCounterparty: values.sourceCounterparty,
+    }),
     lines,
   }
 }
@@ -304,6 +336,40 @@ function ContractLinesEditor(
    */
   const linesRef = React.useRef(lines)
   linesRef.current = lines
+
+  const [copyOpen, setCopyOpen] = React.useState(false)
+  const direction = typeof values.direction === 'string' ? values.direction : 'purchase'
+  const counterpartyId = typeof values.counterpartyId === 'string' ? values.counterpartyId : ''
+  const anchorId = typeof values.sourceId === 'string' ? values.sourceId : ''
+  const anchorNumber = typeof values.sourceNumber === 'string' ? values.sourceNumber : ''
+  const anchorCounterparty = typeof values.sourceCounterparty === 'string' ? values.sourceCounterparty : ''
+  const anchorLabel = [anchorNumber || anchorId.slice(0, 8), anchorCounterparty]
+    .filter((part) => part.length > 0)
+    .join(' — ')
+
+  /**
+   * Appends a copied batch and, when the contract has no anchor yet, records where it came from.
+   * The copy is one-shot: rows are added, never replaced, and the anchor's clear action is the only
+   * way to re-point a contract that already has one.
+   */
+  const handleAppendLines = React.useCallback(
+    (rows: ContractLineDraft[], head: ContractLineSourceHead) => {
+      setValue('lines', appendContractLines(linesRef.current, rows))
+      if (anchorId.trim()) return
+      setValue('sourceKind', head.kind === 'purchase_order' ? 'purchase_order' : 'sales_order')
+      setValue('sourceId', head.id)
+      setValue('sourceNumber', head.number)
+      setValue('sourceCounterparty', head.counterparty)
+    },
+    [anchorId, setValue],
+  )
+
+  const handleClearAnchor = React.useCallback(() => {
+    setValue('sourceKind', 'manual')
+    setValue('sourceId', '')
+    setValue('sourceNumber', '')
+    setValue('sourceCounterparty', '')
+  }, [setValue])
 
   const cacheProducts = React.useCallback((options: ProductOption[]) => {
     for (const option of options) productCache.current.set(option.value, option)
@@ -527,10 +593,38 @@ function ContractLinesEditor(
           </div>
         )
       })}
-      <Button type="button" variant="outline" onClick={addLine}>
-        <Plus className="size-4" aria-hidden="true" />
-        {t('trade_docs.contracts.form.lines.add')}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" onClick={addLine}>
+          <Plus className="size-4" aria-hidden="true" />
+          {t('trade_docs.contracts.form.lines.add')}
+        </Button>
+        <Button type="button" variant="outline" onClick={() => setCopyOpen(true)}>
+          {t('trade_docs.contracts.form.lines.copy.action')}
+        </Button>
+        {anchorId ? (
+          <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+            {t('trade_docs.contracts.form.lines.copy.anchor')}
+            {': '}
+            {anchorLabel}
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={t('trade_docs.contracts.form.lines.copy.anchorClear')}
+              onClick={handleClearAnchor}
+            >
+              <X className="size-3.5" aria-hidden="true" />
+            </IconButton>
+          </span>
+        ) : null}
+      </div>
+      <ContractLineSourceDialog
+        open={copyOpen}
+        onOpenChange={setCopyOpen}
+        direction={direction}
+        counterpartyId={counterpartyId}
+        onAppend={handleAppendLines}
+      />
     </div>
   )
 }

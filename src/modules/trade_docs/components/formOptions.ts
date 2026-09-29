@@ -512,3 +512,28 @@ export async function loadPartyDetail(errorMessage: string, partyId: string): Pr
     })),
   }
 }
+
+/**
+ * The `parties` roles of a contract's counterparty — `branch` (our own subsidiary) or `buyer` (a
+ * local customer) — used to align the contract's copyable sales sources with its trade type.
+ *
+ * A contract counterparty may also be a `purchasing` supplier, whose id is not a party: that read
+ * answers 404, and the caller then treats the counterparty as having **no** master link (offering
+ * both trade types labeled) rather than as an error. The same happens when the read is simply
+ * unreadable — never a reason to block the lines editor.
+ */
+export async function loadPartyRoles(errorMessage: string, partyId: string): Promise<string[] | null> {
+  const scopedPartyId = partyId.trim()
+  if (!scopedPartyId) return null
+  try {
+    const payload = await readApiResultOrThrow<{ item?: { roles?: unknown } }>(
+      `/api/parties/${encodeURIComponent(scopedPartyId)}`,
+      undefined,
+      { errorMessage },
+    )
+    const roles = payload.item?.roles
+    return Array.isArray(roles) ? roles.filter((role): role is string => typeof role === 'string') : []
+  } catch {
+    return null
+  }
+}

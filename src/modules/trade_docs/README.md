@@ -68,6 +68,13 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 - 复制进发票时**不搬税**：`tax_rate` 保持 0 由业务补，也不动合同绑定；头部金额走 `applyInvoiceTotals` 重算。
 - 界面：CI 详情「从形式发票复制」、发票详情「从商业发票复制」（共享搜索选择器对话框），来源以 `形式发票（PI） PI-2026-0002` 链回源单据详情。
 
+## 合同行复用（REQ-005）
+
+- 合同明细区「从订单/报价单复制行」（`components/ContractLineSourceDialog.tsx`）：采购方向只列采购订单；销售方向列销售订单/报价单，并按合同对方的**贸易类型**过滤 —— 对方是 `parties` 的 `branch` ⇒ 只列内部销售单据，`buyer` ⇒ 只列对外销售单据（`channelId` 过滤，通道缺失时不展开列表、只给提示）；对方没有主数据链接（手填/供应商）⇒ 两类都列，但每个选项都标出 `内部销售`/`对外销售`。
+- **一次性追加**：复制的行追加到已录入行之后（不清空、不替换），逐行写 `source_snapshot = { kind: 'order_line', id, orderKind, copiedAt }`（`orderKind` = `purchase_order` / `sales_order` / `sales_quote`）；`trade_docs_contract_lines.source_snapshot` 列为本次追加（`Migration20260929073531_trade_docs.ts`）。
+- **头部锚点**：首次复制写入 `source_kind`（`purchase_order` / 报价单也算 `sales_order`）+ `source_id` + `source_snapshot = { number, counterparty }`；明细区复制按钮旁只读回显来源，`×` 清除后可重新锚定；从未锚定的合同仍写 `null`（与本次改动前的落库形状一致）。
+- 来源选择规则是纯函数（`lib/contractLineSource.ts`，含单测 `lib/__tests__/contractLineSource.test.ts`），网络读取复用官方 `sales/{orders,quotes,order-lines,quote-lines}` 与 `purchasing/purchase-orders/lines` 只读列表。
+
 ## 列表缓存失效（2026-09-28）
 
 平台的 CRUD 列表在 `ENABLE_CRUD_API_CACHE=true` 时按「资源 + 租户 + 组织」缓存，`makeCrudRoute` 只失效

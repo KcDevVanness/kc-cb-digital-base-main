@@ -151,6 +151,7 @@ type ResolvedContractLine = {
   quantity: string
   unitPrice: string
   note: string | null
+  sourceSnapshot: Record<string, unknown> | null
 }
 
 /**
@@ -189,6 +190,7 @@ async function resolveContractLines(
       quantity: line.quantity,
       unitPrice: line.unitPrice,
       note: line.note ?? null,
+      sourceSnapshot: line.sourceSnapshot,
     }
   })
 }
@@ -225,6 +227,7 @@ async function persistContractLines(
         quantity: line.quantity,
         unitPrice: line.unitPrice,
         note: line.note,
+        sourceSnapshot: line.sourceSnapshot,
         createdAt: now,
         updatedAt: now,
       }),

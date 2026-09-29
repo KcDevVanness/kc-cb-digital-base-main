@@ -1,0 +1,16 @@
+export const metadata = {
+  requireAuth: true,
+  requireFeatures: ['sales.orders.manage'],
+  pageTitle: 'New external sales order',
+  pageTitleKey: 'internal_sales.form.externalOrder.createTitle',
+  pageGroup: 'Cross-Border',
+  pageGroupKey: 'cross_border.nav.group',
+  pageOrder: 321,
+  icon: 'globe',
+  breadcrumb: [
+    { label: 'External sales orders', labelKey: 'internal_sales.list.externalOrder.title', href: '/backend/external-sales/orders' },
+    { label: 'Create', labelKey: 'internal_sales.form.externalOrder.createTitle' },
+  ],
+}
+
+export default metadata
