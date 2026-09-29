@@ -1,5 +1,8 @@
 {
-  "cross_border.nav.group": "出口业务",
+  "cross_border.nav.group.internal": "出口业务-内部销售",
+  "cross_border.nav.group.contracts": "出口业务-购销合同",
+  "cross_border.nav.group.shipping": "出口业务-发运",
+  "cross_border.nav.group.documents": "出口业务-单证",
   "cross_border.shipments.page.title": "发运单",
   "cross_border.shipments.page.description": "从国内代理商发往海外仓的货运批次；装箱单（PL）、报关单、提单等出口单证在详情页的单证区登记。",
   "cross_border.shipments.list.empty": "还没有发运单。",

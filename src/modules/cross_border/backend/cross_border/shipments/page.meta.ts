@@ -3,8 +3,8 @@ export const metadata = {
   requireFeatures: ['cross_border.shipments.view'],
   pageTitle: 'Shipments',
   pageTitleKey: 'cross_border.shipments.page.title',
-  pageGroup: 'Cross-Border',
-  pageGroupKey: 'cross_border.nav.group',
+  pageGroup: 'Export operations — Shipping',
+  pageGroupKey: 'cross_border.nav.group.shipping',
   pageOrder: 340,
   icon: 'truck',
   breadcrumb: [

@@ -6,8 +6,8 @@ export const metadata = {
   requireFeatures: ['cross_border.shipments.view'],
   pageTitle: 'Packing lists (PL)',
   pageTitleKey: 'cross_border.packingLists.page.title',
-  pageGroup: 'Cross-Border',
-  pageGroupKey: 'cross_border.nav.group',
+  pageGroup: 'Export operations — Shipping',
+  pageGroupKey: 'cross_border.nav.group.shipping',
   pageOrder: 345,
   icon: 'file-text',
   breadcrumb: [
