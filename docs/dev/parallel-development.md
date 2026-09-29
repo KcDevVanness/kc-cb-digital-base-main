@@ -88,6 +88,14 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
   （app 3100 / splash 4100 / postgres 5532 / redis 6479 / meilisearch 7800）。新开工作树时整块 +1000，
   否则第二个 dev server 起不来、UI 冒烟也无法同时跑。
 - 集成测试用 `yarn test:integration:ephemeral`（自起环境），不要把共享开发库当测试库。
+  自起环境是**生产模式**的 Next 服务，所以它会拒绝 `.env` 里的占位 `JWT_SECRET`
+  （`Refusing to run in production with an unsafe signing secret`），表现为
+  `Application process exited before readiness check`。本机跑法：
+  `JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral`
+  （一次性随机密钥，只作用于这次自起的一次性库）；详见
+  [pitfalls/ephemeral-integration-needs-a-real-jwt-secret.md](../pitfalls/ephemeral-integration-needs-a-real-jwt-secret.md)。
+  想只跑一条：`yarn mercato test:integration <文件名关键词>`；上一次一次性环境还在跑时会拒绝重建，
+  等它退出或复用即可。
 
 ## PR 与合并
 

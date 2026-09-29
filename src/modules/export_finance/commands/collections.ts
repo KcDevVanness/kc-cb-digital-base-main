@@ -84,6 +84,9 @@ const saveCollectionCommand: CommandHandler<Record<string, unknown>, ExportFinan
       purchaseOrderNumber: parsed.purchaseOrderNumber ?? existing?.purchaseOrderNumber ?? null,
       currencyCode: parsed.currencyCode,
       collectionStatus: parsed.collectionStatus,
+      // Absent/blank/`null` all mean "nobody has recorded a receipt": stored as null, never as 0.
+      amount: parsed.collectedAmount ?? null,
+      receivedAt: parsed.collectedAt ? new Date(parsed.collectedAt) : null,
     }
 
     const record = existing
@@ -94,6 +97,8 @@ const saveCollectionCommand: CommandHandler<Record<string, unknown>, ExportFinan
             entity.purchaseOrderNumber = fields.purchaseOrderNumber
             entity.currencyCode = fields.currencyCode
             entity.collectionStatus = fields.collectionStatus
+            entity.amount = fields.amount
+            entity.receivedAt = fields.receivedAt
           },
         })
       : await de.createOrmEntity({
@@ -105,6 +110,8 @@ const saveCollectionCommand: CommandHandler<Record<string, unknown>, ExportFinan
             purchaseOrderNumber: fields.purchaseOrderNumber,
             currencyCode: fields.currencyCode,
             collectionStatus: fields.collectionStatus,
+            amount: fields.amount,
+            receivedAt: fields.receivedAt,
             createdAt: new Date(),
             updatedAt: new Date(),
           },

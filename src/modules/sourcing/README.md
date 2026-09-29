@@ -58,6 +58,46 @@ still *feeds* it, and that is its only remaining involvement:
 See [`purchasing/README.md`](../purchasing/README.md) for the library's own rules, and
 `.ai/specs/2026-09-22-supplier-product-library.md` (D2, superseded) for the handover decision.
 
+## Change analysis (version compare · version chain · item price timeline)
+
+The archive keeps every quotation a supplier ever sent; this layer answers the two questions the
+buyer asks of it. All three surfaces are **read-only projections** — no new table, no migration, no
+new feature id (they reuse `sourcing.quotes.view`) — and they never write to a quotation, a library
+row or a product.
+
+| Surface | Endpoint | Page |
+|---|---|---|
+| Compare a version with its previous one | `GET /api/sourcing/quote-changes` | 报价单详情页「与上一版对比」面板（`components/VersionComparePanel.tsx`） |
+| A supplier's version chain with per-version counts | `GET /api/sourcing/quote-changes/versions` | 列表页「变更」标签（`components/QuoteChangesPanel.tsx`） |
+| One item across every version | `GET /api/sourcing/item-timeline` | 差异行「时间线」（`components/ItemTimelineDialog.tsx`） |
+
+Rules that are load-bearing (and why they are not five-line diffs):
+
+- **The join key is the normalized derived SKU**, never `item_no`: a supplier quotes several variants
+  under one Item No., and keying on it pairs those variants with each other. Measured on two identical
+  imports: `changed` went 0 → 16 before the key was fixed. `lib/quoteChanges.ts` `normalizeItemKey`.
+- **Money is compared exactly** — scaled BigInt, no binary floating point; only the displayed
+  percentage is a float. A base price of zero yields an amount with `percent: null`.
+- **A version is a decided quotation with a layout signature**, and repeated imports of the same
+  layout on the same calendar day collapse into one version (`quote_date` wins over import time).
+  Archived versions stay in the chain: a chain that forgets history answers nothing.
+- **Three states are reported instead of guessed**: `currency_mismatch` (never subtract a JPY price
+  from a CNY one), `no_price` (a blank cell is not zero) and `unmatched` (a line with no usable code).
+- Caps: 2000 lines per version (`422 quote_lines_unavailable`), 50 versions per chain
+  (`truncated: true`), `pageSize ≤ 200`.
+- Cross-module reads are raw-Kysely projections declared in `lib/quoteChangeReads.ts`
+  (`purchasing_supplier_products`, `products_products`, `products_prices`) — the module's own tables
+  go through the entity manager. No cross-module entity import.
+- Authentication resolves from the **request** (`getAuthFromRequest`), the same line the CRUD factory
+  uses, so the three routes accept the browser's cookie and a bearer token alike. A hand-written route
+  that reads cookies only is unreachable for the integration harness and for API-key callers —
+  `.ai/lessons/hand-written-routes-must-resolve-auth-from-the-request.md`.
+
+Verification: `yarn test src/modules/sourcing` (the rules are covered by
+`lib/__tests__/quoteChanges.test.ts`), `yarn mercato test:integration quote-changes` (the three
+endpoints through the real HTTP surface, in `__integration__/quote-changes.spec.ts`), and the
+browser paths above.
+
 ## Rules that are easy to get wrong
 
 - **Money is a decimal string.** `unit_cost` and `suggested_rsp` are validated as fixed-scale decimal

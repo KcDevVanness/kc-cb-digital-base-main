@@ -3,9 +3,9 @@ export const metadata = {
   requireFeatures: ['trade_docs.invoices.manage'],
   pageTitle: 'Invoice',
   pageTitleKey: 'trade_docs.invoices.form.editTitle',
-  pageGroup: 'Cross-Border',
-  pageGroupKey: 'cross_border.nav.group',
-  pageOrder: 332,
+  pageGroup: 'Finance',
+  pageGroupKey: 'export_finance.nav.group',
+  pageOrder: 422,
   breadcrumb: [
     { label: 'Invoices', labelKey: 'trade_docs.invoices.page.title', href: '/backend/trade-docs/invoices' },
     { label: 'Edit', labelKey: 'trade_docs.invoices.form.editTitle' },

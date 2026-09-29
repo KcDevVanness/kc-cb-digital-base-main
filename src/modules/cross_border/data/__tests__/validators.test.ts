@@ -2,19 +2,31 @@ import { describe, expect, it } from '@jest/globals'
 import { ALLOCATION_QUANTITY_SCALE, shipmentCreateSchema } from '../validators'
 
 const PURCHASE_LINE_ID = '11111111-1111-4111-8111-111111111111'
+const SALES_ORDER_ID = '22222222-2222-4222-8222-222222222222'
+const SALES_LINE_ID = '33333333-3333-4333-8333-333333333333'
+const CATALOG_PRODUCT_ID = '44444444-4444-4444-8444-444444444444'
 
 const allocation = (quantity: unknown) => ({
   purchaseOrderLineId: PURCHASE_LINE_ID,
   quantity,
 })
 
-const create = (allocations: unknown[]) => shipmentCreateSchema.safeParse({ allocations })
+const salesAllocation = (quantity: unknown, unitPrice: unknown = null) => ({
+  salesOrderId: SALES_ORDER_ID,
+  salesOrderLineId: SALES_LINE_ID,
+  catalogProductId: CATALOG_PRODUCT_ID,
+  quantity,
+  unitPrice,
+})
+
+const create = (allocations: unknown[], salesAllocations: unknown[] = []) =>
+  shipmentCreateSchema.safeParse({ allocations, salesAllocations })
 
 /**
- * The purchase-order allocation quantity path: at most 4 decimals, normalized onto the column's
- * scale, and an over-precise value is a 400 rather than a silently rounded quantity. These cases
- * pin that contract for the command and the form, which both rely on the validator's normalized
- * string.
+ * The two quantity paths (purchase-order allocation and internal-sales allocation) share one
+ * caliber: at most 4 decimals, normalized onto the column's scale, and an over-precise value is a
+ * 400 rather than a silently rounded quantity. These cases pin that contract for the command and
+ * the form, which both rely on the validator's normalized string.
  */
 describe('cross_border purchase allocation quantity validator', () => {
   it('normalizes strings and numbers onto the quantity column scale', () => {
@@ -47,5 +59,23 @@ describe('cross_border purchase allocation quantity validator', () => {
     for (const quantity of ['0', '0.0000', -1, '-0.0001']) {
       expect(create([allocation(quantity)]).success).toBe(false)
     }
+  })
+})
+
+describe('cross_border sales allocation decimal validator', () => {
+  it('keeps the quantity exact at the quantity scale and the unit price at the 4-decimal price scale', () => {
+    const parsed = create([allocation('1')], [salesAllocation('1.5', '65.5916')])
+    expect(parsed.success).toBe(true)
+    if (!parsed.success) return
+    expect(parsed.data.salesAllocations[0].quantity).toBe('1.5000')
+    expect(parsed.data.salesAllocations[0].unitPrice).toBe('65.5916')
+  })
+
+  it('rejects a unit price finer than the 4-decimal price scale, including the old 6-decimal caliber', () => {
+    // The column and the contract both hold 4 decimals; the pre-unification 6-decimal price is
+    // now over-precise input and must be refused rather than rounded.
+    expect(create([allocation('1')], [salesAllocation('1', '341.238200')]).success).toBe(false)
+    expect(create([allocation('1')], [salesAllocation('1', '65.59165')]).success).toBe(false)
+    expect(create([allocation('1')], [salesAllocation('1', '65.5916')]).success).toBe(true)
   })
 })

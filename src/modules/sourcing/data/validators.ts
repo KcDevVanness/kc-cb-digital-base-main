@@ -270,6 +270,38 @@ export const importProfileDeleteSchema = z.object({ id: z.string().uuid() })
 
 export const quoteDeleteSourceFileSchema = z.object({ quoteId: z.string().uuid() })
 
+// ---------------------------------------------------------------------------------------
+// Change analysis (read-only projections over the archive)
+// ---------------------------------------------------------------------------------------
+
+/**
+ * Comparing two quotations. `baseQuoteId` is optional on purpose: omitted means "the previous
+ * version of this layout" — the question the review console asks. `onlyChanged` drops unchanged
+ * rows from the page while the summary still counts them, so a filtered table and the headline
+ * numbers never disagree.
+ */
+export const quoteChangesQuerySchema = z.object({
+  quoteId: z.string().uuid(),
+  baseQuoteId: z.string().uuid().optional(),
+  onlyChanged: triStateBooleanFilter,
+  page: pageSchema,
+  pageSize: pageSizeSchema,
+})
+
+/** The version chain of one supplier, optionally narrowed to a single layout signature. */
+export const quoteVersionsQuerySchema = z.object({
+  supplierId: z.string().uuid(),
+  signature: z.string().trim().max(64).optional(),
+  page: pageSchema,
+  pageSize: pageSizeSchema,
+})
+
+/** One item's price history — the item is addressed by the supplier's own code. */
+export const itemTimelineQuerySchema = z.object({
+  supplierId: z.string().uuid(),
+  sku: z.string().trim().min(1).max(120),
+  pageSize: pageSizeSchema,
+})
 
 export type QuoteCreateInput = z.infer<typeof quoteCreateSchema>
 export type QuoteUpdateInput = z.infer<typeof quoteUpdateSchema>
@@ -281,3 +313,6 @@ export type QuoteParseInput = z.infer<typeof quoteParseSchema>
 export type QuoteRemapInput = z.infer<typeof quoteRemapSchema>
 export type ImportProfileListQuery = z.infer<typeof importProfileListSchema>
 export type PromoteInput = z.infer<typeof promoteSchema>
+export type QuoteChangesQuery = z.infer<typeof quoteChangesQuerySchema>
+export type QuoteVersionsQuery = z.infer<typeof quoteVersionsQuerySchema>
+export type ItemTimelineQuery = z.infer<typeof itemTimelineQuerySchema>

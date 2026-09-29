@@ -37,6 +37,6 @@ module.exports = {
       },
     ],
   },
-  transformIgnorePatterns: ['/node_modules/(?!(@open-mercato|@mikro-orm|@tanstack/react-table|@tanstack/table-core|@tanstack/react-store|@tanstack/store)/)'],
+  transformIgnorePatterns: ['/node_modules/(?!(@open-mercato|@mikro-orm|@tanstack/react-table|@tanstack/table-core|@tanstack/react-store|@tanstack/store|kysely)/)'],
   testPathIgnorePatterns: ['/node_modules/', '/.next/', '/.mercato/', '/.ai/qa/', '/__integration__/'],
 }

@@ -1,0 +1,24 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 2,
+  "items": [
+    {
+      "sku": "РК56",
+      "reason": "unknown_code",
+      "qty": "300",
+      "eta": "2026-10-05",
+      "has_catalog_card": false,
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    },
+    {
+      "sku": "PJ_EP1",
+      "reason": "no_catalog_card",
+      "qty": "240",
+      "eta": "2026-11-30",
+      "has_catalog_card": false,
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    }
+  ]
+}

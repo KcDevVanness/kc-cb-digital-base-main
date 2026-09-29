@@ -37,6 +37,7 @@ import { toUtcDateInputValue } from '@open-mercato/ui/primitives/date-format'
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { AttachmentPreviewLink, useAttachmentPreview } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import {
   ORDERS_API_PATH,
@@ -50,6 +51,7 @@ import {
   toOptionalNumber,
   trimDecimalZeros,
   type OrderStatus,
+  type PaymentStatus,
   type PurchaseOrderRecord,
 } from './PurchaseOrderForm'
 import { loadProductCategoryOptions } from './orderFormOptions'
@@ -89,13 +91,6 @@ const ORDER_DOCUMENT_TYPE_LABEL_KEYS: Record<OrderDocumentType, string> = {
 
 type OrderTransitionAction = 'place' | 'mark_shipped' | 'mark_received' | 'close' | 'cancel'
 export type PaymentStage = 'deposit' | 'balance' | 'other'
-export type PaymentStatus = 'unpaid' | 'deposit_paid' | 'partially_paid' | 'paid'
-
-export type PaymentSummary = {
-  paid: number
-  outstanding: number
-  status: PaymentStatus
-}
 
 /** A line as `/api/purchasing/purchase-orders/lines` projects it. */
 type OrderLineRecord = {
@@ -221,28 +216,6 @@ function toOrderDocumentRecord(item: Record<string, unknown>): OrderDocumentReco
   }
 }
 
-/**
- * Payment summary derived from the recorded payments: this module stores no paid/outstanding
- * columns, so the order total minus what has been recorded is the only source of truth. A
- * single deposit with no balance row reads as "deposit paid"; anything else partial is
- * "partially paid".
- */
-export function summarizePayments(order: PurchaseOrderRecord, payments: PaymentRecord[]): PaymentSummary {
-  const paid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
-  const total = Number(order.total) || 0
-  const outstanding = Math.max(total - paid, 0)
-  const depositRows = payments.filter((payment) => payment.stage === 'deposit').length
-  const balanceRows = payments.filter((payment) => payment.stage === 'balance').length
-  const status: PaymentStatus = paid <= 0
-    ? 'unpaid'
-    : outstanding <= 0
-      ? 'paid'
-      : depositRows === 1 && balanceRows === 0
-        ? 'deposit_paid'
-        : 'partially_paid'
-  return { paid, outstanding, status }
-}
-
 function mutationErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim().length) return error.message
   return fallback
@@ -293,7 +266,7 @@ function buildLineColumns(t: TranslateFn, currencyCode: string): ColumnDef<Order
       enableSorting: false,
       meta: { priority: 3, align: 'right' },
       cell: ({ row }) => (
-        <MoneyAmount currencyCode={currencyCode} amount={row.original.unitPrice} className="items-end" />
+        <MoneyAmount currencyCode={currencyCode} amount={row.original.unitPrice} kind="price" className="items-end" />
       ),
     },
     {
@@ -644,12 +617,18 @@ function PurchasePaymentsSection({
         const attachmentId = row.original.attachmentId
         if (!attachmentId) return <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>
         return (
-          <Link
-            href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
-            className="text-sm text-primary hover:underline"
-          >
-            {t('purchasing.orders.payments.attachmentOpen')}
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              label={t('purchasing.orders.payments.attachmentOpen')}
+            />
+            <Link
+              href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
+              className="text-sm text-primary hover:underline"
+            >
+              {t('purchasing.orders.payments.attachmentDownload')}
+            </Link>
+          </div>
         )
       },
     },
@@ -834,17 +813,24 @@ function PurchaseOrderDocumentAttachmentField({
           {t('purchasing.orders.documents.field.attachmentId')}
         </Button>
         {attachmentId ? (
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={disabled}
-            onClick={() => {
-              setValue('')
-              setFileName(null)
-            }}
-          >
-            {t('purchasing.orders.documents.actions.remove')}
-          </Button>
+          <>
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              fileName={fileName}
+              label={t('purchasing.orders.documents.actions.preview')}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={disabled}
+              onClick={() => {
+                setValue('')
+                setFileName(null)
+              }}
+            >
+              {t('purchasing.orders.documents.actions.remove')}
+            </Button>
+          </>
         ) : null}
       </div>
       {fileName ? <p className="text-xs text-muted-foreground">{fileName}</p> : null}
@@ -873,6 +859,7 @@ function PurchaseOrderDocumentsSection({
   const t = useT()
   const locale = useLocale()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
+  const { openPreview, previewDialog } = useAttachmentPreview()
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<OrderDocumentRecord | null>(null)
   // Bumping the key rebuilds the dialog form, so every open starts from the row it is editing
@@ -1030,12 +1017,18 @@ function PurchaseOrderDocumentsSection({
         const attachmentId = row.original.attachmentId
         if (!attachmentId) return <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>
         return (
-          <Link
-            href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
-            className="text-sm text-primary hover:underline"
-          >
-            {t('purchasing.orders.documents.actions.download')}
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              label={t('purchasing.orders.documents.actions.preview')}
+            />
+            <Link
+              href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
+              className="text-sm text-primary hover:underline"
+            >
+              {t('purchasing.orders.documents.actions.download')}
+            </Link>
+          </div>
         )
       },
     },
@@ -1099,6 +1092,10 @@ function PurchaseOrderDocumentsSection({
               <RowActions
                 items={[
                   ...(row.attachmentId ? [{
+                    id: 'preview',
+                    label: t('purchasing.orders.documents.actions.preview'),
+                    onSelect: () => openPreview(row.attachmentId as string),
+                  }, {
                     id: 'download',
                     label: t('purchasing.orders.documents.actions.download'),
                     href: `/api/attachments/file/${encodeURIComponent(row.attachmentId)}?download=1`,
@@ -1145,6 +1142,7 @@ function PurchaseOrderDocumentsSection({
         </DialogContent>
       </Dialog>
 
+      {previewDialog}
       {ConfirmDialogElement}
     </>
   )
@@ -1310,7 +1308,6 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
     return <ErrorMessage label={loadError ?? t('purchasing.orders.form.loadFailed')} />
   }
 
-  const summary = summarizePayments(order, payments)
   const transitionActions = TRANSITIONS_BY_STATUS[order.status]
   const ownerName = order.ownerName ?? (typeof order.ownerSnapshot?.name === 'string' ? order.ownerSnapshot.name : null)
   const customerName = order.customerName ?? (typeof order.customerSnapshot?.name === 'string' ? order.customerSnapshot.name : null)
@@ -1370,14 +1367,14 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
           <MoneyAmount currencyCode={order.currencyCode} amount={order.total} />
         </SummaryField>
         <SummaryField label={t('purchasing.orders.list.columns.paid')}>
-          <MoneyAmount currencyCode={order.currencyCode} amount={summary.paid} />
+          <MoneyAmount currencyCode={order.currencyCode} amount={order.paidTotal} />
         </SummaryField>
         <SummaryField label={t('purchasing.orders.list.columns.outstanding')}>
-          <MoneyAmount currencyCode={order.currencyCode} amount={summary.outstanding} />
+          <MoneyAmount currencyCode={order.currencyCode} amount={order.outstanding} />
         </SummaryField>
         <SummaryField label={t('purchasing.orders.list.columns.paymentStatus')}>
-          <StatusBadge variant={PAYMENT_STATUS_MAP[summary.status]} dot>
-            {t(PAYMENT_STATUS_LABEL_KEYS[summary.status])}
+          <StatusBadge variant={PAYMENT_STATUS_MAP[order.paymentStatus]} dot>
+            {t(PAYMENT_STATUS_LABEL_KEYS[order.paymentStatus])}
           </StatusBadge>
         </SummaryField>
         <SummaryField label={t('purchasing.orders.list.columns.expectedShipAt')}>

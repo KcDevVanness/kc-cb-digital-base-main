@@ -44,6 +44,20 @@ export class ExportFinanceCollection {
   @Property({ name: 'collection_status', type: 'text', default: 'unknown' })
   collectionStatus: string = 'unknown'
 
+  /**
+   * 已收金额 — how much of this order's proceeds actually arrived.
+   *
+   * Nullable on purpose and never defaulted to zero: every row written before this column existed
+   * has no answer, and "0" would silently claim that nothing was collected. The receivables ledger
+   * (`finance`) reads this column; the receivables side of the pair is `received_at` below.
+   */
+  @Property({ name: 'amount', type: 'numeric', precision: 18, scale: 2, nullable: true })
+  amount?: string | null
+
+  /** The date the proceeds were received; null while nobody has recorded a receipt. */
+  @Property({ name: 'received_at', type: 'date', nullable: true })
+  receivedAt?: Date | null
+
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()
 

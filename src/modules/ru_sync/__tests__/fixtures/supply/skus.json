@@ -1,0 +1,35 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 3,
+  "items": [
+    {
+      "sku": "PK44",
+      "variant_suffix": null,
+      "name": "Automatic litter box PUROBOT ULTRA",
+      "category": "trays",
+      "planning_enabled": true,
+      "active": true,
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    },
+    {
+      "sku": "PK39_2",
+      "variant_suffix": "sklad",
+      "name": "Automatic litter box PUROBOT MAX PRO 2",
+      "category": "trays",
+      "planning_enabled": true,
+      "active": true,
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    },
+    {
+      "sku": "UNKNOWN-CODE-1",
+      "variant_suffix": null,
+      "name": "Unknown factory item",
+      "category": "trays",
+      "planning_enabled": false,
+      "active": true,
+      "updated_at": "2026-09-27T10:05:00+03:00"
+    }
+  ]
+}

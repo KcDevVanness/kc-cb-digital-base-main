@@ -41,6 +41,7 @@ function contractLabels(t: TranslateFn) {
     deliveryDate: t('trade_docs.contracts.print.deliveryDate', 'Delivery date'),
     paymentTerms: t('trade_docs.contracts.print.paymentTerms', 'Payment terms'),
     shippingMethod: t('trade_docs.contracts.print.shippingMethod', 'Shipping method'),
+    incoterms: t('trade_docs.contracts.print.incoterms', 'Incoterms'),
     destination: t('trade_docs.contracts.print.destination', 'Destination'),
     marks: t('trade_docs.contracts.print.marks', 'Marks'),
     notes: t('trade_docs.contracts.print.notes', 'Notes'),
@@ -86,6 +87,7 @@ export type ContractSheetInput = {
   deliveryDate: string | null
   paymentTerms: string | null
   shippingMethod: string | null
+  incoterms?: string | null
   destination: string | null
   marks: string | null
   notes: string | null
@@ -141,6 +143,7 @@ export function buildContractSheet(input: ContractSheetInput, t: TranslateFn): X
   rows.push([labels.partyB, partyBlock(input.counterparty)])
   rows.push([labels.currency, input.currencyCode, labels.priceTier, input.priceTier ?? ''])
   rows.push([labels.deliveryDate, input.deliveryDate ?? '', labels.paymentTerms, input.paymentTerms ?? ''])
+  rows.push([labels.incoterms, input.incoterms ?? ''])
   rows.push([labels.shippingMethod, input.shippingMethod ?? '', labels.destination, input.destination ?? ''])
   rows.push([labels.marks, input.marks ?? ''])
   rows.push([labels.notes, input.notes ?? ''])

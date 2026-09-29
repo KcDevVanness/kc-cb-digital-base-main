@@ -124,6 +124,10 @@ export type FinanceView = {
   balancePlanned: string | null
   paidAmount: string
   outstandingAmount: string
+  /** 已收金额 of the order's collection record; `null` = nobody has recorded a receipt. */
+  collectedAmount: string | null
+  /** 收款日期, ISO timestamp; `null` when no receipt is recorded. */
+  collectedAt: string | null
   kcPriceAmount: string | null
   kcPriceCurrency: string | null
   subsidiaryInvoiceAmount: string | null
@@ -245,6 +249,8 @@ export function computeFinanceView(input: {
   depositAmount: string | null
   depositPercent: string | null
   paymentAmounts: string[]
+  collectedAmount: string | null
+  collectedAt: string | null
   kcPriceAmount: string | null
   kcPriceCurrency: string | null
   subsidiaryInvoiceAmount: string | null
@@ -282,6 +288,10 @@ export function computeFinanceView(input: {
     balancePlanned,
     paidAmount,
     outstandingAmount,
+    // Quantized to the amount scale like every other amount in this view; a record with no amount
+    // stays `null` so the screen never reads a missing number as zero.
+    collectedAmount: quantizeAmount(input.collectedAmount, AMOUNT_SCALE),
+    collectedAt: input.collectedAt,
     kcPriceAmount: quantizeAmount(input.kcPriceAmount, AMOUNT_SCALE),
     kcPriceCurrency: input.kcPriceAmount === null ? null : input.kcPriceCurrency,
     subsidiaryInvoiceAmount: quantizeAmount(input.subsidiaryInvoiceAmount, AMOUNT_SCALE),

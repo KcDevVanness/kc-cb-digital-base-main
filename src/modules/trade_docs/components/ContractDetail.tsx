@@ -25,9 +25,11 @@ import { EmptyState } from '@open-mercato/ui/primitives/empty-state'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { AMOUNT_SCALE, toScaledUnits } from '../lib/money'
 import { contractStatusLabel, directionLabel, invoiceStatusLabel, type ContractStatus } from './contractLabels'
+import { invoiceKindLabel } from './InvoicesTable'
 import { downloadApiFile } from './downloadFile'
 
 const CONTRACTS_API_PATH = 'trade_docs/contracts'
@@ -72,6 +74,7 @@ type ContractHead = {
   signedAt: string | null
   deliveryDate: string | null
   paymentTerms: string | null
+  incoterms: string | null
   shippingMethod: string | null
   destination: string | null
   marks: string | null
@@ -103,6 +106,7 @@ type InvoiceRecord = {
   id: string
   number: string | null
   direction: string
+  invoiceKind: string | null
   status: string
   total: string
   currencyCode: string
@@ -145,6 +149,7 @@ function toHead(item: Record<string, unknown>): ContractHead {
     signedAt: (item.signedAt ?? null) as string | null,
     deliveryDate: (item.deliveryDate ?? null) as string | null,
     paymentTerms: (item.paymentTerms ?? null) as string | null,
+    incoterms: (item.incoterms ?? null) as string | null,
     shippingMethod: (item.shippingMethod ?? null) as string | null,
     destination: (item.destination ?? null) as string | null,
     marks: (item.marks ?? null) as string | null,
@@ -180,6 +185,7 @@ function toInvoice(item: Record<string, unknown>): InvoiceRecord {
     id: String(item.id),
     number: (item.number ?? null) as string | null,
     direction: String(item.direction ?? 'inbound'),
+    invoiceKind: (item.invoiceKind ?? item.invoice_kind ?? null) as string | null,
     status: String(item.status ?? 'draft'),
     total: String(item.total ?? '0'),
     currencyCode: String(item.currencyCode ?? 'CNY'),
@@ -388,6 +394,10 @@ function ContractScanSection({ contractId, attachmentId, updatedAt, onChanged }:
         </Button>
         {attachmentId ? (
           <>
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              label={t('trade_docs.contracts.attach.preview')}
+            />
             <a
               className="text-sm font-medium hover:underline"
               href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
@@ -654,6 +664,7 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
           <SummaryField label={t('trade_docs.contracts.form.field.signedAt')}>{head.signedAt ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.deliveryDate')}>{head.deliveryDate ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.paymentTerms')}>{head.paymentTerms ?? '—'}</SummaryField>
+          <SummaryField label={t('trade_docs.contracts.form.field.incoterms')}>{head.incoterms ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.shippingMethod')}>{head.shippingMethod ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.destination')}>{head.destination ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.marks')}>{head.marks ?? '—'}</SummaryField>
@@ -697,6 +708,11 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
                     {invoiceStatusLabel(t, invoice.status)}
                   </StatusBadge>
                   <span className="text-xs text-muted-foreground">{directionLabel(t, invoice.direction)}</span>
+                  {/*
+                    The kind is what tells a reader why a listed invoice may not move the contract's
+                    financial figures: an export invoice is excluded by caliber, everything else counts.
+                  */}
+                  <span className="text-xs text-muted-foreground">{invoiceKindLabel(t, invoice.invoiceKind)}</span>
                 </div>
                 <MoneyAmount
                   currencyCode={invoice.currencyCode}

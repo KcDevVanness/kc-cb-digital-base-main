@@ -350,12 +350,24 @@ export async function loadOrderFiles(
 
   const collections = (await db
     .selectFrom('export_finance_collections as fc')
-    .select(['fc.id as id', 'fc.purchase_order_id as purchase_order_id', 'fc.collection_status as collection_status'])
+    .select([
+      'fc.id as id',
+      'fc.purchase_order_id as purchase_order_id',
+      'fc.collection_status as collection_status',
+      'fc.amount as collected_amount',
+      'fc.received_at as received_at',
+    ])
     .where('fc.purchase_order_id', 'in', orderIds)
     .where('fc.tenant_id', '=', params.tenantId)
     .where('fc.organization_id', 'in', params.organizationIds)
     .where('fc.deleted_at', 'is', null)
-    .execute()) as Array<{ id: string; purchase_order_id: string; collection_status: string }>
+    .execute()) as Array<{
+    id: string
+    purchase_order_id: string
+    collection_status: string
+    collected_amount: string | null
+    received_at: Date | string | null
+  }>
 
   const collectionIds = collections.map((row) => String(row.id))
 
@@ -511,6 +523,8 @@ export async function loadOrderFiles(
         depositAmount: order.deposit_amount ?? null,
         depositPercent: order.deposit_percent ?? null,
         paymentAmounts: payments.filter((row) => String(row.order_id) === orderId).map((row) => String(row.amount ?? '0')),
+        collectedAmount: collection ? collection.collected_amount ?? null : null,
+        collectedAt: collection ? toIsoTimestamp(collection.received_at) : null,
         kcPriceAmount: kcContract?.financeTotal ?? null,
         kcPriceCurrency: kcContract?.currencyCode ?? null,
         subsidiaryInvoiceAmount: subsidiaryInvoice?.total ?? null,
