@@ -15,6 +15,7 @@ import { RowActions } from '@open-mercato/ui/backend/RowActions'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { formatDate } from '@open-mercato/ui/utils/format'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
+import { usePathname } from 'next/navigation'
 import { hasFeature } from '@open-mercato/shared/security/features'
 import { useBackendChrome } from '@open-mercato/ui/backend/BackendChromeProvider'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
@@ -23,6 +24,13 @@ import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionar
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { SALES_STATUS_DICTIONARY_KEY } from '../lib/salesStatus'
 import type { InternalSalesKind } from './InternalSalesForm'
+import { useTradeTypeChannels } from '../lib/tradeTypeChannels'
+import {
+  channelIdForTradeType,
+  resolveRowTradeType,
+  tradeTypeFromPathname,
+  type SalesTradeType,
+} from '../lib/tradeType'
 import { documentEditHref, listHrefFor } from './InternalSalesForm'
 
 /**
@@ -38,6 +46,7 @@ const PAGE_SIZE = 50
 
 type DocumentRecord = {
   id: string
+  tradeType: SalesTradeType | null
   number: string | null
   currencyCode: string
   total: string
@@ -55,7 +64,11 @@ function readText(source: Record<string, unknown>, ...keys: string[]): string {
   return ''
 }
 
-function toDocumentRecord(item: Record<string, unknown>, kind: InternalSalesKind): DocumentRecord {
+function toDocumentRecord(
+  item: Record<string, unknown>,
+  kind: InternalSalesKind,
+  channelIds: Partial<Record<SalesTradeType, string | null | undefined>>,
+): DocumentRecord {
   const snapshot = item.customerSnapshot ?? item.customer_snapshot
   const customerName = snapshot && typeof snapshot === 'object'
     ? readText(snapshot as Record<string, unknown>, 'name') || null
@@ -63,6 +76,7 @@ function toDocumentRecord(item: Record<string, unknown>, kind: InternalSalesKind
   const total = item.grandTotalNetAmount ?? item.grand_total_net_amount ?? item.grandTotalGrossAmount
   return {
     id: String(item.id),
+    tradeType: resolveRowTradeType(item, channelIds),
     number: readText(item, kind === 'quote' ? 'quoteNumber' : 'orderNumber') || null,
     currencyCode: readText(item, 'currencyCode', 'currency_code') || 'CNY',
     total: typeof total === 'number' ? String(total) : typeof total === 'string' ? total : '0',
@@ -78,8 +92,21 @@ function buildColumns(
   locale: string,
   kind: InternalSalesKind,
   statusMap: DictionaryMap | null,
+  showTradeType: boolean,
 ): ColumnDef<DocumentRecord>[] {
   return [
+    ...(showTradeType
+      ? [{
+          id: 'tradeType',
+          header: t('internal_sales.list.columns.tradeType'),
+          enableSorting: false,
+          cell: ({ row }: { row: { original: DocumentRecord } }) => (
+            row.original.tradeType
+              ? t(`internal_sales.form.tradeType.${row.original.tradeType}`)
+              : <span className="text-xs text-muted-foreground">—</span>
+          ),
+        } as ColumnDef<DocumentRecord>]
+      : []),
     {
       accessorKey: 'number',
       header: t(kind === 'quote' ? 'internal_sales.list.columns.quoteNumber' : 'internal_sales.list.columns.orderNumber'),
@@ -132,6 +159,11 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
   const t = useT()
   const locale = useLocale()
   const router = useRouter()
+  const pathname = usePathname()
+  // One implementation, two menus: the route prefix decides which trade type this page shows, so
+  // the external pages can be plain re-exports of the internal ones.
+  const tradeType = tradeTypeFromPathname(pathname)
+  const { channels } = useTradeTypeChannels(kind)
   const scopeVersion = useOrganizationScopeVersion()
   const [search, setSearch] = React.useState('')
   const [page, setPage] = React.useState(1)
@@ -148,12 +180,12 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
     && canManage
     && (!chromeReady || hasFeature(chromePayload?.grantedFeatures, 'sales.orders.manage'))
 
-  const listHref = listHrefFor(kind)
+  const listHref = tradeType === 'external' ? listHrefFor(kind).replace('/internal-sales/', '/external-sales/') : listHrefFor(kind)
   const apiPath = kind === 'quote' ? 'sales/quotes' : 'sales/orders'
 
   const queryKey = React.useMemo(
-    () => [`internal-sales-${kind}`, page, search, scopeVersion],
-    [kind, page, scopeVersion, search],
+    () => [`internal-sales-${kind}`, tradeType, channels.internal ?? '', channels.external ?? '', page, search, scopeVersion],
+    [channels.external, channels.internal, kind, page, scopeVersion, search, tradeType],
   )
 
   const { data, isLoading, error } = useQuery({
@@ -162,8 +194,13 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
       const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE), sortField: 'created_at', sortDir: 'desc' })
       const term = search.trim()
       if (term) params.set('search', term)
+      // Server-side filtering on the engine's own channel marker; without a resolved channel the
+      // list stays unfiltered and the 类型 column tells the two apart (the form blocks a write in
+      // that state, so an unseeded organization can still read its documents).
+      const channelId = channelIdForTradeType(tradeType, channels)
+      if (channelId) params.set('channelId', channelId)
       const payload = await fetchCrudList<Record<string, unknown>>(apiPath, Object.fromEntries(params))
-      return { ...payload, items: (payload.items ?? []).map((item) => toDocumentRecord(item, kind)) }
+      return { ...payload, items: (payload.items ?? []).map((item) => toDocumentRecord(item, kind, channels)) }
     },
   })
 
@@ -225,7 +262,27 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
     () => (salesStatusEntries ? createDictionaryMap(salesStatusEntries) : null),
     [salesStatusEntries],
   )
-  const columns = React.useMemo(() => buildColumns(t, locale, kind, statusMap), [kind, locale, statusMap, t])
+  // The column only earns its width when the rows can be of more than one type: a filtered list is
+  // single-type by construction, an unseeded organization's list is not.
+  const columns = React.useMemo(
+    () => buildColumns(t, locale, kind, statusMap, !channelIdForTradeType(tradeType, channels)),
+    [channels, kind, locale, statusMap, t, tradeType],
+  )
+
+  // The same implementation serves both menus: every label follows the entry's trade type.
+  const external = tradeType === 'external'
+  const titleKey = kind === 'quote'
+    ? (external ? 'internal_sales.list.externalQuote.title' : 'internal_sales.list.quote.title')
+    : (external ? 'internal_sales.list.externalOrder.title' : 'internal_sales.list.order.title')
+  const descriptionKey = kind === 'quote'
+    ? (external ? 'internal_sales.list.externalQuote.description' : 'internal_sales.list.quote.description')
+    : (external ? 'internal_sales.list.externalOrder.description' : 'internal_sales.list.order.description')
+  const createTitleKey = kind === 'quote'
+    ? (external ? 'internal_sales.form.externalQuote.createTitle' : 'internal_sales.form.quote.createTitle')
+    : (external ? 'internal_sales.form.externalOrder.createTitle' : 'internal_sales.form.order.createTitle')
+  const emptyKey = kind === 'quote'
+    ? (external ? 'internal_sales.list.externalQuote.empty' : 'internal_sales.list.quote.empty')
+    : (external ? 'internal_sales.list.externalOrder.empty' : 'internal_sales.list.order.empty')
 
   return (
     <>
@@ -233,10 +290,10 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
         title={(
           <div className="flex flex-col gap-1">
             <h1 className="text-base font-semibold leading-tight">
-              {t(kind === 'quote' ? 'internal_sales.list.quote.title' : 'internal_sales.list.order.title')}
+              {t(titleKey)}
             </h1>
             <p className="text-sm font-normal text-muted-foreground">
-              {t(kind === 'quote' ? 'internal_sales.list.quote.description' : 'internal_sales.list.order.description')}
+              {t(descriptionKey)}
             </p>
           </div>
         )}
@@ -246,7 +303,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
           canManage ? (
             <Button asChild>
               <Link href={`${listHref}/create`}>
-                {t(kind === 'quote' ? 'internal_sales.form.quote.createTitle' : 'internal_sales.form.order.createTitle')}
+                {t(createTitleKey)}
               </Link>
             </Button>
           ) : null
@@ -260,11 +317,11 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
         searchAlign="right"
         emptyState={(
           <ListEmptyState
-            title={t(kind === 'quote' ? 'internal_sales.list.quote.empty' : 'internal_sales.list.order.empty')}
+            title={t(emptyKey)}
             {...(canManage
               ? {
                   createHref: `${listHref}/create`,
-                  createLabel: t(kind === 'quote' ? 'internal_sales.form.quote.createTitle' : 'internal_sales.form.order.createTitle'),
+                  createLabel: t(createTitleKey),
                 }
               : {})}
           />
@@ -280,7 +337,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
                   {
                     id: 'new-order-from-quote',
                     label: t('internal_sales.list.actions.newOrderFromQuote'),
-                    href: `/backend/internal-sales/orders/create?fromQuote=${row.id}`,
+                    href: `${tradeType === 'external' ? '/backend/external-sales' : '/backend/internal-sales'}/orders/create?fromQuote=${row.id}`,
                   },
                   {
                     id: 'convert-to-order',

@@ -187,6 +187,8 @@ export const contractLineInputSchema = z.object({
   quantity: decimalSchema(6, { min: '0' }),
   unitPrice: decimalSchema(PRICE_SCALE, { min: '0' }),
   note: nullableText(500),
+  /** Frozen provenance when the row was copied from an order/quote; `null` on a typed row. */
+  sourceSnapshot: snapshotSchema,
 })
 
 /**

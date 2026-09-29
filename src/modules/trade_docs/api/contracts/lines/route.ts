@@ -25,6 +25,8 @@ const contractLineItemSchema = z
     financeAmount: z.string(),
     financeSource: z.enum(['invoice', 'computed']),
     note: z.string().nullable().optional(),
+    /** Frozen provenance of a copied line (`{kind:'order_line', id, orderKind, copiedAt}`). */
+    sourceSnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .passthrough()
 
@@ -81,6 +83,7 @@ export const { metadata, GET } = makeCrudRoute({
       'contract_amount',
       'finance_amount',
       'note',
+      'source_snapshot',
       'tenant_id',
       'organization_id',
     ],
@@ -107,6 +110,7 @@ export const { metadata, GET } = makeCrudRoute({
       financeAmount: String(item.finance_amount ?? '0'),
       financeSource: 'computed' as const,
       note: (item.note ?? null) as string | null,
+      sourceSnapshot: (item.source_snapshot ?? null) as Record<string, unknown> | null,
     }),
   },
   hooks: {

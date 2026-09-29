@@ -69,6 +69,15 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
 - **权限与失败**：读报价要安装层复数功能位 `sales.quotes.view`；缺位/读失败 → 面板行内提示（+ 自动载入时 flash），
   表单内容不变，**载入不发任何写请求**。
 
+## 贸易类型：内部 / 对外（2026-09-29）
+
+- **类型由买方来源决定，不单独选**：贸易类型控件（`internal` 内部＝总部→分公司；`external` 对外＝分公司→当地客户）决定买方选择器给哪一半（关联组织 vs 外部客户），切换类型会清空已选买方；`lib/tradeType.ts` 是纯函数单点（`tradeTypeFromBuyerKind` / `tradeTypeFromSnapshot` / `resolveRowTradeType`）。
+- **写入引擎原生标记**：单据的 `channel_id` 指向本组织的两条系统通道 `INTERNAL_SALES` / `EXTERNAL_SALES`（`setup.ts` 的 `onTenantCreated` + `seedDefaults` 幂等播种；已有组织跑 `yarn mercato seed:defaults --module internal_sales`）。`sales_channels.code` 上 `(organization, tenant, code)` 唯一，重复播种不会产生第二条。通道缺失时**保存被拦截**并给出可执行提示——不带标记的单据会从两个筛选列表里同时消失。
+- **解析通道不走官方渠道页**：本模块自带 `GET /api/internal_sales/trade-type-channels/{quotes,orders}`（门禁是单据自己的 `sales.quotes.view` / `sales.orders.view`），因为分公司业务员通常没有 `sales.channels.view`；该路由只读，写入只发生在播种与回填。
+- **两个入口，一套实现**：`/backend/internal-sales/**` 与 `/backend/external-sales/**` 是同一批页面（后者 re-export 前者的 `page.tsx`，只换 `page.meta.ts`）；`tradeTypeFromPathname` 让组件知道自己在哪个入口，对外入口的贸易类型控件锁定为「对外」。列表按解析出的通道服务端过滤；通道解析不到时不加过滤并显示「类型」列（未播种的组织仍可只读）。
+- **回填历史单据**：`yarn mercato internal_sales backfill-trade-type`（默认 dry-run，`--apply` 才写，需 owner 批准）。分类规则＝快照链接（`internalSales.organizationId` → internal；`partyId` → external），**不做猜测**：没有链接的单据只报数（`skipped`），不会被打标。`customer_snapshot` 是加密列，所以 CLI 走官方实体 + 解密读取助手，而不是裸 SQL。
+- **下游**：发运单的销售分摊选择器只列**内部**订单（`cross_border/components/shipmentFormOptions.ts` 传 `channelId=<internal>`）；对外订单不进出口分摊链。
+
 ## 买方：关联组织 + 外部客户（2026-09-28）
 
 内部销售的两个方向共用这一套页面，买方的语义随之分两种（spec：
