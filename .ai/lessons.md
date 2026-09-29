@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 52 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 53 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -80,3 +80,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [A squash-promoted release branch lags main, and its PR to main misreports the size](lessons/squash-promoted-release-branch-lags-main.md) — area:spec-pr; module:platform; topic:branch-hygiene,squash-merge,release-branch,merge-conflicts,branch-protection
 - [A permanent integration trunk survives only on a reset after each landing and a loud drift report](lessons/permanent-trunk-needs-reset-and-drift-report.md) — area:spec-pr; module:platform; topic:integration-branch,trunk,branch-hygiene,reset,force-with-lease,parallel-development
 - [A page that is the record's own surface is never its own back/cancel target](lessons/edit-page-is-not-its-own-back-target.md) — area:backend-ui,debugging; module:internal_sales,platform; topic:navigation,back-link,cancel-link,dead-link,crud-form,href-helpers
+- [An installed sales single-document read returns metadata only for `id`, never for `ids`](lessons/sales-single-doc-read-id-vs-ids-projection.md) — area:framework-context,module-data,backend-ui; module:internal_sales,sales; topic:sales-documents,list-projection,metadata,single-document-read,read-after-write,field-vs-projection
