@@ -490,7 +490,6 @@
   "trade_docs.documents.print.total": "Total",
   "trade_docs.documents.print.inWords": "Amount in words",
   "trade_docs.contracts.print.incoterms": "Incoterms",
-<<<<<<< HEAD
   "trade_docs.contracts.form.tradeTypeChannelsLoadFailed": "Could not load the trade-type channels",
   "trade_docs.contracts.form.lines.copy.action": "Copy lines from an order/quote",
   "trade_docs.contracts.form.lines.copy.title": "Copy lines from an order or quote",
@@ -510,8 +509,6 @@
   "trade_docs.contracts.form.lines.copy.kind.sales_order": "Sales order",
   "trade_docs.contracts.form.lines.copy.kind.sales_quote": "Sales quote",
   "trade_docs.contracts.form.lines.copy.tradeType.internal": "Internal sale",
-  "trade_docs.contracts.form.lines.copy.tradeType.external": "External sale"
-=======
+  "trade_docs.contracts.form.lines.copy.tradeType.external": "External sale",
   "trade_docs.counterparty.picker.organizationRequired": "Select an organization in the top bar before choosing a counterparty."
->>>>>>> 702c8ea (fix(trade-docs,purchasing): review findings — supplier detail URL, copy-from counterparty, picker scope)
 }
