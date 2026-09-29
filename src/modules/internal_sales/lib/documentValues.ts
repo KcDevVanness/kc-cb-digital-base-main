@@ -7,6 +7,7 @@
  */
 
 import { readBuyerSnapshot } from './buyer'
+import { resolveRowTradeType, type SalesTradeType } from './tradeType'
 
 export type InternalSalesLineValues = {
   key: string
@@ -37,6 +38,13 @@ export type SourceQuoteRef = {
 
 export type InternalSalesFormValues = {
   id?: string
+  /**
+   * Trade type of the document — `internal` (总部 → 分公司) or `external` (分公司 → 当地客户).
+   *
+   * It decides which buyer sources the picker offers and which engine channel the document is
+   * written to (`lib/tradeType.ts`); it is never chosen independently of the buyer.
+   */
+  tradeType: SalesTradeType
   /**
    * The buyer picker's value protocol: `''` | `org:<uuid>` | `party:<uuid>` (see `lib/buyer.ts`).
    *
@@ -69,6 +77,7 @@ export const EMPTY_LINE: InternalSalesLineValues = {
 }
 
 export const EMPTY_VALUES: InternalSalesFormValues = {
+  tradeType: 'internal',
   buyerRef: '',
   customerName: '',
   currencyCode: '',
@@ -127,6 +136,7 @@ export function buildDocumentMetadata(sourceQuote: SourceQuoteRef): Record<strin
 export function toInternalSalesFormValues(
   item: Record<string, unknown>,
   lines: InternalSalesLineValues[] = [],
+  channelIds: Partial<Record<SalesTradeType, string | null | undefined>> = {},
 ): InternalSalesFormValues {
   const updatedAt = item.updatedAt ?? item.updated_at
   // The buyer link and its printed name both live in the snapshot (`lib/buyer.ts`); the installed
@@ -134,6 +144,9 @@ export function toInternalSalesFormValues(
   const buyer = readBuyerSnapshot(item.customerSnapshot ?? item.customer_snapshot)
   return {
     id: readText(item, 'id'),
+    // The channel marker is the truth; a document written before the marker existed falls back to
+    // its frozen snapshot (the same rule the backfill uses).
+    tradeType: resolveRowTradeType(item, channelIds) ?? 'internal',
     buyerRef: buyer.ref,
     customerName: buyer.name,
     currencyCode: readText(item, 'currencyCode', 'currency_code'),

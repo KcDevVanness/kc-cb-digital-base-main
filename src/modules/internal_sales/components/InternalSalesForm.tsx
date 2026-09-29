@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import {
@@ -46,6 +46,8 @@ import {
   encodeBuyerRef,
   isUuid,
 } from '../lib/buyer'
+import { useTradeTypeChannels } from '../lib/tradeTypeChannels'
+import { SALES_TRADE_TYPES, channelIdForTradeType, isSalesTradeType, tradeTypeFromPathname, type SalesTradeType } from '../lib/tradeType'
 import {
   EMPTY_LINE,
   EMPTY_VALUES,
@@ -210,10 +212,17 @@ export function lineScaleViolation(
  */
 function toHeadPayload(
   values: InternalSalesFormValues,
-  options?: { clearing?: boolean },
+  options?: {
+    clearing?: boolean
+    channelIds?: Partial<Record<SalesTradeType, string | null | undefined>>
+  },
 ): Record<string, unknown> {
   const snapshot = buildBuyerSnapshot({ name: values.customerName, ref: values.buyerRef })
+  const channelId = channelIdForTradeType(values.tradeType, options?.channelIds ?? {})
   return {
+    // The trade type travels on the engine's channel; callers resolve the map and block the save
+    // when the organization has not been seeded, so a document is never written unmarked.
+    ...(channelId ? { channelId } : {}),
     currencyCode: values.currencyCode.trim().toUpperCase(),
     customerSnapshot: snapshot ?? (options?.clearing ? null : undefined),
     customerReference: values.customerReference.trim() ? values.customerReference.trim() : undefined,
@@ -231,9 +240,10 @@ function toHeadPayload(
 export function buildInternalSalesPayload(
   kind: InternalSalesKind,
   values: InternalSalesFormValues,
+  channelIds: Partial<Record<SalesTradeType, string | null | undefined>> = {},
 ): Record<string, unknown> {
   return {
-    ...toHeadPayload(values),
+    ...toHeadPayload(values, { channelIds }),
     // Provenance only, and only on create: the engine's update path leaves `metadata` untouched
     // when the payload omits it, so the edit form never rewrites the stored value.
     ...(values.sourceQuote ? { metadata: buildDocumentMetadata(values.sourceQuote) } : {}),
@@ -263,11 +273,12 @@ export async function saveInternalSalesDocument(
   documentId: string,
   values: InternalSalesFormValues,
   loadedLineIds: readonly string[],
+  channelIds: Partial<Record<SalesTradeType, string | null | undefined>> = {},
 ): Promise<void> {
   await withScopedApiRequestHeaders(buildOptimisticLockHeader(values.updatedAt ?? null), () =>
     updateCrud(apiPathFor(kind), {
       id: documentId,
-      ...toHeadPayload(values, { clearing: true }),
+      ...toHeadPayload(values, { clearing: true, channelIds }),
       updatedAt: values.updatedAt ?? null,
     }),
   )
@@ -370,6 +381,7 @@ function BuyerPickerField({
   setValue,
   setFormValue,
   disabled,
+  values,
   t,
 }: CrudCustomFieldRenderProps & { t: TranslateFn }) {
   const { organizationId } = useOrganizationScopeDetail()
@@ -377,6 +389,25 @@ function BuyerPickerField({
   const queryClient = useQueryClient()
   const [partiesFailed, setPartiesFailed] = React.useState(false)
   const currentValue = typeof value === 'string' ? value : ''
+  /**
+   * The trade type decides which sources exist at all: an internal sale buys from a group company,
+   * an external one from a local customer. Reading it from the sibling field here is why the picker
+   * is a custom field rather than a `CrudField` (an option loader gets no sibling values).
+   */
+  const rawTradeType = values?.tradeType
+  const tradeType: SalesTradeType = isSalesTradeType(rawTradeType) ? rawTradeType : 'internal'
+  /**
+   * Switching the trade type changes which namespace the buyer belongs to, so the picked value
+   * cannot carry over (an organization id is not a customer). The first render is skipped so an
+   * edit page keeps the stored buyer.
+   */
+  const previousTradeType = React.useRef(tradeType)
+  React.useEffect(() => {
+    if (previousTradeType.current === tradeType) return
+    previousTradeType.current = tradeType
+    setValue('')
+    setFormValue?.('customerName', '')
+  }, [setFormValue, setValue, tradeType])
   /**
    * Labels the operator has seen for a value. `ComboboxInput` renders the selected value as its
    * option label and, on focus, asks the source to search for the input's text — this map lets the
@@ -409,40 +440,46 @@ function BuyerPickerField({
       const selectedLabel = labelByValue.current.get(currentValue)
       const term = selectedLabel && queryText === selectedLabel ? '' : queryText
       const normalized = term.toLowerCase()
-      const organizationOptions = organizationEntries
-        .filter((entry) => (normalized.length === 0 ? true : entry.name.toLowerCase().includes(normalized)))
-        .map((entry) => ({
-          value: encodeBuyerRef({ kind: 'organization', id: entry.id }),
-          label: `${relatedOrgPrefix}${entry.name}`,
-        }))
+      const organizationOptions = tradeType === 'internal'
+        ? organizationEntries
+            .filter((entry) => (normalized.length === 0 ? true : entry.name.toLowerCase().includes(normalized)))
+            .map((entry) => ({
+              value: encodeBuyerRef({ kind: 'organization', id: entry.id }),
+              label: `${relatedOrgPrefix}${entry.name}`,
+            }))
+        : []
 
       let partyOptions: ComboboxOption[] = []
-      try {
-        const payload = await readApiResultOrThrow<{ items?: Array<{ value?: string; label?: string }> }>(
-          buildPartyOptionsUrl({ query: term, organizationId, roles: EXTERNAL_BUYER_ROLES }),
-          undefined,
-          { errorMessage: partyLoadFailed },
-        )
-        partyOptions = (payload.items ?? [])
-          .map((item) => {
-            const id = String(item.value ?? '')
-            if (!id) return null
-            return {
-              value: encodeBuyerRef({ kind: 'party', id }),
-              label: `${externalPrefix}${String(item.label ?? '')}`,
-            }
-          })
-          .filter((option): option is ComboboxOption => option !== null)
+      if (tradeType === 'external') {
+        try {
+          const payload = await readApiResultOrThrow<{ items?: Array<{ value?: string; label?: string }> }>(
+            buildPartyOptionsUrl({ query: term, organizationId, roles: EXTERNAL_BUYER_ROLES }),
+            undefined,
+            { errorMessage: partyLoadFailed },
+          )
+          partyOptions = (payload.items ?? [])
+            .map((item) => {
+              const id = String(item.value ?? '')
+              if (!id) return null
+              return {
+                value: encodeBuyerRef({ kind: 'party', id }),
+                label: `${externalPrefix}${String(item.label ?? '')}`,
+              }
+            })
+            .filter((option): option is ComboboxOption => option !== null)
+          setPartiesFailed(false)
+        } catch {
+          // The hint under the field explains the empty list; the rest of the form stays usable.
+          setPartiesFailed(true)
+        }
+      } else {
         setPartiesFailed(false)
-      } catch {
-        // The organization half stays usable; the hint under the field explains the empty half.
-        setPartiesFailed(true)
       }
       const options = [...organizationOptions, ...partyOptions]
       for (const option of options) labelByValue.current.set(option.value, option.label)
       return options
     },
-    [currentValue, externalPrefix, organizationEntries, organizationId, partyLoadFailed, relatedOrgPrefix],
+    [currentValue, externalPrefix, organizationEntries, organizationId, partyLoadFailed, relatedOrgPrefix, tradeType],
   )
 
   const resolveLabel = React.useCallback(
@@ -507,8 +544,10 @@ function BuyerPickerField({
         value={currentValue}
         onChange={handleChange}
         placeholder={t(
-          'internal_sales.form.buyer.selectPlaceholder',
-          'Search a related organization or external customer…',
+          tradeType === 'internal'
+            ? 'internal_sales.form.buyer.selectInternalPlaceholder'
+            : 'internal_sales.form.buyer.selectExternalPlaceholder',
+          tradeType === 'internal' ? 'Search a related organization…' : 'Search an external customer…',
         )}
         loadSuggestions={loadSuggestions}
         resolveLabel={resolveLabel}
@@ -733,8 +772,30 @@ function InternalSalesLinesEditor(
   )
 }
 
-function useFields(t: TranslateFn): CrudField[] {
+/**
+ * `fixedTradeType` locks the control to one value: the external menu (`/backend/external-sales/**`)
+ * is the entry for trade with local customers, so that surface must not be able to write an internal
+ * document (and the other way round the internal entry stays editable for legacy reasons only when
+ * the route says internal — see `tradeTypeFromPathname`).
+ */
+function useFields(t: TranslateFn, fixedTradeType: SalesTradeType | null = null): CrudField[] {
   return React.useMemo<CrudField[]>(() => [
+    {
+      id: 'tradeType',
+      label: t('internal_sales.form.field.tradeType'),
+      type: 'select',
+      required: true,
+      layout: 'half',
+      description: fixedTradeType
+        ? t('internal_sales.form.field.tradeTypeFixed', 'This entry is fixed to the trade type it names.')
+        : t('internal_sales.form.field.tradeTypeHelp'),
+      options: SALES_TRADE_TYPES
+        .filter((type) => (fixedTradeType ? type === fixedTradeType : true))
+        .map((type) => ({
+          value: type,
+          label: t(`internal_sales.form.tradeType.${type}`),
+        })),
+    },
     {
       id: 'buyerRef',
       label: t('internal_sales.form.field.customer'),
@@ -753,7 +814,7 @@ function useFields(t: TranslateFn): CrudField[] {
     },
     { id: 'customerReference', label: t('internal_sales.form.field.customerReference'), type: 'text', layout: 'half' },
     { id: 'comments', label: t('internal_sales.form.field.comments'), type: 'textarea', layout: 'half' },
-  ], [t])
+  ], [fixedTradeType, t])
 }
 
 /**
@@ -786,7 +847,7 @@ function useGroups(
           ),
         }]
       : []),
-    { id: 'header', column: 1, fields: ['buyerRef', 'customerName', 'currencyCode', 'customerReference', 'comments'] },
+    { id: 'header', column: 1, fields: ['tradeType', 'buyerRef', 'customerName', 'currencyCode', 'customerReference', 'comments'] },
     {
       id: 'lines',
       column: 1,
@@ -796,16 +857,32 @@ function useGroups(
   ], [autoLoadFrom, mode, t, withQuoteLoad])
 }
 
+/**
+ * The trade type this route is dedicated to, or `null` when the entry is the generic internal one.
+ * `/backend/external-sales/**` is the external surface; the internal pages keep the switch so a
+ * legacy internal operator can still fix a mis-typed document before the backfill runs.
+ */
+function useFixedTradeType(): SalesTradeType | null {
+  const pathname = usePathname()
+  return tradeTypeFromPathname(pathname) === 'external' ? 'external' : null
+}
+
 function CreateForm({ kind }: { kind: InternalSalesKind }) {
   const t = useT()
   const router = useRouter()
-  const fields = useFields(t)
+  const fixedTradeType = useFixedTradeType()
+  const fields = useFields(t, fixedTradeType)
+  const { channels, hasAll: hasAllChannels, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
   // The quote list's row action arrives here; the panel loads that quote once on mount.
   const fromQuote = useSearchParams().get('fromQuote')
   const groups = useGroups(t, { withQuoteLoad: kind === 'order', mode: 'create', autoLoadFrom: fromQuote })
 
   const handleSubmit = React.useCallback(async (values: InternalSalesFormValues) => {
-    const payload = buildInternalSalesPayload(kind, values)
+    if (!hasAllChannels) {
+      flash(missingChannelMessage, 'error')
+      throw new Error(missingChannelMessage)
+    }
+    const payload = buildInternalSalesPayload(kind, values, channels)
     const lines = payload.lines as unknown[]
     if (lines.length === 0) {
       flash(t('internal_sales.form.linesRequired'), 'error')
@@ -840,7 +917,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       flash(t('internal_sales.form.saveFailed'), 'error')
       throw error
     }
-  }, [kind, router, t])
+  }, [channels, hasAllChannels, kind, missingChannelMessage, router, t])
 
   return (
     <CrudForm<InternalSalesFormValues>
@@ -849,7 +926,11 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       backHref={listHrefFor(kind)}
       fields={fields}
       groups={groups}
-      initialValues={{ ...EMPTY_VALUES, lines: [{ ...EMPTY_LINE }] }}
+      initialValues={{
+        ...EMPTY_VALUES,
+        tradeType: fixedTradeType ?? EMPTY_VALUES.tradeType,
+        lines: [{ ...EMPTY_LINE }],
+      }}
       submitLabel={t('internal_sales.form.save')}
       cancelHref={listHrefFor(kind)}
       onSubmit={handleSubmit}
@@ -860,7 +941,9 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
 function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: string }) {
   const t = useT()
   const router = useRouter()
-  const fields = useFields(t)
+  const fixedTradeType = useFixedTradeType()
+  const fields = useFields(t, fixedTradeType)
+  const { channels, hasAll: hasAllChannels, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
   const groups = useGroups(t, { withQuoteLoad: kind === 'order', mode: 'edit' })
   const [initial, setInitial] = React.useState<InternalSalesFormValues | null>(null)
   const [loadedLineIds, setLoadedLineIds] = React.useState<string[]>([])
@@ -902,7 +985,8 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
         const lineRecords = linePayload.items ?? []
         const lines = lineRecords.map(toInternalSalesLineValues)
         if (!cancelled) {
-          setInitial(toInternalSalesFormValues(item, lines))
+          const loaded = toInternalSalesFormValues(item, lines, channels)
+          setInitial(fixedTradeType ? { ...loaded, tradeType: fixedTradeType } : loaded)
           // Remembered so the save can delete the rows the operator removed.
           setLoadedLineIds(lineRecords.map((record) => String(record.id ?? '')).filter((id) => id.length > 0))
         }
@@ -919,14 +1003,24 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
     return () => {
       cancelled = true
     }
-  }, [documentId, kind, reloadToken, t])
+  }, [channels, documentId, fixedTradeType, kind, reloadToken, t])
 
   const fallback = React.useMemo<InternalSalesFormValues>(
-    () => ({ ...EMPTY_VALUES, id: documentId, lines: [{ ...EMPTY_LINE }], updatedAt: null }),
-    [documentId],
+    () => ({
+      ...EMPTY_VALUES,
+      tradeType: fixedTradeType ?? EMPTY_VALUES.tradeType,
+      id: documentId,
+      lines: [{ ...EMPTY_LINE }],
+      updatedAt: null,
+    }),
+    [documentId, fixedTradeType],
   )
 
   const handleSubmit = React.useCallback(async (values: InternalSalesFormValues) => {
+    if (!hasAllChannels) {
+      flash(missingChannelMessage, 'error')
+      throw new Error(missingChannelMessage)
+    }
     if (usableLines(values).length === 0) {
       flash(t('internal_sales.form.linesRequired'), 'error')
       throw new Error(t('internal_sales.form.linesRequired'))
@@ -942,7 +1036,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
       throw new Error(message)
     }
     try {
-      await saveInternalSalesDocument(kind, initial?.id || documentId, values, loadedLineIds)
+      await saveInternalSalesDocument(kind, initial?.id || documentId, values, loadedLineIds, channels)
       flash(t('internal_sales.form.saved'), 'success')
       setReloadToken((token) => token + 1)
     } catch (updateError) {
@@ -953,7 +1047,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
       flash(t('internal_sales.form.saveFailed'), 'error')
       throw updateError
     }
-  }, [documentId, initial, kind, loadedLineIds, t])
+  }, [channels, documentId, hasAllChannels, initial, kind, loadedLineIds, missingChannelMessage, t])
 
   if (isNotFound) {
     return <RecordNotFoundState label={t('internal_sales.form.notFound')} backHref={listHrefFor(kind)} />
