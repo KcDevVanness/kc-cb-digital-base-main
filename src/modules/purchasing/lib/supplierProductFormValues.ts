@@ -220,6 +220,7 @@ export function buildSupplierProductPriceRowsPayload(rows: SupplierProductPriceR
     .map((row) => ({
       priceKind: row.priceKind,
       currencyCode: row.currencyCode.trim().toUpperCase(),
+      // A price-ladder step is an integer count; only `unitPrice` is on the money caliber.
       minQuantity: Number(row.minQuantity.trim() || '1'),
       unitPrice: row.unitPrice.trim(),
       isActive: row.isActive,
@@ -265,7 +266,10 @@ export function toSupplierProductFormValues(item: Record<string, unknown>): Supp
   }
 }
 
-/** A numeric field's value as a number, or `null` for blank/not-a-number. */
+/**
+ * A numeric field's value as a number, or `null` for blank/not-a-number. For **non-money** fields
+ * (packing dimensions, integer counts); an amount goes through `nullableDecimalText` and the engine.
+ */
 export function nullableNumberText(value: number | string): number | null {
   const trimmed = typeof value === 'number' ? String(value) : value.trim()
   if (trimmed.length === 0) return null

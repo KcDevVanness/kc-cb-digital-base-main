@@ -17,6 +17,7 @@ import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { PRICE_SCALE } from '../../trade_docs/lib/money'
 import { loadQuoteSectionOptions } from './quoteSectionOptions'
 import type { PromotionResult, QuoteLineRow, QuoteLineStatus } from '../types'
 // The supplier library moved to `purchasing`, so the action's route and payload shape live there;
@@ -420,13 +421,13 @@ export function QuoteLinesGrid({
           const delta = Number.isFinite(quoted) && Number.isFinite(stored) ? quoted - stored : null
           return (
             <span className="text-xs">
-              <MoneyAmount currencyCode={price.currencyCode} amount={price.unitPrice} />
+              <MoneyAmount currencyCode={price.currencyCode} amount={price.unitPrice} kind="price" />
               {delta === null || delta === 0 ? (
                 <span className="text-muted-foreground"> · 0</span>
               ) : (
                 <Badge variant={delta > 0 ? 'error' : 'success'}>
                   {delta > 0 ? '+' : ''}
-                  {delta.toFixed(2)}
+                  {delta.toFixed(PRICE_SCALE)}
                 </Badge>
               )}
             </span>

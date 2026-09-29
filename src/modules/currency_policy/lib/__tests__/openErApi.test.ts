@@ -21,7 +21,10 @@ describe('buildCnyRatePairs', () => {
       'USD→CNY',
     ])
     const usdToCny = pairs.find((pair) => pair.fromCurrencyCode === 'USD')
-    expect(Number(usdToCny?.rate)).toBeCloseTo(6.7226, 3)
+    // 1 / 0.148751 = 6.722643881385… — HALF_UP at 8 decimals through the engine, not a float product.
+    expect(usdToCny?.rate).toBe('6.72264388')
+    const hkdToCny = pairs.find((pair) => pair.fromCurrencyCode === 'HKD')
+    expect(hkdToCny?.rate).toBe('0.85719698')
     const cnyToUsd = pairs.find((pair) => pair.toCurrencyCode === 'USD')
     expect(cnyToUsd?.rate).toBe('0.148751')
   })

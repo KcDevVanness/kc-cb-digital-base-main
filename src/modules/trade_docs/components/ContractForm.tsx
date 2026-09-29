@@ -31,6 +31,10 @@ import { CONTRACT_DIRECTIONS, CONTRACT_STATUSES, directionLabel } from './contra
 import {
   loadCounterpartyOptions,
   loadCurrencyOptions,
+  loadIncotermOptions,
+  loadPartyBankAccountOptions,
+  loadPartyDetail,
+  loadPartyOptions,
   loadPaymentTermOptions,
   loadPortOptions,
   loadProductOption,
@@ -39,6 +43,7 @@ import {
   readText,
   useUnitOptions,
   withCurrentUnit,
+  type PartyDetail,
   type ProductOption,
 } from './formOptions'
 
@@ -68,6 +73,10 @@ export type ContractFormValues = {
   counterpartyAddress: string
   counterpartyContact: string
   counterpartyBank: string
+  /** `parties` id of our own side, when the head was picked from master data (F-004). */
+  ourPartyId: string
+  /** `PartyBankAccount` id the bank text was filled from; carried into the snapshot. */
+  ourPartyBankAccountId: string
   ourPartyName: string
   ourPartyAddress: string
   ourPartyContact: string
@@ -78,6 +87,7 @@ export type ContractFormValues = {
   signedAt: string
   deliveryDate: string
   paymentTerms: string
+  incoterms: string
   shippingMethod: string
   destination: string
   marks: string
@@ -109,6 +119,8 @@ const EMPTY_CONTRACT_VALUES: ContractFormValues = {
   counterpartyAddress: '',
   counterpartyContact: '',
   counterpartyBank: '',
+  ourPartyId: '',
+  ourPartyBankAccountId: '',
   ourPartyName: '',
   ourPartyAddress: '',
   ourPartyContact: '',
@@ -119,6 +131,7 @@ const EMPTY_CONTRACT_VALUES: ContractFormValues = {
   signedAt: '',
   deliveryDate: '',
   paymentTerms: '',
+  incoterms: '',
   shippingMethod: '',
   destination: '',
   marks: '',
@@ -148,6 +161,8 @@ export function toContractFormValues(
     counterpartyAddress: snapshotText(counterpartySnapshot, 'address'),
     counterpartyContact: snapshotText(counterpartySnapshot, 'contact'),
     counterpartyBank: snapshotText(counterpartySnapshot, 'bank'),
+    ourPartyId: snapshotText(ourPartySnapshot, 'partyId'),
+    ourPartyBankAccountId: snapshotText(ourPartySnapshot, 'bankAccountId'),
     ourPartyName: snapshotText(ourPartySnapshot, 'name'),
     ourPartyAddress: snapshotText(ourPartySnapshot, 'address'),
     ourPartyContact: snapshotText(ourPartySnapshot, 'contact'),
@@ -158,6 +173,7 @@ export function toContractFormValues(
     signedAt: (item.signedAt ?? item.signed_at ?? '') as string,
     deliveryDate: (item.deliveryDate ?? item.delivery_date ?? '') as string,
     paymentTerms: readText(item, 'paymentTerms', 'payment_terms'),
+    incoterms: readText(item, 'incoterms'),
     shippingMethod: readText(item, 'shippingMethod', 'shipping_method'),
     destination: readText(item, 'destination'),
     marks: readText(item, 'marks'),
@@ -220,6 +236,17 @@ export function buildContractPayload(values: ContractFormValues): Record<string,
       note: trimmedOrNull(line.note),
     }))
 
+  const ourParty = partySnapshot({
+    name: values.ourPartyName,
+    address: values.ourPartyAddress,
+    contact: values.ourPartyContact,
+    bank: values.ourPartyBank,
+  }) ?? {}
+  // The master-data ids ride inside the free-form snapshot; the validator accepts any object, so the
+  // printed head stays traceable to `parties` without a command change.
+  if (values.ourPartyId.trim()) ourParty.partyId = values.ourPartyId.trim()
+  if (values.ourPartyBankAccountId.trim()) ourParty.bankAccountId = values.ourPartyBankAccountId.trim()
+
   return {
     direction: values.direction,
     counterpartyKind: values.counterpartyKind,
@@ -230,18 +257,14 @@ export function buildContractPayload(values: ContractFormValues): Record<string,
       contact: values.counterpartyContact,
       bank: values.counterpartyBank,
     }),
-    ourPartySnapshot: partySnapshot({
-      name: values.ourPartyName,
-      address: values.ourPartyAddress,
-      contact: values.ourPartyContact,
-      bank: values.ourPartyBank,
-    }),
+    ourPartySnapshot: Object.keys(ourParty).length > 0 ? ourParty : null,
     priceTier: values.priceTier.trim() ? values.priceTier.trim() : null,
     currencyCode: values.currencyCode.trim().toUpperCase(),
     exchangeRate: values.exchangeRate.trim() ? values.exchangeRate.trim() : null,
     signedAt: trimmedOrNull(values.signedAt),
     deliveryDate: trimmedOrNull(values.deliveryDate),
     paymentTerms: trimmedOrNull(values.paymentTerms),
+    incoterms: trimmedOrNull(values.incoterms),
     shippingMethod: trimmedOrNull(values.shippingMethod),
     destination: trimmedOrNull(values.destination),
     marks: trimmedOrNull(values.marks),
@@ -500,6 +523,130 @@ function ContractLinesEditor(
   )
 }
 
+/**
+ * Our own side (F-004): the pickers fill the printed seller head and the beneficiary bank from the
+ * `parties` master, while the four free-text fields below stay editable for contracts that predate
+ * the master data. The chosen party/account ids travel inside `ourPartySnapshot` (the validator
+ * accepts a free-form snapshot, so no command change is needed).
+ */
+export function OurPartyPicker({
+  values,
+  setValue,
+  t,
+  idPrefix = 'contract',
+}: CrudFormGroupComponentProps & { t: TranslateFn; idPrefix?: string }) {
+  const partyId = typeof values.ourPartyId === 'string' ? values.ourPartyId : ''
+  const bankAccountId = typeof values.ourPartyBankAccountId === 'string' ? values.ourPartyBankAccountId : ''
+  const partyName = typeof values.ourPartyName === 'string' ? values.ourPartyName : ''
+  const bankText = typeof values.ourPartyBank === 'string' ? values.ourPartyBank : ''
+  /** Accounts of the last party we loaded, so picking a second account needs no second request. */
+  const accountsRef = React.useRef<PartyDetail['bankAccounts']>([])
+
+  const applyBankAccount = React.useCallback(
+    (account: PartyDetail['bankAccounts'][number]) => {
+      setValue('ourPartyBankAccountId', account.id)
+      setValue(
+        'ourPartyBank',
+        [account.beneficiaryBank, account.accountNumber, account.swiftCode]
+          .filter((part) => part.length > 0)
+          .join(' '),
+      )
+    },
+    [setValue],
+  )
+
+  const handlePartyChange = React.useCallback(
+    (nextId: string) => {
+      setValue('ourPartyId', nextId)
+      if (!nextId) return
+      void loadPartyDetail(t('trade_docs.contracts.form.partyLoadFailed'), nextId)
+        .then((party) => {
+          if (!party) return
+          accountsRef.current = party.bankAccounts
+          setValue('ourPartyName', party.name)
+          setValue('ourPartyAddress', party.address)
+          setValue('ourPartyContact', party.contact)
+          setValue('ourPartyBankAccountId', '')
+          const preferred = party.bankAccounts.find((account) => account.isDefault) ?? party.bankAccounts[0]
+          if (preferred) applyBankAccount(preferred)
+          else setValue('ourPartyBank', '')
+        })
+        .catch(() => undefined)
+    },
+    [applyBankAccount, setValue, t],
+  )
+
+  const handleBankAccountChange = React.useCallback(
+    (nextId: string) => {
+      setValue('ourPartyBankAccountId', nextId)
+      if (!nextId) return
+      const cached = accountsRef.current.find((account) => account.id === nextId)
+      if (cached) {
+        applyBankAccount(cached)
+        return
+      }
+      if (!partyId) return
+      void loadPartyDetail(t('trade_docs.contracts.form.partyLoadFailed'), partyId)
+        .then((party) => {
+          accountsRef.current = party?.bankAccounts ?? []
+          const account = accountsRef.current.find((row) => row.id === nextId)
+          if (account) applyBankAccount(account)
+        })
+        .catch(() => undefined)
+    },
+    [applyBankAccount, partyId, setValue, t],
+  )
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <div className="space-y-1.5">
+        <FieldLabel htmlFor={`${idPrefix}-our-party`}>
+          {t('trade_docs.contracts.form.field.ourPartyFromMaster')}
+        </FieldLabel>
+        <ComboboxInput
+          value={partyId}
+          onChange={handlePartyChange}
+          placeholder={t('trade_docs.contracts.form.field.ourPartySelect')}
+          seedOptions={partyId ? [{ value: partyId, label: partyName || partyId }] : undefined}
+          loadSuggestions={async (query) => {
+            const options = await loadPartyOptions(t('trade_docs.contracts.form.partyLoadFailed'), query)
+            return options.map<ComboboxOption>((option) => ({ value: option.value, label: option.label }))
+          }}
+          allowCustomValues={false}
+          clearable
+        />
+        <p className="text-xs text-muted-foreground">
+          {t('trade_docs.contracts.form.field.ourPartyFromMasterHelp')}
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        <FieldLabel htmlFor={`${idPrefix}-our-party-bank`}>
+          {t('trade_docs.contracts.form.field.bankAccount')}
+        </FieldLabel>
+        <ComboboxInput
+          value={bankAccountId}
+          onChange={handleBankAccountChange}
+          placeholder={t('trade_docs.contracts.form.field.bankAccountSelect')}
+          disabled={!partyId}
+          seedOptions={bankAccountId ? [{ value: bankAccountId, label: bankText || bankAccountId }] : undefined}
+          loadSuggestions={async (query) => {
+            const options = await loadPartyBankAccountOptions(
+              t('trade_docs.contracts.form.partyLoadFailed'),
+              partyId,
+            )
+            const term = query?.trim().toLowerCase() ?? ''
+            return options
+              .filter((option) => (term.length ? option.label.toLowerCase().includes(term) : true))
+              .map<ComboboxOption>((option) => ({ value: option.value, label: option.label }))
+          }}
+          allowCustomValues={false}
+          clearable
+        />
+      </div>
+    </div>
+  )
+}
+
 function useContractFields(t: TranslateFn): CrudField[] {
   const { organizationId } = useOrganizationScopeDetail()
   return React.useMemo<CrudField[]>(() => [
@@ -584,6 +731,18 @@ function useContractFields(t: TranslateFn): CrudField[] {
       allowCustomValues: true,
       resolveLabel: (value) => value,
       loadOptions: (query) => loadPaymentTermOptions(query),
+    },
+    {
+      id: 'incoterms',
+      label: t('trade_docs.contracts.form.field.incoterms'),
+      // Trade terms come from the `incoterms` dictionary the setup seeds; the field stays free-text
+      // so a negotiated term (or a dictionary not yet seeded) never blocks the form.
+      type: 'combobox',
+      layout: 'half',
+      description: t('trade_docs.contracts.form.field.incotermsHelp'),
+      allowCustomValues: true,
+      resolveLabel: (value) => value,
+      loadOptions: (query) => loadIncotermOptions(query),
     },
     {
       id: 'shippingMethod',
@@ -683,7 +842,13 @@ export default function ContractForm({ mode, contractId }: { mode: 'create' | 'e
     {
       id: 'terms',
       column: 2,
-      fields: ['paymentTerms', 'shippingMethod', 'destination', 'marks', 'notes'],
+      fields: ['paymentTerms', 'incoterms', 'shippingMethod', 'destination', 'marks', 'notes'],
+    },
+    {
+      id: 'ourPartyMaster',
+      column: 2,
+      bare: true,
+      component: (context) => <OurPartyPicker {...context} t={t} />,
     },
     {
       id: 'parties',

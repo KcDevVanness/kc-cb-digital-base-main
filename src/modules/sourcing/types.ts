@@ -127,3 +127,116 @@ export type LineDraft = {
   sectionLabel: string
   dirty: boolean
 }
+
+export type QuoteChangeKind =
+  | 'added'
+  | 'removed'
+  | 'up'
+  | 'down'
+  | 'currency_mismatch'
+  | 'no_price'
+  | 'same'
+
+export type QuoteVersionRef = {
+  quoteId: string
+  number: string | null
+  status: string
+  signature: string | null
+  supplierId: string | null
+  quoteDate: string | null
+  createdAt: string
+  fileName: string | null
+  lineCount: number
+  promotedCount: number
+  day?: string
+  collapsedCount?: number
+}
+
+export type QuoteChangeRow = {
+  key: string | null
+  itemNo: string | null
+  name: string | null
+  kind: QuoteChangeKind
+  baseLineId: string | null
+  targetLineId: string | null
+  baseUnitCost: string | null
+  targetUnitCost: string | null
+  baseCurrencyCode: string | null
+  targetCurrencyCode: string | null
+  deltaAmount: string | null
+  deltaPercent: number | null
+  library: { supplierProductId: string; supplierSku: string; productId: string | null } | null
+  purchase: { productId: string; productSku: string; unitPrice: string; currencyCode: string } | null
+}
+
+export type QuoteChangeSummary = {
+  added: number
+  removed: number
+  up: number
+  down: number
+  same: number
+  currencyMismatch: number
+  noPrice: number
+  total: number
+  unmatched: number
+  duplicateKeys: number
+}
+
+export type QuoteChangesResponse = {
+  target: QuoteVersionRef
+  base: QuoteVersionRef | null
+  candidates: QuoteVersionRef[]
+  summary: QuoteChangeSummary
+  items: QuoteChangeRow[]
+  totalCount: number
+  page: number
+  pageSize: number
+}
+
+export type QuoteVersionRow = {
+  quoteId: string
+  number: string | null
+  status: string
+  signature: string | null
+  supplierId: string | null
+  quoteDate: string | null
+  createdAt: string
+  fileName: string | null
+  lineCount: number
+  promotedCount: number
+  day: string
+  collapsedCount: number
+  baseQuoteId: string | null
+  summary: QuoteChangeSummary | null
+}
+
+export type ItemTimelinePoint = {
+  quoteId: string
+  number: string | null
+  day: string
+  signature: string | null
+  itemNo: string | null
+  name: string | null
+  unitCost: string | null
+  currencyCode: string | null
+  moqQuantity: number | null
+  promotedProductId: string | null
+  kind: QuoteChangeKind
+  deltaAmount: string | null
+  deltaPercent: number | null
+  first: boolean
+}
+
+export type ItemTimelineResponse = {
+  item: {
+    key: string
+    itemNo: string | null
+    name: string | null
+    library: { supplierProductId: string; supplierSku: string; productId: string | null } | null
+    purchase: { productId: string; productSku: string; unitPrice: string; currencyCode: string } | null
+  }
+  points: ItemTimelinePoint[]
+  versionCount: number
+  latestVersionDay: string | null
+  reportedInLatestVersion: boolean
+}

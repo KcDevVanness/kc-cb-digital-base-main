@@ -14,6 +14,7 @@ Route first; never probe unmatched context.
 
 - Route all axes; missing context: `yarn mercato agentic:init --update-harness`.
 - Lessons: scan `.ai/lessons.md` tags; open/update one matching record + row.
+- Delivery: one work unit = one worktree = one branch = one PR; commit per slice, run the gate, open the PR — never wait to be asked, never push `main`/`production` (see Delivery Flow).
 - App code: `src/modules/<id>/`; framework context only for named gaps.
 - Derive trusted `tenantId` + `organizationId` and fail closed. Only an installed contract may use system scope (`organizationId: null`).
 - Use commands/`makeCrudRoute`/`CrudForm`/`DataTable`, DI/events/UMES; effects stay post-commit.
@@ -40,6 +41,46 @@ Route first; never probe unmatched context.
 ## Validation
 
 Broad: `yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test && yarn build`; integration: `yarn test:integration:ephemeral`. Never migrate to validate.
+
+## Delivery Flow (default, every session)
+
+One work unit = one module / one spec slice / one bug = one worktree = one branch = one PR = one agent.
+The default is autonomous: claim, isolate, commit per slice, gate, PR — never wait for the user to ask.
+Mechanics and the shared-file conflict list: `docs/dev/parallel-development.md`; PR/review machinery:
+`.agents/skills/om-auto-create-pr/SKILL.md` plus the `.ai/skills/**` overrides (`om-auto-continue-pr`,
+`om-auto-review-pr`) — read the skill before driving a PR by hand.
+
+1. **Claim before the first edit.** `git worktree list` + `gh pr list --state open`: if the unit
+   already has a branch/worktree/PR, continue that one (`om-auto-continue-pr`) instead of opening a
+   second; the same module or spec slice is never worked twice in parallel.
+2. **Isolate.** `git worktree add ../kc-cb-digital-base-min-<slug> -b feat/<slug> origin/main`
+   (bugfix `fix/<slug>`, process/tooling `chore/<slug>`), then `yarn install && yarn generate` and a
+   `.env` copy with its own port block. Branch base is always `origin/main`; the only exception is a
+   stack declared in the PR's `## Assumptions` (child base = parent branch), and the child is
+   retargeted to `main` (`gh pr edit <child> --base main`) the moment the parent merges. Never point
+   a PR at a branch that is already merged into `main` — everything merged into it afterwards stays
+   out of `main`. Never work a unit inside another unit's tree; never nest worktrees.
+3. **Commit per slice.** One coherent change per commit, conventional subject, the affected subset of
+   `Validation` before each commit, push after every phase so an interrupted run is resumable. Other
+   sessions' uncommitted files are read-only for you; never rewrite a pushed shared branch.
+4. **Close out.** Broad gate (`Validation`) green; a docs-only change runs the relevant lint plus
+   `node scripts/check-lessons.mjs` when a lesson changed.
+5. **PR.** Open as a **draft** at the first push, flip to **ready** (`gh pr ready`) only when the gate
+   is green and the Progress list is complete. Body MUST carry `Tracking plan:`/`Source doc:` (this
+   tracker has no issues; the spec/run path is the requirement record — add `Closes #N`/`Refs #N` the
+   day issues exist), `## Goal` (problem + root cause), `## What Changed`, `## Assumptions`,
+   `## 🧪 Tests` (commands + result counts), `## 💥 Breaking Changes`, `## Rollback`, `## 📋 Progress`.
+   Docs, specs and module READMEs ride in the same branch and PR as the code they describe; never a
+   separate `docs/*` branch for the same unit.
+6. **Clean up after the merge.** The remote branch is auto-deleted (`delete_branch_on_merge`); run
+   `yarn branches:cleanup --apply` for the local branch and its clean worktree. An integration branch
+   (base of stacked PRs) is finished only when `git diff --diff-filter=A --name-only origin/main
+   <branch>` is empty — land the remainder first, then delete it.
+7. **Labels + disclosure.** Apply the pipeline/category/priority/risk labels from
+   `.ai/agentic.config.json`; AI-authored commits carry an `[AI-Generated]` trailer in the body (never
+   in the subject) and run comments open with the `🤖` marker.
+8. **Never commit or push to `main` or `production`** — every change enters through a PR, and the
+   `main` admin bypass is not a shortcut for routine work.
 
 ## Three-Axis Context Assembler
 
@@ -190,5 +231,6 @@ authorized by hiding, and dropping a route with `null` breaks already-stored not
 
 1. Route, then implement the smallest complete slice through real call sites.
 2. Discovery change: run `yarn generate`; then the smallest gate/integration paths.
+3. Close the unit: commit per slice, run the gate, drive the PR draft → ready (Delivery Flow).
 
 Precedence: root→BC→installed `AGENTS.md`→facts; stop on skew/conflict; never guess.

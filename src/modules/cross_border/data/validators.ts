@@ -1,4 +1,12 @@
 import { z } from 'zod'
+import { PRICE_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
+
+/**
+ * Allocation quantities live on a `numeric(18,4)` column, and both quantity paths (purchase-order
+ * lines and internal-sales-order lines) share this one caliber: at most 4 decimals, compared and
+ * stored as exact decimals — never re-read through a float.
+ */
+export const ALLOCATION_QUANTITY_SCALE = 4
 
 export const SHIPMENT_STATUSES = ['draft', 'in_transit', 'received', 'cancelled'] as const
 export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number]
@@ -29,9 +37,89 @@ const uuid = () => z.string().uuid()
 const optionalText = (max: number) => z.string().trim().max(max).nullable().optional()
 const optionalDate = () => z.string().min(1).nullable().optional()
 
+/**
+ * Decimal columns keep every digit they are given: a quantity or unit price with more decimals
+ * than the column holds is rejected instead of silently rounded, because the value is a frozen
+ * snapshot of an internal sales price. Arithmetic follows the same decimal-string convention as
+ * the trade documents module, and the lower bound is compared as scaled integers (`toScaledUnits`)
+ * so a value a ten-thousandth over the bound is not judged by float noise.
+ */
+const DECIMAL_PATTERN = /^-?\d+(?:\.\d+)?$/
+
+function decimalSchema(scale: number, options: { min?: string; minExclusive?: boolean } = {}) {
+  return z
+    .union([z.string(), z.number()])
+    .transform((value) => (typeof value === 'number' ? String(value) : value.trim()))
+    .superRefine((value, ctx) => {
+      if (!DECIMAL_PATTERN.test(value)) {
+        ctx.addIssue({ code: 'custom', message: 'value must be a plain decimal number' })
+        return
+      }
+      const fraction = value.split('.')[1] ?? ''
+      if (fraction.length > scale) {
+        ctx.addIssue({ code: 'custom', message: `value allows at most ${scale} decimal places` })
+        return
+      }
+      if (value.startsWith('-') && value !== '-0') {
+        ctx.addIssue({ code: 'custom', message: 'value must not be negative' })
+        return
+      }
+      if (options.min !== undefined) {
+        const valueUnits = toScaledUnits(value, scale)
+        const minUnits = toScaledUnits(options.min, scale)
+        if (options.minExclusive ? valueUnits <= minUnits : valueUnits < minUnits) {
+          ctx.addIssue({
+            code: 'custom',
+            message: options.minExclusive ? `value must be greater than ${options.min}` : `value must be at least ${options.min}`,
+          })
+        }
+      }
+    })
+    .transform((value) => {
+      const negative = value.startsWith('-')
+      const digits = negative ? value.slice(1) : value
+      const [integerPart, fractionPart = ''] = digits.split('.')
+      const padded = fractionPart.padEnd(scale, '0')
+      return `${negative && !/^0*$/.test(integerPart + padded) ? '-' : ''}${integerPart}.${padded}`
+    })
+}
+
+const nullableDecimalSchema = (scale: number, options: { min?: string } = {}) =>
+  z
+    .union([z.string(), z.number(), z.null()])
+    .optional()
+    .transform((value) => (value === null || value === undefined ? null : value))
+    .pipe(z.union([decimalSchema(scale, options), z.null()]))
+
 const allocationInputSchema = z.object({
   purchaseOrderLineId: uuid(),
-  quantity: z.coerce.number().positive(),
+  // Normalized to the column's scale and compared as scaled integers: a value with a fifth
+  // decimal, an exponent string (`1e-7`) or a float artifact (`0.30000000000000004`) is a 400
+  // instead of being rounded onto the column, and zero is not an allocation.
+  quantity: decimalSchema(ALLOCATION_QUANTITY_SCALE, { min: '0', minExclusive: true }),
+})
+
+/**
+ * One shipment ↔ internal-sales-order-line allocation, as the form submits it. The sales order id
+ * and number are server-resolved from the line where possible; the price/currency are the frozen
+ * snapshot the operator may adjust before saving. ISO-4217-shaped codes are uppercased rather
+ * than rejected, mirroring the trade documents module.
+ */
+export const salesAllocationInputSchema = z.object({
+  salesOrderId: uuid(),
+  salesOrderLineId: uuid(),
+  salesOrderNumber: optionalText(200),
+  catalogProductId: uuid(),
+  productSnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
+  quantity: decimalSchema(ALLOCATION_QUANTITY_SCALE, { min: '0' }),
+  unitPrice: nullableDecimalSchema(PRICE_SCALE, { min: '0' }),
+  currencyCode: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{3}$/, 'currency code must be a three-letter ISO code')
+    .transform((value) => value.toUpperCase())
+    .nullable()
+    .optional(),
 })
 
 export const shipmentCreateSchema = z.object({
@@ -48,11 +136,14 @@ export const shipmentCreateSchema = z.object({
   eta: optionalDate(),
   notes: optionalText(2000),
   allocations: z.array(allocationInputSchema).min(1),
+  salesAllocations: z.array(salesAllocationInputSchema).max(500).default([]),
 })
 
 export const shipmentUpdateSchema = shipmentCreateSchema.partial().extend({
   id: uuid(),
   allocations: z.array(allocationInputSchema).min(1).optional(),
+  // Absent = leave the stored set untouched; an explicit list (including `[]`) replaces it wholesale.
+  salesAllocations: z.array(salesAllocationInputSchema).max(500).optional(),
 })
 
 export const shipmentListSchema = z.object({
@@ -95,6 +186,13 @@ export const milestoneListSchema = z.object({
 })
 
 export const allocationListSchema = z.object({
+  id: uuid().optional(),
+  shipmentId: uuid().optional(),
+  page: z.coerce.number().min(1).default(1),
+  pageSize: z.coerce.number().min(1).max(200).default(100),
+})
+
+export const salesAllocationListSchema = z.object({
   id: uuid().optional(),
   shipmentId: uuid().optional(),
   page: z.coerce.number().min(1).default(1),

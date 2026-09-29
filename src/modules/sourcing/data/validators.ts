@@ -1,13 +1,18 @@
 import { z } from 'zod'
 import { parseBooleanToken } from '@open-mercato/shared/lib/boolean'
+import { PRICE_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
 import { SOURCE_FIELD_BY_KEY, type SourceFieldKey } from '../lib/fieldAliases'
 
 /**
  * Input contracts for the sourcing module.
  *
- * Money and weight columns follow the products module's decimal convention (a decimal string
- * with a fixed scale is validated and passed through untouched, so no float rounding happens
- * on the way to Postgres). Optimistic locking is **not** part of these schemas for the
+ * Money and weight columns follow the products module's decimal convention (a decimal string with a
+ * fixed scale is validated and passed through untouched, so no float rounding happens on the way to
+ * Postgres). A price may be submitted as a string or a number, is normalized to the column's own
+ * scale (4 decimals), and is rejected — never rounded — when it carries more decimals than the
+ * column holds, because a silently rounded price is indistinguishable from an operator's typo. The
+ * lower bound is compared as scaled integers (`toScaledUnits`) so a ten-thousandth over the bound is
+ * not judged by float noise. Optimistic locking is **not** part of these schemas for the
  * single-record routes: the version travels in the
  * `x-om-ext-optimistic-lock-expected-updated-at` header that `enforceCommandOptimisticLock`
  * reads. The batch line edit is the exception — one header cannot carry 200 versions, so each
@@ -18,14 +23,29 @@ const DECIMAL_PATTERN = /^-?\d+(?:\.\d+)?$/
 
 function decimalSchema(scale: number, options: { min?: string } = {}) {
   return z
-    .string()
-    .trim()
-    .regex(DECIMAL_PATTERN, 'value must be a decimal number')
-    .refine((value) => {
+    .union([z.string(), z.number()])
+    .transform((value) => (typeof value === 'number' ? String(value) : value.trim()))
+    .superRefine((value, ctx) => {
+      if (!DECIMAL_PATTERN.test(value)) {
+        ctx.addIssue({ code: 'custom', message: 'value must be a plain decimal number' })
+        return
+      }
       const fraction = value.split('.')[1] ?? ''
-      return fraction.length <= scale
-    }, `value must have at most ${scale} decimal places`)
-    .refine((value) => (options.min === undefined ? true : Number(value) >= Number(options.min)), `value must be >= ${options.min}`)
+      if (fraction.length > scale) {
+        ctx.addIssue({ code: 'custom', message: `value allows at most ${scale} decimal places` })
+        return
+      }
+      if (options.min !== undefined && toScaledUnits(value, scale) < toScaledUnits(options.min, scale)) {
+        ctx.addIssue({ code: 'custom', message: `value must be at least ${options.min}` })
+      }
+    })
+    .transform((value) => {
+      const negative = value.startsWith('-')
+      const digits = negative ? value.slice(1) : value
+      const [integerPart, fractionPart = ''] = digits.split('.')
+      const padded = fractionPart.padEnd(scale, '0')
+      return `${negative && !/^0*$/.test(integerPart + padded) ? '-' : ''}${integerPart}.${padded}`
+    })
 }
 
 const nullableDecimalSchema = (scale: number, options: { min?: string } = {}) =>
@@ -136,8 +156,8 @@ export const quoteLineCreateSchema = z.object({
   hsCode: nullableText(32),
   description: nullableText(2000),
   unit: z.string().trim().max(24).default('PCS'),
-  unitCost: nullableDecimalSchema(6, { min: '0' }),
-  suggestedRsp: nullableDecimalSchema(6, { min: '0' }),
+  unitCost: nullableDecimalSchema(PRICE_SCALE, { min: '0' }),
+  suggestedRsp: nullableDecimalSchema(PRICE_SCALE, { min: '0' }),
   moqRaw: nullableText(64),
   moqQuantity: nullableNonNegativeIntegerSchema,
   cartonQuantity: nullableNonNegativeIntegerSchema,
@@ -177,7 +197,7 @@ export const quoteLinesBatchUpdateSchema = z.object({
           .optional(),
         productName: nullableText(300),
         moqQuantity: nullableNonNegativeIntegerSchema,
-        unitCost: nullableDecimalSchema(6, { min: '0' }),
+        unitCost: nullableDecimalSchema(PRICE_SCALE, { min: '0' }),
         sectionLabel: nullableText(120),
       }),
     )
@@ -250,6 +270,38 @@ export const importProfileDeleteSchema = z.object({ id: z.string().uuid() })
 
 export const quoteDeleteSourceFileSchema = z.object({ quoteId: z.string().uuid() })
 
+// ---------------------------------------------------------------------------------------
+// Change analysis (read-only projections over the archive)
+// ---------------------------------------------------------------------------------------
+
+/**
+ * Comparing two quotations. `baseQuoteId` is optional on purpose: omitted means "the previous
+ * version of this layout" — the question the review console asks. `onlyChanged` drops unchanged
+ * rows from the page while the summary still counts them, so a filtered table and the headline
+ * numbers never disagree.
+ */
+export const quoteChangesQuerySchema = z.object({
+  quoteId: z.string().uuid(),
+  baseQuoteId: z.string().uuid().optional(),
+  onlyChanged: triStateBooleanFilter,
+  page: pageSchema,
+  pageSize: pageSizeSchema,
+})
+
+/** The version chain of one supplier, optionally narrowed to a single layout signature. */
+export const quoteVersionsQuerySchema = z.object({
+  supplierId: z.string().uuid(),
+  signature: z.string().trim().max(64).optional(),
+  page: pageSchema,
+  pageSize: pageSizeSchema,
+})
+
+/** One item's price history — the item is addressed by the supplier's own code. */
+export const itemTimelineQuerySchema = z.object({
+  supplierId: z.string().uuid(),
+  sku: z.string().trim().min(1).max(120),
+  pageSize: pageSizeSchema,
+})
 
 export type QuoteCreateInput = z.infer<typeof quoteCreateSchema>
 export type QuoteUpdateInput = z.infer<typeof quoteUpdateSchema>
@@ -261,3 +313,6 @@ export type QuoteParseInput = z.infer<typeof quoteParseSchema>
 export type QuoteRemapInput = z.infer<typeof quoteRemapSchema>
 export type ImportProfileListQuery = z.infer<typeof importProfileListSchema>
 export type PromoteInput = z.infer<typeof promoteSchema>
+export type QuoteChangesQuery = z.infer<typeof quoteChangesQuerySchema>
+export type QuoteVersionsQuery = z.infer<typeof quoteVersionsQuerySchema>
+export type ItemTimelineQuery = z.infer<typeof itemTimelineQuerySchema>

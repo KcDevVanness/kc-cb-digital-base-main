@@ -1,0 +1,64 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 1,
+  "items": [
+    {
+      "period_start": "2026-09-15",
+      "period_end": "2026-09-28",
+      "net_revenue": {
+        "amount": "5006199.00",
+        "currency": "RUB"
+      },
+      "ad_spend": {
+        "amount": "376307.00",
+        "currency": "RUB"
+      },
+      "ad_spend_live": {
+        "amount": "219441.00",
+        "currency": "RUB"
+      },
+      "drr_percent": 7.5,
+      "drr_live_percent": 4.4,
+      "orders_paid": 472,
+      "orders_total": 542,
+      "avg_check": {
+        "amount": "10606.00",
+        "currency": "RUB"
+      },
+      "spend_by_type": [
+        {
+          "type": "smart_banners",
+          "amount": {
+            "amount": "137333.00",
+            "currency": "RUB"
+          },
+          "share_percent": 36.5
+        }
+      ],
+      "revenue_by_category": [
+        {
+          "category": "trays",
+          "amount": {
+            "amount": "3048777.00",
+            "currency": "RUB"
+          },
+          "share_percent": 60.9
+        }
+      ],
+      "top_products": [
+        {
+          "sku": "PK39_2",
+          "revenue": {
+            "amount": "1081339.00",
+            "currency": "RUB"
+          },
+          "revenue_share_percent": 21.6
+        }
+      ],
+      "drr_target_percent": 20,
+      "updated_at": "2026-09-28T03:00:00+03:00"
+    }
+  ]
+}

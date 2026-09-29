@@ -1,0 +1,52 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 1,
+  "items": [
+    {
+      "sku": "PK44",
+      "period_start": "2026-09-01",
+      "period_end": "2026-09-30",
+      "granularity": "month",
+      "is_partial": true,
+      "qty": "18",
+      "revenue": {
+        "amount": "1037844.00",
+        "currency": "RUB"
+      },
+      "platform_costs": {
+        "amount": "458042.00",
+        "currency": "RUB"
+      },
+      "acquiring_cost": {
+        "amount": "45769.00",
+        "currency": "RUB"
+      },
+      "logistics_cost": {
+        "amount": "25116.00",
+        "currency": "RUB"
+      },
+      "ad_spend_live": {
+        "amount": "66444.00",
+        "currency": "RUB"
+      },
+      "drr_live_percent": 6.4,
+      "margin_sales_percent": 37.9,
+      "margin_sales": {
+        "amount": "1049204.00",
+        "currency": "RUB"
+      },
+      "margin_orders_percent": 36.3,
+      "avg_check": {
+        "amount": "57658.00",
+        "currency": "RUB"
+      },
+      "carts": 61,
+      "transitions": 2104,
+      "stock_qty": "38",
+      "days_until_oos": 92,
+      "updated_at": "2026-09-28T03:00:00+03:00"
+    }
+  ]
+}

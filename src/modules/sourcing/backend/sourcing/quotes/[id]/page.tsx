@@ -1,5 +1,6 @@
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import QuoteReviewPanel from '../../../../components/QuoteReviewPanel'
+import VersionComparePanel from '../../../../components/VersionComparePanel'
 
 export default function SourcingQuoteReviewPage({ params }: { params?: { id?: string } }) {
   const quoteId = params?.id
@@ -9,6 +10,7 @@ export default function SourcingQuoteReviewPage({ params }: { params?: { id?: st
     <Page>
       <PageBody>
         <QuoteReviewPanel quoteId={quoteId} />
+        <VersionComparePanel quoteId={quoteId} />
       </PageBody>
     </Page>
   )

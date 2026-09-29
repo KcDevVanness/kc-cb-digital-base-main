@@ -1,9 +1,11 @@
 import { z } from 'zod'
+import type { EntityManager } from '@mikro-orm/postgresql'
 import { makeCrudRoute } from '@open-mercato/shared/lib/crud/factory'
 import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern'
 import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
 import { PurchasingPurchaseOrder } from '../../data/entities'
 import { purchaseOrderCreateSchema, purchaseOrderUpdateSchema, ORDER_STATUSES } from '../../commands/orders'
+import { derivePaymentState, type PaymentRow } from '../../lib/orderTotals'
 import { createPurchasingCrudOpenApi, purchasingCreatedSchema, purchasingOkSchema } from '../openapi'
 
 const ENTITY_ID = 'purchasing:purchasing_purchase_order' as const
@@ -25,6 +27,10 @@ const purchaseOrderListItemSchema = z
     subtotal: z.string(),
     taxTotal: z.string(),
     total: z.string(),
+    /** Derived from the order's payment rows by the `afterList` hook (never stored). */
+    paidTotal: z.string().optional(),
+    outstanding: z.string().optional(),
+    paymentStatus: z.enum(['unpaid', 'deposit_paid', 'partially_paid', 'paid']).optional(),
     depositPercent: z.string().nullable().optional(),
     depositAmount: z.string().nullable().optional(),
     expectedShipAt: z.string().nullable().optional(),
@@ -165,6 +171,53 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       updated_at: toIsoTimestamp(item.updated_at),
       updatedAt: toIsoTimestamp(item.updated_at),
     }),
+  },
+  hooks: {
+    /**
+     * Attaches the derived payment state to each listed order in one scoped read.
+     *
+     * The CRUD factory's `transformItem` is synchronous and holds no payments, so the state cannot be
+     * computed per row: the page's payment rows are loaded once and `derivePaymentState` (the single
+     * implementation the detail page and the finance ledger share) turns them into `paidTotal`,
+     * `outstanding` and `paymentStatus` — all 2-decimal strings from the money engine.
+     */
+    afterList: async (res, ctx) => {
+      const payload = res as { items?: Array<Record<string, unknown>> } | null
+      if (!payload || !Array.isArray(payload.items) || payload.items.length === 0) return
+      const tenantId = ctx.auth?.tenantId ?? null
+      const organizationId = ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null
+      if (!tenantId || !organizationId) return
+      const orderIds = payload.items
+        .map((item) => (typeof item.id === 'string' ? item.id : null))
+        .filter((id): id is string => id !== null)
+      if (orderIds.length === 0) return
+      const em = ctx.container.resolve('em') as EntityManager
+      const rows = (await em
+        .fork()
+        .getKysely<any>()
+        .selectFrom('purchasing_purchase_payments')
+        .select(['order_id', 'stage', 'amount'])
+        .where('order_id', 'in', orderIds)
+        .where('tenant_id', '=', tenantId)
+        .where('organization_id', '=', organizationId)
+        .execute()) as Array<{ order_id: unknown; stage: unknown; amount: unknown }>
+
+      const byOrder = new Map<string, PaymentRow[]>()
+      for (const row of rows) {
+        const orderId = row.order_id === null || row.order_id === undefined ? '' : String(row.order_id)
+        if (!orderId) continue
+        const list = byOrder.get(orderId) ?? []
+        list.push({ stage: String(row.stage ?? ''), amount: String(row.amount ?? '0') })
+        byOrder.set(orderId, list)
+      }
+
+      for (const item of payload.items) {
+        const state = derivePaymentState(String(item.total ?? '0'), byOrder.get(String(item.id)) ?? [])
+        item.paidTotal = state.paidTotal
+        item.outstanding = state.outstanding
+        item.paymentStatus = state.paymentStatus
+      }
+    },
   },
   actions: {
     create: {

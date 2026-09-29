@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
+import { parseISO } from 'date-fns/parseISO'
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import {
   CrudForm,
@@ -18,6 +19,8 @@ import { pushWithFlash } from '@open-mercato/ui/backend/utils/flash'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
 import { ComboboxInput } from '@open-mercato/ui/backend/inputs/ComboboxInput'
+import { toDateInputValue } from '@open-mercato/ui/primitives/date-format'
+import { DatePicker } from '@open-mercato/ui/primitives/date-picker'
 import { FieldLabel } from '@open-mercato/ui/primitives/label'
 import { IconButton } from '@open-mercato/ui/primitives/icon-button'
 import { Input } from '@open-mercato/ui/primitives/input'
@@ -916,6 +919,7 @@ function ProductPriceRowsEditor({ values, setValue, errors, t }: CrudFormGroupCo
                   <MoneyAmount
                     currencyCode={row.currencyCode || 'CNY'}
                     amount={row.unitPrice}
+                    kind="price"
                     showRate
                     className="pt-1"
                   />
@@ -923,20 +927,18 @@ function ProductPriceRowsEditor({ values, setValue, errors, t }: CrudFormGroupCo
               </div>
               <div className="space-y-1.5 md:col-span-4">
                 <FieldLabel htmlFor={startsAtId}>{t('products.items.form.priceStartsAt')}</FieldLabel>
-                <Input
+                <DatePicker
                   id={startsAtId}
-                  type="date"
-                  value={row.startsAt}
-                  onChange={(event) => updateRow(index, { startsAt: event.target.value })}
+                  value={row.startsAt ? parseISO(row.startsAt) : null}
+                  onChange={(date) => updateRow(index, { startsAt: toDateInputValue(date) ?? '' })}
                 />
               </div>
               <div className="space-y-1.5 md:col-span-4">
                 <FieldLabel htmlFor={endsAtId}>{t('products.items.form.priceEndsAt')}</FieldLabel>
-                <Input
+                <DatePicker
                   id={endsAtId}
-                  type="date"
-                  value={row.endsAt}
-                  onChange={(event) => updateRow(index, { endsAt: event.target.value })}
+                  value={row.endsAt ? parseISO(row.endsAt) : null}
+                  onChange={(date) => updateRow(index, { endsAt: toDateInputValue(date) ?? '' })}
                 />
               </div>
               <div className="flex items-end md:col-span-4">

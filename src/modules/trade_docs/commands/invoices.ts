@@ -14,18 +14,20 @@ import { badRequest, conflict, CrudHttpError, notFound } from '@open-mercato/sha
 import type { CrudEmitContext, CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
-import { TradeDocsContract, TradeDocsContractLine, TradeDocsInvoice, TradeDocsInvoiceLine } from '../data/entities'
+import { TradeDocsContract, TradeDocsContractLine, TradeDocsDocument, TradeDocsDocumentLine, TradeDocsInvoice, TradeDocsInvoiceLine } from '../data/entities'
 import {
   invoiceAttachSchema,
+  invoiceCopySchema,
   invoiceCreateSchema,
   invoiceTransitionSchema,
   invoiceUpdateSchema,
   type InvoiceLineInput,
 } from '../data/validators'
-import { ensureScope, invoiceFilter, loadContract, loadInvoice, type TradeDocsScope } from '../lib/scope'
+import { invalidateInvoiceCaches } from '../lib/cacheInvalidation'
+import { ensureScope, invoiceFilter, loadContract, loadDocument, loadInvoice, type TradeDocsScope } from '../lib/scope'
 import { recomputeContractHead } from '../lib/contractRecalc'
-import { productSnapshotPayload, readProductSnapshots } from '../lib/currencyScale'
-import { sumAmounts } from '../lib/money'
+import { productSnapshotPayload, readProductSnapshots } from '../lib/productSnapshots'
+import { computeInvoiceLineTax, computeInvoiceTotals } from '../lib/invoiceTax'
 import { eventsConfig } from '../events'
 
 const ENTITY_ID = 'trade_docs:trade_docs_invoice' as const
@@ -62,6 +64,8 @@ export const invoiceCrudIndexer: CrudIndexerConfig<TradeDocsInvoice> = {
 type SerializedInvoice = {
   id: string
   number: string | null
+  invoiceKind: string | null
+  ourNumber: string | null
   direction: string
   status: string
   counterpartyKind: string
@@ -70,6 +74,8 @@ type SerializedInvoice = {
   currencyCode: string
   subtotal: string
   total: string
+  taxTotal: string
+  grossTotal: string
   issuedAt: string | null
   attachmentId: string | null
   notes: string | null
@@ -91,6 +97,8 @@ function serializeInvoice(entity: TradeDocsInvoice): SerializedInvoice {
   return {
     id: String(entity.id),
     number: entity.number ?? null,
+    invoiceKind: entity.invoiceKind ?? null,
+    ourNumber: entity.ourNumber ?? null,
     direction: entity.direction,
     status: entity.status,
     counterpartyKind: entity.counterpartyKind,
@@ -99,6 +107,8 @@ function serializeInvoice(entity: TradeDocsInvoice): SerializedInvoice {
     currencyCode: entity.currencyCode,
     subtotal: entity.subtotal,
     total: entity.total,
+    taxTotal: entity.taxTotal,
+    grossTotal: entity.grossTotal,
     issuedAt: toDateOnly(entity.issuedAt),
     attachmentId: entity.attachmentId ? String(entity.attachmentId) : null,
     notes: entity.notes ?? null,
@@ -117,6 +127,9 @@ type ResolvedInvoiceLine = {
   quantity: string
   unitPrice: string
   amount: string
+  taxRate: string
+  priceIncludesTax: boolean
+  taxAmount: string
   contractLineId: string | null
 }
 
@@ -183,6 +196,9 @@ async function resolveInvoiceLines(
       quantity: line.quantity,
       unitPrice: line.unitPrice,
       amount: line.amount,
+      taxRate: line.taxRate,
+      priceIncludesTax: line.priceIncludesTax,
+      taxAmount: computeInvoiceLineTax({ amount: line.amount, taxRate: line.taxRate, priceIncludesTax: line.priceIncludesTax }).taxAmount,
       contractLineId: line.contractLineId ?? null,
     }
   })
@@ -213,6 +229,9 @@ async function persistInvoiceLines(
         quantity: line.quantity,
         unitPrice: line.unitPrice,
         amount: line.amount,
+        taxRate: line.taxRate,
+        priceIncludesTax: line.priceIncludesTax,
+        taxAmount: line.taxAmount,
         contractLine: line.contractLineId ? em.getReference(TradeDocsContractLine, line.contractLineId) : undefined,
         createdAt: now,
         updatedAt: now,
@@ -220,12 +239,6 @@ async function persistInvoiceLines(
     )
   }
   await em.flush()
-}
-
-/** Invoice totals are the sums of the printed line amounts — never of `quantity × unitPrice`. */
-function invoiceTotals(lines: Array<{ amount: string }>): { subtotal: string; total: string } {
-  const total = sumAmounts(lines.map((line) => line.amount))
-  return { subtotal: total, total }
 }
 
 /** Applies the invoice totals to the row it owns. */
@@ -239,9 +252,11 @@ async function applyInvoiceTotals(
     tenantId: scope.tenantId,
     organizationId: scope.organizationId,
   } as FilterQuery<TradeDocsInvoiceLine>)
-  const totals = invoiceTotals(lines)
+  const totals = computeInvoiceTotals(lines)
   invoice.subtotal = totals.subtotal
   invoice.total = totals.total
+  invoice.taxTotal = totals.taxTotal
+  invoice.grossTotal = totals.grossTotal
   await em.flush()
 }
 
@@ -266,7 +281,7 @@ const createInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
     const contractId = parsed.contractId ?? null
     await assertContractVisible(em, scope, contractId)
     const lines = await resolveInvoiceLines(em, scope, contractId, parsed.lines)
-    const totals = invoiceTotals(lines)
+    const totals = computeInvoiceTotals(lines)
 
     let invoice!: TradeDocsInvoice
     await withAtomicFlush(
@@ -279,6 +294,7 @@ const createInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
               tenantId: scope.tenantId,
               organizationId: scope.organizationId,
               number: parsed.number,
+              invoiceKind: parsed.invoiceKind ?? null,
               direction: parsed.direction,
               status: 'draft',
               counterpartyKind: parsed.counterpartyKind,
@@ -291,6 +307,8 @@ const createInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
               currencyCode: parsed.currencyCode,
               subtotal: totals.subtotal,
               total: totals.total,
+              taxTotal: totals.taxTotal,
+              grossTotal: totals.grossTotal,
               issuedAt: parsed.issuedAt ? new Date(parsed.issuedAt) : null,
               notes: parsed.notes,
             },
@@ -310,6 +328,11 @@ const createInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
       events: invoiceCrudEvents,
       indexer: invoiceCrudIndexer,
     })
+    await invalidateInvoiceCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(invoice.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'created',
+    )
 
     return invoice
   },
@@ -355,6 +378,11 @@ const createInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
       events: invoiceCrudEvents,
       indexer: invoiceCrudIndexer,
     })
+    await invalidateInvoiceCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'deleted',
+    )
   },
 }
 
@@ -393,6 +421,7 @@ const updateInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
             where: invoiceFilter(scope, parsed.id),
             apply: (entity) => {
               if (parsed.number !== undefined) entity.number = parsed.number
+              if (parsed.invoiceKind !== undefined) entity.invoiceKind = parsed.invoiceKind
               if (parsed.direction !== undefined) entity.direction = parsed.direction
               if (parsed.counterpartyKind !== undefined) entity.counterpartyKind = parsed.counterpartyKind
               if (parsed.counterpartyId !== undefined) entity.counterpartyId = parsed.counterpartyId
@@ -439,6 +468,11 @@ const updateInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
       events: invoiceCrudEvents,
       indexer: invoiceCrudIndexer,
     })
+    await invalidateInvoiceCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(updated.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'updated',
+    )
 
     return updated
   },
@@ -456,7 +490,7 @@ const updateInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
       changes: buildChanges(
         (before ?? null) as unknown as Record<string, unknown> | null,
         after as unknown as Record<string, unknown>,
-        ['number', 'direction', 'counterpartyKind', 'contractId', 'currencyCode', 'issuedAt', 'notes'],
+        ['number', 'invoiceKind', 'direction', 'counterpartyKind', 'contractId', 'currencyCode', 'issuedAt', 'notes'],
       ),
       snapshotBefore: before ?? null,
       snapshotAfter: after,
@@ -500,6 +534,11 @@ const deleteInvoiceCommand: CommandHandler<
       events: invoiceCrudEvents,
       indexer: invoiceCrudIndexer,
     })
+    await invalidateInvoiceCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(removed.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'deleted',
+    )
 
     return removed
   },
@@ -519,9 +558,166 @@ const deleteInvoiceCommand: CommandHandler<
 }
 
 /**
+ * The next `TI-<year>-<4 digits>` slot for this organization.
+ *
+ * Reads the highest number that is actually **visible** (the caller writes a `PENDING` placeholder
+ * before this runs), so two concurrent confirms may pick the same value — the unique index
+ * `trade_docs_invoices_our_number_uniq` is the real guarantee and the loser gets a 409 it can
+ * retry with a fresh number.
+ */
+async function nextInvoiceNumber(em: EntityManager, scope: TradeDocsScope): Promise<string> {
+  const year = new Date().getFullYear()
+  const prefix = `TI-${year}-`
+  const rows = (await (em.fork().getKysely<any>())
+    .selectFrom('trade_docs_invoices')
+    .select('our_number')
+    .where('tenant_id', '=', scope.tenantId)
+    .where('organization_id', '=', scope.organizationId)
+    .where('our_number', 'like', `${prefix}%`)
+    .orderBy('our_number', 'desc')
+    .limit(1)
+    .execute()) as Array<{ our_number: string | null }>
+  const last = rows[0]?.our_number ?? null
+  const lastSequence = last ? Number.parseInt(last.slice(prefix.length), 10) : 0
+  const next = Number.isFinite(lastSequence) ? lastSequence + 1 : 1
+  return `${prefix}${String(next).padStart(4, '0')}`
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    error.name === 'UniqueConstraintViolationException'
+  )
+}
+
+/**
+ * One-shot copy of a PI/CI (a `trade_docs_documents` row) into a draft tax invoice — the
+ * "从上一张单据复制" step from the commercial invoice. The invoice owns no trade-term/party columns of
+ * its own beyond the counterparty, so only the counterparty (kind/id/snapshot) and the currency
+ * carry over; the document's lines are mapped onto invoice lines and the operator sets the VAT rate
+ * afterwards, because a commercial invoice carries none.
+ *
+ * `contract`/`contractLine` are deliberately untouched: an invoice must never inherit a binding that
+ * would move money on a contract the operator did not choose.
+ */
+const copyInvoiceFromCommand: CommandHandler<Record<string, unknown>, { id: string; lineCount: number }> = {
+  id: 'trade_docs.invoices.copy-from',
+  isUndoable: false,
+  async execute(rawInput, ctx) {
+    const parsed = invoiceCopySchema.parse(rawInput)
+    const scope = ensureScope(ctx)
+    const em = ctx.container.resolve('em') as EntityManager
+    const de = ctx.container.resolve('dataEngine') as DataEngine
+
+    const invoice = await loadInvoice(em, scope, parsed.id)
+    if (invoice.status !== 'draft') {
+      throw conflict('Only a draft invoice can be edited')
+    }
+    const source = await loadDocument(em, scope, parsed.sourceDocumentId)
+
+    const sourceLines = await em.find(TradeDocsDocumentLine, {
+      document: source.id,
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+    } as FilterQuery<TradeDocsDocumentLine>)
+
+    const sourceSnapshotHead = {
+      kind: 'trade_document',
+      id: String(source.id),
+      number: source.number ?? null,
+      documentKind: source.kind,
+    }
+    const resolved: ResolvedInvoiceLine[] = sourceLines
+      .slice()
+      .sort((a, b) => a.lineNumber - b.lineNumber)
+      .map((line, index) => {
+        const taxRate = '0'
+        const priceIncludesTax = true
+        return {
+          lineNumber: index + 1,
+          productId: line.productId ?? null,
+          productSnapshot: line.productSnapshot ?? null,
+          description: line.name?.trim() || line.sku || '',
+          sku: line.sku ?? null,
+          unit: line.unit ?? null,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          amount: line.amount,
+          taxRate,
+          priceIncludesTax,
+          taxAmount: computeInvoiceLineTax({ amount: line.amount, taxRate, priceIncludesTax }).taxAmount,
+          contractLineId: null,
+        }
+      })
+
+    await withAtomicFlush(
+      em,
+      [
+        async () => {
+          await de.updateOrmEntity({
+            entity: TradeDocsInvoice,
+            where: invoiceFilter(scope, parsed.id),
+            apply: (entity) => {
+              entity.counterpartyKind = source.counterpartyKind
+              entity.counterpartyId = source.counterpartyId ?? null
+              entity.counterpartySnapshot = source.counterpartySnapshot ?? null
+              entity.currencyCode = source.currencyCode
+              entity.sourceKind = 'trade_document'
+              entity.sourceId = String(source.id)
+              entity.sourceSnapshot = sourceSnapshotHead
+            },
+          })
+          const target = await em.findOneOrFail(TradeDocsInvoice, invoiceFilter(scope, parsed.id))
+          await persistInvoiceLines(em, scope, target, resolved)
+        },
+        async () => {
+          const target = await em.findOneOrFail(TradeDocsInvoice, invoiceFilter(scope, parsed.id))
+          await applyInvoiceTotals(em, scope, target)
+        },
+      ],
+      { transaction: true, label: 'trade_docs.invoices.copy-from' },
+    )
+
+    const updated = await loadInvoice(em, scope, parsed.id)
+
+    await emitCrudSideEffects({
+      dataEngine: de,
+      action: 'updated',
+      entity: updated,
+      identifiers: { id: String(updated.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      syncOrigin: ctx.syncOrigin,
+      events: invoiceCrudEvents,
+      indexer: invoiceCrudIndexer,
+    })
+    await invalidateInvoiceCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(updated.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'updated',
+    )
+
+    return { id: String(updated.id), lineCount: resolved.length }
+  },
+  buildLog: async ({ result }) => {
+    const { translate } = await resolveTranslations()
+    return {
+      actionLabel: translate('trade_docs.audit.invoices.copy', 'Copy invoice from a trade document'),
+      resourceKind: RESOURCE_KIND,
+      resourceId: result.id,
+      metadata: { lineCount: result.lineCount },
+    }
+  },
+}
+
+/**
  * `confirm` puts the invoice's printed amounts into the financial caliber of every contract line
  * it is bound to; `void` releases them again. Both recompute the contract head in the same
  * transaction, so a reader can never see a confirmed invoice with an unrecomputed contract.
+ *
+ * `confirm` also assigns our own `TI-<year>-<4 digits>` number — but only to an **outbound**
+ * invoice that carries an `invoiceKind`. Inbound invoices, kind-less historical rows and every
+ * other status keep `ourNumber` null.
  */
 const transitionInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInvoice> = {
   id: 'trade_docs.invoices.transition',
@@ -552,17 +748,39 @@ const transitionInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDoc
 
     const contractId = contractIdFrom(invoice.contract)
 
+    const shouldAssignNumber =
+      parsed.action === 'confirm' &&
+      invoice.direction === 'outbound' &&
+      !!invoice.invoiceKind &&
+      !invoice.ourNumber
+
     const updated = await de.updateOrmEntity({
       entity: TradeDocsInvoice,
       where: invoiceFilter(scope, parsed.id),
       apply: (entity) => {
         entity.status = transition.to
+        if (shouldAssignNumber) {
+          // Placeholder first: the sequence read only sees numbers that are already committed.
+          entity.ourNumber = entity.ourNumber ?? `PENDING-${String(entity.id).slice(0, 8)}`
+        }
         if (parsed.reason) {
           entity.notes = `${entity.notes ? `${entity.notes}\n` : ''}${parsed.action}: ${parsed.reason}`
         }
       },
     })
     if (!updated) throw notFound('Invoice not found')
+
+    if (shouldAssignNumber && (!updated.ourNumber || updated.ourNumber.startsWith('PENDING-'))) {
+      try {
+        updated.ourNumber = await nextInvoiceNumber(em, scope)
+        await em.fork().nativeUpdate(TradeDocsInvoice, { id: updated.id }, { ourNumber: updated.ourNumber })
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw conflict('Another invoice took that number; retry the transition')
+        }
+        throw error
+      }
+    }
 
     if (contractId) await recomputeContractHead(em, scope, contractId)
 
@@ -640,6 +858,11 @@ const attachInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
       events: invoiceCrudEvents,
       indexer: invoiceCrudIndexer,
     })
+    await invalidateInvoiceCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(updated.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'updated',
+    )
     await eventsConfig.emit('trade_docs.invoice.attached', {
       id: String(updated.id),
       tenantId: scope.tenantId,
@@ -661,6 +884,7 @@ const attachInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
 registerCommand(createInvoiceCommand)
 registerCommand(updateInvoiceCommand)
 registerCommand(deleteInvoiceCommand)
+registerCommand(copyInvoiceFromCommand)
 registerCommand(transitionInvoiceCommand)
 registerCommand(attachInvoiceCommand)
 
@@ -668,6 +892,7 @@ export {
   createInvoiceCommand,
   updateInvoiceCommand,
   deleteInvoiceCommand,
+  copyInvoiceFromCommand,
   transitionInvoiceCommand,
   attachInvoiceCommand,
 }

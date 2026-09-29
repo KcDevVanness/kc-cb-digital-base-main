@@ -7,11 +7,15 @@
  * recoverable: re-running the mapping never needs the operator to re-upload the workbook.
  */
 
+import { parseExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
+import { createLogger } from '@open-mercato/shared/lib/logger'
+import { PRICE_SCALE, toAmountString } from '../../trade_docs/lib/money'
 import { resolveSectionLabel, type SheetStructure } from './headerDetection'
 import type { ColumnMap } from './columnMapping'
 import { deriveLineSkus, type SkuWarning } from './skuDerivation'
 import {
   cellToText,
+  extractNumberToken,
   isNullToken,
   parseDimensionsCell,
   parseMoqCell,
@@ -19,6 +23,9 @@ import {
   type Dimensions,
 } from './valueNormalization'
 import type { CellValue } from './workbook'
+
+/** A supplier sheet is external integration data: a price finer than the caliber is quantized, not rejected. */
+const logger = createLogger('sourcing').child({ component: 'import' })
 
 export type QuoteLineWarning = SkuWarning | 'moq_partial' | 'moq_not_numeric' | 'missing_name' | 'section_slug_empty'
 
@@ -70,6 +77,24 @@ function textCell(rows: readonly (readonly CellValue[])[], rowIndex: number, col
 
 function numberCell(rows: readonly (readonly CellValue[])[], rowIndex: number, columnMap: ColumnMap, field: string): number | null {
   return parseNumberCell(readCell(rows, rowIndex, columnMap, field))
+}
+
+/**
+ * A quoted price as the money engine writes it: the cell's own digits, HALF_UP (away from zero)
+ * quantized to `PRICE_SCALE` and rendered at that scale. The token never passes through a float —
+ * `String(Number('0.405'))` and a sheet's `341.2382` must not arrive as binary noise — and a cell
+ * with more decimals than a price holds is quantized rather than rejected, because a supplier file
+ * is external integration data; the quantization is reported with the field and the raw token.
+ */
+function priceCell(rows: readonly (readonly CellValue[])[], rowIndex: number, columnMap: ColumnMap, field: string): string | null {
+  const token = extractNumberToken(readCell(rows, rowIndex, columnMap, field))
+  if (token === null) return null
+  const parsed = parseExactDecimal(token)
+  if (!parsed) return null
+  if (parsed.scale > PRICE_SCALE) {
+    logger.warn('supplier price quantized to the price scale', { field, value: token, scale: parsed.scale })
+  }
+  return toAmountString(parsed, PRICE_SCALE)
 }
 
 /**
@@ -132,9 +157,9 @@ export function buildQuoteLines(input: {
       hsCode: textCell(rows, rowIndex, columnMap, 'hs_code'),
       description: textCell(rows, rowIndex, columnMap, 'description'),
       unit: textCell(rows, rowIndex, columnMap, 'unit') ?? defaultUnit,
-      unitCost: toDecimalString(numberCell(rows, rowIndex, columnMap, 'unit_cost'), 6),
+      unitCost: priceCell(rows, rowIndex, columnMap, 'unit_cost'),
       currencyCode: currency && /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : null,
-      suggestedRsp: toDecimalString(numberCell(rows, rowIndex, columnMap, 'suggested_rsp'), 6),
+      suggestedRsp: priceCell(rows, rowIndex, columnMap, 'suggested_rsp'),
       moqRaw: moq.raw,
       moqQuantity: moq.quantity,
       cartonQuantity: cartonQuantityValue === null ? null : Math.round(cartonQuantityValue),

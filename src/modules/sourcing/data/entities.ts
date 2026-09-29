@@ -174,14 +174,14 @@ export class SourcingQuoteLine {
   @Property({ type: 'text', default: 'PCS' })
   unit: string = 'PCS'
 
-  @Property({ name: 'unit_cost', type: 'numeric', precision: 18, scale: 6, nullable: true })
+  @Property({ name: 'unit_cost', type: 'numeric', precision: 18, scale: 4, nullable: true })
   unitCost?: string | null
 
   /** Line-level override of the quotation currency; null means "use the quotation's". */
   @Property({ name: 'currency_code', type: 'text', nullable: true })
   currencyCode?: string | null
 
-  @Property({ name: 'suggested_rsp', type: 'numeric', precision: 18, scale: 6, nullable: true })
+  @Property({ name: 'suggested_rsp', type: 'numeric', precision: 18, scale: 4, nullable: true })
   suggestedRsp?: string | null
 
   @Property({ name: 'moq_raw', type: 'text', nullable: true })

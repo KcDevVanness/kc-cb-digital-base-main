@@ -7,34 +7,26 @@ import {
 } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
 
 /**
- * The money engine for contracts and invoices — the **single** place where a contract amount is
- * rounded.
+ * The money engine — the **single** place where an amount is rounded.
  *
- * Two calibers exist side by side and are both derived from `quantity × unit_price`:
+ * One caliber, system-wide: **an amount is always 2 decimals, HALF_UP (away from zero)**. A unit
+ * price keeps 4 decimals and is never re-rounded after entry. The only rounding point in the whole
+ * system is the line amount, `HALF_UP(quantity × unit_price, 2)`; a total is the **exact sum of
+ * already-rounded line amounts** and is never rounded a second time.
  *
- * - **financial amount** — quantized to the currency's decimal places (`Currency.decimalPlaces`,
- *   typically 2, sometimes 0 or 3). This is the number finance reconciles against the invoice.
- * - **contract amount** — quantized to 2 decimals. This is the number printed on the signed
- *   contract.
- *
- * Quantization is BigInt `HALF_UP` (away from zero). `Number.toFixed` is **not** usable here:
- * `(1.005).toFixed(2)` is `"1.00"` because 1.005 is really 1.00499999999999989, so a contract
- * would print a cent less than the parties' own arithmetic. The platform's
- * `exactDecimal` primitives carry `{ units, scale }` but have no multiply/quantize, so the two
- * missing operations live here rather than in a framework file.
+ * `Number.toFixed` is **not** usable here: `(1.005).toFixed(2)` is `"1.00"` because 1.005 is really
+ * 1.00499999999999989, so a contract would print a cent less than the parties' own arithmetic. The
+ * platform's `exactDecimal` primitives carry `{ units, scale }` but have no multiply/quantize/
+ * divide, so the missing operations live here rather than in a framework file.
  *
  * Amounts travel as decimal strings (MikroORM `numeric` columns) and are parsed only here.
  */
 
-/** Contract amounts are always printed with two decimals. */
-export const CONTRACT_AMOUNT_SCALE = 2
+/** Every amount in the system is 2 decimals: storage, API, export and print. */
+export const AMOUNT_SCALE = 2
 
-/** Amounts persisted on the contract head and on lines: `numeric(18,4)`. */
-export const STORED_AMOUNT_SCALE = 4
-
-/** `Currency.decimalPlaces` bounds; anything outside is a data error, not a rounding rule. */
-const MIN_CURRENCY_SCALE = 0
-const MAX_CURRENCY_SCALE = 8
+/** Unit prices (product/purchase/quote/sales) are 4 decimals and are not re-rounded. */
+export const PRICE_SCALE = 4
 
 function pow10(exponent: number): bigint {
   return 10n ** BigInt(exponent)
@@ -93,48 +85,59 @@ export function toAmountString(value: ExactDecimal, scale: number): string {
 }
 
 /**
- * Rounding scale for a currency. A missing or nonsensical `Currency.decimalPlaces` falls back to
- * 2 — the value every invoice in this business uses — rather than failing a contract.
+ * Scaled-integer units of an amount at `scale`. Every money comparison and ratio goes through
+ * scaled integers: comparing decimal strings as floats would lose cents beyond 2^53 and would make
+ * a total depend on the machine's arithmetic. An unparseable or absent value is `0n`.
  */
-export function resolveCurrencyScale(decimalPlaces: number | null | undefined): number {
-  if (typeof decimalPlaces !== 'number' || !Number.isFinite(decimalPlaces)) return 2
-  const truncated = Math.trunc(decimalPlaces)
-  if (truncated < MIN_CURRENCY_SCALE) return MIN_CURRENCY_SCALE
-  if (truncated > MAX_CURRENCY_SCALE) return MAX_CURRENCY_SCALE
-  return truncated
+export function toScaledUnits(value: string | number | null | undefined, scale: number): bigint {
+  const parsed = parseExactDecimal(value)
+  return parsed ? quantizeExactDecimal(parsed, scale).units : 0n
+}
+
+/** Scaled-integer division, half away from zero — the only rounding this engine performs. */
+export function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
+  if (denominator === 0n) return 0n
+  const negative = (numerator < 0n) !== (denominator < 0n)
+  const absNumerator = numerator < 0n ? -numerator : numerator
+  const absDenominator = denominator < 0n ? -denominator : denominator
+  let quotient = absNumerator / absDenominator
+  if ((absNumerator % absDenominator) * 2n >= absDenominator) quotient += 1n
+  return negative ? -quotient : quotient
 }
 
 export type LineAmountInput = {
   quantity: string | number
   unitPrice: string | number
-  /** `Currency.decimalPlaces` for the contract currency. */
-  currencyScale: number
 }
 
 export type LineAmounts = {
-  /** Quantized to the currency scale. */
+  /** The amount finance reconciles against the invoice. */
   financeAmount: string
-  /** Quantized to 2 decimals for the printed contract. */
+  /** The amount printed on the signed contract. */
   contractAmount: string
 }
 
 /**
- * Both calibers for one line. Each is quantized **from the raw product**, never from the other
- * caliber: an amount that satisfies the contract's rounding must not inherit the financial
- * amount's fractional cents.
+ * Both calibers for one line, each `HALF_UP(quantity × unit_price, 2)` — the one rounding point.
+ *
+ * The two fields are kept because the contract page prints them side by side, but they now share a
+ * single scale; the only difference they can show going forward comes from an invoice *overriding*
+ * the financial amount, never from the currency's decimal places.
  */
 export function computeLineAmounts(input: LineAmountInput): LineAmounts {
   const quantity = parseAmount(input.quantity, 'quantity')
   const unitPrice = parseAmount(input.unitPrice, 'unitPrice')
   const gross = multiplyExactDecimal(quantity, unitPrice)
-  return {
-    financeAmount: toAmountString(gross, resolveCurrencyScale(input.currencyScale)),
-    contractAmount: toAmountString(gross, CONTRACT_AMOUNT_SCALE),
-  }
+  const amount = toAmountString(gross, AMOUNT_SCALE)
+  return { financeAmount: amount, contractAmount: amount }
 }
 
 /**
- * Sums decimal strings exactly and renders the result at the stored amount scale (4 decimals).
+ * Sums decimal strings exactly and renders the result at the amount scale (2 decimals).
+ *
+ * The sum is taken over already-quantized line values, so the head equals what a reader gets by
+ * adding the printed column; rendering at the amount scale is a no-op for those values and never a
+ * second rounding of a total.
  *
  * A value that cannot be parsed throws instead of being skipped: a silently dropped line would
  * understate a contract total, and every caller already holds validated rows.
@@ -144,7 +147,7 @@ export function sumAmounts(values: Array<string | number>): string {
   for (const value of values) {
     total = addExactDecimal(total, parseAmount(value, 'amount'))
   }
-  return toAmountString(total, STORED_AMOUNT_SCALE)
+  return toAmountString(total, AMOUNT_SCALE)
 }
 
 export type ContractTotalsInput = {
@@ -175,7 +178,7 @@ export function computeContractTotals(lines: ContractTotalsInput[]): ContractTot
   return {
     contractTotal,
     financeTotal,
-    differenceTotal: toAmountString(difference, STORED_AMOUNT_SCALE),
+    differenceTotal: toAmountString(difference, AMOUNT_SCALE),
   }
 }
 

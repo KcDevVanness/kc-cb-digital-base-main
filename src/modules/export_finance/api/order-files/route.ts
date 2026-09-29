@@ -70,6 +70,8 @@ const orderFileItemSchema = z
       balancePlanned: z.string().nullable(),
       paidAmount: z.string(),
       outstandingAmount: z.string(),
+      collectedAmount: z.string().nullable(),
+      collectedAt: z.string().nullable(),
       kcPriceAmount: z.string().nullable(),
       kcPriceCurrency: z.string().nullable(),
       subsidiaryInvoiceAmount: z.string().nullable(),
@@ -135,6 +137,8 @@ function financeColumns(translate: Translate): CrudExportColumn[] {
     { field: 'balancePlanned', header: translate('export_finance.orders.csv.balancePlanned', 'Balance (planned)') },
     { field: 'paidAmount', header: translate('export_finance.orders.csv.paidAmount', 'Paid') },
     { field: 'outstandingAmount', header: translate('export_finance.orders.csv.outstandingAmount', 'Outstanding') },
+    { field: 'collectedAmount', header: translate('export_finance.orders.csv.collectedAmount', 'Collected amount') },
+    { field: 'collectedAt', header: translate('export_finance.orders.csv.collectedAt', 'Collected on') },
     { field: 'kcPriceAmount', header: translate('export_finance.orders.csv.kcPrice', 'KC order price') },
     { field: 'subsidiaryInvoiceAmount', header: translate('export_finance.orders.csv.subsidiaryInvoice', 'Subsidiary invoice (USD)') },
     { field: 'collectionStatus', header: translate('export_finance.orders.csv.collectionStatus', 'Collection status') },
@@ -162,6 +166,8 @@ function toCsvRow(row: OrderFileRow, view: OrderFileView, translate: Translate):
       balancePlanned: row.finance.balancePlanned ?? '',
       paidAmount: row.finance.paidAmount,
       outstandingAmount: row.finance.outstandingAmount,
+      collectedAmount: row.finance.collectedAmount ?? '',
+      collectedAt: row.finance.collectedAt ? row.finance.collectedAt.slice(0, 10) : '',
       kcPriceAmount: row.finance.kcPriceAmount === null
         ? ''
         : `${row.finance.kcPriceAmount} ${row.finance.kcPriceCurrency ?? ''}`.trim(),

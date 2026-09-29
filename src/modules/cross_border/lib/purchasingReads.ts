@@ -1,4 +1,6 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
+import { toAmountString, toScaledUnits } from '../../trade_docs/lib/money'
+import { ALLOCATION_QUANTITY_SCALE } from '../data/validators'
 import type { Scope } from './scope'
 
 /**
@@ -82,13 +84,17 @@ export async function loadPurchaseOrderLines(
  * Quantity already committed to non-cancelled shipments, per purchase-order line. Cancelled
  * shipments release their allocation, which is why the join filters on shipment status rather
  * than on a flag this module would have to maintain.
+ *
+ * The sum is exact: rows are folded as scaled integers at the allocation quantity scale and
+ * rendered back as fixed-scale decimal strings, so the returned value carries no float residue
+ * (`0.1 + 0.2` stays `0.3000`) and the caller's over-allocation guard compares like with like.
  */
 export async function loadAllocatedQuantities(
   em: EntityManager,
   scope: Scope,
   lineIds: string[],
   excludeShipmentId?: string | null,
-): Promise<Record<string, number>> {
+): Promise<Record<string, string>> {
   if (lineIds.length === 0) return {}
   let query = (em.fork().getKysely<any>())
     .selectFrom('cross_border_shipment_allocations as a')
@@ -101,12 +107,50 @@ export async function loadAllocatedQuantities(
   if (excludeShipmentId) query = query.where('a.shipment_id', '!=', excludeShipmentId)
   const rows = (await query.execute()) as Array<{ line_id: string; quantity: string }>
 
-  const totals: Record<string, number> = {}
+  const grouped: Record<string, Array<string | null | undefined>> = {}
   for (const row of rows) {
     const key = String(row.line_id)
-    totals[key] = (totals[key] ?? 0) + Number.parseFloat(String(row.quantity ?? '0'))
+    ;(grouped[key] ??= []).push(row.quantity ?? '0')
+  }
+  const totals: Record<string, string> = {}
+  for (const [key, quantities] of Object.entries(grouped)) {
+    totals[key] = sumAllocationQuantities(quantities)
   }
   return totals
+}
+
+/**
+ * Exact sum of allocation quantities, rendered at the allocation quantity scale.
+ *
+ * The fold runs over scaled integers, so the returned decimal string never carries float residue
+ * (`['0.1', '0.2']` → `0.3000`, not `0.30000000000000004`). An unparseable or absent value counts
+ * as zero, mirroring the engine's `toScaledUnits`.
+ */
+export function sumAllocationQuantities(
+  quantities: Array<string | number | null | undefined>,
+): string {
+  let units = 0n
+  for (const quantity of quantities) {
+    units += toScaledUnits(quantity, ALLOCATION_QUANTITY_SCALE)
+  }
+  return toAmountString({ units, scale: ALLOCATION_QUANTITY_SCALE }, ALLOCATION_QUANTITY_SCALE)
+}
+
+/**
+ * True when the requested quantity would push a purchase-order line's committed total past what
+ * was ordered. The comparison is over scaled integers at the allocation quantity scale — the same
+ * caliber the validator normalizes to — because comparing decimal strings as floats lets a value
+ * a ten-thousandth over the line slip through on one machine and fail on another.
+ */
+export function allocationExceedsOrderedQuantity(
+  ordered: string,
+  committed: string,
+  requested: string,
+): boolean {
+  const orderedUnits = toScaledUnits(ordered, ALLOCATION_QUANTITY_SCALE)
+  const committedUnits = toScaledUnits(committed, ALLOCATION_QUANTITY_SCALE)
+  const requestedUnits = toScaledUnits(requested, ALLOCATION_QUANTITY_SCALE)
+  return committedUnits + requestedUnits > orderedUnits
 }
 
 /**

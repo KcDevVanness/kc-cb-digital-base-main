@@ -47,6 +47,7 @@ import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primiti
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { useCurrencyOptions, withCurrentCurrency } from '../../currency_policy/lib/clientOptions'
 import { quantizeExactDecimal, subtractExactDecimal, toAmountString } from '../../trade_docs/lib/money'
@@ -317,17 +318,24 @@ function RefundDocumentAttachmentField({
           {t('export_finance.cabinets.detail.documents.field.attachmentId')}
         </Button>
         {attachmentId ? (
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={disabled}
-            onClick={() => {
-              setValue('')
-              setFileName(null)
-            }}
-          >
-            {t('export_finance.cabinets.detail.documents.delete')}
-          </Button>
+          <>
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              fileName={fileName}
+              label={t('export_finance.cabinets.detail.documents.preview')}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={disabled}
+              onClick={() => {
+                setValue('')
+                setFileName(null)
+              }}
+            >
+              {t('export_finance.cabinets.detail.documents.delete')}
+            </Button>
+          </>
         ) : null}
       </div>
       {fileName ? <p className="text-xs text-muted-foreground">{fileName}</p> : null}
@@ -509,12 +517,18 @@ function RefundDocumentsSection({
         const attachmentId = row.original.attachmentId
         if (!attachmentId) return <EmptyCell />
         return (
-          <Link
-            href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
-            className="text-sm text-primary hover:underline"
-          >
-            {t('export_finance.cabinets.detail.documents.download')}
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              label={t('export_finance.cabinets.detail.documents.preview')}
+            />
+            <Link
+              href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
+              className="text-sm text-primary hover:underline"
+            >
+              {t('export_finance.cabinets.detail.documents.download')}
+            </Link>
+          </div>
         )
       },
     },

@@ -1,0 +1,48 @@
+#!/bin/sh
+# Refuse a push that would publish a tree which lost the repository.
+#
+# Same rule as the `guard-tree` CI check (`scripts/guards/guard-tree.mjs`), applied before the bad
+# commit leaves the machine: a commit made from an empty or partial checkout with `git add -A`
+# records the absence of everything that was not checked out.
+#
+# Install once per clone (repository-local config, shared by every worktree):
+#   git config core.hooksPath .githooks
+#
+# Bypass for a deliberate large deletion: `git push --no-verify`.
+set -u
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+guard="$repo_root/scripts/guards/guard-tree.mjs"
+[ -f "$guard" ] || exit 0
+command -v node >/dev/null 2>&1 || exit 0
+
+status=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$local_sha" in
+    ''|0000000000000000000000000000000000000000) continue ;; # ref deletion
+  esac
+  case "$remote_ref" in
+    refs/tags/*) continue ;; # tag pushes carry no branch tree
+  esac
+
+  base="$remote_sha"
+  case "$base" in
+    ''|0000000000000000000000000000000000000000)
+      # New branch: measure it against the branch it was cut from.
+      base=$(git rev-parse --verify --quiet 'origin/main^{commit}' 2>/dev/null || git rev-parse --verify --quiet 'main^{commit}' 2>/dev/null || true)
+      ;;
+  esac
+  if [ -z "$base" ]; then
+    echo "pre-push: no base branch to measure $remote_ref against — guard skipped" >&2
+    continue
+  fi
+
+  if ! node "$guard" --base "$base" --head "$local_sha"; then
+    echo "pre-push: refusing to push $local_ref -> $remote_ref" >&2
+    echo "pre-push: cut the branch from its target branch and add only your files, then re-commit." >&2
+    status=1
+  fi
+done
+
+exit $status

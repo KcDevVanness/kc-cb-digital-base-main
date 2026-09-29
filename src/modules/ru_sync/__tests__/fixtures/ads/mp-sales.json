@@ -1,0 +1,44 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 1,
+  "items": [
+    {
+      "channel": "ozon",
+      "sku": "PK44",
+      "period_start": "2026-09-01",
+      "period_end": "2026-09-30",
+      "orders_qty": 37,
+      "orders_revenue": {
+        "amount": "4208024.00",
+        "currency": "RUB"
+      },
+      "sales_qty": 31,
+      "sales_revenue": {
+        "amount": "3574798.00",
+        "currency": "RUB"
+      },
+      "marketplace_fees": {
+        "amount": "1849273.00",
+        "currency": "RUB"
+      },
+      "cogs": {
+        "amount": "903619.00",
+        "currency": "RUB"
+      },
+      "ad_spend": {
+        "amount": "82227.00",
+        "currency": "RUB"
+      },
+      "drr_percent": 2.3,
+      "drr_accrued_percent": 2.5,
+      "margin_percent": 22.0,
+      "margin_amount": {
+        "amount": "786457.00",
+        "currency": "RUB"
+      },
+      "updated_at": "2026-09-28T03:00:00+03:00"
+    }
+  ]
+}

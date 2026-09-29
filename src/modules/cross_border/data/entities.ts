@@ -1,5 +1,5 @@
 import { OptionalProps } from '@mikro-orm/core'
-import { Entity, ManyToOne, PrimaryKey, Property, Unique } from '@mikro-orm/decorators/legacy'
+import { Entity, Index, ManyToOne, PrimaryKey, Property, Unique } from '@mikro-orm/decorators/legacy'
 
 /**
  * A consignment: goods that travel together from the domestic supplier to the overseas
@@ -148,6 +148,66 @@ export class CrossBorderShipmentAllocation {
   /** Set when the goods are received; null means still in transit. */
   @Property({ name: 'received_quantity', type: 'numeric', precision: 18, scale: 4, nullable: true })
   receivedQuantity?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}
+
+/**
+ * One **internal sales-order line** travelling in one shipment.
+ *
+ * The mirror image of `CrossBorderShipmentAllocation`, on the sales side of the chain
+ * (内部销售订单 → 拣货装箱 → 报关 → 发运): a container may carry goods ordered on several sales
+ * orders, and one order may be split across shipments. The sales side is referenced by scalar
+ * ids plus frozen display/price snapshots — no cross-module ORM relation, and no cross-module
+ * write from here. Rows are replaced wholesale with the shipment they belong to, exactly like
+ * the purchase allocations, and the composite unique key is per (shipment, sales order line).
+ */
+@Entity({ tableName: 'cross_border_shipment_sales_allocations' })
+@Index({ name: 'cross_border_shipment_sales_allocations_scope_idx', properties: ['organizationId', 'tenantId'] })
+@Unique({ name: 'cross_border_shipment_sales_allocations_shipment_line_uniq', properties: ['shipment', 'salesOrderLineId'] })
+export class CrossBorderShipmentSalesAllocation {
+  [OptionalProps]?: 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @ManyToOne(() => CrossBorderShipment, { fieldName: 'shipment_id', deleteRule: 'cascade' })
+  shipment!: CrossBorderShipment
+
+  @Property({ name: 'sales_order_id', type: 'uuid' })
+  salesOrderId!: string
+
+  @Property({ name: 'sales_order_line_id', type: 'uuid' })
+  salesOrderLineId!: string
+
+  @Property({ name: 'sales_order_number', type: 'text', nullable: true })
+  salesOrderNumber?: string | null
+
+  @Property({ name: 'catalog_product_id', type: 'uuid' })
+  catalogProductId!: string
+
+  @Property({ name: 'product_snapshot', type: 'jsonb', nullable: true })
+  productSnapshot?: Record<string, unknown> | null
+
+  @Property({ type: 'numeric', precision: 18, scale: 4, default: '0' })
+  quantity: string = '0'
+
+  /** Internal sales price and currency, frozen at allocation time; null = the line is unpriced. */
+  @Property({ name: 'unit_price', type: 'numeric', precision: 18, scale: 4, nullable: true })
+  unitPrice?: string | null
+
+  @Property({ name: 'currency_code', type: 'text', nullable: true })
+  currencyCode?: string | null
 
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()

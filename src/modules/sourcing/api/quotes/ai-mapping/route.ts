@@ -62,7 +62,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const workbook = await readWorkbookForQuote({
+    const { workbook } = await readWorkbookForQuote({
       container,
       auth,
       quote,
