@@ -652,6 +652,12 @@ function InternalSalesLinesEditor(
                 onChange={(next) => void handleProductChange(index, next)}
                 placeholder={t('internal_sales.form.lines.selectProduct')}
                 seedOptions={line.productId && line.productLabel ? [{ value: line.productId, label: line.productLabel }] : undefined}
+                resolveLabel={async (value) => {
+                  // A loaded line normally carries its label; this covers the row whose snapshot is
+                  // empty, where the picker would otherwise paint the raw product uuid.
+                  const option = await loadProductOption(value, t('internal_sales.form.productLoadFailed'), organizationId)
+                  return option?.label ?? ''
+                }}
                 loadSuggestions={async (query) => {
                   const options = await loadProductOptions(
                     t('internal_sales.form.productLoadFailed'),

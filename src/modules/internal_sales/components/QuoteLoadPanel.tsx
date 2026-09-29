@@ -63,6 +63,7 @@ import {
   hasOperatorInput,
   loadQuoteDraft,
   loadQuoteOptions,
+  resolveQuoteLabel,
   sourceQuotePreviewFromDraft,
   type SourceQuotePreview,
 } from '../lib/quoteLoad'
@@ -390,6 +391,7 @@ export default function QuoteLoadPanel({
                 onChange={setQuoteId}
                 placeholder={t('internal_sales.form.quoteLoad.placeholder', 'Search by quote number…')}
                 loadSuggestions={async (query): Promise<ComboboxOption[]> => loadQuoteOptions(query)}
+                resolveLabel={async (value) => resolveQuoteLabel(value)}
                 allowCustomValues={false}
                 clearable
               />
