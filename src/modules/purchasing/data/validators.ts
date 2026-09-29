@@ -144,6 +144,24 @@ const pageSchema = z.coerce.number().min(1).default(1)
 const pageSizeSchema = z.coerce.number().min(1).max(200).default(50)
 
 /**
+ * One row of a supplier's bank block. Mirrors the `parties` bank row: bank and account number are
+ * required (an account with no number cannot be paid into), SWIFT and bank address are optional, and
+ * at most one row may be the default (enforced in the command; the partial unique index is the race
+ * guard).
+ */
+export const supplierBankAccountInputSchema = z.object({
+  /** Present = update this row in place; absent = insert. Ids the payload does not name are deleted. */
+  id: z.string().uuid().optional(),
+  beneficiaryBank: z.string().trim().min(1).max(200),
+  accountNumber: z.string().trim().min(1).max(120),
+  swiftCode: z.string().trim().max(32).nullable().optional(),
+  bankAddress: z.string().trim().max(500).nullable().optional(),
+  isDefault: z.boolean().optional(),
+})
+
+export type SupplierBankAccountInput = z.infer<typeof supplierBankAccountInputSchema>
+
+/**
  * Supplier input contracts.
  *
  * `nullable().optional()` on the free-text fields is deliberate: `undefined` means
@@ -168,6 +186,8 @@ export const supplierCreateSchema = z.object({
   brandValue: z.string().trim().max(64).nullable().optional(),
   isActive: z.boolean().default(true),
   notes: z.string().max(2000).nullable().optional(),
+  /** The supplier's bank block. Absent = leave untouched on update; `[]` = clear the block. */
+  bankAccounts: z.array(supplierBankAccountInputSchema).max(10).optional(),
 })
 
 export const supplierUpdateSchema = z.object({
@@ -182,12 +202,22 @@ export const supplierUpdateSchema = z.object({
   brandValue: z.string().trim().max(64).nullable().optional(),
   isActive: z.boolean().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  bankAccounts: z.array(supplierBankAccountInputSchema).max(10).optional(),
 })
 
 export const supplierListSchema = z.object({
   id: z.string().uuid().optional(),
   ids: z.string().optional(),
   search: z.string().max(200).optional(),
+  /**
+   * Narrows a picker to the selected organization.
+   *
+   * Documents reference a supplier from the organization they belong to, and the write commands
+   * reject another organization's record even when the caller may see it (HQ sees its subsidiaries),
+   * so a picker that offered those rows would only produce a 400. Omitting the key keeps the
+   * readable-set expansion every list read has.
+   */
+  organizationId: z.string().uuid().optional(),
   // `z.coerce.boolean()` would read the string "false" as `true`, silently turning an
   // "inactive only" filter into "active only". The factory may hand this key through as a
   // real boolean (it pre-parses recognized boolean query keys), so accept both shapes and

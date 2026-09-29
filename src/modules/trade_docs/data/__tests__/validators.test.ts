@@ -2,8 +2,13 @@ import { describe, expect, it } from '@jest/globals'
 import {
   contractCreateSchema,
   contractLineInputSchema,
+  contractUpdateSchema,
+  documentCreateSchema,
   documentLineInputSchema,
+  documentUpdateSchema,
+  invoiceCreateSchema,
   invoiceLineInputSchema,
+  invoiceUpdateSchema,
 } from '../validators'
 
 /**
@@ -75,5 +80,69 @@ describe('trade_docs decimal validators', () => {
     expect(contractLineInputSchema.safeParse({ ...line, unitPrice: '12,5' }).success).toBe(false)
     expect(contractLineInputSchema.safeParse({ ...line, unitPrice: '-0.01' }).success).toBe(false)
     expect(contractLineInputSchema.safeParse({ ...line, unitPrice: '' }).success).toBe(false)
+  })
+})
+
+const CONTRACT_ID = '11111111-1111-4111-8111-111111111111'
+
+describe('the direction decides the counterparty kind', () => {
+  it('accepts a create that names only the direction (the command derives the kind)', () => {
+    expect(contractCreateSchema.parse({ direction: 'sales' }).counterpartyKind).toBeUndefined()
+    expect(documentCreateSchema.parse({ direction: 'purchase' }).counterpartyKind).toBeUndefined()
+    expect(invoiceCreateSchema.parse({ direction: 'outbound' }).counterpartyKind).toBeUndefined()
+  })
+
+  it('accepts a kind that agrees with the direction', () => {
+    expect(contractCreateSchema.parse({ direction: 'sales', counterpartyKind: 'customer' }).counterpartyKind).toBe('customer')
+    expect(contractCreateSchema.parse({ direction: 'purchase', counterpartyKind: 'supplier' }).counterpartyKind).toBe('supplier')
+    expect(documentCreateSchema.parse({ direction: 'sales', counterpartyKind: 'customer' }).counterpartyKind).toBe('customer')
+    expect(invoiceCreateSchema.parse({ direction: 'inbound', counterpartyKind: 'supplier' }).counterpartyKind).toBe('supplier')
+  })
+
+  it('rejects a pair that contradicts itself', () => {
+    expect(() => contractCreateSchema.parse({ direction: 'sales', counterpartyKind: 'supplier' })).toThrow(
+      /counterpartyKind must be/,
+    )
+    expect(() => contractCreateSchema.parse({ direction: 'purchase', counterpartyKind: 'customer' })).toThrow()
+    expect(() => documentCreateSchema.parse({ direction: 'purchase', counterpartyKind: 'customer' })).toThrow()
+    expect(() => invoiceCreateSchema.parse({ direction: 'outbound', counterpartyKind: 'supplier' })).toThrow()
+    expect(() => invoiceCreateSchema.parse({ direction: 'inbound', counterpartyKind: 'customer' })).toThrow()
+  })
+
+  it('checks the pair on an update only when the caller sends both halves', () => {
+    expect(() =>
+      contractUpdateSchema.parse({ id: CONTRACT_ID, direction: 'sales', counterpartyKind: 'supplier' }),
+    ).toThrow()
+    expect(contractUpdateSchema.parse({ id: CONTRACT_ID, direction: 'sales' }).counterpartyKind).toBeUndefined()
+  })
+})
+
+/**
+ * Regression for the zod behaviour this module relied on wrongly: `.partial()` keeps `.default()`,
+ * so an update schema built from the create body re-injected `direction`, `counterpartyKind`,
+ * `currencyCode` and — because `lines` defaulted to `[]` — wiped every line on a notes-only PUT.
+ */
+describe('partial updates carry only what the caller sent', () => {
+  const updateCases: Array<{ name: string; parse: (body: Record<string, unknown>) => Record<string, unknown> }> = [
+    { name: 'contract', parse: (body) => contractUpdateSchema.parse(body) as Record<string, unknown> },
+    { name: 'document', parse: (body) => documentUpdateSchema.parse(body) as Record<string, unknown> },
+    { name: 'invoice', parse: (body) => invoiceUpdateSchema.parse(body) as Record<string, unknown> },
+  ]
+
+  for (const { name, parse } of updateCases) {
+    it(`${name}: a notes-only update leaves direction, kind, currency and lines undefined`, () => {
+      const parsed = parse({ id: CONTRACT_ID, notes: 'edited' })
+      expect(parsed.direction).toBeUndefined()
+      expect(parsed.counterpartyKind).toBeUndefined()
+      expect(parsed.currencyCode).toBeUndefined()
+      expect(parsed.lines).toBeUndefined()
+    })
+  }
+
+  it('create still applies its own defaults', () => {
+    const parsed = contractCreateSchema.parse({})
+    expect(parsed.direction).toBe('purchase')
+    expect(parsed.currencyCode).toBe('CNY')
+    expect(parsed.lines).toEqual([])
   })
 })

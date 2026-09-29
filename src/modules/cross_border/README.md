@@ -19,7 +19,7 @@ app 自有模块。把多张采购单**拼柜**成一张发运单，跟踪在途
 ## 规则（有意为之）
 
 - **分摊不可超发**：`allocations` 累计数量不得超过采购单行的订购数量，超出返回 **422**；同一采购单**行**重复分摊同样拒绝（载荷内重复，或该发运单已占用该行，唯一约束 `(shipment_id, purchase_order_line_id)`）。
-- **销售分摊是「一柜多单」的另一半（2026-09-28）**：采购分摊记录货从哪些采购单来，销售分摊记录同一批货卖给了哪些内部销售订单（同一柜可跨多张订单，唯一键 `(shipment_id, sales_order_line_id)`）；单价/币种取自销售行的当时值作为**快照**（单价 4 位；事后改价不改已开单据），CI 的明细按它汇总。
+- **销售分摊是「一柜多单」的另一半（2026-09-28）**：采购分摊记录货从哪些采购单来，销售分摊记录同一批货卖给了哪些内部销售订单（同一柜可跨多张订单，唯一键 `(shipment_id, sales_order_line_id)`）；单价/币种取自销售行的当时值作为**快照**（单价 4 位；事后改价不改已开单据），CI 的明细按它汇总。**只列内部订单（2026-09-29）**：选择器先解析本组织的内部贸易类型通道（`GET /api/internal_sales/trade-type-channels/orders`），把 `channelId=<internal>` 传给 `sales/orders`，分公司对外的订单因此不会进入出口分摊；通道解析不到时**不发请求**并用调用方的提示文案报错，不悄然放宽成「作用域内全部订单」。
 - **出口单证的「商业发票」槽位已停用（不删枚举）**：`commercial_invoice` 仍是合法枚举值（既有行继续显示/可读），但新建单证的下拉不再提供它，单证区与对话框都给出「已改为结构化单据」提示并链接 `/backend/trade-docs/commercial-invoices`——系统里商业发票只有一个真相源（`trade_docs_documents(kind='commercial')`）。
 - **写后列表即新（2026-09-28）**：平台的 CRUD 列表缓存在 `ENABLE_CRUD_API_CACHE=true` 时生效，而工厂只失效本路由自己的资源；发运单命令因此显式失效本模块的全部集合（`lib/cacheInvalidation.ts`：`cross_border.shipment` + `.allocation` + `.sales.allocation` + `.milestone` + `cross_border.document`，后两者按实体名推导，因为对应的读取路由没有命令可推导）。回归口径见 trade_docs 的 `__integration__/crud-cache-freshness.spec.ts` 与 [lesson](../../../.ai/lessons/crud-cache-invalidation-spans-resources.md)。
 - **里程碑单调**：`advance-milestone` 只允许前进，回退返回 **422**；历史节点保留可查。

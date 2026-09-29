@@ -48,7 +48,6 @@ import {
   type DocumentKind,
 } from './DocumentsTable'
 import {
-  loadCounterpartyOptions,
   loadCurrencyOptions,
   loadIncotermOptions,
   loadPaymentTermOptions,
@@ -63,6 +62,8 @@ import {
   withCurrentUnit,
   type ProductOption,
 } from './formOptions'
+import { CounterpartyPicker } from './CounterpartyPicker'
+import { COUNTERPARTY_KIND_BY_DIRECTION } from '../data/validators'
 
 const DOCUMENTS_API_PATH = 'trade_docs/documents'
 const DOCUMENT_LINES_API_PATH = 'trade_docs/documents/lines'
@@ -92,8 +93,9 @@ export type DocumentLineValues = {
 export type DocumentFormValues = {
   id?: string
   direction: string
-  counterpartyKind: string
   counterpartyId: string
+  /** Bank account id the counterparty bank text was filled from; carried into the snapshot. */
+  counterpartyBankAccountId: string
   counterpartyName: string
   counterpartyAddress: string
   counterpartyContact: string
@@ -148,8 +150,8 @@ function emptyLine(): DocumentLineValues {
 function emptyDocumentValues(): DocumentFormValues {
   return {
     direction: 'sales',
-    counterpartyKind: 'customer',
     counterpartyId: '',
+    counterpartyBankAccountId: '',
     counterpartyName: '',
     counterpartyAddress: '',
     counterpartyContact: '',
@@ -223,8 +225,8 @@ export function toDocumentFormValues(
   return {
     id: readText(item, 'id'),
     direction: readText(item, 'direction') || 'sales',
-    counterpartyKind: readText(item, 'counterpartyKind', 'counterparty_kind') || 'customer',
     counterpartyId: readText(item, 'counterpartyId', 'counterparty_id'),
+    counterpartyBankAccountId: snapshotText(counterpartySnapshot, 'bankAccountId'),
     counterpartyName: readText(item, 'counterpartyName', 'counterparty_name') || snapshotText(counterpartySnapshot),
     counterpartyAddress: snapshotText(counterpartySnapshot, 'address'),
     counterpartyContact: snapshotText(counterpartySnapshot, 'contact'),
@@ -287,6 +289,9 @@ export function buildDocumentPayload(values: DocumentFormValues): Record<string,
     contact: values.counterpartyContact,
     bank: values.counterpartyBank,
   })
+  if (counterparty && values.counterpartyBankAccountId.trim()) {
+    counterparty.bankAccountId = values.counterpartyBankAccountId.trim()
+  }
 
   const sourceSnapshot: Record<string, unknown> = {}
   if (values.sourceNumber.trim()) sourceSnapshot.number = values.sourceNumber.trim()
@@ -309,7 +314,8 @@ export function buildDocumentPayload(values: DocumentFormValues): Record<string,
 
   return {
     direction: values.direction,
-    counterpartyKind: values.counterpartyKind,
+    // Derived, never a separate operator choice: the direction decides who the counterparty can be.
+    counterpartyKind: COUNTERPARTY_KIND_BY_DIRECTION[values.direction as keyof typeof COUNTERPARTY_KIND_BY_DIRECTION],
     counterpartyId: values.counterpartyId.trim() ? values.counterpartyId.trim() : null,
     counterpartySnapshot: Object.keys(counterparty).length > 0 ? counterparty : null,
     ourPartySnapshot: Object.keys(ourParty).length > 0 ? ourParty : null,
@@ -871,7 +877,6 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
 }
 
 function useDocumentFields(t: TranslateFn, kind: DocumentKind): CrudField[] {
-  const { organizationId } = useOrganizationScopeDetail()
   return React.useMemo<CrudField[]>(() => {
     const directionOptions = (kind === 'commercial' ? ['sales'] : DOCUMENT_DIRECTIONS).map((value) => ({
       value,
@@ -885,30 +890,6 @@ function useDocumentFields(t: TranslateFn, kind: DocumentKind): CrudField[] {
         required: true,
         options: directionOptions,
         layout: 'half',
-      },
-      {
-        id: 'counterpartyKind',
-        label: t('trade_docs.documents.form.field.counterpartyKind', '对方类型'),
-        type: 'select',
-        options: [
-          { value: 'customer', label: t('trade_docs.documents.form.counterpartyKind.customer', '客户') },
-          { value: 'supplier', label: t('trade_docs.documents.form.counterpartyKind.supplier', '供应商') },
-        ],
-        layout: 'half',
-      },
-      {
-        id: 'counterpartyId',
-        label: t('trade_docs.documents.form.field.counterpartyId', '对方'),
-        type: 'select',
-        placeholder: t('trade_docs.documents.form.field.counterpartyName', '对方名称'),
-        layout: 'half',
-        loadOptions: () =>
-          loadCounterpartyOptions({
-            supplierLabel: t('trade_docs.documents.form.counterpartyKind.supplier', '供应商'),
-            customerLabel: t('trade_docs.documents.form.counterpartyKind.customer', '客户'),
-            errorMessage: t('trade_docs.documents.form.counterpartyLoadFailed', '对方列表加载失败'),
-            organizationId,
-          }),
       },
       {
         id: 'currencyCode',
@@ -1045,7 +1026,7 @@ function useDocumentFields(t: TranslateFn, kind: DocumentKind): CrudField[] {
           ] as CrudField[])
         : []),
     ]
-  }, [kind, organizationId, t])
+  }, [kind, t])
 }
 
 export default function DocumentsForm({
@@ -1067,13 +1048,17 @@ export default function DocumentsForm({
         column: 1,
         fields: [
           'direction',
-          'counterpartyKind',
-          'counterpartyId',
           'currencyCode',
           'exchangeRate',
           'validUntil',
           'deliveryDate',
         ],
+      },
+      {
+        id: 'counterpartyPicker',
+        column: 1,
+        bare: true,
+        component: (context) => <CounterpartyPicker {...context} t={t} directionKind="trade" idPrefix="document" />,
       },
       {
         id: 'terms',

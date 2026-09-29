@@ -5,11 +5,19 @@ import { CrudForm, type CrudField, type CrudFieldOption, type CrudFormGroup } fr
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { ErrorMessage, RecordNotFoundState } from '@open-mercato/ui/backend/detail'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
-import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
+import { createCrud, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { loadCodeListOptions } from '../lib/codeListOptions'
 import { PRODUCT_BRAND_DICTIONARY_KEY } from '../../product_codes/lib/dictionaryValues'
+// Deliberate cross-module reuse: the bank block is one value object with one editor, and `parties`
+// owns the only implementation (multiple accounts, exactly one default, clear affordances). Copying
+// it here would fork the same interaction; the field names in both contracts are identical.
+import {
+  BankAccountsEditor,
+  readBankAccountRows,
+  type PartyBankAccountValue,
+} from '../../parties/components/BankAccountsEditor'
 
 const API_PATH = 'purchasing/suppliers'
 const LIST_HREF = '/backend/purchasing/suppliers'
@@ -25,6 +33,8 @@ export type SupplierFormValues = {
   defaultCurrencyCode: string
   isActive: boolean
   notes: string
+  /** The supplier's bank block: the accounts our payments go to (encrypted at rest). */
+  bankAccounts: PartyBankAccountValue[]
   /**
    * Carries the optimistic-lock version into `CrudForm`, which auto-derives the
    * expected-version header from `initialValues.updatedAt` for update.
@@ -45,12 +55,19 @@ const EMPTY_SUPPLIER_VALUES: SupplierFormValues = {
   defaultCurrencyCode: '',
   isActive: true,
   notes: '',
+  bankAccounts: [],
 }
 
 const SUPPLIER_GROUPS_SETTINGS: CrudFormGroup = {
   id: 'settings',
   column: 2,
   fields: ['defaultCurrencyCode', 'brandValue', 'isActive', 'notes'],
+}
+
+const SUPPLIER_GROUPS_BANK: CrudFormGroup = {
+  id: 'bank',
+  column: 1,
+  fields: ['bankAccounts'],
 }
 
 /**
@@ -67,6 +84,7 @@ function supplierGroups(mode: 'create' | 'edit'): CrudFormGroup[] {
         ? ['name', 'contactName', 'phone', 'email', 'address']
         : ['name', 'code', 'contactName', 'phone', 'email', 'address'],
     },
+    SUPPLIER_GROUPS_BANK,
     SUPPLIER_GROUPS_SETTINGS,
   ]
 }
@@ -100,6 +118,7 @@ export function toSupplierFormValues(item: Record<string, unknown>): SupplierRec
     defaultCurrencyCode: readText(item, 'defaultCurrencyCode', 'default_currency_code'),
     isActive: isActive === undefined ? true : Boolean(isActive),
     notes: readText(item, 'notes'),
+    bankAccounts: readBankAccountRows(item.bankAccounts),
     updatedAt: typeof updatedAt === 'string' ? updatedAt : null,
   }
 }
@@ -119,6 +138,14 @@ export function buildSupplierPayload(values: SupplierFormValues): Record<string,
     defaultCurrencyCode: values.defaultCurrencyCode.trim().toUpperCase(),
     isActive: Boolean(values.isActive),
     notes: values.notes.trim(),
+    bankAccounts: values.bankAccounts.map((row) => ({
+      ...(row.id ? { id: row.id } : {}),
+      beneficiaryBank: row.beneficiaryBank.trim(),
+      accountNumber: row.accountNumber.trim(),
+      swiftCode: row.swiftCode.trim() ? row.swiftCode.trim() : null,
+      bankAddress: row.bankAddress.trim() ? row.bankAddress.trim() : null,
+      isDefault: row.isDefault === true,
+    })),
   }
 }
 
@@ -209,6 +236,12 @@ function useSupplierFields(t: TranslateFn, mode: 'create' | 'edit'): CrudField[]
       type: 'checkbox',
     },
     {
+      id: 'bankAccounts',
+      label: t('purchasing.suppliers.form.group.bank'),
+      type: 'custom',
+      component: BankAccountsEditor,
+    },
+    {
       id: 'notes',
       label: t('purchasing.suppliers.form.field.notes'),
       type: 'textarea',
@@ -271,8 +304,14 @@ function SupplierEditForm({ supplierId }: { supplierId: string }) {
       setError(null)
       setIsNotFound(false)
       try {
-        const payload = await fetchCrudList<Record<string, unknown>>(API_PATH, { ids: supplierId, pageSize: 1 })
-        const item = payload?.items?.[0]
+        // The list projection carries no bank rows (they are encrypted and never part of a list), so
+        // the edit form reads the module's own detail route, which also returns `updatedAt`.
+        const payload = await readApiResultOrThrow<{ item?: Record<string, unknown> }>(
+          `${API_PATH}/${encodeURIComponent(supplierId)}`,
+          undefined,
+          { errorMessage: t('purchasing.suppliers.form.loadFailed') },
+        )
+        const item = payload?.item
         if (!item) {
           if (!cancelled) setIsNotFound(true)
           return

@@ -32,6 +32,7 @@ const LINE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
 function formValues(patch: Partial<InternalSalesFormValues> = {}): InternalSalesFormValues {
   return {
+    tradeType: 'internal',
     buyerRef: '',
     customerName: '',
     currencyCode: '',
