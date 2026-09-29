@@ -141,10 +141,24 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 3. 合并前：rebase 到最新 `main`，门禁全绿（`.ai/agentic.config.json` 的 `validation.commands`）。
 4. **squash 合并**，保持 `main` 线性；合并后删除远端分支（仓库 `delete_branch_on_merge=true` 自动做），
    本地分支与工作树紧接着 `yarn branches:cleanup --apply` 收尾。
-5. **CI**：`.github/workflows/validate.yml` 在**所有 PR**（不限目标分支）与 `main` 上按顺序跑同一组
-   门禁命令（`generate` / `typecheck` / `lint` / `lessons` / `ds:check` / `test` / `build`），检查名
-   **`validate`**；docs / 部署侧改动的 PR 由 job 内的 scope 步骤跳过重步骤，检查照常报告（required
-   check 不会卡在 "Expected — Waiting"）。本地复现同一结论，就按同一顺序跑同一份命令。
+5. **CI**：`.github/workflows/validate.yml` 在**所有 PR**（不限目标分支）与 `main` 上跑同一组门禁命令
+   （`generate` / `typecheck` / `lint` / `lessons` / `ds:check` / `test` / `build`），检查名 **`validate`**。
+   结构是「先判定、再并行两半、最后汇总」：
+
+   - `scope`：从 diff 判定这套命令是否**可能**失败（白名单，见下）；
+   - `checks`：install → generate → typecheck → lint → lessons → ds:check → test；
+   - `build`：install → build（`yarn build` 本身就是 `yarn generate && next build`，不重复 generate）；
+   - `validate`：汇总 job，**名字就是分支保护要求的那个检查名**，只在两半都通过（或按范围跳过）时报绿。
+
+   `checks` 与 `build` 同时起跑，所以 app 源码改动的墙钟时间约等于 `install + build` 这条最长路径，
+   而不是所有步骤相加（2026-09-29 之前是单 job 串行：每次 4:49–6:06）。**必需检查按 job 名匹配**，
+   所以汇总 job 不能改名、也不能换成 matrix——名字一旦不存在，每个 PR 会永久卡在 "Expected — Waiting"。
+   docs / 部署侧改动的 PR 由 `scope` 判定 `needed=false`：两个 job 直接 skipped，汇总 job 照常上报成功。
+   跨运行复用的缓存三份：yarn 缓存、`tsconfig.tsbuildinfo`、`next build` 自己那份
+   `.mercato/next/cache/.tsbuildinfo`（`next build` 内部还会再做一次类型检查，只是记录文件不同）。
+   缓存的是**增量记录**而不是结果：类型检查照跑，TypeScript 按文件内容与编译选项失效，陈旧条目只花
+   时间、不漏错误。本地复现同一结论：按 `.ai/agentic.config.json` 的 `validation.commands` 顺序跑同一份
+   命令（CI 只是把它拆开并行，命令本身没变）。
    **结构守卫**：另有 `.github/workflows/guard-tree.yml`（检查名 **`guard-tree`**），判定只看两棵树：
    head 里缺 `package.json` / `yarn.lock` / `src/modules.ts` / `.github/workflows/validate.yml` 之一，
    或保留文件数低于基线的 50%，即失败（PR #12 的 `1543 files changed, 593482 deletions(-)` 会被判红）。

@@ -9,7 +9,7 @@
 
 | 分支 | 作用 | 触发什么 |
 |---|---|---|
-| `main` | 集成分支 | `validate.yml`（generate/typecheck/lint/ds:check/test/build） |
+| `main` | 集成分支 | `validate.yml`（`scope` → `checks` ∥ `build` → 汇总 `validate`，命令仍是 generate/typecheck/lint/ds:check/test/build） |
 | `feat/*` | 特性分支 | 开 PR 时跑 `validate.yml` |
 | `production` | **发布分支，唯一会部署的分支** | `deploy.yml`（构建镜像 → 部署到 AWS） |
 
