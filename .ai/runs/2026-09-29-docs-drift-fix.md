@@ -53,35 +53,37 @@ Non-goals: no code changes; frozen RU target contracts keep their semantics (dat
 
 ## Progress
 
+PR: #57
+
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
 ### Phase 1: Status truth (specs, plan boards, PRDs)
 
-- [ ] 1.1 spec Status lines + endpoint wording
-- [ ] 1.2 plan boards and cross-border plan
-- [ ] 1.3 PRD open questions and framing
+- [x] 1.1 spec Status lines + endpoint wording — 7710865, 1f61c8b
+- [x] 1.2 plan boards and cross-border plan — 7710865, 1f61c8b
+- [x] 1.3 PRD open questions and framing — 7710865
 
 ### Phase 2: Module READMEs + AGENTS ownership map
 
-- [ ] 2.1 module README corrections
-- [ ] 2.2 AGENTS.md ownership map
+- [x] 2.1 module README corrections — 1aa6154
+- [x] 2.2 AGENTS.md ownership map — 1aa6154
 
 ### Phase 3: docs/dev + docs index
 
-- [ ] 3.1 dev guides (business-architecture, architecture, setup, parallel-development)
-- [ ] 3.2 model/i18n docs + docs/README.md index
+- [x] 3.1 dev guides (business-architecture, architecture, setup, parallel-development) — 9d858a4
+- [x] 3.2 model/i18n docs + docs/README.md index — 9d858a4
 
 ### Phase 4: docs/deploy
 
-- [ ] 4.1 cicd + runtime
-- [ ] 4.2 storage + cutover runbook
+- [x] 4.1 cicd + runtime — 20adbc8
+- [x] 4.2 storage + cutover runbook — 20adbc8
 
 ### Phase 5: RU dossier + pitfalls
 
-- [ ] 5.1 docs/ru-petkit corrections
-- [ ] 5.2 pitfalls corrections
+- [x] 5.1 docs/ru-petkit corrections — 4405563
+- [x] 5.2 pitfalls corrections — 4405563
 
 ### Phase 6: Verification and close-out
 
-- [ ] 6.1 docs gate + re-verification pass
-- [ ] 6.2 PR body refresh, summary comment, ready flip, labels
+- [x] 6.1 docs gate + re-verification pass — gate green (`yarn lint` 0 errors / 8 pre-existing warnings, `node scripts/check-lessons.mjs` OK); reviewer pass over the full diff: approve
+- [x] 6.2 PR body refresh, summary comment, ready flip, labels
