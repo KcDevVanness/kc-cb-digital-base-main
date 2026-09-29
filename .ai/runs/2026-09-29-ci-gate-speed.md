@@ -95,8 +95,8 @@ parallel, then the fan-in 2s.
 The run is now bounded by the `build` slice instead of the sum of every step, and the `checks` slice
 finishes ~80s before it rather than delaying it.
 
-After, warm caches (run `36520762983`, second run on the same lockfile/tsconfig — both incremental
-records restored): **166s** total.
+After, warm caches (runs `36520762983` and `36521076712`, same lockfile/tsconfig — both incremental
+records restored): **166s and 161s** (2:46 / 2:41).
 
 | Slice | Job wall | Steps |
 |---|---|---|
@@ -115,6 +115,7 @@ Gate-shape evidence, all on this PR:
 | `36519938204` | deliberate failing test | `checks` **failure**, `build` **failure**, `validate` **failure** |
 | `36520357923` | final tree, cold | all four jobs success, 225s |
 | `36520762983` | final tree, warm | all four jobs success, 166s |
+| `36521076712` | final tree, warm | all four jobs success, 161s |
 
 ## Source doc
 
@@ -142,4 +143,4 @@ tracker has no issues.
 - [x] 3.1 local snippet harness (scope ranges + fan-in permutations)
 - [x] 3.2 docs-only PR run → skip path green — run `36519752486`: `validate` success in 13s
 - [x] 3.3 deliberate failure → `validate` red — run `36519938204`: `checks` + `build` failure
-- [x] 3.4 final tree → green, timings recorded — runs `36520357923` (225s cold) and `36520762983` (166s warm)
+- [x] 3.4 final tree → green, timings recorded — runs `36520357923` (225s cold), `36520762983` (166s warm), `36521076712` (161s warm)
