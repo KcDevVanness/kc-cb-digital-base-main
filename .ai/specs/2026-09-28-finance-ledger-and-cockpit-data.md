@@ -18,7 +18,7 @@
 - **外贸侧没有金额**。`cross_border_shipments` 零金额列（无运费/关税/货值）；该模块唯一的钱是 `cross_border_shipment_sales_allocations.unit_price + currency_code`（内部销售价快照）。收货只动数量：`src/modules/cross_border/commands/shipments.ts:703-726` → `wms.inventory.receive` + `purchasing.purchase-orders.apply-receipt`，**不传任何成本**；`wms` 无成本层 ⇒ 库存资金占用今天算不出来。运费/关税只有两个单证类型枚举 `domestic_freight_receipt`/`booking_charges_receipt`（`src/modules/cross_border/data/validators.ts:15-26`），**金额化**的柜费用不存在。
 - **收汇只有状态没有金额**。`export_finance_collections`（`src/modules/export_finance/data/entities.ts:44-45` 起）只有 `collection_status`；`export_finance_refunds` 有 `tax_refund_amount`。应收台账无来源。
 - **没有损益**。全仓无任何 P&L / SKU 毛利代码；无期间费用（广告/平台费/物流/管理）实体。
-- **RU 16 端点未接**。`docs/ru-petkit/supply-sync-tech.md` 契约已冻结（§1–§7 supply、§10–§18 ads），但 `A.4 四项敏感确认`全部未勾选；SKU 大小写与 `склад`/`фабрика` 后缀的映射没有落点。既有 spec `.ai/specs/2026-09-28-three-system-metric-reconciliation.md` 是 Draft、`Blocked`（Q-005…Q-010），只覆盖 supply 同步 + 只读驾驶舱，不含财务模块。
+- **RU 17 端点未接**。`docs/ru-petkit/supply-sync-tech.md` 契约已冻结（§1–§7 supply、§10–§18 ads），但 `A.4 四项敏感确认`全部未勾选；SKU 大小写与 `склад`/`фабрика` 后缀的映射没有落点。既有 spec `.ai/specs/2026-09-28-three-system-metric-reconciliation.md` 是 Draft、`Blocked`（Q-005…Q-010），只覆盖 supply 同步 + 只读驾驶舱，不含财务模块。
 - **驾驶舱不存在**。全仓无 cockpit 代码；链路未端到端验收、到期提醒未做（`docs/prd/cross-border-erp.md` 验收清单 + PRD Q6）。
 
 为什么现有行为不足：老板六类数据（赚多少 / 货转不转 / 卖得好不好 / 花钱值不值 / 钱回不回来 / SKU 对齐）没有任何单一可验收定义；采购价与到岸成本两个口径各自缺一半；D-资料（收汇/退税）有锚点无金额；RU 侧数字与 CN 账本各说各话。
@@ -26,7 +26,7 @@
 ## Overview and Success Measures
 
 - **Primary outcome:** 驾驶舱六类数与 RU 页一致（误差 ≤ 0.2 п.п. / ≤ 20 ₽），且 CN 侧三数（应付未付 / 应收未收 / 库存资金占用）可逐单复算；柜级费用折算 CNY 后**分摊总和 == 费用总和**（金额 2 位）。
-- **Leading indicators:** 7 端点 mock 全量拉取行数一致、同 `as_of` 重放 0 新增、失败页游标不推进；SKU 映射覆盖率（canonical 命中 supply SKU 集合）；采购单行 `received_quantity` 与 `wms` 余额一致。
+- **Leading indicators:** 8 端点（§1–§7 + §1.1）mock 全量拉取行数一致、同 `as_of` 重放 0 新增、失败页游标不推进；SKU 映射覆盖率（canonical 命中 supply SKU 集合）；采购单行 `received_quantity` 与 `wms` 余额一致。
 - **Baseline:** 驾驶舱不存在；应付/应收无台账出口（本轮检索证据见 Problem Statement）；RU 页基线取 `docs/ru-petkit/evidence.md`（ДРР 7,5%、Сен маржа 21,6%、ROI 102,6%/77,2%、supply 32,0 млн ₽ / 565 130 $）。
 - **Market / product reference:** RU BI 自身 11 路由（口径已验算）取定义；拒绝其渲染方式（服务端直出 HTML、无 key 内嵌 ROWS，不可复用）。ERP 侧近邻参考 = 本仓 `export_finance` 的档案 + 只读投影范式（`src/modules/export_finance/lib/peerReads.ts` 的 scoped Kysely 只读）。
 
@@ -68,7 +68,7 @@
 | 归属 | 模块 id | 拥有 | 不拥有 |
 |---|---|---|---|
 | 钱 | **`finance`**（新） | 柜级费用、到岸成本（读时派生）、期间费用、应付/应收/库存资金占用/损益只读投影 | 不写 peer 表；不建凭证/科目/总账；不建账期/账龄 |
-| 数据 | **`ru_sync`**（新） | RU provider 适配器、16 端点快照投影、游标、SKU 映射、同步健康 | 不做业务写（唯一例外 Phase 5 的 PO 草稿走 `purchasing` 命令） |
+| 数据 | **`ru_sync`**（新） | RU provider 适配器、17 端点快照投影、游标、SKU 映射、同步健康 | 不做业务写（唯一例外 Phase 5 的 PO 草稿走 `purchasing` 命令） |
 | 看 | **`boss_cockpit`**（新） | 只读驾驶舱页 + widgets + 四预警触发 | 无 mutations |
 | 加列 | `export_finance`（既有） | `collections` 加 `amount`/`received_at` | 不动收汇/退税锚点与唯一键 |
 
@@ -210,8 +210,8 @@ boss_cockpit/lib/summary.ts（只读聚合：RU 快照 + CN 派生）
 | `/backend/finance/receivables` | 只读：应收台账（三类来源） | `GET /api/finance/receivables?kind=` | 同上 | 同上 | loading, empty, error | REQ-006 |
 | `/backend/finance/profit-loss` | 只读：月损益行项（事实/预测分列） | `GET /api/finance/profit-loss?periodStart=&periodEnd=&basis=` | 同上 | `DataTable` + KPI 头 | loading, empty（未接入 RU）, error, `caliber` 列 | REQ-008 |
 | `/backend/finance/sku-margin` | 只读：SKU 毛利 + 对账差异 | `GET /api/finance/sku-margin?periodStart=&periodEnd=` | 同上 | 同上 | loading, empty, error, 超差标记 | REQ-009 |
-| `/backend/ru-sync/sku-map` | 映射列表 + 手工绑定 + 忽略 | `GET /api/ru-sync/sku-map`、`PUT /api/ru-sync/sku-map`（绑定/忽略） | 同上 | `DataTable` + `RowActions`（绑定对话框 `useConfirmDialog`） | loading, empty, error, 冲突 | REQ-010 |
-| `/backend/ru-sync/health` | 只读：每端点 lastAsOf/lastRunAt/cursor/status | `GET /api/ru-sync/health` | 同上 | `DataTable` + `StatusBadge` | loading, empty, error, stale 高亮 | REQ-013 |
+| `/backend/ru-sync/sku-map` | 映射列表 + 手工绑定 + 忽略 | `GET /api/ru_sync/sku-map`、`PUT /api/ru_sync/sku-map`（绑定/忽略） | 同上 | `DataTable` + `RowActions`（绑定对话框 `useConfirmDialog`） | loading, empty, error, 冲突 | REQ-010 |
+| `/backend/ru-sync/health` | 只读：每端点 lastAsOf/lastRunAt/cursor/status | `GET /api/ru_sync/health` | 同上 | `DataTable` + `StatusBadge` | loading, empty, error, stale 高亮 | REQ-013 |
 | `/backend/boss-cockpit` | 六类数一页览 + 下钻 | `GET /api/boss-cockpit/summary?asOf=` | `example/components/TodosTable.tsx` + dashboards 宿主 | `Page`/`PageBody`、KPI 头组件族、`DataTable`（下钻）、`Alert`（stale banner） | loading, empty, error, stale banner, permission denied | REQ-014, REQ-016 |
 | dashboards widgets ×4（`supply-gap`/`in-transit`/`overstock`/`drr`） | 四数 widget | 同 `/api/boss-cockpit/summary` | `example/widgets/dashboard/todos/widget.ts` | `DashboardWidgetModule` + lazy client；`metadata.features = ['boss_cockpit.view']` | loading, empty, error, stale；ДРР 在 Phase 6 前显示「未接入」空态 | REQ-014, REQ-016 |
 | `/backend/finance/**`、`/backend/ru-sync/**`、`/backend/boss-cockpit` 导航 | 三组（2026-09-28 按受众拆分）：财务作业与台账（柜费用 / 到岸成本 / 期间费用 / 应付 / 应收）沿用 `pageGroupKey: 'export_finance.nav.group'`（组名「财务」）；老板结果页（驾驶舱 / 月损益 / SKU 毛利 / 库存资金占用）用 `executive_overview.nav.group`（「经营概览」，label 在 `boss_cockpit/i18n`）；RU 管道运维页（映射 / 健康）用 `ru_sync.nav.group`（「数据同步」，label 在 `ru_sync/i18n`）；`src/modules.ts` 的 `groupOrder` 声明三个 id 的顺序 | `page.meta.ts` | `example/backend/todos/page.meta.ts` | `icon` 必须是 installed 图标注册表内的名字 | — | REQ-014 |
@@ -276,10 +276,10 @@ boss_cockpit/lib/summary.ts（只读聚合：RU 快照 + CN 派生）
 | `PUT`（既有 `export_finance.collections.save`） | `/api/export_finance/collections` | auth + `export_finance.manage` | 既有载荷 + `amount`/`receivedAt` | 200 + `export_finance.collections.updated` | 400（金额格式）、409 | REQ-007 |
 | `GET` | `/api/finance/profit-loss` | auth + `finance.profit.view` | `periodStart`、`periodEnd`、`channelId?`、`basis=fact\|forecast` | `{ rows[], totals, asOf }` | 400/403 | REQ-008 |
 | `GET` | `/api/finance/sku-margin` | auth + `finance.profit.view` | `periodStart`、`periodEnd` | `{ rows[] }` | 400/403 | REQ-009 |
-| `GET`/`PUT` | `/api/ru-sync/sku-map` | auth + `ru_sync.view` / `ru_sync.map.manage` | `ruSku`、`productId` 或 `status` | 200 | 400/403/404/409 | REQ-010 |
+| `GET`/`PUT` | `/api/ru_sync/sku-map` | auth + `ru_sync.view` / `ru_sync.map.manage` | `ruSku`、`productId` 或 `status` | 200 | 400/403/404/409 | REQ-010 |
 | worker | `ru_sync.pull`（`data_sync` run + 游标） | `ru_sync.run`（作业） | endpoint 集、`fullSync?` | 投影 upsert + 游标推进 + 事件 | transient 重试；失败页不推进；同 `as_of` 幂等 | REQ-011, REQ-012 |
-| `GET` | `/api/ru-sync/health` | auth + `ru_sync.view` | — | `{ endpoints[] }` | 403 | REQ-013 |
-| `POST` | `/api/ru-sync/plan/draft-pos` | auth + `purchasing.orders.manage` | `sku[]`（已映射） | PO 草稿号 + `purchasing.purchase_order.created` | 400/403/422（未映射）、409 | REQ-017（Phase 5） |
+| `GET` | `/api/ru_sync/health` | auth + `ru_sync.view` | — | `{ endpoints[] }` | 403 | REQ-013 |
+| `POST` | `/api/ru_sync/plan/draft-pos` | auth + `purchasing.orders.manage` | `sku[]`（已映射） | PO 草稿号 + `purchasing.purchase_order.created` | 400/403/422（未映射）、409 | REQ-017（Phase 5） |
 | `GET` | `/api/boss-cockpit/summary` | auth + `boss_cockpit.view` | `asOf?` | `{ kpis[], asOf, stale }` | 400/401/403 | REQ-014, REQ-016 |
 
 写入路由一律走 `makeCrudRoute`（既有 `export_finance/api/collections/route.ts` 的 PUT 形态）或带门禁的命令路由；每方法 `metadata` + `openApi`。`finance` 只读派生路由用自定义 guarded route（`example/api/organizations/route.ts` 形态的 auth + scope 读取）。`ru_sync` 适配器按 `@open-mercato/sync-akeneo` 的 `integration.ts`/`di.ts` 注册形态接入 `data_sync` 的 run API。
@@ -310,7 +310,7 @@ boss_cockpit/lib/summary.ts（只读聚合：RU 快照 + CN 派生）
 | TEST-001 | unit | 分摊：行 `net_total`、权重全 0、无汇率、USD→CNY | 调 `finance/lib/landedCost.ts` | 余差落占比最大行、平手取最小 `lineNumber`、Σ分摊 == 费用×汇率、`unconvertible` 剔除、`rateMissing` 置空 | REQ-002 |
 | TEST-002 | integration | 新柜 + 采购行 | `POST /api/finance/shipment-costs`（USD 1000 + 汇率）→ `GET /api/finance/landed-costs?shipmentId=…` | Σ分摊 == 1000×汇率；逐行 `landedUnitCost = (purchaseAmount + allocatedCost) / quantity` | REQ-001, REQ-002 |
 | TEST-003 | integration | 采购单 + 付款行；三类应收各一条 | `GET /api/finance/payables`、`/receivables`；`PUT /api/export_finance/collections` 带 `amount` | 应付四值与手算一致；三类来源各一行；旧记录 `amount=null` 不报错；回读一致 | REQ-005, REQ-006, REQ-007 |
-| TEST-004 | integration | mock 7 端点（含未映射 SKU 与未识别在途） | 全量拉取 → 同 `as_of` 重放 → 中途 500 | 投影行数 == mock 行数；重放 0 新增；`cursor` 不推进；未映射进清单 | REQ-010, REQ-011 |
+| TEST-004 | integration | mock 8 端点（含未映射 SKU 与未识别在途） | 全量拉取 → 同 `as_of` 重放 → 中途 500 | 投影行数 == mock 行数；重放 0 新增；`cursor` 不推进；未映射进清单 | REQ-010, REQ-011 |
 | TEST-005 | security | 第二 tenant / 无 feature | 读驾驶舱 / 调同步 / 读成本 | fail closed，无泄漏 | REQ-014, REQ-003 |
 | TEST-006 | UI | stale 游标 / 空 plan / 未映射 | 打开驾驶舱三态与下钻 | stale banner、空态、置灰行、widget 可见并尊重布局 | REQ-014, REQ-016 |
 | TEST-007 | integration | 全链夹具（供应商→PO→定金→发运→收货→尾款→关闭→收汇→退税） | **已实现**：`src/modules/finance/__integration__/finance-flow.spec.ts`，`yarn mercato test:integration finance-flow` | **通过**（2026-09-28，全新一次性库）：采购行 `received_quantity` == `wms` 余额（10 == 10）；Σ到岸分摊 == Σ柜费用（1400 == 200 USD × 7）；应付结清 1000/1000；收汇 1200 入应收台账、余额 0；退税 130 按柜分摊回采购单 | REQ-017 |
@@ -352,11 +352,11 @@ boss_cockpit/lib/summary.ts（只读聚合：RU 快照 + CN 派生）
 - **Validation:** 同上 + 浏览器三页。
 - **Exit gate:** 应付四值与采购单详情手算逐单一致；三类应收各一行；`collections.amount` 回读一致、旧记录不报错；迁移经批准已应用。
 
-### Phase 3 — `ru_sync` supply 7 端点（SYN-E）
+### Phase 3 — `ru_sync` supply 8 端点（§1–§7 + §1.1）（SYN-E）
 
 - **Depends on:** Phase 0（契约冻结于 `supply-sync-tech.md`）
-- **Outcome:** 7 端点可拉、投影可查、游标连续；映射页可用；健康页可读。
-- **Deliverables:** `ru_sync` 模块骨架 + `lib/skuNormalize.ts` + `ru_sync_sku_map` + 映射页；`ru_sync_snapshots`/`ru_sync_cursors` + `lib/client.ts` + `lib/endpoints/*.ts`（7 zod schema）+ `lib/adapter.ts` + `integration.ts`/`di.ts`；拉取作业 + health 路由/页 + `ru_sync.pull_failed` 通知类型；mock 夹具（含未映射 SKU 与未识别在途）。
+- **Outcome:** 8 端点（§1–§7 + §1.1）可拉、投影可查、游标连续；映射页可用；健康页可读。
+- **Deliverables:** `ru_sync` 模块骨架 + `lib/skuNormalize.ts` + `ru_sync_sku_map` + 映射页；`ru_sync_snapshots`/`ru_sync_cursors` + `lib/client.ts` + `lib/endpoints/*.ts`（supply 8 个 zod schema）+ `lib/adapter.ts` + `integration.ts`/`di.ts`；拉取作业 + health 路由/页 + `ru_sync.pull_failed` 通知类型；mock 夹具（含未映射 SKU 与未识别在途）。
 - **Independent slices / estimated commits:** 映射切片；客户端+端点 schema 切片（逐端点）；作业+健康切片。
 - **Requirements closed:** REQ-010, REQ-011, REQ-013
 - **Tests:** TEST-004
@@ -378,7 +378,7 @@ boss_cockpit/lib/summary.ts（只读聚合：RU 快照 + CN 派生）
 
 - **Depends on:** Phase 3
 - **Outcome:** 缺口一键变 draft PO；未映射异常清单可见。
-- **Deliverables:** `POST /api/ru-sync/plan/draft-pos`（只建 draft）；异常清单区块/页；`platform_ops.reconciliation` 供应差异 kinds。
+- **Deliverables:** `POST /api/ru_sync/plan/draft-pos`（只建 draft）；异常清单区块/页；`platform_ops.reconciliation` 供应差异 kinds。
 - **Requirements closed:** REQ-017（草稿部分）
 - **Tests:** TEST-004（扩展未映射 422）
 - **Validation:** 端到端 draft + 409/422 路径。
@@ -427,10 +427,10 @@ boss_cockpit/lib/summary.ts（只读聚合：RU 快照 + CN 派生）
 | REQ-007 | 订单档案财务视图 | `export_finance_collections.amount/received_at`；`collections.save` | Phase 2 | TEST-003 | AC-007 |
 | REQ-008 | J-004, `/backend/finance/profit-loss` | `lib/profitLoss.ts`；`GET /api/finance/profit-loss` | Phase 6 | TEST-008 | AC-008 |
 | REQ-009 | `/backend/finance/sku-margin` | `lib/skuMargin.ts`；`GET /api/finance/sku-margin` | Phase 6 | TEST-008 | AC-009 |
-| REQ-010 | J-005, `/backend/ru-sync/sku-map` | `ru_sync_sku_map`；`lib/skuNormalize.ts`；`/api/ru-sync/sku-map` | Phase 3 | TEST-004 | AC-010 |
+| REQ-010 | J-005, `/backend/ru-sync/sku-map` | `ru_sync_sku_map`；`lib/skuNormalize.ts`；`/api/ru_sync/sku-map` | Phase 3 | TEST-004 | AC-010 |
 | REQ-011 | worker | `ru_sync_snapshots`/`ru_sync_cursors`；`lib/adapter.ts`；`lib/endpoints/*` | Phase 3 | TEST-004 | AC-011 |
 | REQ-012 | worker | 适配器 9 entity；`platform_ops.orders.ingest`/`settlements.import` | Phase 6 | TEST-008 | AC-012 |
-| REQ-013 | `/backend/ru-sync/health` | `GET /api/ru-sync/health`；`ru_sync.pull_failed` | Phase 3 | TEST-004 | AC-013 |
+| REQ-013 | `/backend/ru-sync/health` | `GET /api/ru_sync/health`；`ru_sync.pull_failed` | Phase 3 | TEST-004 | AC-013 |
 | REQ-014 | J-002, `/backend/boss-cockpit` + widgets ×4 | `lib/summary.ts`；`GET /api/boss-cockpit/summary` | Phase 4, Phase 7 | TEST-005, TEST-006 | AC-014 |
 | REQ-015 | 通知四类型 | typed events → `notifications` | Phase 7 | TEST-006 | AC-015 |
 | REQ-016 | J-002, 下钻 + banner | 同 summary；`stale` 语义 | Phase 4 | TEST-006 | AC-016 |
@@ -495,9 +495,9 @@ boss_cockpit/lib/summary.ts（只读聚合：RU 快照 + CN 派生）
 - [ ] **AC-008** — `GET /api/finance/profit-loss` 行项与 RU `/ads/summary` 页数字对齐（误差 ≤ 0.2 п.п. / 20 ₽）；`Косвенные…` 无行不计合计；事实/预测不混列。
 - [ ] **AC-009** — SKU 毛利 = 到岸成本 × 数量 与 RU 页差值 >0.2 п.п./20 ₽ 的行进对账队列。
 - [ ] **AC-010** — `canonicalize`/`matchKey` 单测覆盖大小写与 `склад`/`фабрика` 后缀；唯一命中自动 `mapped`；零/多命中留 `unmapped`；未映射清单为派生。
-- [ ] **AC-011** — mock 7 端点全量拉取投影行数 == mock 行数；同 `as_of` 重放 0 新增；中途 500 → `cursor` 不推进；缺 `as_of` 响应拒绝入库。
+- [ ] **AC-011** — mock 8 端点全量拉取投影行数 == mock 行数；同 `as_of` 重放 0 新增；中途 500 → `cursor` 不推进；缺 `as_of` 响应拒绝入库。
 - [ ] **AC-012** — ads 订单按 500 切批、结算按 2000 行切单；重复 externalId 幂等（按批切分重试）。
-- [ ] **AC-013** — `/api/ru-sync/health` 每端点四值；游标改到 25h 前 → `stale`；失败发 `ru_sync.pull_failed`。
+- [ ] **AC-013** — `/api/ru_sync/health` 每端点四值；游标改到 25h 前 → `stale`；失败发 `ru_sync.pull_failed`。
 - [ ] **AC-014** — 驾驶舱每 KPI 与其来源 API 逐一核对一致；每数带 `as_of` 与来源标签；无 `boss_cockpit.view` → 403。
 - [ ] **AC-015** — 四预警各自触发一次且去重窗口生效，有审计。
 - [ ] **AC-016** — 下钻行含 Остаток / дней до OOS / ETA / Заказать до；游标断 > 24h → 整页 banner（数字不隐藏）。
@@ -526,9 +526,9 @@ Verdict: `Ready for implementation`
 | Q-001 | 一个 spec 还是拆两个？（承 2026-09-28 既有） | 用户 | no | 2026-09-28：拆两个（PRD + 技术）；本 spec 承接技术面 |
 | Q-002 | 老板面形态 | 用户 | no | 2026-09-28：本 ERP 新建只读驾驶舱 |
 | Q-003 | 谁是账本 | 用户 | no | 2026-09-28：按域分账本 |
-| Q-004 | supply 范围 | 用户 | no | 2026-09-28：完整 7 端点 |
+| Q-004 | supply 范围 | 用户 | no | 2026-09-28：完整 7 端点；后按 `supply-sync-tech.md` §0 更正为 8 端点（§1–§7 + §1.1） |
 | Q-005 | 新模块一分为二还是合一？ | 用户 | no | **本 spec 决议：拆 `ru_sync`（数据面）+ `boss_cockpit`（呈现面）**；理由见 Design Decisions |
-| Q-006 | 7 端点 `updated_since` 粒度与全量回填策略 | 俄方 | no（Phase 3 用 mock 先行） | pending（快照到手定；schema 加法兼容） |
+| Q-006 | 8 端点 `updated_since` 粒度与全量回填策略 | 俄方 | no（Phase 3 用 mock 先行） | pending（快照到手定；schema 加法兼容） |
 | Q-007 | 四预警阈值与接收人（ДРР 20% 外，其余三线定多少/发给谁/频率） | 老板 | no（默认取 supply 参数页值） | pending |
 | Q-008 | ФБО 延迟容忍（stale 阈值 24h 是否合适） | 用户 | no | 默认 24h（既有 spec 默认） |
 | Q-009 | 第二阶段三域是否沿用同一 8 条契约 | 用户 | no | 默认沿用 |
