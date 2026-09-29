@@ -12,7 +12,6 @@
   "internal_sales.form.field.currency": "币种",
   "internal_sales.form.field.customerReference": "客户参考号",
   "internal_sales.form.field.comments": "备注",
-  "internal_sales.form.customerLoadFailed": "客户列表加载失败",
   "internal_sales.form.currencyLoadFailed": "币种列表加载失败",
   "internal_sales.form.productLoadFailed": "商品列表加载失败",
   "internal_sales.form.lines.empty": "还没有明细。",
