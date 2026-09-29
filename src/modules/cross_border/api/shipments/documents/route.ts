@@ -1,9 +1,11 @@
 import { z } from 'zod'
+import type { EntityManager } from '@mikro-orm/postgresql'
 import { makeCrudRoute } from '@open-mercato/shared/lib/crud/factory'
 import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern'
 import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
 import { CrossBorderExportDocument } from '../../../data/entities'
 import { documentCreateSchema, documentListSchema, documentUpdateSchema, EXPORT_DOC_TYPES } from '../../../data/validators'
+import { loadShipmentIdsForContract } from '../../../lib/contractReads'
 import { createCrossBorderCrudOpenApi, crossBorderCreatedSchema, crossBorderOkSchema } from '../../openapi'
 
 const ENTITY_ID = 'cross_border:cross_border_export_document' as const
@@ -72,11 +74,22 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       'organization_id',
       'created_at',
     ],
-    buildFilters: async (query: DocumentListQuery) => {
+    buildFilters: async (query: DocumentListQuery, ctx) => {
       const filters: Record<string, unknown> = {}
       if (query.id) filters.id = query.id
       if (query.shipmentId) filters.shipment_id = query.shipmentId
       if (query.docType) filters.doc_type = query.docType
+      if (query.contractId) {
+        // A packing list belongs to a contract through its shipment: resolve the linked shipment
+        // ids, then narrow the page. An unknown contract yields an empty `$in` (matches nothing).
+        const em = ctx.container.resolve('em') as EntityManager
+        const linked = await loadShipmentIdsForContract(
+          em,
+          { tenantId: ctx.auth?.tenantId ?? '', organizationIds: ctx.organizationIds ?? [] },
+          query.contractId,
+        )
+        filters.shipment_id = { $in: linked }
+      }
       if (query.search && query.search.trim().length > 0) {
         // `document_number` and `note` are plaintext columns; the escape keeps a typed `%` literal.
         const term = `%${escapeLikePattern(query.search.trim())}%`

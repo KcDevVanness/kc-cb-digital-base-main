@@ -6,8 +6,8 @@ export const metadata = {
   requireFeatures: ['sales.quotes.manage'],
   pageTitle: 'New Internal Sales Quote',
   pageTitleKey: 'internal_sales.form.quote.createTitle',
-  pageGroup: 'Cross-Border',
-  pageGroupKey: 'cross_border.nav.group',
+  pageGroup: 'Export operations — Internal sales',
+  pageGroupKey: 'cross_border.nav.group.internal',
   pageOrder: 301,
   icon: 'file-text',
   breadcrumb: [

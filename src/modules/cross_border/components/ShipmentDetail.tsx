@@ -19,7 +19,9 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuardedMutation'
-import { createCrud, deleteCrud, fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
+import { createCrud, deleteCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
+import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
+import { withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
 import { Button } from '@open-mercato/ui/primitives/button'
 import {
   Dialog,
@@ -39,6 +41,7 @@ import {
   SHIPMENT_ALLOCATIONS_API_PATH,
   SHIPMENT_CANCEL_API_PATH,
   SHIPMENT_COMMERCIAL_INVOICE_HREF,
+  SHIPMENT_CONTRACTS_API_PATH,
   SHIPMENT_DEPART_API_PATH,
   SHIPMENT_DOCUMENTS_API_PATH,
   SHIPMENT_DOCUMENT_TYPES,
@@ -49,17 +52,20 @@ import {
   SHIPMENT_SELECTABLE_DOCUMENT_TYPES,
   SHIPMENTS_API_PATH,
   SHIPMENTS_LIST_HREF,
+  ShipmentContractEditor,
   ShipmentDestinationFields,
   ShipmentStatusBadge,
   buildDocumentPayload,
   buildMilestonePayload,
   formatShipmentDate,
+  readContracts,
   shipmentDocumentTypeLabel,
   shipmentErrorMessage,
   shipmentMilestoneLabel,
   toLocalDateTimeInputValue,
   toShipmentRecord,
   trimShipmentQuantity,
+  type ShipmentContractValues,
   type ShipmentDocumentFormValues,
   type ShipmentDocumentType,
   type ShipmentMilestone,
@@ -72,7 +78,10 @@ import { ShipmentDocumentAttachmentField } from './shipmentDocumentAttachmentFie
 const ALLOCATION_PAGE_SIZE = 200
 const MILESTONE_PAGE_SIZE = 100
 const DOCUMENT_PAGE_SIZE = 100
+const CONTRACT_PAGE_SIZE = 100
 const EMPTY_CELL = '—'
+/** The trade-docs contract detail page a linked contract points at. */
+const CONTRACTS_LIST_HREF = '/backend/trade-docs/contracts'
 
 /** A shipment allocation as `/api/cross_border/shipments/allocations` projects it. */
 export type ShipmentAllocationRecord = {
@@ -184,6 +193,23 @@ function toShipmentSalesAllocationRecord(item: Record<string, unknown>): Shipmen
     quantity: readRecordText(item, 'quantity') || '0',
     unitPrice: readRecordOptionalText(item, 'unitPrice', 'unit_price'),
     currencyCode: readRecordOptionalText(item, 'currencyCode', 'currency_code'),
+  }
+}
+
+/** A shipment↔contract link as `/api/cross_border/shipments/contracts` projects it. */
+export type ShipmentContractRecord = {
+  id: string
+  contractId: string
+  contractNumber: string | null
+  contractDirection: string | null
+}
+
+function toShipmentContractRecord(item: Record<string, unknown>): ShipmentContractRecord {
+  return {
+    id: readRecordText(item, 'id'),
+    contractId: readRecordText(item, 'contractId', 'contract_id'),
+    contractNumber: readRecordOptionalText(item, 'contractNumber', 'contract_number'),
+    contractDirection: readRecordOptionalText(item, 'contractDirection', 'contract_direction'),
   }
 }
 
@@ -322,6 +348,162 @@ function buildSalesAllocationColumns(t: TranslateFn): ColumnDef<ShipmentSalesAll
       },
     },
   ]
+}
+
+type ContractLinkFormValues = {
+  contracts: ShipmentContractValues[]
+}
+
+/**
+ * The contracts a shipment travels under.
+ *
+ * Links are written through the shipment update command — the same `contracts` array the create
+ * form submits, replaced wholesale — so this section owns the dialog and hands the payload to the
+ * shared mutation guard. The command only edits a **draft** shipment, so the edit action is offered
+ * on drafts only and the reason is spelled out next to it for everyone else.
+ */
+function ShipmentContractsSection({
+  shipment,
+  contracts,
+  onChanged,
+}: {
+  shipment: ShipmentRecord
+  contracts: ShipmentContractRecord[]
+  onChanged: () => Promise<void>
+}) {
+  const t = useT()
+  const [dialogOpen, setDialogOpen] = React.useState(false)
+  const dialogContentRef = React.useRef<HTMLDivElement | null>(null)
+
+  const mutationContextId = React.useMemo(() => `cross_border.shipment-contract:${shipment.id}`, [shipment.id])
+  const { runMutation, retryLastMutation } = useGuardedMutation<{
+    formId: string
+    resourceKind: string
+    resourceId?: string
+    retryLastMutation: () => Promise<boolean>
+  }>({ contextId: mutationContextId })
+
+  const mutationContext = React.useMemo(() => ({
+    formId: mutationContextId,
+    resourceKind: 'cross_border.shipment',
+    resourceId: shipment.id,
+    retryLastMutation,
+  }), [mutationContextId, retryLastMutation, shipment.id])
+
+  // Seeded from the stored links each time the dialog opens, so a failed save never leaves a
+  // stale set behind, and stable while it stays open.
+  const initialValues = React.useMemo<ContractLinkFormValues>(() => ({
+    contracts: contracts.map((link) => ({
+      key: link.id,
+      contractId: link.contractId,
+      contractLabel: link.contractNumber ?? '',
+    })),
+  // The open flag is the trigger, not a value read in the body: rebuild on open, hold otherwise.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberate re-seed on dialog open
+  }), [contracts, dialogOpen])
+
+  const handleSubmit = React.useCallback(async (values: ContractLinkFormValues) => {
+    const payload = {
+      id: shipment.id,
+      updatedAt: shipment.updatedAt,
+      contracts: readContracts(values.contracts).map((row) => ({ contractId: row.contractId.trim() })),
+    }
+    try {
+      await runMutation({
+        operation: () => withScopedApiRequestHeaders(
+          buildOptimisticLockHeader(shipment.updatedAt),
+          () => updateCrud(
+            SHIPMENTS_API_PATH,
+            payload,
+            { errorMessage: t('cross_border.shipments.contracts.saveFailed') },
+          ),
+        ),
+        context: mutationContext,
+        mutationPayload: payload,
+      })
+    } catch (error) {
+      // A stale version or an issued shipment surfaces its own reason and keeps the dialog open.
+      surfaceRecordConflict(error, t, { onRefresh: () => void onChanged() })
+      throw error
+    }
+    flash(t('cross_border.shipments.contracts.saved'), 'success')
+    setDialogOpen(false)
+    await onChanged()
+  }, [mutationContext, onChanged, runMutation, shipment.id, shipment.updatedAt, t])
+
+  const handleSubmitForm = React.useCallback(() => {
+    dialogContentRef.current?.querySelector('form')?.requestSubmit()
+  }, [])
+  const handleDialogKeyDown = useDialogKeyHandler({
+    onConfirm: handleSubmitForm,
+    onCancel: () => setDialogOpen(false),
+  })
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
+      <SectionHeader
+        title={t('cross_border.shipments.contracts.title')}
+        count={contracts.length}
+        action={shipment.status === 'draft' ? (
+          <Button type="button" variant="outline" onClick={() => setDialogOpen(true)}>
+            {t('cross_border.shipments.contracts.edit')}
+          </Button>
+        ) : undefined}
+      />
+      {contracts.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t('cross_border.shipments.contracts.empty')}</p>
+      ) : (
+        <ul className="divide-y divide-border rounded-lg border border-border">
+          {contracts.map((link) => (
+            <li key={link.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2">
+              <Link
+                href={`${CONTRACTS_LIST_HREF}/${encodeURIComponent(link.contractId)}`}
+                className="text-sm font-medium hover:underline"
+              >
+                {link.contractNumber ?? link.contractId.slice(0, 8)}
+              </Link>
+              <span className="text-xs text-muted-foreground">
+                {link.contractDirection === 'sales'
+                  ? t('cross_border.shipments.contracts.direction.sales')
+                  : link.contractDirection === 'purchase'
+                    ? t('cross_border.shipments.contracts.direction.purchase')
+                    : EMPTY_CELL}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-xs text-muted-foreground">
+        {shipment.status === 'draft'
+          ? t('cross_border.shipments.contracts.help')
+          : t('cross_border.shipments.contracts.draftOnly')}
+      </p>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent ref={dialogContentRef} onKeyDown={handleDialogKeyDown}>
+          <DialogHeader>
+            <DialogTitle>{t('cross_border.shipments.contracts.title')}</DialogTitle>
+            <DialogDescription>{t('cross_border.shipments.contracts.dialogDescription')}</DialogDescription>
+          </DialogHeader>
+          <CrudForm<ContractLinkFormValues>
+            embedded
+            fields={[]}
+            groups={[
+              {
+                id: 'contractLinks',
+                column: 1,
+                bare: true,
+                component: (context) => <ShipmentContractEditor {...context} t={t} />,
+              },
+            ]}
+            initialValues={initialValues}
+            submitLabel={t('cross_border.shipments.contracts.save')}
+            onSubmit={handleSubmit}
+          />
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
 }
 
 function ShipmentMilestonesSection({
@@ -750,6 +932,7 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
   const scopeVersion = useOrganizationScopeVersion()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const [shipment, setShipment] = React.useState<ShipmentRecord | null>(null)
+  const [contracts, setContracts] = React.useState<ShipmentContractRecord[]>([])
   const [allocations, setAllocations] = React.useState<ShipmentAllocationRecord[]>([])
   const [salesAllocations, setSalesAllocations] = React.useState<ShipmentSalesAllocationRecord[]>([])
   const [milestones, setMilestones] = React.useState<ShipmentMilestoneRecord[]>([])
@@ -783,8 +966,12 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
     setLoadError(null)
     setNotFound(false)
     try {
-      const [shipmentPayload, allocationPayload, salesAllocationPayload, milestonePayload, documentPayload] = await Promise.all([
+      const [shipmentPayload, contractPayload, allocationPayload, salesAllocationPayload, milestonePayload, documentPayload] = await Promise.all([
         fetchCrudList<Record<string, unknown>>(SHIPMENTS_API_PATH, { ids: shipmentId, pageSize: 1 }),
+        fetchCrudList<Record<string, unknown>>(SHIPMENT_CONTRACTS_API_PATH, {
+          shipmentId,
+          pageSize: CONTRACT_PAGE_SIZE,
+        }),
         fetchCrudList<Record<string, unknown>>(SHIPMENT_ALLOCATIONS_API_PATH, {
           shipmentId,
           pageSize: ALLOCATION_PAGE_SIZE,
@@ -805,6 +992,7 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
       const item = shipmentPayload.items?.[0]
       if (!item) {
         setShipment(null)
+        setContracts([])
         setAllocations([])
         setSalesAllocations([])
         setMilestones([])
@@ -813,6 +1001,7 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
         return
       }
       setShipment(toShipmentRecord(item))
+      setContracts((contractPayload.items ?? []).map(toShipmentContractRecord))
       setAllocations((allocationPayload.items ?? []).map(toShipmentAllocationRecord))
       setSalesAllocations((salesAllocationPayload.items ?? []).map(toShipmentSalesAllocationRecord))
       setMilestones((milestonePayload.items ?? []).map(toShipmentMilestoneRecord))
@@ -1016,6 +1205,8 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
           {shipment.currentMilestone ? shipmentMilestoneLabel(t, shipment.currentMilestone) : EMPTY_CELL}
         </SummaryField>
       </div>
+
+      <ShipmentContractsSection shipment={shipment} contracts={contracts} onChanged={load} />
 
       <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
         <SectionHeader title={t('cross_border.shipments.allocations.title')} count={allocations.length} />
