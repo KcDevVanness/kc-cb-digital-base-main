@@ -1,5 +1,9 @@
 # Execution plan — load an internal-sales order from an existing quote (2026-09-29)
 
+> Delivered as PR [#30](https://github.com/KcDevVanness/kc-cb-digital-base-main/pull/30)
+> (`feat/internal-sales-order-from-quote` → `dev`); the sibling unit
+> `fix/internal-sales-edit-nav` (#29) merged first and this branch was rebased onto that `dev`.
+
 Operator request (2026-09-29, after the PO/PI labelling round): the quote→order path only existed as
 the engine's **in-place conversion** (the quote is deleted, 1:1). Real internal trade needs the other
 shape — the quote stays, one quote can back several orders (分批发运/多柜), and the order usually
