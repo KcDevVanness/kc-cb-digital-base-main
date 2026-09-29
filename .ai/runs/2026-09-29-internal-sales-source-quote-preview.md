@@ -79,13 +79,13 @@ load action already uses, so nothing new is fetched and no write path is touched
 
 ### Phase 1: preview
 
-- [ ] 1.1 Worktree + branch off `origin/dev`
-- [ ] 1.2 Draft carries the record; pure preview mapper
-- [ ] 1.3 Drawer + status key extraction + i18n keys
-- [ ] 1.4 Unit tests for the preview mapping
+- [x] 1.1 Worktree + branch off `origin/dev` — 26219ed
+- [x] 1.2 Draft carries the record; pure preview mapper — 26219ed
+- [x] 1.3 Drawer + status key extraction + i18n keys — 26219ed
+- [x] 1.4 Unit tests for the preview mapping — 26219ed
 
 ### Phase 2: verify
 
-- [ ] 2.1 Targeted checks
-- [ ] 2.2 Live smoke (drawer, no data loss, footer navigation, zh/en)
-- [ ] 2.3 Broad gate (`yarn test`, `yarn build`)
+- [x] 2.1 Targeted checks — 26219ed
+- [x] 2.2 Live smoke (drawer, no data loss, footer navigation, zh/en) — 26219ed
+- [x] 2.3 Broad gate (`yarn test`, `yarn build`) — 26219ed
