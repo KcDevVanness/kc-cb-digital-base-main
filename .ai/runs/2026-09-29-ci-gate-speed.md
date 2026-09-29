@@ -79,6 +79,30 @@ linking), Turbopack's experimental build cache (an app-config change with produc
 - **Extra runners.** Four jobs per run instead of one; standard runners are free on this public
   repository, so the cost is concurrency, not money.
 
+## Results
+
+Baseline, one serial job (run `36518277456`, 2026-09-29): **344s** — install 66, generate 15,
+typecheck 75, lint 26, lessons 0, ds:check 1, test 11, build 140.
+
+After, cold caches (run `36520357923`): **225s** total — `scope` 7s, then `checks` and `build` in
+parallel, then the fan-in 2s.
+
+| Slice | Job wall | Steps |
+|---|---|---|
+| `checks` | 130s | install 41 → generate 8 → typecheck 44 → lint 16 → lessons 0 → ds:check 0 → test 7 |
+| `build` | 209s | install 55 → build 142 (that step is `generate` + `next build`, which type-checks internally) |
+
+The run is now bounded by the `build` slice instead of the sum of every step, and the `checks` slice
+finishes ~80s before it rather than delaying it.
+
+Gate-shape evidence, all on this PR:
+
+| Run | Tree | Result |
+|---|---|---|
+| `36519752486` | docs-only diff | `scope` success, both slices skipped, `validate` **success** in 13s |
+| `36519938204` | deliberate failing test | `checks` **failure**, `build` **failure**, `validate` **failure** |
+| `36520357923` | final tree, cold | all four jobs success, 225s |
+
 ## Source doc
 
 `docs/dev/parallel-development.md` §CI (operating model). This file is the requirement record; the
@@ -102,7 +126,7 @@ tracker has no issues.
 
 ### Phase 3: evidence
 
-- [ ] 3.1 local snippet harness (scope ranges + fan-in permutations)
-- [ ] 3.2 docs-only PR run → skip path green
-- [ ] 3.3 deliberate failure → `validate` red
+- [x] 3.1 local snippet harness (scope ranges + fan-in permutations)
+- [x] 3.2 docs-only PR run → skip path green — run `36519752486`: `validate` success in 13s
+- [x] 3.3 deliberate failure → `validate` red — run `36519938204`: `checks` + `build` failure
 - [ ] 3.4 final tree → green, timings recorded

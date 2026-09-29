@@ -15,8 +15,9 @@ same window shows the other half of the hole: a batch of commits landed on `main
 2026-09-23/24 deploy wave with no PR object at all (`gh api …/commits/<sha>/pulls` empty, while known
 squash merges resolve to their PR), i.e. through the `enforce_admins=false` bypass.
 2026-09-29 — the gate had also grown into seven commands inside one serial job (286–366s per run,
-measured over that day's `validate` runs), so it was split into parallel slices (`checks`, `build`)
-behind a fan-in job. That is the step where the same hazard returns from a different direction: the
+measured over that day's `validate` runs; 344s in run `36518277456`), so it was split into parallel
+slices (`checks`, `build`) behind a fan-in job — 225s on the first cold run of the new shape
+(`36520357923`). That is the step where the same hazard returns from a different direction: the
 required check is matched by job *name*, and both the new slices and any renaming produce names branch
 protection does not wait for.
 
