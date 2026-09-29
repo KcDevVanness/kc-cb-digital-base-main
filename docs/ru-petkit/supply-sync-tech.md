@@ -95,8 +95,10 @@
 | 协议 | HTTPS only，TLS 1.2+ |
 | Base URL | 由俄方给出（例 `https://api.example.ru`，本文件一律写 `{BASE}` 占位，不硬编码） |
 | 版本 | 路径前缀 `/api/v1`；破坏性变更开 `/api/v2`，v1 保持可用 ≥ 1 个次版本 |
-| 认证 | `Authorization: Bearer <token>`；token 由俄方签发，中方只存服务端环境变量 |
+| 认证 | `Authorization: Bearer <token>`；token 由俄方签发，中方以 integrations provider 的加密凭证保存（按组织落库；见 `src/modules/ru_sync/integration.ts`、`lib/credentials.ts`，不进代码/文档/日志） |
 | Content-Type | 请求无 body；响应 `application/json; charset=utf-8` |
+
+> 落地说明（2026-09-28）：`协议 HTTPS only` 为对接目标。我方出站 URL guard 实际允许 `http:` 协议，仅在凭证 `allowPrivate` 打开时接受私网 mock 主机（本地 dry run）；真实端点不得打开 `allowPrivate`（见 `src/modules/ru_sync/lib/client.ts`、`integration.ts`）。
 
 ### 0.2 通用查询参数（游标：背景、需求、解法）
 
@@ -605,7 +607,7 @@ need = daily_demand × (order_cycle_days + coverage_window_days + safety_days)
 | external_order_id | string ≤ 200（例 `"115236"`，页 `№`） | 必填 | 订单号行明细主键一半 镜像 `external_order_id` | номер, половина ключа |
 | channel | enum + string | 必填 | 来源括号部分如 归一到三分 `(OZON)channel` | Способ доставки |
 | status | enum + string | 必填 | 订单状态上表 镜像 `status` | статус, таблица выше |
-| payment_status | string | 否 | 支付状态 展示 | Статус оплаты （例 `"Оплачен"`） |
+| payment_status | enum（英文码，例 `PAID`；见 0.5） | 否 | 支付状态 展示 | Статус оплаты （页原文 `"Оплачен"`） |
 | delivery_method | enum + string | 否 | 配送方式 展示 | доставка |
 | delivery_cost | 金额对象（例 `{"amount": "0.00", "currency": "RUB"}`） | 否 | 整单运费，整单重复，禁求和 | Стоимость доставки |
 | order_goods_total | 金额对象 | 否 | 整单货款，整单重复 | Общая стоимость товаров |
@@ -909,7 +911,7 @@ need = daily_demand × (order_cycle_days + coverage_window_days + safety_days)
 - [ ] B-6 游标与回填：俄方圈 A（标准增量）或 B（降级日期覆盖）；历史回填不需要（中方已确认）。
 - [x] 15 结算 `fee_type` 三码映射（已确认）：`marketplace_fee`（平台扣费） / `ads`（广告） / `logistics`（物流）；联调时再验一次。
 - [ ] B-8 联调窗口填空 + token 到手后先进第一阶段 Phase 1；第二阶段等第一阶段 exit gate（连续 7 天 cursor 无断）后再开。
-- [ ] 发俄方前我方内部对齐（5 agents 已验源码）：① 新模块名（`supply_sync`  vs  `ru_sync`，后者为 approved spec 方向）与两张落地表名冻结；② `platform_ops` 金额走 `z.coerce.number()`，RU 2 位字符串入库前先过 transcode 校验；③ 驾驶舱 widgets 与通知类型按 dashboards/notifications 注册契约建；④ DataSyncAdapter + queue + ProgressJob 接线（已确认存在）；⑤ `finance` vs `export_finance` 分工写进 PRD（前者记账后者档案）。
+- [ ] 发俄方前我方内部对齐（5 agents 已验源码）：① **已定（2026-09-28）**：模块名 `ru_sync`（非 `supply_sync`），三张落地表 `ru_sync_snapshots` / `ru_sync_sku_map` / `ru_sync_cursors`；② `platform_ops` 金额走 `z.coerce.number()`，RU 2 位字符串入库前先过 transcode 校验；③ 驾驶舱 widgets 与通知类型按 dashboards/notifications 注册契约建；④ DataSyncAdapter + queue + ProgressJob 接线（已确认存在）；⑤ `finance` vs `export_finance` 分工写进 PRD（前者记账后者档案）。
 
 ## 21 数据源映射（贵方 7 类数据源 → 我方端点）
 

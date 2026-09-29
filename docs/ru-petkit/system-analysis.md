@@ -118,6 +118,8 @@
 
 ## 8 对接价值分级 (S/A/B/C, 只排 RU 已有页面)
 
+> 截至 2026-09-28 的调研结论；实现落地见 `src/modules/ru_sync/**`（成本/价格与在途落 `ru_sync_snapshots` 快照，非 `products_prices`/`cross_border` 分摊）与 `src/modules/finance/lib/profitLoss.ts`（ОПИУ 由 `ads_summary` 快照计算）。
+
 - 定义: S = 断流即停摆; A = 直接省钱/算钱; B = 提效; C = 存档备查.
 - 排序: `supply ≧ costs/reprice > marketplaces/summary/export > products > types > funnel > brand`.
 - S — `/supply` (59 SKU, 缺口→自动生成 PO 草稿; 在途 ETA→收货计划; 超储→刹车).
