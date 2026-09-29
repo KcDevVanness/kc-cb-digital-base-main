@@ -131,6 +131,10 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
   字典（`setup.ts` 幂等写入，`yarn mercato seed:defaults --module trade_docs`；付款方式是合同上印刷的措辞，
   运输方式是海运/空运/铁路/快递/陆运），`destination` 读外贸模块的 `port` 字典。三者都是**带建议的输入框**：
   合同打印的是双方签下的原文，字典没收录的写法必须还能填。
+- **唛头已删除（2026-09-29 owner 口径）**：合同与单据不再携带 `marks`——实体、校验器、两条 API 的
+  序列化、两类命令的创建/更新/审计字段、两套表单与详情页、两份 XLSX 打印模板与四个 i18n key 一并移除，
+  两列由 `Migration20260929084456_trade_docs.ts` 删除（业务上不需要这条数据；本机 dev 库在合入后的下次
+  `yarn dev` 由 supervisor 自动应用；打印模板不再输出唛头行）。
 - **发票号不唯一**：外部票号只建索引，不建唯一约束（两家系统可能重号）。
 - **附件先建后绑**：发票先建 → 上传 `/api/attachments` → `attach` 绑 `attachment_id`；上传失败不回滚发票，行内可重试；本期只归档与下载，不解析。合同的双方盖章扫描件同理走 `PUT /api/trade_docs/contracts/attach`（`attachmentId: null` 解绑），它只动 `attachment_id`，生成的 XLSX 存在 `generated_attachment_id`，互不覆盖。
 - **合同 Excel 最后补**：`lib/contractTemplate.ts` 的常量是唯一模板出处，`buildXlsx`（平台零依赖写入器）生成后**归档为附件**（重新生成会换新文件，旧文件保留）；金额写数字便于 Excel 求和；大写金额见 `lib/amountInWords.ts`。

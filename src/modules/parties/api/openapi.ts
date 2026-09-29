@@ -22,12 +22,14 @@ export const partiesCreatedSchema = z.object({
 /**
  * Display-name option row: `value` is the party id, `label` is what an operator reads. `roles` rides
  * along so a merged picker can label a group branch and an external customer differently without a
- * second request (additive — existing consumers read `value`/`label` only).
+ * second request — additive and optional, so a consumer reading `value`/`label` only keeps working
+ * against either shape. When the request carried `roles=<…>`, the list holds the roles the party
+ * has *among the requested ones*, not necessarily every role it holds.
  */
 export const partyOptionSchema = z.object({
   value: z.string(),
   label: z.string(),
-  roles: z.array(z.string()),
+  roles: z.array(z.string()).optional(),
 })
 
 export const partyOptionsResponseSchema = z.object({
@@ -53,7 +55,7 @@ export const partyOptionsOpenApi: OpenApiRouteDoc = {
     GET: {
       summary: 'List party options',
       description:
-        'Scoped option source for pickers: display names only, filtered by code (the plaintext column). Encrypted fields are decrypted for the response but never used as a filter. Optional `roles=<role>[,<role>]` narrows the list to parties holding any of the listed roles; an unknown role name answers 400. Each item carries the roles the party holds.',
+        'Scoped option source for pickers: display names only, filtered by code (the plaintext column). Encrypted fields are decrypted for the response but never used as a filter. Optional `roles=<role>[,<role>]` narrows the list to parties holding any of the listed roles; an unknown role name answers 400. Each item may carry the roles the party holds among the requested ones.',
       tags: [partiesTag],
       responses: [
         { status: 200, description: 'Available party options.', schema: partyOptionsResponseSchema },

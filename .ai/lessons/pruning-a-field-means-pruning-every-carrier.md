@@ -1,6 +1,6 @@
 ---
 title: "A pruned field is carried by a dozen files: grep the identifier, and leave the raw-source table alone"
-modules: ["products", "purchasing", "sourcing"]
+modules: ["products", "purchasing", "sourcing", "trade_docs"]
 areas: ["module-data", "architecture"]
 topics: ["field-removal", "generated-migrations", "migration-ordering", "shared-write-contract", "supplier-mapping", "doc-coupling"]
 ---
@@ -69,7 +69,11 @@ that no longer exists — all of which typecheck or surface only later.
    data-model table and acceptance criteria that name the field, the module `README.md`, and one
    spec Changelog row all move in the same change.
 
-**Applies to**: any "this field is not needed" request — most recently
+**Applies to**: any "this field is not needed" request — most recently `trade_docs`'s `marks`
+(the owner ruled 唛头 unnecessary after asking what it means: entity, validator, both API transforms,
+both command families, both forms, both detail pages, both XLSX templates, four i18n keys and two
+group titles moved together, and the migration dropped `trade_docs_contracts.marks` +
+`trade_docs_documents.marks`); before that
 `products/lib/supplierMapping.ts`, `purchasing/lib/{supplierProductFormValues,supplierProductImport,quoteLineReads,productMapping}.ts`,
 `sourcing/lib/{productMapping,promotion,productsReads}.ts`,
 `src/modules/{products,purchasing}/components/*Form.tsx`, and their `i18n/*.json`.

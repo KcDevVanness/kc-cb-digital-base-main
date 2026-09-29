@@ -106,10 +106,6 @@ export class TradeDocsContract {
   @Property({ name: 'destination', type: 'text', nullable: true })
   destination?: string | null
 
-  /** 唛头 — printed shipping marks. */
-  @Property({ type: 'text', nullable: true })
-  marks?: string | null
-
   @Property({ type: 'text', nullable: true })
   notes?: string | null
 
@@ -526,10 +522,6 @@ export class TradeDocsDocument {
 
   @Property({ name: 'delivery_date', type: 'date', nullable: true })
   deliveryDate?: Date | null
-
-  /** 唛头 — printed shipping marks. */
-  @Property({ type: 'text', nullable: true })
-  marks?: string | null
 
   /** `sales_order` | `purchase_order` | `shipment` | `manual` — what the document was raised from. */
   @Property({ name: 'source_kind', type: 'text', nullable: true })

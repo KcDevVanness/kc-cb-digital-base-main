@@ -47,7 +47,15 @@ import {
   isUuid,
 } from '../lib/buyer'
 import { useTradeTypeChannels } from '../lib/tradeTypeChannels'
-import { SALES_TRADE_TYPES, channelIdForTradeType, isSalesTradeType, tradeTypeFromPathname, type SalesTradeType } from '../lib/tradeType'
+import {
+  SALES_TRADE_TYPES,
+  channelIdForTradeType,
+  isSalesTradeType,
+  resolveRowTradeType,
+  tradeTypeFromBuyerKind,
+  tradeTypeFromPathname,
+  type SalesTradeType,
+} from '../lib/tradeType'
 import {
   EMPTY_LINE,
   EMPTY_VALUES,
@@ -149,13 +157,21 @@ export function documentEditHref(kind: InternalSalesKind, documentId: string): s
 }
 
 /**
+ * The list an entry owns: `/backend/external-sales/**` for the external trade type, the internal
+ * pair otherwise. Every back/cancel/redirect link goes through it, so an operator who opened the
+ * external entry is never dropped into the internal list (where the document would not be listed).
+ */
+export function listHrefForTradeType(kind: InternalSalesKind, tradeType: SalesTradeType): string {
+  return tradeType === 'external' ? listHrefFor(kind).replace('/internal-sales/', '/external-sales/') : listHrefFor(kind)
+}
+
+/**
  * The edit page an entry owns: `/backend/external-sales/**` for an external document, the internal
  * pair otherwise. Used wherever the module navigates by the document's own trade type rather than by
  * the entry the operator happens to be standing in.
  */
 export function documentEditHrefForTradeType(kind: InternalSalesKind, documentId: string, tradeType: SalesTradeType): string {
-  const base = tradeType === 'external' ? listHrefFor(kind).replace('/internal-sales/', '/external-sales/') : listHrefFor(kind)
-  return `${base}/${documentId}/edit`
+  return `${listHrefForTradeType(kind, tradeType)}/${documentId}/edit`
 }
 
 function toLinePayload(
@@ -407,17 +423,18 @@ function BuyerPickerField({
   const rawTradeType = values?.tradeType
   const tradeType: SalesTradeType = isSalesTradeType(rawTradeType) ? rawTradeType : 'internal'
   /**
-   * Switching the trade type changes which namespace the buyer belongs to, so the picked value
-   * cannot carry over (an organization id is not a customer). The first render is skipped so an
-   * edit page keeps the stored buyer.
+   * A buyer from the other namespace cannot survive a trade-type switch (an organization id is not
+   * a customer). The check is on the *picked value's* kind rather than on a previous-render ref: an
+   * edit page whose stored type arrives after the fallback values must keep the buyer it just
+   * loaded, while an operator who switches the control must lose the incompatible pick.
    */
-  const previousTradeType = React.useRef(tradeType)
+  const pickedBuyerKind = decodeBuyerRef(currentValue).kind
   React.useEffect(() => {
-    if (previousTradeType.current === tradeType) return
-    previousTradeType.current = tradeType
+    if (pickedBuyerKind === 'none') return
+    if (tradeTypeFromBuyerKind(pickedBuyerKind) === tradeType) return
     setValue('')
     setFormValue?.('customerName', '')
-  }, [setFormValue, setValue, tradeType])
+  }, [pickedBuyerKind, setFormValue, setValue, tradeType])
   /**
    * Labels the operator has seen for a value. `ComboboxInput` renders the selected value as its
    * option label and, on focus, asks the source to search for the input's text — this map lets the
@@ -796,22 +813,31 @@ function InternalSalesLinesEditor(
  */
 function useFields(t: TranslateFn, fixedTradeType: SalesTradeType | null = null): CrudField[] {
   return React.useMemo<CrudField[]>(() => [
-    {
-      id: 'tradeType',
-      label: t('internal_sales.form.field.tradeType'),
-      type: 'select',
-      required: true,
-      layout: 'half',
-      description: fixedTradeType
-        ? t('internal_sales.form.field.tradeTypeFixed', 'This entry is fixed to the trade type it names.')
-        : t('internal_sales.form.field.tradeTypeHelp'),
-      options: SALES_TRADE_TYPES
-        .filter((type) => (fixedTradeType ? type === fixedTradeType : true))
-        .map((type) => ({
-          value: type,
-          label: t(`internal_sales.form.tradeType.${type}`),
-        })),
-    },
+    fixedTradeType
+      ? {
+          // A one-option select reads as a broken control (`.ai/lessons/one-option-picker-is-a-defect.md`);
+          // the entry fixes the type, so it is shown as a value.
+          id: 'tradeType',
+          label: t('internal_sales.form.field.tradeType'),
+          type: 'custom',
+          layout: 'half',
+          description: t('internal_sales.form.field.tradeTypeFixed'),
+          component: () => (
+            <p className="pt-2 text-sm font-medium">{t(`internal_sales.form.tradeType.${fixedTradeType}`)}</p>
+          ),
+        }
+      : {
+          id: 'tradeType',
+          label: t('internal_sales.form.field.tradeType'),
+          type: 'select',
+          required: true,
+          layout: 'half',
+          description: t('internal_sales.form.field.tradeTypeHelp'),
+          options: SALES_TRADE_TYPES.map((type) => ({
+            value: type,
+            label: t(`internal_sales.form.tradeType.${type}`),
+          })),
+        },
     {
       id: 'buyerRef',
       label: t('internal_sales.form.field.customer'),
@@ -840,10 +866,12 @@ function useFields(t: TranslateFn, fixedTradeType: SalesTradeType | null = null)
  */
 function useGroups(
   t: TranslateFn,
-  { withQuoteLoad = false, mode = 'create' as 'create' | 'edit', autoLoadFrom = null }: {
+  { withQuoteLoad = false, mode = 'create' as 'create' | 'edit', autoLoadFrom = null, tradeType = 'internal' as SalesTradeType }: {
     withQuoteLoad?: boolean
     mode?: 'create' | 'edit'
     autoLoadFrom?: string | null
+    /** The entry's trade type, so the panel's quote link stays inside the entry it was opened from. */
+    tradeType?: SalesTradeType
   } = {},
 ): CrudFormGroup[] {
   return React.useMemo<CrudFormGroup[]>(() => [
@@ -858,7 +886,7 @@ function useGroups(
               setValue={context.setValue}
               mode={mode}
               autoLoadFrom={autoLoadFrom}
-              quoteEditHref={(quoteId) => documentEditHref('quote', quoteId)}
+              quoteEditHref={(quoteId) => documentEditHrefForTradeType('quote', quoteId, tradeType)}
             />
           ),
         }]
@@ -870,7 +898,7 @@ function useGroups(
       bare: true,
       component: (context) => <InternalSalesLinesEditor {...context} t={t} />,
     },
-  ], [autoLoadFrom, mode, t, withQuoteLoad])
+  ], [autoLoadFrom, mode, t, tradeType, withQuoteLoad])
 }
 
 /**
@@ -891,7 +919,14 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
   const { channels, hasAll: hasAllChannels, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
   // The quote list's row action arrives here; the panel loads that quote once on mount.
   const fromQuote = useSearchParams().get('fromQuote')
-  const groups = useGroups(t, { withQuoteLoad: kind === 'order', mode: 'create', autoLoadFrom: fromQuote })
+  const entryTradeType: SalesTradeType = fixedTradeType ?? 'internal'
+  const entryHref = listHrefForTradeType(kind, entryTradeType)
+  const groups = useGroups(t, {
+    withQuoteLoad: kind === 'order',
+    mode: 'create',
+    autoLoadFrom: fromQuote,
+    tradeType: entryTradeType,
+  })
 
   const handleSubmit = React.useCallback(async (values: InternalSalesFormValues) => {
     if (!hasAllChannels) {
@@ -925,7 +960,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       const id = typeof created.result?.id === 'string' ? created.result.id : null
       pushWithFlash(
         router,
-        id ? documentEditHrefForTradeType(kind, id, values.tradeType) : listHrefFor(kind),
+        id ? documentEditHrefForTradeType(kind, id, values.tradeType) : entryHref,
         t('internal_sales.form.saved'),
         'success',
       )
@@ -933,7 +968,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       flash(t('internal_sales.form.saveFailed'), 'error')
       throw error
     }
-  }, [channels, hasAllChannels, kind, missingChannelMessage, router, t])
+  }, [channels, entryHref, hasAllChannels, kind, missingChannelMessage, router, t])
 
   return (
     <CrudForm<InternalSalesFormValues>
@@ -943,7 +978,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
           : (kind === 'quote' ? 'internal_sales.form.quote.createTitle' : 'internal_sales.form.order.createTitle'),
       )}
       titleHeadingLevel={1}
-      backHref={listHrefFor(kind)}
+      backHref={entryHref}
       fields={fields}
       groups={groups}
       initialValues={{
@@ -952,7 +987,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
         lines: [{ ...EMPTY_LINE }],
       }}
       submitLabel={t('internal_sales.form.save')}
-      cancelHref={listHrefFor(kind)}
+      cancelHref={entryHref}
       onSubmit={handleSubmit}
     />
   )
@@ -964,7 +999,9 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
   const fixedTradeType = useFixedTradeType()
   const fields = useFields(t, fixedTradeType)
   const { channels, hasAll: hasAllChannels, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
-  const groups = useGroups(t, { withQuoteLoad: kind === 'order', mode: 'edit' })
+  const entryTradeType: SalesTradeType = fixedTradeType ?? 'internal'
+  const entryHref = listHrefForTradeType(kind, entryTradeType)
+  const groups = useGroups(t, { withQuoteLoad: kind === 'order', mode: 'edit', tradeType: entryTradeType })
   const [initial, setInitial] = React.useState<InternalSalesFormValues | null>(null)
   const [loadedLineIds, setLoadedLineIds] = React.useState<string[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -1006,7 +1043,13 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
         const lines = lineRecords.map(toInternalSalesLineValues)
         if (!cancelled) {
           const loaded = toInternalSalesFormValues(item, lines, channels)
-          setInitial(fixedTradeType ? { ...loaded, tradeType: fixedTradeType } : loaded)
+          // A document that belongs to the other entry must not be saved from here: the locked
+          // control would rewrite its marker. Send the operator to the page that owns it.
+          if (fixedTradeType && loaded.tradeType !== fixedTradeType) {
+            router.replace(documentEditHrefForTradeType(kind, documentId, loaded.tradeType))
+            return
+          }
+          setInitial(loaded)
           // Remembered so the save can delete the rows the operator removed.
           setLoadedLineIds(lineRecords.map((record) => String(record.id ?? '')).filter((id) => id.length > 0))
         }
@@ -1023,7 +1066,10 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
     return () => {
       cancelled = true
     }
-  }, [channels, documentId, fixedTradeType, kind, reloadToken, t])
+    // Primitive deps on purpose: the channel map object is memoized by the hook, but primitive deps
+    // keep this effect from re-running on a fresh map identity (it re-reads the document and lines).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see the primitive deps below
+  }, [channels.internal, channels.external, documentId, fixedTradeType, kind, reloadToken, router, t])
 
   const fallback = React.useMemo<InternalSalesFormValues>(
     () => ({
@@ -1070,7 +1116,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
   }, [channels, documentId, hasAllChannels, initial, kind, loadedLineIds, missingChannelMessage, t])
 
   if (isNotFound) {
-    return <RecordNotFoundState label={t('internal_sales.form.notFound')} backHref={listHrefFor(kind)} />
+    return <RecordNotFoundState label={t('internal_sales.form.notFound')} backHref={entryHref} />
   }
   if (error) return <ErrorMessage label={error} />
 
@@ -1085,7 +1131,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
       // This module has no per-document detail view — the edit page *is* the document's page.
       // Back/cancel must therefore leave for the list; built from `documentEditHref` they
       // addressed the page the operator was already on and clicking them did nothing.
-      backHref={listHrefFor(kind)}
+      backHref={entryHref}
       fields={fields}
       groups={groups}
       initialValues={initial ?? fallback}
@@ -1093,7 +1139,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
       // version and every line call carries the row's, so the form must not attach one globally.
       disableOptimisticLock
       submitLabel={t('internal_sales.form.save')}
-      cancelHref={listHrefFor(kind)}
+      cancelHref={entryHref}
       isLoading={loading}
       onSubmit={handleSubmit}
     />
