@@ -19,6 +19,7 @@
 | `prd/` | 产品需求：解决什么问题、给谁用、验收标准 | [lookup-field-dropdown](./prd/lookup-field-dropdown.md)、[cross-border-erp](./prd/cross-border-erp.md)、[finance-and-cockpit](./prd/finance-and-cockpit.md) |
 | `plans/` | 计划开发需求：分阶段、任务拆解、依赖与排期 | [lookup-field-dropdown](./plans/lookup-field-dropdown.md)、[cross-border-erp](./plans/cross-border-erp.md)、[finance-and-cockpit](./plans/finance-and-cockpit.md) |
 | `ru-petkit/` | 俄罗斯 PETKIT 外部系统调研（非本项目系统）：取证、功能 PRD（中文为准）、字段清单、对接 brief | [PRD](./ru-petkit/prd.md)、[功能分析](./ru-petkit/system-analysis.md)、[字段映射](./ru-petkit/field-mapping.md)、[对接 brief](./ru-petkit/integration-brief.md)、[证据包](./ru-petkit/evidence.md) |
+| `reports/` | 给管理层 / 业务的进度汇报：总体状态、逐项需求进展、待决事项与下一步计划（单份维护、按时间线更新） | [progress](./reports/progress.md) |
 
 每个目录的 `README.md` 是该目录的契约：放什么、不放什么、索引。
 
