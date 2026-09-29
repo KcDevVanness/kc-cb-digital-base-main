@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import {
@@ -45,8 +45,17 @@ import {
   decodeBuyerRef,
   encodeBuyerRef,
   isUuid,
-  readBuyerSnapshot,
 } from '../lib/buyer'
+import {
+  EMPTY_LINE,
+  EMPTY_VALUES,
+  buildDocumentMetadata,
+  toInternalSalesFormValues,
+  toInternalSalesLineValues,
+  type InternalSalesFormValues,
+  type InternalSalesLineValues,
+} from '../lib/documentValues'
+import QuoteLoadPanel from './QuoteLoadPanel'
 
 /**
  * App-owned create/edit surface for the internal-sales documents (quote, order).
@@ -123,119 +132,18 @@ export function listHrefFor(kind: InternalSalesKind): string {
 }
 
 /**
- * This module's own edit page for a document.
+ * This module's own edit page for a document — the **only** per-document page it ships.
  *
- * Deliberately not the installed viewer: the installed dynamic sales pages (`/backend/sales/
- * documents/[id]`, `quotes/[id]`, `orders/[id]`) answer 404 in this deployment while their list
- * pages render, so pointing an operator there would strand them right after a save. Keeping the
- * destination inside the app-owned surface also means list → edit → save never leaves it.
+ * The list row, its row action and the post-create redirect all land here; keeping them inside the
+ * app-owned surface is a design choice, not a workaround (the installed sales viewer
+ * `/backend/sales/{quotes,orders}/[id]` stays resolvable, it is simply not part of this flow).
+ *
+ * Because this *is* the document's page, it can never be the back/cancel target of itself: that
+ * link points at the page the operator is already on and nothing happens on click. Back/cancel go
+ * to `listHrefFor(kind)`.
  */
-export function documentDetailHref(kind: InternalSalesKind, documentId: string): string {
+export function documentEditHref(kind: InternalSalesKind, documentId: string): string {
   return `${listHrefFor(kind)}/${documentId}/edit`
-}
-
-export type InternalSalesLineValues = {
-  key: string
-  productId: string
-  /** Display label only; never submitted. */
-  productLabel: string
-  /** Resolved from the product's catalog link; the fulfilment half needs it. */
-  productVariantId: string
-  name: string
-  spec: string
-  sku: string
-  quantity: string
-  unitPriceNet: string
-  note: string
-}
-
-export type InternalSalesFormValues = {
-  id?: string
-  /**
-   * The buyer picker's value protocol: `''` | `org:<uuid>` | `party:<uuid>` (see `lib/buyer.ts`).
-   *
-   * An organization id means the buyer is a group company (internal trade); a party id means an
-   * app-owned `parties` record (external customer). Optional on purpose: a buyer without master
-   * data is still typed by name only, and the snapshot is what the document prints.
-   */
-  buyerRef: string
-  customerName: string
-  currencyCode: string
-  customerReference: string
-  comments: string
-  lines: InternalSalesLineValues[]
-  updatedAt?: string | null
-}
-
-const EMPTY_LINE: InternalSalesLineValues = {
-  key: 'line-1',
-  productId: '',
-  productLabel: '',
-  productVariantId: '',
-  name: '',
-  spec: '',
-  sku: '',
-  quantity: '1',
-  unitPriceNet: '0',
-  note: '',
-}
-
-const EMPTY_VALUES: InternalSalesFormValues = {
-  buyerRef: '',
-  customerName: '',
-  currencyCode: '',
-  customerReference: '',
-  comments: '',
-  lines: [{ ...EMPTY_LINE }],
-}
-
-function readText(source: Record<string, unknown>, ...keys: string[]): string {
-  for (const key of keys) {
-    const value = source[key]
-    if (typeof value === 'string') return value
-  }
-  return ''
-}
-
-function snapshotValue(snapshot: unknown, key: string): string {
-  if (!snapshot || typeof snapshot !== 'object') return ''
-  const value = (snapshot as Record<string, unknown>)[key]
-  return typeof value === 'string' ? value : ''
-}
-
-export function toInternalSalesFormValues(
-  item: Record<string, unknown>,
-  lines: InternalSalesLineValues[] = [],
-): InternalSalesFormValues {
-  const updatedAt = item.updatedAt ?? item.updated_at
-  // The buyer link and its printed name both live in the snapshot (`lib/buyer.ts`); the installed
-  // `customerEntityId` column is deliberately not read — this module no longer writes it.
-  const buyer = readBuyerSnapshot(item.customerSnapshot ?? item.customer_snapshot)
-  return {
-    id: readText(item, 'id'),
-    buyerRef: buyer.ref,
-    customerName: buyer.name,
-    currencyCode: readText(item, 'currencyCode', 'currency_code'),
-    customerReference: readText(item, 'customerReference', 'customer_reference'),
-    comments: readText(item, 'comments'),
-    lines: lines.length > 0 ? lines : [{ ...EMPTY_LINE }],
-    updatedAt: typeof updatedAt === 'string' ? updatedAt : null,
-  }
-}
-
-export function toInternalSalesLineValues(item: Record<string, unknown>): InternalSalesLineValues {
-  return {
-    key: String(item.id ?? `line-${item.lineNumber ?? Math.random()}`),
-    productId: readText(item, 'productId', 'product_id'),
-    productLabel: readText(item, 'name'),
-    productVariantId: readText(item, 'productVariantId', 'product_variant_id'),
-    name: readText(item, 'name'),
-    spec: snapshotValue(item.catalogSnapshot ?? item.catalog_snapshot, 'spec'),
-    sku: snapshotValue(item.catalogSnapshot ?? item.catalog_snapshot, 'sku'),
-    quantity: readText(item, 'quantity') || '0',
-    unitPriceNet: readText(item, 'unitPriceNet', 'unit_price_net') || '0',
-    note: readText(item, 'comment'),
-  }
 }
 
 function toLinePayload(
@@ -326,6 +234,9 @@ export function buildInternalSalesPayload(
 ): Record<string, unknown> {
   return {
     ...toHeadPayload(values),
+    // Provenance only, and only on create: the engine's update path leaves `metadata` untouched
+    // when the payload omits it, so the edit form never rewrites the stored value.
+    ...(values.sourceQuote ? { metadata: buildDocumentMetadata(values.sourceQuote) } : {}),
     lines: usableLines(values).map((line) => toLinePayload(kind, '', values, line)),
   }
 }
@@ -845,8 +756,36 @@ function useFields(t: TranslateFn): CrudField[] {
   ], [t])
 }
 
-function useGroups(t: TranslateFn): CrudFormGroup[] {
+/**
+ * `withQuoteLoad` adds the order's reference-loading panel above the header. It is off for quotes:
+ * there is nothing upstream of a quote to load from, and the panel's read-only half only makes
+ * sense where a document can carry a source quote.
+ */
+function useGroups(
+  t: TranslateFn,
+  { withQuoteLoad = false, mode = 'create' as 'create' | 'edit', autoLoadFrom = null }: {
+    withQuoteLoad?: boolean
+    mode?: 'create' | 'edit'
+    autoLoadFrom?: string | null
+  } = {},
+): CrudFormGroup[] {
   return React.useMemo<CrudFormGroup[]>(() => [
+    ...(withQuoteLoad
+      ? [{
+          id: 'quote-load',
+          column: 1 as const,
+          bare: true,
+          component: (context: CrudFormGroupComponentProps) => (
+            <QuoteLoadPanel
+              values={context.values}
+              setValue={context.setValue}
+              mode={mode}
+              autoLoadFrom={autoLoadFrom}
+              quoteEditHref={(quoteId) => documentEditHref('quote', quoteId)}
+            />
+          ),
+        }]
+      : []),
     { id: 'header', column: 1, fields: ['buyerRef', 'customerName', 'currencyCode', 'customerReference', 'comments'] },
     {
       id: 'lines',
@@ -854,14 +793,16 @@ function useGroups(t: TranslateFn): CrudFormGroup[] {
       bare: true,
       component: (context) => <InternalSalesLinesEditor {...context} t={t} />,
     },
-  ], [t])
+  ], [autoLoadFrom, mode, t, withQuoteLoad])
 }
 
 function CreateForm({ kind }: { kind: InternalSalesKind }) {
   const t = useT()
   const router = useRouter()
   const fields = useFields(t)
-  const groups = useGroups(t)
+  // The quote list's row action arrives here; the panel loads that quote once on mount.
+  const fromQuote = useSearchParams().get('fromQuote')
+  const groups = useGroups(t, { withQuoteLoad: kind === 'order', mode: 'create', autoLoadFrom: fromQuote })
 
   const handleSubmit = React.useCallback(async (values: InternalSalesFormValues) => {
     const payload = buildInternalSalesPayload(kind, values)
@@ -891,7 +832,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       const id = typeof created.result?.id === 'string' ? created.result.id : null
       pushWithFlash(
         router,
-        id ? documentDetailHref(kind, id) : listHrefFor(kind),
+        id ? documentEditHref(kind, id) : listHrefFor(kind),
         t('internal_sales.form.saved'),
         'success',
       )
@@ -920,7 +861,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
   const t = useT()
   const router = useRouter()
   const fields = useFields(t)
-  const groups = useGroups(t)
+  const groups = useGroups(t, { withQuoteLoad: kind === 'order', mode: 'edit' })
   const [initial, setInitial] = React.useState<InternalSalesFormValues | null>(null)
   const [loadedLineIds, setLoadedLineIds] = React.useState<string[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -942,7 +883,10 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
       setError(null)
       setIsNotFound(false)
       try {
-        const payload = await fetchCrudList<Record<string, unknown>>(apiPathFor(kind), { ids: documentId, pageSize: 1 })
+        // `id` (singular) is the installed single-document read: the same route answers it with the
+        // **full** projection — `ids` returns the trimmed grid one, which drops `metadata`, and the
+        // order's source quote lives exactly there.
+        const payload = await fetchCrudList<Record<string, unknown>>(apiPathFor(kind), { id: documentId, pageSize: 1 })
         const item = payload?.items?.[0]
         if (!item) {
           if (!cancelled) setIsNotFound(true)
@@ -1020,7 +964,10 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
     <CrudForm<InternalSalesFormValues>
       title={t(kind === 'quote' ? 'internal_sales.form.quote.editTitle' : 'internal_sales.form.order.editTitle')}
       titleHeadingLevel={1}
-      backHref={documentDetailHref(kind, documentId)}
+      // This module has no per-document detail view — the edit page *is* the document's page.
+      // Back/cancel must therefore leave for the list; built from `documentEditHref` they
+      // addressed the page the operator was already on and clicking them did nothing.
+      backHref={listHrefFor(kind)}
       fields={fields}
       groups={groups}
       initialValues={initial ?? fallback}
@@ -1028,7 +975,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
       // version and every line call carries the row's, so the form must not attach one globally.
       disableOptimisticLock
       submitLabel={t('internal_sales.form.save')}
-      cancelHref={documentDetailHref(kind, documentId)}
+      cancelHref={listHrefFor(kind)}
       isLoading={loading}
       onSubmit={handleSubmit}
     />
