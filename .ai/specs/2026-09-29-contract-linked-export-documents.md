@@ -1,7 +1,7 @@
 # 合同为主体的出口单据关联（发运单 / 装箱单（PL）/ PI / CI）
 
 **Date**: 2026-09-29
-**Status**: Draft（Open Questions 已全部答复；等待业主批准实现）
+**Status**: Phase 1 已实现并验证（2026-09-29，`cross_border`）；Phase 2（`trade_docs`）待 `feat/counterparty-linkage` 合并后开工
 
 > 业务口径（2026-09-29，业务确认）：出口业务以**购销合同**为主体——发运单、装箱单（PL）、形式发票（PI）、
 > 商业发票（CI）都关联购销合同；一张主合同可产生**多张发运单、多张装箱单**；四类单据在编辑明细时都支持
@@ -505,4 +505,5 @@ Verdict: **Blocked — pending owner approval of implementation and merge of `fe
 |---|---|
 | 2026-09-29 | 骨架：问题陈述 + 方案轮廓 + 3 个阻塞 Open Questions。 |
 | 2026-09-29 | 菜单口径按业主指示改为**组名前缀拆组**（出口业务-内部销售/购销合同/发运/单证），替代原「合同置顶」；REQ-009/AC-009/导航契约同步。 |
+| 2026-09-29 | **Phase 1 实现并验证**（`cross_border`）：合同关联表 + 装箱单明细表（迁移只增、已应用）、命令/路由/筛选/缓存失效、发运单「关联合同」UI、装箱单三页 + 明细编辑器、四处「从合同引用商品」中的三处（发运单两个分摊 + 装箱单明细）、菜单拆四组。证据：`yarn generate/typecheck/lint` 绿（0 error）；单元 2 suites/16 tests；集成 `__integration__/shipment-contracts.spec.ts` **3 passed**（TEST-101/102/103）；真机 API 冒烟（合同链接 11/11、装箱单明细 11/11）；浏览器实测 PL 三页 + 快速引用对话框 + 发运单分摊引用对话框 + 侧边栏四组。 |
 | 2026-09-29 | Open Questions 全部关闭（Q-001 完整 PL 口径；Q-002 按已选订单行匹配；Q-003 合同↔订单关联要做）→ 填全 spec：数据模型（2+2 张表、2 列）、API/命令、UI 契约、阶段 1/2（Phase 2 等 `feat/counterparty-linkage` 合并）、测试与验收。 |
