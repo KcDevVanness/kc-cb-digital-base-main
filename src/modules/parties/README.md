@@ -19,7 +19,7 @@ Decisions: [`docs/dev/business-architecture.md`](../../../docs/dev/business-arch
 | Surface | What ships |
 |---|---|
 | Backend pages | `/backend/parties` (list), `/backend/parties/create`, `/backend/parties/[id]` (detail), `/backend/parties/[id]/edit` |
-| API | `GET\|POST\|PUT\|DELETE /api/parties` — list / create / update (id in body) / delete (`?id=`); `GET /api/parties/[id]` (party + roles + bank block, the edit form's read); `GET /api/parties/options` (picker source, `?search=` by code, `?ids=`) |
+| API | `GET\|POST\|PUT\|DELETE /api/parties` — list / create / update (id in body) / delete (`?id=`); `GET /api/parties/[id]` (party + roles + bank block, the edit form's read); `GET /api/parties/options` (picker source, `?search=` by code, `?ids=`, `?roles=<role>[,<role>]` — narrows to parties holding any of the listed roles, unknown role name → 400) |
 | Commands | `parties.parties.create`, `parties.parties.update`, `parties.parties.delete` |
 | Events | `parties.party.created`, `parties.party.updated`, `parties.party.deleted` — all `clientBroadcast`, so open lists and pickers refresh without polling |
 | ACL | `parties.view` — list, detail and options; `parties.manage` — create, update, delete and the create/edit pages |
@@ -56,6 +56,11 @@ Decisions: [`docs/dev/business-architecture.md`](../../../docs/dev/business-arch
 
 - `trade_docs` — contract/invoice counterparty picker reads `/api/parties/options` (Phase 3 of the
   spec; before that it read `customers/companies`).
+- `internal_sales` — the buyer picker's external half reads `/api/parties/options?roles=buyer`
+  (external customers only; a branch's `branch`-role record is addressed as an organization, not
+  through this list) and `GET /api/parties/[id]` for the printed buyer name, and writes the party id
+  into the document's `customerSnapshot.internalSales.partyId` (2026-09-28, [`.ai/specs/2026-09-28-internal-sales-buyer-linkage.md`](../../../.ai/specs/2026-09-28-internal-sales-buyer-linkage.md);
+  the same change added the optional `roles` filter to the options route).
 
 ## Verification
 

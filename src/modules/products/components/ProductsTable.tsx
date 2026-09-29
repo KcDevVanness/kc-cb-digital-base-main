@@ -21,8 +21,11 @@ import { Button } from '@open-mercato/ui/primitives/button'
 import { formatDisplayDateTime } from '@open-mercato/ui/primitives/date-format'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
+import { hasFeature } from '@open-mercato/shared/security/features'
+import { useBackendChrome } from '@open-mercato/ui/backend/BackendChromeProvider'
 import { PRODUCT_TABLE_COLUMNS, type ProductTableColumn } from '../lib/formLayout'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import DistributeProductsDialog from './DistributeProductsDialog'
 import {
   OPTION_PAGE_SIZE,
   PRODUCTS_API_PATH,
@@ -40,6 +43,8 @@ import {
 
 const PAGE_SIZE = 50
 const QUERY_KEY_ROOT = 'products-items'
+/** The server's gate for create / edit / delete / distribute (`products/acl.ts`). */
+const FEATURE_MANAGE = 'products.items.manage'
 const OPTION_QUERY_KEY_ROOT = 'products-items-options'
 /** "No filter" is an explicit option: the filter overlay drops an empty-valued option. */
 const ALL_FILTER = 'all'
@@ -169,8 +174,20 @@ export default function ProductsTable() {
   const [typeId, setTypeId] = React.useState<string>(ALL_FILTER)
   const [categoryId, setCategoryId] = React.useState<string>(ALL_FILTER)
   const [isExporting, setIsExporting] = React.useState(false)
+  /**
+   * The distribution dialog's subject: `null` = closed, `{}` = every product of the current
+   * organization, `{ productIds: [id] }` = the given products.
+   */
+  const [distributeTarget, setDistributeTarget] = React.useState<{ productIds?: string[] } | null>(null)
   const [sorting, setSorting] = React.useState<SortingState>([{ id: DEFAULT_SORT_FIELD, desc: false }])
   const [page, setPage] = React.useState(1)
+  // The server is the authority on every action's feature gate; these flags only decide whether the
+  // control is worth showing. While the chrome payload is still loading nothing is hidden, so a
+  // permitted operator never sees a control flicker in. Without this a view-only operator (for
+  // example a branch account, which owns its distributed copies) would see Create/Edit/Delete and
+  // "Distribute to organizations" — controls that can only fail for them.
+  const { payload: chromePayload, isReady: chromeReady } = useBackendChrome()
+  const canManage = !chromeReady || hasFeature(chromePayload?.grantedFeatures, FEATURE_MANAGE)
 
   const filterParams = React.useMemo(() => {
     const params = new URLSearchParams()
@@ -414,9 +431,16 @@ export default function ProductsTable() {
               <FileDown className="size-4" aria-hidden="true" />
               {t('products.items.actions.export')}
             </Button>
-            <Button asChild>
-              <Link href={`${PRODUCTS_LIST_HREF}/create`}>{t('products.items.actions.create')}</Link>
-            </Button>
+            {canManage ? (
+              <Button type="button" variant="outline" onClick={() => setDistributeTarget({})}>
+                {t('products.items.actions.distribute', 'Distribute to organizations')}
+              </Button>
+            ) : null}
+            {canManage ? (
+              <Button asChild>
+                <Link href={`${PRODUCTS_LIST_HREF}/create`}>{t('products.items.actions.create')}</Link>
+              </Button>
+            ) : null}
           </div>
         )}
         searchValue={search}
@@ -433,20 +457,33 @@ export default function ProductsTable() {
         emptyState={(
           <ListEmptyState
             title={t('products.items.list.empty')}
-            createHref={`${PRODUCTS_LIST_HREF}/create`}
-            createLabel={t('products.items.actions.create')}
+            {...(canManage
+              ? {
+                  createHref: `${PRODUCTS_LIST_HREF}/create`,
+                  createLabel: t('products.items.actions.create'),
+                }
+              : {})}
           />
         )}
         rowActions={(row) => (
           <RowActions
             items={[
-              { id: 'edit', label: t('products.items.actions.edit'), href: `${PRODUCTS_LIST_HREF}/${row.id}/edit` },
-              {
-                id: 'delete',
-                label: t('products.items.actions.delete'),
-                destructive: true,
-                onSelect: () => { void handleDelete(row) },
-              },
+              ...(canManage
+                ? [
+                    { id: 'edit', label: t('products.items.actions.edit'), href: `${PRODUCTS_LIST_HREF}/${row.id}/edit` },
+                    {
+                      id: 'distribute',
+                      label: t('products.items.actions.distribute', 'Distribute to organizations'),
+                      onSelect: () => setDistributeTarget({ productIds: [row.id] }),
+                    },
+                    {
+                      id: 'delete',
+                      label: t('products.items.actions.delete'),
+                      destructive: true,
+                      onSelect: () => { void handleDelete(row) },
+                    },
+                  ]
+                : []),
             ]}
           />
         )}
@@ -463,6 +500,13 @@ export default function ProductsTable() {
         onRowClick={(row) => router.push(`${PRODUCTS_LIST_HREF}/${row.id}/edit`)}
       />
       {ConfirmDialogElement}
+      <DistributeProductsDialog
+        open={distributeTarget !== null}
+        productIds={distributeTarget?.productIds}
+        onOpenChange={(next) => {
+          if (!next) setDistributeTarget(null)
+        }}
+      />
     </>
   )
 }

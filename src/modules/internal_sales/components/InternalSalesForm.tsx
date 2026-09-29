@@ -2,9 +2,11 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import {
   CrudForm,
+  type CrudCustomFieldRenderProps,
   type CrudField,
   type CrudFormGroup,
   type CrudFormGroupComponentProps,
@@ -13,7 +15,7 @@ import { ComboboxInput, type ComboboxOption } from '@open-mercato/ui/backend/inp
 import { ErrorMessage, RecordNotFoundState } from '@open-mercato/ui/backend/detail'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
-import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
+import { apiCall, readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
 import { createCrud, deleteCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
@@ -22,9 +24,29 @@ import { Button } from '@open-mercato/ui/primitives/button'
 import { IconButton } from '@open-mercato/ui/primitives/icon-button'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { FieldLabel } from '@open-mercato/ui/primitives/label'
-import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
+import {
+  useOrganizationScopeDetail,
+  useOrganizationScopeVersion,
+} from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { loadProductOption, loadProductOptions, type ProductOption } from '../../products/components/formOptions'
+import {
+  parseOrganizationSwitcherScope,
+} from '../../dictionaries/lib/dictionariesLibraryApi'
+import {
+  findOrganizationName,
+  relatedOrganizationEntries,
+  type RelatedOrganizationNode,
+} from '@/lib/orgs/organizationOptions'
+import {
+  EXTERNAL_BUYER_ROLES,
+  buildPartyOptionsUrl,
+  buildBuyerSnapshot,
+  decodeBuyerRef,
+  encodeBuyerRef,
+  isUuid,
+  readBuyerSnapshot,
+} from '../lib/buyer'
 
 /**
  * App-owned create/edit surface for the internal-sales documents (quote, order).
@@ -32,9 +54,21 @@ import { loadProductOption, loadProductOptions, type ProductOption } from '../..
  * The documents themselves stay where they belong — the installed `sales` chain owns numbering,
  * statuses, totals, shipments and invoices, and this module drives that chain through its public
  * API (`POST /api/sales/{quotes,orders}`) instead of reimplementing it. What this module owns is the
- * **flow and the picker**: lines reference the app-owned product master
+ * **flow and the pickers**: lines reference the app-owned product master
  * (`products_products.id`, see .ai/specs/2026-09-22-products-and-trade-docs.md), so the operator
  * chooses from the products the business actually maintains instead of the installed catalog.
+ *
+ * The **buyer** is the second picker this module owns. An internal sale goes from the group's main
+ * entity to a branch — both are organizations in the platform's organization tree
+ * (广州凯翠国际贸易有限公司 → 俄罗斯 AB 有限公司), while a branch selling externally addresses an
+ * app-owned `parties` record. The picker therefore offers one list with two labelled sources
+ * (`.ai/specs/2026-09-28-internal-sales-buyer-linkage.md`): related organizations from the same
+ * payload as the top-bar switcher (visible organizations minus the current one — a branch account
+ * has no upward/lateral visibility, so it simply gets no internal options) and external customers
+ * from `/api/parties/options?roles=buyer` (external customers only — a group branch is addressed
+ * as the organization it is, not through its printable-party record). The chosen buyer is frozen
+ * onto the document as a snapshot (`lib/buyer.ts`), never as `customerEntityId` — that column is
+ * `customer_entities.id` in the installed contract.
  *
  * Lines also carry the product's catalog **variant** when the product is linked to one: the sales
  * chain books fulfilment per variant and the warehouse receives per variant, so the bridge is
@@ -43,9 +77,15 @@ import { loadProductOption, loadProductOptions, type ProductOption } from '../..
 
 export type InternalSalesKind = 'quote' | 'order'
 
-const CUSTOMERS_API_PATH = 'customers/companies'
 const CURRENCY_DICTIONARY_URL = '/api/currency_policy/currencies'
 const CATALOG_VARIANTS_URL = '/api/catalog/variants'
+/**
+ * The top-bar switcher's own payload — the organizations the caller may work with, with names and
+ * the `selectable` flag. Reused as the buyer picker's internal source so "总部 → 分公司" follows the
+ * same visibility rule the switcher already enforces (a branch account sees only itself).
+ */
+const ORGANIZATION_SWITCHER_URL = '/api/directory/organization-switcher'
+const ORGANIZATION_QUERY_KEY = 'internal-sales-related-organizations'
 /**
  * This module's own list routes.
  *
@@ -112,13 +152,13 @@ export type InternalSalesLineValues = {
 export type InternalSalesFormValues = {
   id?: string
   /**
-   * Optional link to a customer company record.
+   * The buyer picker's value protocol: `''` | `org:<uuid>` | `party:<uuid>` (see `lib/buyer.ts`).
    *
-   * Optional on purpose: in this deployment a branch is an organization, not a customer record, so
-   * the buyer is often typed by name only. The installed line schema treats the id as optional too,
-   * and `customerSnapshot` carries whatever the document must print.
+   * An organization id means the buyer is a group company (internal trade); a party id means an
+   * app-owned `parties` record (external customer). Optional on purpose: a buyer without master
+   * data is still typed by name only, and the snapshot is what the document prints.
    */
-  customerEntityId: string
+  buyerRef: string
   customerName: string
   currencyCode: string
   customerReference: string
@@ -141,7 +181,7 @@ const EMPTY_LINE: InternalSalesLineValues = {
 }
 
 const EMPTY_VALUES: InternalSalesFormValues = {
-  customerEntityId: '',
+  buyerRef: '',
   customerName: '',
   currencyCode: '',
   customerReference: '',
@@ -168,10 +208,13 @@ export function toInternalSalesFormValues(
   lines: InternalSalesLineValues[] = [],
 ): InternalSalesFormValues {
   const updatedAt = item.updatedAt ?? item.updated_at
+  // The buyer link and its printed name both live in the snapshot (`lib/buyer.ts`); the installed
+  // `customerEntityId` column is deliberately not read — this module no longer writes it.
+  const buyer = readBuyerSnapshot(item.customerSnapshot ?? item.customer_snapshot)
   return {
     id: readText(item, 'id'),
-    customerEntityId: readText(item, 'customerEntityId', 'customer_entity_id'),
-    customerName: snapshotValue(item.customerSnapshot ?? item.customer_snapshot, 'name'),
+    buyerRef: buyer.ref,
+    customerName: buyer.name,
     currencyCode: readText(item, 'currencyCode', 'currency_code'),
     customerReference: readText(item, 'customerReference', 'customer_reference'),
     comments: readText(item, 'comments'),
@@ -195,8 +238,6 @@ export function toInternalSalesLineValues(item: Record<string, unknown>): Intern
   }
 }
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 function toLinePayload(
   kind: InternalSalesKind,
   documentId: string,
@@ -207,7 +248,7 @@ function toLinePayload(
   return {
     // A row that came from the server keeps its line id, which is what makes the upsert an update
     // instead of a second row.
-    ...(UUID_PATTERN.test(line.key) ? { id: line.key } : {}),
+    ...(isUuid(line.key) ? { id: line.key } : {}),
     // The parent key belongs on the collection payload only; the document create command injects it.
     ...(documentId ? { [kind === 'quote' ? 'quoteId' : 'orderId']: documentId } : {}),
     kind: 'product',
@@ -251,14 +292,22 @@ export function lineScaleViolation(
   return null
 }
 
-function toHeadPayload(values: InternalSalesFormValues): Record<string, unknown> {
-  const customerName = values.customerName.trim()
+/**
+ * Scalar head payload, shared by create and update.
+ *
+ * `customerSnapshot` is the buyer: the printed name plus the `internalSales.organizationId` /
+ * `internalSales.partyId` link (`lib/buyer.ts`). On update an emptied buyer must clear the stored
+ * snapshot — `null` is the installed schema's explicit clear, while omitting the key would leave a
+ * buyer the operator just removed on the document.
+ */
+function toHeadPayload(
+  values: InternalSalesFormValues,
+  options?: { clearing?: boolean },
+): Record<string, unknown> {
+  const snapshot = buildBuyerSnapshot({ name: values.customerName, ref: values.buyerRef })
   return {
     currencyCode: values.currencyCode.trim().toUpperCase(),
-    customerEntityId: values.customerEntityId.trim() ? values.customerEntityId.trim() : undefined,
-    // The snapshot is what the document prints, so a buyer that has no customer record still lands
-    // on the quote/order instead of forcing a master-data detour before the first sale.
-    customerSnapshot: customerName ? { name: customerName } : undefined,
+    customerSnapshot: snapshot ?? (options?.clearing ? null : undefined),
     customerReference: values.customerReference.trim() ? values.customerReference.trim() : undefined,
     comments: values.comments.trim() ? values.comments.trim() : undefined,
   }
@@ -307,7 +356,7 @@ export async function saveInternalSalesDocument(
   await withScopedApiRequestHeaders(buildOptimisticLockHeader(values.updatedAt ?? null), () =>
     updateCrud(apiPathFor(kind), {
       id: documentId,
-      ...toHeadPayload(values),
+      ...toHeadPayload(values, { clearing: true }),
       updatedAt: values.updatedAt ?? null,
     }),
   )
@@ -316,7 +365,7 @@ export async function saveInternalSalesDocument(
   const keptIds = new Set<string>()
   for (const line of submitted) {
     await updateCrud(linesApiPathFor(kind), toLinePayload(kind, documentId, values, line))
-    if (UUID_PATTERN.test(line.key)) keptIds.add(line.key)
+    if (isUuid(line.key)) keptIds.add(line.key)
   }
   for (const loadedId of loadedLineIds) {
     if (keptIds.has(loadedId)) continue
@@ -341,21 +390,229 @@ async function loadCurrencyOptions(errorMessage: string) {
     .sort((left, right) => left.value.localeCompare(right.value))
 }
 
-/** The buyer: an existing customer company (a branch is a company record in this deployment). */
-async function loadCustomerOptions(errorMessage: string, organizationId?: string | null) {
-  const payload = await fetchCrudList<Record<string, unknown>>(CUSTOMERS_API_PATH, {
-    // `customers/companies` caps `pageSize` at 100; a larger value answers 400 and would leave the
-    // picker empty, so the cap is the page size.
-    pageSize: 100,
-    sortField: 'name',
-    sortDir: 'asc',
-    ...(organizationId ? { organizationId } : {}),
+const ORGANIZATION_QUERY_STALE_MS = 60_000
+
+/**
+ * The related organizations — the same payload the top-bar switcher renders
+ * (`parseOrganizationSwitcherScope`, the app's shared reader of it). The refetch key carries the
+ * scope version, so switching organizations in the top bar refreshes the option list like every
+ * other scope-dependent read on this page.
+ *
+ * Kept as the **tree** (not flattened): `relatedOrganizationEntries` walks it once, and a
+ * flattened copy would walk every child twice.
+ */
+async function fetchOrganizationMenu(): Promise<RelatedOrganizationNode[]> {
+  const call = await apiCall<Record<string, unknown>>(ORGANIZATION_SWITCHER_URL)
+  if (!call.ok) throw new Error(`organization_switcher_failed:${call.status}`)
+  return parseOrganizationSwitcherScope(call.result).organizations
+}
+
+function useRelatedOrganizations(): {
+  organizations: RelatedOrganizationNode[]
+  failed: boolean
+  scopeVersion: number
+} {
+  const scopeVersion = useOrganizationScopeVersion()
+  const query = useQuery({
+    queryKey: [ORGANIZATION_QUERY_KEY, scopeVersion],
+    staleTime: ORGANIZATION_QUERY_STALE_MS,
+    queryFn: fetchOrganizationMenu,
   })
-  return (payload.items ?? []).map((item) => {
-    const id = String(item.id ?? '')
-    const name = readText(item, 'name', 'displayName', 'display_name') || id
-    return { value: id, label: name }
-  })
+  return { organizations: query.data ?? [], failed: query.isError, scopeVersion }
+}
+
+/**
+ * One party's code and name, for the picker label and the name auto-fill.
+ *
+ * The option source carries `code — name` in its label only; printing the code into the document's
+ * buyer name would be wrong, so the raw name (and the code for label parity) comes from the party
+ * read the module's other surfaces use as well. `null` on failure — the caller degrades instead of
+ * inventing a name.
+ */
+async function fetchPartyDetail(partyId: string): Promise<{ code: string; name: string } | null> {
+  try {
+    const call = await apiCall<{ item?: { code?: string; name?: string } }>(
+      `/api/parties/${encodeURIComponent(partyId)}`,
+    )
+    if (!call.ok) return null
+    const item = call.result?.item
+    const name = typeof item?.name === 'string' ? item.name.trim() : ''
+    if (!name) return null
+    return { code: typeof item?.code === 'string' ? item.code.trim() : '', name }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The buyer picker: related organizations and external customers in one searchable list, each
+ * option labelled with its source up front (`.ai/lessons/merged-picker-source-belongs-in-the-label.md`).
+ *
+ * Picking a linked option auto-fills the printed buyer name through `setFormValue`; the separate
+ * name field below stays editable, so a buyer with no master record is still a first-class case.
+ * The two sources fail independently: a broken organization payload or a denied party read shows a
+ * hint and leaves the other half usable, rather than rendering an empty list that reads as
+ * "no buyers exist" (`.ai/lessons/option-loaders-must-respect-page-size-caps.md`).
+ */
+function BuyerPickerField({
+  value,
+  setValue,
+  setFormValue,
+  disabled,
+  t,
+}: CrudCustomFieldRenderProps & { t: TranslateFn }) {
+  const { organizationId } = useOrganizationScopeDetail()
+  const { organizations, failed: organizationsFailed, scopeVersion } = useRelatedOrganizations()
+  const queryClient = useQueryClient()
+  const [partiesFailed, setPartiesFailed] = React.useState(false)
+  const currentValue = typeof value === 'string' ? value : ''
+  /**
+   * Labels the operator has seen for a value. `ComboboxInput` renders the selected value as its
+   * option label and, on focus, asks the source to search for the input's text — this map lets the
+   * loader recognize that text as "no query" instead of searching the sources for a buyer's own
+   * name (a search that matches nothing and would look like "no buyers exist"). Dynamic
+   * value → label pairs, so a Map, not a record.
+   */
+  const labelByValue = React.useRef(new Map<string, string>())
+
+  const organizationEntries = React.useMemo(
+    () => relatedOrganizationEntries(organizations, organizationId),
+    [organizations, organizationId],
+  )
+  // Dynamic id → name lookup over runtime rows (a Map, not a static table).
+  const organizationNameById = React.useMemo(
+    () => new Map(organizationEntries.map((entry) => [entry.id, entry.name])),
+    [organizationEntries],
+  )
+
+  const relatedOrgPrefix = t('internal_sales.form.buyer.relatedOrgPrefix', 'Related organization: ')
+  const externalPrefix = t('internal_sales.form.buyer.externalPrefix', 'External customer: ')
+  const partyLoadFailed = t('internal_sales.form.buyer.partyLoadFailed', 'Could not load external customers')
+
+  const loadSuggestions = React.useCallback(
+    async (query?: string): Promise<ComboboxOption[]> => {
+      const queryText = typeof query === 'string' ? query.trim() : ''
+      // Focusing a field that shows its selected option asks the source to search for that label;
+      // treat it as "no query" so the fetched list is the full one (the input's own local filter
+      // still narrows the rendered list until the operator types).
+      const selectedLabel = labelByValue.current.get(currentValue)
+      const term = selectedLabel && queryText === selectedLabel ? '' : queryText
+      const normalized = term.toLowerCase()
+      const organizationOptions = organizationEntries
+        .filter((entry) => (normalized.length === 0 ? true : entry.name.toLowerCase().includes(normalized)))
+        .map((entry) => ({
+          value: encodeBuyerRef({ kind: 'organization', id: entry.id }),
+          label: `${relatedOrgPrefix}${entry.name}`,
+        }))
+
+      let partyOptions: ComboboxOption[] = []
+      try {
+        const payload = await readApiResultOrThrow<{ items?: Array<{ value?: string; label?: string }> }>(
+          buildPartyOptionsUrl({ query: term, organizationId, roles: EXTERNAL_BUYER_ROLES }),
+          undefined,
+          { errorMessage: partyLoadFailed },
+        )
+        partyOptions = (payload.items ?? [])
+          .map((item) => {
+            const id = String(item.value ?? '')
+            if (!id) return null
+            return {
+              value: encodeBuyerRef({ kind: 'party', id }),
+              label: `${externalPrefix}${String(item.label ?? '')}`,
+            }
+          })
+          .filter((option): option is ComboboxOption => option !== null)
+        setPartiesFailed(false)
+      } catch {
+        // The organization half stays usable; the hint under the field explains the empty half.
+        setPartiesFailed(true)
+      }
+      const options = [...organizationOptions, ...partyOptions]
+      for (const option of options) labelByValue.current.set(option.value, option.label)
+      return options
+    },
+    [currentValue, externalPrefix, organizationEntries, organizationId, partyLoadFailed, relatedOrgPrefix],
+  )
+
+  const resolveLabel = React.useCallback(
+    async (rawValue: string): Promise<string> => {
+      const ref = decodeBuyerRef(rawValue)
+      if (ref.kind === 'organization') {
+        // A cold label (edit page opened right after load) must not paint the raw `org:<uuid>`:
+        // resolve through the shared query cache, which also serves the suggestion list.
+        let name = organizationNameById.get(ref.id) ?? ''
+        if (!name) {
+          try {
+            const menu = await queryClient.fetchQuery({
+              queryKey: [ORGANIZATION_QUERY_KEY, scopeVersion],
+              queryFn: fetchOrganizationMenu,
+              staleTime: ORGANIZATION_QUERY_STALE_MS,
+            })
+            name = findOrganizationName(menu, ref.id)
+          } catch {
+            return ''
+          }
+        }
+        if (!name) return ''
+        const label = `${relatedOrgPrefix}${name}`
+        labelByValue.current.set(rawValue, label)
+        return label
+      }
+      if (ref.kind === 'party') {
+        const detail = await fetchPartyDetail(ref.id)
+        if (!detail) return ''
+        const label = `${externalPrefix}${detail.code ? `${detail.code} — ` : ''}${detail.name}`
+        labelByValue.current.set(rawValue, label)
+        return label
+      }
+      return ''
+    },
+    [externalPrefix, organizationNameById, queryClient, relatedOrgPrefix, scopeVersion],
+  )
+
+  const handleChange = React.useCallback(
+    (next: string) => {
+      setValue(next)
+      const ref = decodeBuyerRef(next)
+      if (ref.kind === 'organization') {
+        const name = organizationNameById.get(ref.id)
+        if (name) setFormValue?.('customerName', name)
+        return
+      }
+      if (ref.kind === 'party') {
+        // The label carries a code prefix, so the printed name comes from the party read; a failed
+        // read leaves whatever the operator has in the name field untouched.
+        void fetchPartyDetail(ref.id).then((detail) => {
+          if (detail) setFormValue?.('customerName', detail.name)
+        })
+      }
+    },
+    [organizationNameById, setFormValue, setValue],
+  )
+
+  return (
+    <div className="space-y-1.5">
+      <ComboboxInput
+        value={currentValue}
+        onChange={handleChange}
+        placeholder={t(
+          'internal_sales.form.buyer.selectPlaceholder',
+          'Search a related organization or external customer…',
+        )}
+        loadSuggestions={loadSuggestions}
+        resolveLabel={resolveLabel}
+        allowCustomValues={false}
+        clearable
+        disabled={disabled}
+      />
+      {organizationsFailed ? (
+        <p className="text-xs text-status-error-text">
+          {t('internal_sales.form.buyer.orgLoadFailed', 'Could not load related organizations')}
+        </p>
+      ) : null}
+      {partiesFailed ? <p className="text-xs text-status-error-text">{partyLoadFailed}</p> : null}
+    </div>
+  )
 }
 
 /**
@@ -440,7 +697,14 @@ function InternalSalesLinesEditor(
         updateLine(index, { productId: '', productVariantId: '', productLabel: '' })
         return
       }
-      updateLine(index, { productId, productLabel: '', productVariantId: '' })
+      // The picker re-fires `onChange` with the same value once it resolves the selected label
+      // (suggestions reload). Clearing the row first would drop the already-resolved variant and
+      // label, and a save landing in that window would persist the document without the variant —
+      // which fulfilment (shipment / overseas-warehouse receipt) needs. Only a *different* product
+      // clears the stale label/variant; re-picking the same one re-resolves in place.
+      if (linesRef.current[index]?.productId !== productId) {
+        updateLine(index, { productId, productLabel: '', productVariantId: '' })
+      }
       const option =
         productCache.current.get(productId) ??
         (await loadProductOption(productId, t('internal_sales.form.productLoadFailed'), organizationId))
@@ -559,14 +823,13 @@ function InternalSalesLinesEditor(
 }
 
 function useFields(t: TranslateFn): CrudField[] {
-  const { organizationId } = useOrganizationScopeDetail()
   return React.useMemo<CrudField[]>(() => [
     {
-      id: 'customerEntityId',
+      id: 'buyerRef',
       label: t('internal_sales.form.field.customer'),
-      type: 'select',
+      type: 'custom',
       layout: 'half',
-      loadOptions: () => loadCustomerOptions(t('internal_sales.form.customerLoadFailed'), organizationId),
+      component: (props) => <BuyerPickerField {...props} t={t} />,
     },
     { id: 'customerName', label: t('internal_sales.form.field.customerName'), type: 'text', layout: 'half' },
     {
@@ -579,12 +842,12 @@ function useFields(t: TranslateFn): CrudField[] {
     },
     { id: 'customerReference', label: t('internal_sales.form.field.customerReference'), type: 'text', layout: 'half' },
     { id: 'comments', label: t('internal_sales.form.field.comments'), type: 'textarea', layout: 'half' },
-  ], [organizationId, t])
+  ], [t])
 }
 
 function useGroups(t: TranslateFn): CrudFormGroup[] {
   return React.useMemo<CrudFormGroup[]>(() => [
-    { id: 'header', column: 1, fields: ['customerEntityId', 'customerName', 'currencyCode', 'customerReference', 'comments'] },
+    { id: 'header', column: 1, fields: ['buyerRef', 'customerName', 'currencyCode', 'customerReference', 'comments'] },
     {
       id: 'lines',
       column: 1,
@@ -617,7 +880,9 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       flash(message, 'error')
       throw new Error(message)
     }
-    if (!payload.customerEntityId && !payload.customerSnapshot) {
+    // The snapshot carries both the printed name and the organization/party link, so its presence
+    // is exactly "a buyer was given" — no separate id field to check any more.
+    if (!payload.customerSnapshot) {
       flash(t('internal_sales.form.customerRequired'), 'error')
       throw new Error(t('internal_sales.form.customerRequired'))
     }

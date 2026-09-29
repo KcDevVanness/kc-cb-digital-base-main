@@ -1083,6 +1083,23 @@
           "enumItems": [],
           "mappedType": "text"
         },
+        "source_product_id": {
+          "name": "source_product_id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
         "spec_summary": {
           "name": "spec_summary",
           "type": "text",
@@ -1236,11 +1253,36 @@
           "keyName": "products_products_scope_sku_uniq",
           "primary": false,
           "unique": true
+        },
+        {
+          "columnNames": [
+            "organization_id",
+            "tenant_id",
+            "source_product_id"
+          ],
+          "composite": true,
+          "constraint": false,
+          "keyName": "products_products_source_idx",
+          "primary": false,
+          "unique": false
         }
       ],
       "checks": [],
       "triggers": [],
-      "foreignKeys": {},
+      "foreignKeys": {
+        "products_products_source_product_id_foreign": {
+          "columnNames": [
+            "source_product_id"
+          ],
+          "constraintName": "products_products_source_product_id_foreign",
+          "localTableName": "public.products_products",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "referencedTableName": "public.products_products",
+          "deleteRule": "set null"
+        }
+      },
       "comment": null
     },
     {
