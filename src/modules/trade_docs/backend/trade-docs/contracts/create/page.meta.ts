@@ -3,8 +3,8 @@ export const metadata = {
   requireFeatures: ['trade_docs.contracts.manage'],
   pageTitle: 'Create Contract',
   pageTitleKey: 'trade_docs.contracts.form.createTitle',
-  pageGroup: 'Cross-Border',
-  pageGroupKey: 'cross_border.nav.group',
+  pageGroup: 'Export operations — Contracts',
+  pageGroupKey: 'cross_border.nav.group.contracts',
   pageOrder: 321,
   breadcrumb: [
     { label: 'Contracts', labelKey: 'trade_docs.contracts.page.title', href: '/backend/trade-docs/contracts' },

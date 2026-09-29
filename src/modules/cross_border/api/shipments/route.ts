@@ -1,9 +1,11 @@
 import { z } from 'zod'
+import type { EntityManager } from '@mikro-orm/postgresql'
 import { makeCrudRoute } from '@open-mercato/shared/lib/crud/factory'
 import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern'
 import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
 import { CrossBorderShipment } from '../../data/entities'
 import { shipmentCreateSchema, shipmentListSchema, shipmentUpdateSchema, SHIPMENT_STATUSES, SHIPMENT_MILESTONES } from '../../data/validators'
+import { loadShipmentIdsForContract } from '../../lib/contractReads'
 import { createCrossBorderCrudOpenApi, crossBorderCreatedSchema, crossBorderOkSchema } from '../openapi'
 
 const ENTITY_ID = 'cross_border:cross_border_shipment' as const
@@ -87,10 +89,21 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       updated_at: 'updated_at',
       updatedAt: 'updated_at',
     },
-    buildFilters: async (query: ShipmentListQuery) => {
+    buildFilters: async (query: ShipmentListQuery, ctx) => {
       const filters: Record<string, unknown> = {}
       if (query.id) filters.id = query.id
       if (query.status) filters.status = query.status
+      if (query.contractId) {
+        // The link lives in this module's join table: resolve the linked shipment ids first, then
+        // narrow the page. An unknown contract yields an empty `$in`, which matches nothing.
+        const em = ctx.container.resolve('em') as EntityManager
+        const linked = await loadShipmentIdsForContract(
+          em,
+          { tenantId: ctx.auth?.tenantId ?? '', organizationIds: ctx.organizationIds ?? [] },
+          query.contractId,
+        )
+        filters.id = { $in: linked }
+      }
       if (query.containerNumber && query.containerNumber.trim().length > 0) {
         filters.container_number = { $ilike: `%${escapeLikePattern(query.containerNumber.trim())}%` }
       }

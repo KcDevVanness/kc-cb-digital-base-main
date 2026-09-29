@@ -82,7 +82,6 @@ export type SerializedDocument = {
   incoterms: string | null
   validUntil: string | null
   deliveryDate: string | null
-  marks: string | null
   sourceKind: string | null
   sourceId: string | null
   sourceSnapshot: Record<string, unknown> | null
@@ -126,7 +125,6 @@ function serializeDocument(entity: TradeDocsDocument): SerializedDocument {
     incoterms: entity.incoterms ?? null,
     validUntil: toDateOnly(entity.validUntil),
     deliveryDate: toDateOnly(entity.deliveryDate),
-    marks: entity.marks ?? null,
     sourceKind: entity.sourceKind ?? null,
     sourceId: entity.sourceId ? String(entity.sourceId) : null,
     sourceSnapshot: entity.sourceSnapshot ?? null,
@@ -364,7 +362,6 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
               incoterms: parsed.incoterms,
               validUntil: parsed.validUntil ? new Date(parsed.validUntil) : null,
               deliveryDate: parsed.deliveryDate ? new Date(parsed.deliveryDate) : null,
-              marks: parsed.marks,
               sourceKind: parsed.sourceKind ?? null,
               sourceId: parsed.sourceId ?? null,
               sourceSnapshot: parsed.sourceSnapshot,
@@ -509,7 +506,6 @@ const updateDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
               if (parsed.incoterms !== undefined) entity.incoterms = parsed.incoterms
               if (parsed.validUntil !== undefined) entity.validUntil = parsed.validUntil ? new Date(parsed.validUntil) : null
               if (parsed.deliveryDate !== undefined) entity.deliveryDate = parsed.deliveryDate ? new Date(parsed.deliveryDate) : null
-              if (parsed.marks !== undefined) entity.marks = parsed.marks
               if (parsed.sourceKind !== undefined) entity.sourceKind = parsed.sourceKind
               if (parsed.sourceId !== undefined) entity.sourceId = parsed.sourceId
               if (parsed.sourceSnapshot !== undefined) entity.sourceSnapshot = parsed.sourceSnapshot
@@ -561,7 +557,7 @@ const updateDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
       changes: buildChanges(
         (before ?? null) as unknown as Record<string, unknown> | null,
         after as unknown as Record<string, unknown>,
-        ['direction', 'counterpartyKind', 'currencyCode', 'paymentTerms', 'incoterms', 'validUntil', 'deliveryDate', 'marks', 'notes'],
+        ['direction', 'counterpartyKind', 'currencyCode', 'paymentTerms', 'incoterms', 'validUntil', 'deliveryDate', 'notes'],
       ),
       snapshotBefore: before ?? null,
       snapshotAfter: after,
@@ -953,7 +949,6 @@ const copyDocumentFromCommand: CommandHandler<Record<string, unknown>, { id: str
               entity.exchangeRate = source.exchangeRate ?? null
               entity.paymentTerms = source.paymentTerms ?? null
               entity.incoterms = source.incoterms ?? null
-              entity.marks = source.marks ?? null
               entity.sourceKind = 'trade_document'
               entity.sourceId = String(source.id)
               entity.sourceSnapshot = sourceSnapshotHead
@@ -1133,7 +1128,6 @@ const generateDocumentCommand: CommandHandler<
         currencyCode: document.currencyCode,
         incoterms: document.incoterms ?? null,
         paymentTerms: document.paymentTerms ?? null,
-        marks: document.marks ?? null,
         notes: document.notes ?? null,
         ourParty: document.ourPartySnapshot ?? null,
         counterparty: document.counterpartySnapshot ?? null,
