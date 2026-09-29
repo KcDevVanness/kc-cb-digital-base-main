@@ -101,10 +101,13 @@ export function resolveRowTradeType(
 }
 
 /**
- * Which entry the operator is on, derived from the route: `/backend/external-sales/**` is the
- * external surface, everything else internal. One implementation serves both menus, so the pages
- * under the two prefixes are re-exports and this is what tells them apart (no copied page bodies).
+ * Which menu entry a route belongs to. One implementation serves two entries: `/backend/internal-sales/**`
+ * (the sales entry — it owns the documents of **both** trade types and lists them together) and
+ * `/backend/external-sales/**` (the external-only view of the same documents). The pages under the
+ * two prefixes are re-exports, so this is what tells them apart.
  */
-export function tradeTypeFromPathname(pathname: string | null | undefined): SalesTradeType {
-  return typeof pathname === 'string' && pathname.includes('/external-sales/') ? 'external' : 'internal'
+export type SalesEntry = 'sales' | 'external'
+
+export function salesEntryFromPathname(pathname: string | null | undefined): SalesEntry {
+  return typeof pathname === 'string' && pathname.includes('/external-sales/') ? 'external' : 'sales'
 }
