@@ -60,6 +60,27 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 | 口径隔离 | `lib/contractRecalc.ts` 的已确认发票查询排除 `invoice_kind='export'`（历史 NULL 行逐字节不变）：出口发票是退税凭证（0%），不参与合同「财务金额」 |
 | 联动 | 详情按 `source_kind='shipment'` + `source_id` 给出柜（退税锚点）只读链接；`F-305` 的发票生成/打印未做（规格中标为可选，留待后续） |
 
+## 合同 ↔ 订单关联、PI/CI 合同引用与合同枢纽（2026-09-29 Phase 2）
+
+规格：[`.ai/specs/2026-09-29-contract-linked-export-documents.md`](../../../.ai/specs/2026-09-29-contract-linked-export-documents.md)（REQ-005/006/007）。
+
+| 层 | 内容 |
+|---|---|
+| 实体 | `TradeDocsContractOrder` → `trade_docs_contract_orders`（`contract_id` FK cascade、`order_kind`、`order_id`、`order_number` + `order_snapshot`；唯一键 `(contract_id, order_kind, order_id)`）；`trade_docs_documents` 追加 `contract_id` + `contract_snapshot`。迁移 `Migration20260929084039_trade_docs.ts`（只增；`down` 逆回两列并删表） |
+| API | `GET\|POST /api/trade_docs/contracts/orders`（GET 按 `contractId/orderKind/orderId/id` 过滤；POST = **成套替换**动作，`{ contractId, orders[], updatedAt? }`）；`GET /api/trade_docs/documents?contractId=` 过滤 + `contractId/contractName/contractSnapshot` 出参 |
+| 命令 | `trade_docs.contracts.orders.replace`（单写者；非作废合同可改（含已签发/已关闭），重复/未知订单/跨组织 422、作废合同 422、未知合同 404、版本过期 409） |
+| 事件 | `trade_docs.contract.orders.updated`（`clientBroadcast`；同时失效 `trade_docs.contract` 家族缓存） |
+| 后台页面 | 合同详情五个关联区块（订单/发运单/装箱单/PI/CI，均带 `?contractId=` 新建入口与 `查看全部`）+「管理订单关联」对话框；PI/CI 表单「所属合同」字段与「从合同引用商品行」；单据详情显示合同链接；PI/CI 列表支持 `?contractId=` 筛选（带清除按钮）；发运单/装箱单新建页在 `?contractId=` 下预填（cross_border 侧） |
+
+**口径**
+
+- **订单关联是第二份关系**：合同自身的 `source_kind/source_id` 仍是「从哪张单开的」（历史锚点、界面无入口），关联表才是「本合同覆盖哪些订单」；两者并存不互相回写。
+- **快照冻结**：关联行冻结订单的 `number` / 对方名（采购单取 `supplier_snapshot.name`、销售单取 `customer_snapshot.name`）/ 下单时间 / 状态；订单改名不回写。
+- **成套替换**：保存即整组替换（与发运单合同关联、单据行同构），因此挂错单靠重开对话框改，不做逐行增删 API。
+- **乐观锁**：对话框把合同详情的 `updatedAt` 随替换提交；过期 409（`optimistic_lock_conflict`）走平台的冲突提示，不静默覆盖他人刚加的关联。
+- **对外销售订单预留**：`order_kind='external_sales_order'` 值可用（选择器给出未接入提示），等对外销售单据能力落地后接上，不再加表。
+- **订单档案兼容读**：`export_finance` 的 KC 合同选择同时认关联表与历史锚点（`lib/fileRules.ts` 的 `selectKcContract`），迁移期口径不回归。
+
 ## 单据间复制（Phase 4）
 
 - 命令 `trade_docs.documents.copy-from`（PI → CI）与 `trade_docs.invoices.copy-from`（CI → 税务发票），路由 `POST /api/trade_docs/{documents,invoices}/[id]/copy-from`（`{ sourceDocumentId }` → `{ ok, lineCount }`）。
@@ -148,6 +169,21 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 ```bash
 yarn generate && yarn typecheck && yarn lint && yarn ds:check
 yarn jest --config jest.config.cjs src/modules/trade_docs
+# 合同订单关联冒烟（2026-09-29）：
+#   POST /api/trade_docs/contracts/orders {contractId, orders:[采购单, 内部销售订单]} → 201 {ok, count:2}
+#   → GET …/contracts/orders?contractId= 读回冻结快照（单号/对方/日期/状态）
+#   → 重复同一订单 422 / 未知订单 422 / 未知合同 404 / 作废合同 422 / updatedAt 过期 409（record_modified）
+#   → orders: [] 清空 → 列表读回 0；审计行落在 resource_kind=trade_docs.contract.order
+# PI/CI 合同引用冒烟（2026-09-29）：
+#   POST /api/trade_docs/documents {…, contractId} → 201 → GET ?contractId= 命中且 contractName 为合同号快照
+#   → PUT {id, contractId: null} 解绑 → 该筛选不再命中；跨组织合同 id → 404
+# 订单档案兼容读冒烟（2026-09-29）：给一张采购单挂上**无 source_* 锚点**的销售合同 →
+#   GET /api/export_finance/order-files → finance.kcPriceAmount 取该合同财务金额（关联表命中路径）
+# 枢纽页面冒烟（2026-09-29，浏览器）：合同详情五个关联区块可见可跳、新建入口带 ?contractId=；
+#   「管理订单关联」对话框可加/删/保存（保存后区块即时更新）；作废合同不出现该按钮
+# 预填冒烟（2026-09-29，浏览器）：/backend/cross_border/shipments/create?contractId= 关联合同已带一行并显示合同号；
+#   /backend/cross_border/packing-lists/create?contractId= 的发运单选择器只列该合同的柜并预选唯一柜；
+#   /backend/trade-docs/proformas/create?contractId= 所属合同已选；「从合同引用商品行」把合同行带成可编辑明细
 # 冒烟（dev server 在跑时）：建合同 201 → 非法流转 422 → issue 得 PC-<年>-0001 → 换币种 0 位小数时
 # 合同金额与财务金额分离 → 发票 confirm 后财务金额取票面、void 回退 → 上传+绑定附件 200 →
 # POST/GET [id]/document 生成并下载 XLSX（内容类型为 xlsx，金额列可求和）

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Trash2 } from 'lucide-react'
 import {
   CrudForm,
@@ -851,6 +851,46 @@ export function ShipmentContractEditor({
 }: CrudFormGroupComponentProps & { t: TranslateFn }) {
   const contracts = readContracts(values.contracts)
   const labelCache = React.useRef(new Map<string, string>())
+  const resolvedIds = React.useRef(new Set<string>())
+
+  /**
+   * A row can arrive with an id but no label — the create page prefills one when the shipment is
+   * started from a contract's hub. Resolving it here (instead of threading the number through the
+   * URL) keeps the payload contract unchanged and shows the operator the contract they clicked,
+   * not a bare uuid; a label the API cannot resolve stays empty and the picker shows the id.
+   */
+  React.useEffect(() => {
+    const pending = contracts.filter(
+      (row) => row.contractId && !row.contractLabel && !resolvedIds.current.has(row.contractId),
+    )
+    if (pending.length === 0) return
+    let cancelled = false
+    const resolve = async () => {
+      let options: CrudFieldOption[] = []
+      try {
+        options = await loadContractOptions()
+      } catch {
+        return
+      }
+      if (cancelled) return
+      for (const option of options) {
+        labelCache.current.set(option.value, option.label)
+      }
+      for (const row of pending) resolvedIds.current.add(row.contractId)
+      setValue(
+        'contracts',
+        contracts.map((row) =>
+          row.contractId && !row.contractLabel
+            ? { ...row, contractLabel: labelCache.current.get(row.contractId) ?? '' }
+            : row,
+        ),
+      )
+    }
+    void resolve()
+    return () => {
+      cancelled = true
+    }
+  }, [contracts, setValue])
 
   const updateRow = React.useCallback((index: number, patch: Partial<ShipmentContractValues>) => {
     setValue('contracts', contracts.map((row, position) => (position === index ? { ...row, ...patch } : row)))
@@ -1783,7 +1823,22 @@ function useShipmentFields(t: TranslateFn): CrudField[] {
 export default function ShipmentForm() {
   const t = useT()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const fields = useShipmentFields(t)
+
+  /**
+   * Arriving from a contract's hub (`?contractId=`) starts the shipment with that contract already
+   * linked: the click said which contract this container belongs to, and re-picking it is busywork.
+   * The label stays empty because it is display-only — the picker resolves it from its options.
+   */
+  const initialValues = React.useMemo<ShipmentFormValues>(() => {
+    const contractId = searchParams.get('contractId')?.trim() ?? ''
+    if (!contractId) return EMPTY_SHIPMENT_VALUES
+    return {
+      ...EMPTY_SHIPMENT_VALUES,
+      contracts: [{ key: newRowKey(), contractId, contractLabel: '' }],
+    }
+  }, [searchParams])
 
   const groups = React.useMemo<CrudFormGroup[]>(() => [
     {
@@ -1860,7 +1915,7 @@ export default function ShipmentForm() {
       backHref={SHIPMENTS_LIST_HREF}
       fields={fields}
       groups={groups}
-      initialValues={EMPTY_SHIPMENT_VALUES}
+      initialValues={initialValues}
       submitLabel={t('cross_border.shipments.form.save')}
       cancelHref={SHIPMENTS_LIST_HREF}
       onSubmit={handleSubmit}

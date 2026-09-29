@@ -34,6 +34,7 @@ app 自有模块。把多张采购单**拼柜**成一张发运单，跟踪在途
   字典（`setup.ts` 幂等写入，`yarn mercato seed:defaults --module cross_border`），界面是带建议的下拉——
   字典没收录的港口/承运人仍可直接输入，订舱不会被词表缺口卡住。`trade_docs` 合同头的「目的地」读同一份 `port` 字典。
 - **分摊快照带供应商货号**：分摊行引用采购单行并把该行的 `product_snapshot` 原样冻结，快照里的 `supplierSku`（= 供应商产品库的 `item_no ?? supplier_sku`）随 `GET /api/cross_border/shipments/allocations` 的 `supplierSku` 输出，界面在商品名后显示"货号"；历史快照没有该键，读侧按 null。**分摊载荷本身不变**（仍是 `{ purchaseOrderLineId, quantity }`）。
+- **合同枢纽的入口带 `?contractId=`（2026-09-29）**：合同详情的关联区块把用户直接送进新建页——发运单新建页读 `?contractId=` 并**预填一张已关联合同**（点它进来的人已经选过合同了），装箱单新建页读 `?contractId=` 把**发运单选择器收窄到该合同的发运单**，且只有一个候选时直接选中（多个候选/读取失败则交回完整选择器，猜柜号只会把箱单挂到错的柜上）。预填只发生在**新建**页；编辑页仍按记录原值。
 - **没有目录链接就不能收货**：采购单行没有官方目录链接时拒绝分摊（**422**），报错直接点明要"先把供应商产品同步成商品并补目录链接"——收货是变体级（`wms.inventory.receive`），而变体只能经官方目录解析。收货时若该目录商品没有变体，同样 **422**。外贸侧**不另建产品清单**，出货依据就是采购单行来源 + 快照。
 - **不跨模块 ORM 关联**：对 `purchasing`、`wms`、`attachments` 只存 ID，靠命令与事件联动。
 
@@ -55,6 +56,8 @@ yarn mercato test:integration shipment-contracts   # __integration__/shipment-co
 #       详情页显示明细 → 编辑页「从合同引用商品行」对话框（合同下拉 + 匹配状态 + 添加/全部添加）
 # 分摊引用冒烟（2026-09-29）：发运单新建页两个分摊区都出现「从合同引用商品」；对话框预选表单里的关联合同、
 #       读回合同商品行，未匹配行给出原因且「添加」置灰
+# 枢纽入口冒烟（2026-09-29）：/backend/cross_border/shipments/create?contractId=<id> 打开时「关联合同」已带一行该合同；
+#       /backend/cross_border/packing-lists/create?contractId=<id> 的发运单选择器只列该合同的柜，唯一柜时已选中
 # 附件预览冒烟（2026-09-24）：出口单证行「预览」→ 图片等比显示 / PDF 由 PDF.js 渲染到 canvas / 其它类型说明 + 下载（同一组件，见 purchasing README）
 ```
 

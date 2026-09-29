@@ -45,6 +45,7 @@ const DOCUMENT_LINES_API_PATH = 'trade_docs/documents/lines'
 const DOCUMENT_TRANSITIONS_URL = '/api/trade_docs/documents/transitions'
 const DOCUMENT_ATTACH_API_PATH = 'trade_docs/documents/attach'
 const DOCUMENT_FILE_API_PATH = '/api/trade_docs/documents'
+const CONTRACTS_HREF = '/backend/trade-docs/contracts'
 
 /**
  * Attachment assignment entity id of the uploaded replacement; resolves to the platform's private
@@ -80,6 +81,9 @@ type DocumentHead = {
   sourceKind: string | null
   sourceId: string | null
   sourceSnapshot: Record<string, unknown> | null
+  contractId: string | null
+  contractName: string | null
+  contractSnapshot: Record<string, unknown> | null
   issuedAt: string | null
   generatedAttachmentId: string | null
   attachmentId: string | null
@@ -148,6 +152,9 @@ function toHead(item: Record<string, unknown>): DocumentHead {
     sourceKind: (item.sourceKind ?? item.source_kind ?? null) as string | null,
     sourceId: (item.sourceId ?? item.source_id ?? null) as string | null,
     sourceSnapshot: (item.sourceSnapshot ?? item.source_snapshot ?? null) as Record<string, unknown> | null,
+    contractId: (item.contractId ?? item.contract_id ?? null) as string | null,
+    contractName: (item.contractName ?? item.contract_name ?? null) as string | null,
+    contractSnapshot: (item.contractSnapshot ?? item.contract_snapshot ?? null) as Record<string, unknown> | null,
     issuedAt: (item.issuedAt ?? null) as string | null,
     generatedAttachmentId: (item.generatedAttachmentId ?? null) as string | null,
     attachmentId: (item.attachmentId ?? null) as string | null,
@@ -850,6 +857,15 @@ export default function DocumentDetail({ kind, documentId }: { kind: DocumentKin
           <SummaryField label={t('trade_docs.documents.list.columns.counterparty', '对方')}>
             {head.counterpartyName ?? snapshotTextValue(head.counterpartySnapshot, 'name') ?? '—'}
           </SummaryField>
+          {head.contractId ? (
+            <SummaryField label={t('trade_docs.documents.detail.contract', '所属合同')}>
+              <Link className="hover:underline" href={`${CONTRACTS_HREF}/${head.contractId}`}>
+                {head.contractName
+                  ?? snapshotTextValue(head.contractSnapshot, 'number')
+                  ?? head.contractId.slice(0, 8)}
+              </Link>
+            </SummaryField>
+          ) : null}
           <SummaryField label={t('trade_docs.documents.form.field.currencyCode', '币种')}>{head.currencyCode}</SummaryField>
           <SummaryField label={t('trade_docs.documents.form.field.exchangeRate', '汇率（快照）')}>
             {head.exchangeRate ?? '—'}
