@@ -56,6 +56,8 @@ import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/u
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { isUuid } from '../lib/buyer'
+import { channelIdForTradeType } from '../lib/tradeType'
+import type { TradeTypeChannelMap } from '../lib/tradeTypeChannels'
 import type { InternalSalesFormValues, SourceQuoteRef } from '../lib/documentValues'
 import { SALES_STATUS_DICTIONARY_KEY } from '../lib/salesStatus'
 import {
@@ -77,6 +79,8 @@ export default function QuoteLoadPanel({
   mode,
   autoLoadFrom,
   quoteEditHref,
+  channelIds,
+  adoptQuoteType,
 }: {
   values: Record<string, unknown>
   setValue: (field: string, value: unknown) => void
@@ -84,6 +88,10 @@ export default function QuoteLoadPanel({
   /** `?fromQuote=<id>` — the quote-list row action's entry, loaded once on mount. */
   autoLoadFrom?: string | null
   quoteEditHref: (quoteId: string) => string
+  /** The organization's trade-type channels, so the picker offers the order's own type. */
+  channelIds: TradeTypeChannelMap
+  /** Whether loading may move this form's trade type to the quote's — false on a locked entry. */
+  adoptQuoteType: boolean
 }) {
   const t = useT()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
@@ -148,6 +156,9 @@ export default function QuoteLoadPanel({
 
   const currentValues = values as unknown as InternalSalesFormValues
   const sourceQuote: SourceQuoteRef | null = (currentValues.sourceQuote as SourceQuoteRef | null) ?? null
+  // The picker follows the form's own trade type: an internal order may load an internal quote,
+  // an external order an external one.
+  const quoteChannelId = channelIdForTradeType(currentValues.tradeType, channelIds)
 
   const runLoad = React.useCallback(
     async (id: string, via: 'dialog' | 'auto') => {
@@ -167,7 +178,7 @@ export default function QuoteLoadPanel({
       setBusy(true)
       setInlineError(null)
       try {
-        const { number, lineCount } = await applyQuoteDraftToForm(id, setValue)
+        const { number, lineCount } = await applyQuoteDraftToForm(id, setValue, { adoptQuoteType })
         flash(
           t('internal_sales.form.quoteLoad.done', 'Loaded from quote {number}', {
             number: number || id.slice(0, 8),
@@ -195,7 +206,7 @@ export default function QuoteLoadPanel({
         setBusy(false)
       }
     },
-    [confirm, currentValues, setValue, t],
+    [adoptQuoteType, confirm, currentValues, setValue, t],
   )
 
   React.useEffect(() => {
@@ -390,7 +401,7 @@ export default function QuoteLoadPanel({
                 value={quoteId}
                 onChange={setQuoteId}
                 placeholder={t('internal_sales.form.quoteLoad.placeholder', 'Search by quote number…')}
-                loadSuggestions={async (query): Promise<ComboboxOption[]> => loadQuoteOptions(query)}
+                loadSuggestions={async (query): Promise<ComboboxOption[]> => loadQuoteOptions(query, quoteChannelId)}
                 resolveLabel={async (value) => resolveQuoteLabel(value)}
                 allowCustomValues={false}
                 clearable

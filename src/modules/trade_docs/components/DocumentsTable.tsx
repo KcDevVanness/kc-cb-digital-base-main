@@ -78,7 +78,7 @@ export function documentDirectionLabel(t: TranslateFn, direction: string): strin
 export function documentSourceKindLabel(t: TranslateFn, kind: string | null | undefined): string {
   switch (kind) {
     case 'sales_order':
-      return t('trade_docs.documents.sourceKind.salesOrder', '内部销售订单')
+      return t('trade_docs.documents.sourceKind.salesOrder', '对内销售订单')
     case 'purchase_order':
       return t('trade_docs.documents.sourceKind.purchaseOrder', '采购订单')
     case 'shipment':

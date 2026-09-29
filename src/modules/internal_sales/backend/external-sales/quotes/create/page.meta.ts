@@ -3,8 +3,8 @@ export const metadata = {
   requireFeatures: ['sales.quotes.manage'],
   pageTitle: 'New external sales quote',
   pageTitleKey: 'internal_sales.form.externalQuote.createTitle',
-  pageGroup: 'Cross-Border',
-  pageGroupKey: 'cross_border.nav.group',
+  pageGroup: 'Export operations — External sales',
+  pageGroupKey: 'cross_border.nav.group.externalSales',
   pageOrder: 318,
   icon: 'globe',
   breadcrumb: [
