@@ -8,6 +8,8 @@ import {
   requireId,
 } from '@open-mercato/shared/lib/commands/helpers'
 import { extractUndoPayload } from '@open-mercato/shared/lib/commands/undo'
+import { withAtomicFlush } from '@open-mercato/shared/lib/commands/flush'
+import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/optimistic-lock-command'
 import { badRequest, conflict, CrudHttpError, isUniqueViolation, notFound } from '@open-mercato/shared/lib/crud/errors'
 import { ORGANIZATION_SCOPE_REQUIRED_ERROR_CODE } from '@open-mercato/shared/lib/auth/organizationScope'
@@ -15,13 +17,33 @@ import type { CrudEmitContext, CrudEventsConfig, CrudIndexerConfig } from '@open
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
 import { PRODUCT_BRAND_DICTIONARY_KEY, assertDictionaryValue } from '../../product_codes/lib/dictionaryValues'
-import { PurchasingSupplier } from '../data/entities'
+import { PurchasingSupplier, PurchasingSupplierBankAccount } from '../data/entities'
 import { assertCurrencyInDictionary } from '../lib/currencyDictionary'
-import { supplierCreateSchema, supplierUpdateSchema } from '../data/validators'
+import { supplierCreateSchema, supplierUpdateSchema, type SupplierBankAccountInput } from '../data/validators'
 import { ensureScope } from './shared'
 
 const ENTITY_ID = 'purchasing:purchasing_supplier' as const
 const RESOURCE_KIND = 'purchasing.supplier' as const
+
+type SerializedBankAccount = {
+  id: string
+  beneficiaryBank: string
+  accountNumber: string
+  swiftCode: string | null
+  bankAddress: string | null
+  isDefault: boolean
+}
+
+function serializeBankAccount(row: PurchasingSupplierBankAccount): SerializedBankAccount {
+  return {
+    id: String(row.id),
+    beneficiaryBank: row.beneficiaryBank,
+    accountNumber: row.accountNumber,
+    swiftCode: row.swiftCode ?? null,
+    bankAddress: row.bankAddress ?? null,
+    isDefault: row.isDefault === true,
+  }
+}
 
 type SerializedSupplier = {
   id: string
@@ -37,9 +59,18 @@ type SerializedSupplier = {
   notes: string | null
   tenantId: string
   organizationId: string
+  /**
+   * Bank rows travel with the update snapshot so undo can rebuild them exactly (the same shape
+   * `parties` records for its bank block). Create/delete snapshots carry the head only — their undo
+   * never has to restore an account list.
+   */
+  bankAccounts?: SerializedBankAccount[]
 }
 
-function serializeSupplier(entity: PurchasingSupplier): SerializedSupplier {
+function serializeSupplier(
+  entity: PurchasingSupplier,
+  bankAccounts: PurchasingSupplierBankAccount[] = [],
+): SerializedSupplier {
   return {
     id: String(entity.id),
     name: entity.name,
@@ -54,7 +85,200 @@ function serializeSupplier(entity: PurchasingSupplier): SerializedSupplier {
     notes: entity.notes ?? null,
     tenantId: String(entity.tenantId),
     organizationId: String(entity.organizationId),
+    bankAccounts: bankAccounts.map(serializeBankAccount),
   }
+}
+
+/**
+ * Bank rows of one supplier, oldest first. The columns are encrypted at rest (`encryption.ts`), so
+ * every direct read goes through the framework decryption helper with the same scope the write uses.
+ */
+async function loadBankAccounts(
+  em: EntityManager,
+  scope: { tenantId: string; organizationId: string },
+  supplierId: string,
+): Promise<PurchasingSupplierBankAccount[]> {
+  return findWithDecryption(
+    em.fork(),
+    PurchasingSupplierBankAccount,
+    {
+      supplier: supplierId,
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+    } as FilterQuery<PurchasingSupplierBankAccount>,
+    { orderBy: { createdAt: 'asc' } },
+    { tenantId: scope.tenantId, organizationId: scope.organizationId },
+  )
+}
+
+/**
+ * More than one default is a payload mistake the operator can fix, so it is rejected before any
+ * write; no default at all is resolved to the first row (deterministic, and the printed block needs
+ * exactly one account).
+ */
+function assertSingleDefault(bankAccounts: SupplierBankAccountInput[] | undefined): void {
+  if (!bankAccounts || bankAccounts.length === 0) return
+  const defaults = bankAccounts.filter((row) => row.isDefault === true)
+  if (defaults.length > 1) {
+    throw badRequest('Only one bank account can be the default')
+  }
+}
+
+function toNullableText(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+/** Insert every row of a create payload; `id` values (if any) are ignored on purpose. */
+async function createBankAccounts(
+  de: DataEngine,
+  em: EntityManager,
+  scope: { tenantId: string; organizationId: string },
+  supplierId: string,
+  rows: SupplierBankAccountInput[] | undefined,
+): Promise<void> {
+  const list = rows ?? []
+  if (list.length === 0) return
+  const supplier = em.getReference(PurchasingSupplier, supplierId)
+  const hasExplicitDefault = list.some((row) => row.isDefault === true)
+  for (let index = 0; index < list.length; index += 1) {
+    const row = list[index]
+    await de.createOrmEntity({
+      entity: PurchasingSupplierBankAccount,
+      data: {
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        supplier,
+        beneficiaryBank: row.beneficiaryBank,
+        accountNumber: row.accountNumber,
+        swiftCode: toNullableText(row.swiftCode),
+        bankAddress: toNullableText(row.bankAddress),
+        isDefault: hasExplicitDefault ? row.isDefault === true : index === 0,
+      },
+    })
+  }
+}
+
+/**
+ * First replace boundary: rows the payload does not name are deleted and every kept row loses its
+ * default flag. Clearing first is what keeps the partial unique index satisfiable: Postgres checks it
+ * per statement, so a batch that flips the default from one row to another could transiently see two.
+ */
+async function clearBankAccountsBeforeReplace(
+  de: DataEngine,
+  scope: { tenantId: string; organizationId: string },
+  rows: SupplierBankAccountInput[],
+  existing: PurchasingSupplierBankAccount[],
+): Promise<void> {
+  const wantedIds = new Set(
+    rows.map((row) => row.id).filter((id): id is string => typeof id === 'string'),
+  )
+  for (const row of existing) {
+    const where = {
+      id: String(row.id),
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+    } as FilterQuery<PurchasingSupplierBankAccount>
+    if (!wantedIds.has(String(row.id))) {
+      await de.deleteOrmEntity({ entity: PurchasingSupplierBankAccount, where, soft: false })
+      continue
+    }
+    await de.updateOrmEntity({
+      entity: PurchasingSupplierBankAccount,
+      where,
+      apply: (entity) => {
+        entity.isDefault = false
+      },
+    })
+  }
+}
+
+/** Second replace boundary: insert the unnamed rows and write the final values, default included. */
+async function applyBankAccountsAfterReplace(
+  de: DataEngine,
+  em: EntityManager,
+  scope: { tenantId: string; organizationId: string },
+  supplierId: string,
+  rows: SupplierBankAccountInput[],
+  existing: PurchasingSupplierBankAccount[],
+): Promise<void> {
+  const byId = new Map(existing.map((row) => [String(row.id), row]))
+  const supplier = em.getReference(PurchasingSupplier, supplierId)
+  const hasExplicitDefault = rows.some((row) => row.isDefault === true)
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]
+    const isDefault = hasExplicitDefault ? row.isDefault === true : index === 0
+    const current = row.id ? byId.get(row.id) : undefined
+    if (!current) {
+      if (row.id) throw badRequest('Bank account not found on this supplier')
+      await de.createOrmEntity({
+        entity: PurchasingSupplierBankAccount,
+        data: {
+          tenantId: scope.tenantId,
+          organizationId: scope.organizationId,
+          supplier,
+          beneficiaryBank: row.beneficiaryBank,
+          accountNumber: row.accountNumber,
+          swiftCode: toNullableText(row.swiftCode),
+          bankAddress: toNullableText(row.bankAddress),
+          isDefault,
+        },
+      })
+      continue
+    }
+    await de.updateOrmEntity({
+      entity: PurchasingSupplierBankAccount,
+      where: {
+        id: String(current.id),
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+      } as FilterQuery<PurchasingSupplierBankAccount>,
+      apply: (entity) => {
+        entity.beneficiaryBank = row.beneficiaryBank
+        entity.accountNumber = row.accountNumber
+        entity.swiftCode = toNullableText(row.swiftCode)
+        entity.bankAddress = toNullableText(row.bankAddress)
+        entity.isDefault = isDefault
+      },
+    })
+  }
+}
+
+/** Undo path: the previous bank block is rebuilt exactly as the snapshot recorded it, ids included. */
+async function restoreBankAccounts(
+  de: DataEngine,
+  em: EntityManager,
+  scope: { tenantId: string; organizationId: string },
+  supplierId: string,
+  snapshotRows: SerializedBankAccount[] | undefined,
+  existing: PurchasingSupplierBankAccount[],
+): Promise<void> {
+  for (const row of existing) {
+    await de.deleteOrmEntity({
+      entity: PurchasingSupplierBankAccount,
+      where: {
+        id: String(row.id),
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+      } as FilterQuery<PurchasingSupplierBankAccount>,
+      soft: false,
+    })
+  }
+  await createBankAccounts(
+    de,
+    em,
+    scope,
+    supplierId,
+    (snapshotRows ?? []).map((row) => ({
+      id: row.id,
+      beneficiaryBank: row.beneficiaryBank,
+      accountNumber: row.accountNumber,
+      swiftCode: row.swiftCode,
+      bankAddress: row.bankAddress,
+      isDefault: row.isDefault,
+    })),
+  )
 }
 
 export const supplierCrudEvents: CrudEventsConfig<PurchasingSupplier> = {
@@ -201,6 +425,7 @@ const createSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
     // caller could save a supplier whose rows can never generate, and the refusal would only surface
     // much later, at 生成 time.
     if (parsed.brandValue) await assertDictionaryValue(em, scope, PRODUCT_BRAND_DICTIONARY_KEY, parsed.brandValue)
+    assertSingleDefault(parsed.bankAccounts)
 
     const supplier = await createSupplierRow(
       em,
@@ -220,6 +445,21 @@ const createSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
       },
       explicitCode,
     )
+
+    // The code-issuance retry above commits the supplier in its own fork per attempt, so the bank
+    // block is written in a following atomic boundary. A failure here leaves the supplier without
+    // accounts — visible and fixable by re-saving — never a half-written account row.
+    if (parsed.bankAccounts && parsed.bankAccounts.length > 0) {
+      await withAtomicFlush(
+        em,
+        [
+          async () => {
+            await createBankAccounts(de, em, scope, String(supplier.id), parsed.bankAccounts)
+          },
+        ],
+        { transaction: true, label: 'purchasing.suppliers.create.bank-accounts' },
+      )
+    }
 
     await emitCrudSideEffects({
       dataEngine: de,
@@ -284,7 +524,8 @@ const updateSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
     const em = ctx.container.resolve('em') as EntityManager
     const current = await em.fork().findOne(PurchasingSupplier, scopeFilter(scope, parsed.id))
     if (!current) return {}
-    return { before: serializeSupplier(current) }
+    const bankAccounts = await loadBankAccounts(em, scope, parsed.id)
+    return { before: serializeSupplier(current, bankAccounts) }
   },
   async execute(rawInput, ctx) {
     const parsed = supplierUpdateSchema.parse(rawInput)
@@ -313,23 +554,49 @@ const updateSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
     if (parsed.brandValue && parsed.brandValue !== current.brandValue) {
       await assertDictionaryValue(em, scope, PRODUCT_BRAND_DICTIONARY_KEY, parsed.brandValue)
     }
+    assertSingleDefault(parsed.bankAccounts)
 
-    const updated = await de.updateOrmEntity({
-      entity: PurchasingSupplier,
-      where: scopeFilter(scope, parsed.id),
-      apply: (entity) => {
-        if (parsed.name !== undefined) entity.name = parsed.name
-        if (parsed.code !== undefined) entity.code = parsed.code
-        if (parsed.contactName !== undefined) entity.contactName = parsed.contactName
-        if (parsed.phone !== undefined) entity.phone = parsed.phone
-        if (parsed.email !== undefined) entity.email = parsed.email
-        if (parsed.address !== undefined) entity.address = parsed.address
-        if (parsed.defaultCurrencyCode !== undefined) entity.defaultCurrencyCode = parsed.defaultCurrencyCode
-        if (parsed.brandValue !== undefined) entity.brandValue = parsed.brandValue ?? null
-        if (parsed.isActive !== undefined) entity.isActive = parsed.isActive
-        if (parsed.notes !== undefined) entity.notes = parsed.notes
-      },
-    })
+    const existingBankAccounts = parsed.bankAccounts !== undefined
+      ? await loadBankAccounts(em, scope, parsed.id)
+      : []
+
+    const updatedRows: PurchasingSupplier[] = []
+    await withAtomicFlush(
+      em,
+      [
+        async () => {
+          const result = await de.updateOrmEntity({
+            entity: PurchasingSupplier,
+            where: scopeFilter(scope, parsed.id),
+            apply: (entity) => {
+              if (parsed.name !== undefined) entity.name = parsed.name
+              if (parsed.code !== undefined) entity.code = parsed.code
+              if (parsed.contactName !== undefined) entity.contactName = parsed.contactName
+              if (parsed.phone !== undefined) entity.phone = parsed.phone
+              if (parsed.email !== undefined) entity.email = parsed.email
+              if (parsed.address !== undefined) entity.address = parsed.address
+              if (parsed.defaultCurrencyCode !== undefined) entity.defaultCurrencyCode = parsed.defaultCurrencyCode
+              if (parsed.brandValue !== undefined) entity.brandValue = parsed.brandValue ?? null
+              if (parsed.isActive !== undefined) entity.isActive = parsed.isActive
+              if (parsed.notes !== undefined) entity.notes = parsed.notes
+            },
+          })
+          if (result) updatedRows.push(result as PurchasingSupplier)
+        },
+        // Two boundaries for the bank block: the default flag is cleared first and written second, so
+        // the partial unique index never sees two default rows in one statement batch.
+        async () => {
+          if (parsed.bankAccounts === undefined) return
+          await clearBankAccountsBeforeReplace(de, scope, parsed.bankAccounts, existingBankAccounts)
+        },
+        async () => {
+          if (parsed.bankAccounts === undefined) return
+          await applyBankAccountsAfterReplace(de, em, scope, parsed.id, parsed.bankAccounts, existingBankAccounts)
+        },
+      ],
+      { transaction: true, label: 'purchasing.suppliers.update' },
+    )
+    const updated = updatedRows[0]
     if (!updated) throw notFound('Supplier not found')
 
     await emitCrudSideEffects({
@@ -370,27 +637,43 @@ const updateSupplierCommand: CommandHandler<Record<string, unknown>, PurchasingS
     const before = payload?.before ?? (logEntry?.snapshotBefore as SerializedSupplier | undefined)
     if (!before?.id) throw new Error('[internal] Missing previous supplier snapshot for undo')
     const scope = ensureScope(ctx)
+    const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
-    const updated = await de.updateOrmEntity({
-      entity: PurchasingSupplier,
-      where: scopeFilter(scope, before.id),
-      apply: (entity) => {
-        entity.name = before.name
-        entity.code = before.code
-        entity.contactName = before.contactName
-        entity.phone = before.phone
-        entity.email = before.email
-        entity.address = before.address
-        entity.defaultCurrencyCode = before.defaultCurrencyCode
-        entity.brandValue = before.brandValue
-        entity.isActive = before.isActive
-        entity.notes = before.notes
-      },
-    })
+    const existingBanks = await loadBankAccounts(em, scope, before.id)
+    const updatedRows: PurchasingSupplier[] = []
+    await withAtomicFlush(
+      em,
+      [
+        async () => {
+          const result = await de.updateOrmEntity({
+            entity: PurchasingSupplier,
+            where: scopeFilter(scope, before.id),
+            apply: (entity) => {
+              entity.name = before.name
+              entity.code = before.code
+              entity.contactName = before.contactName
+              entity.phone = before.phone
+              entity.email = before.email
+              entity.address = before.address
+              entity.defaultCurrencyCode = before.defaultCurrencyCode
+              entity.brandValue = before.brandValue
+              entity.isActive = before.isActive
+              entity.notes = before.notes
+            },
+          })
+          if (result) updatedRows.push(result as PurchasingSupplier)
+        },
+        async () => {
+          if (before.bankAccounts === undefined) return
+          await restoreBankAccounts(de, em, scope, before.id, before.bankAccounts, existingBanks)
+        },
+      ],
+      { transaction: true, label: 'purchasing.suppliers.update.undo' },
+    )
     await emitCrudUndoSideEffects({
       dataEngine: de,
       action: 'updated',
-      entity: updated,
+      entity: updatedRows[0] ?? null,
       identifiers: { id: before.id, tenantId: scope.tenantId, organizationId: scope.organizationId },
       syncOrigin: ctx.syncOrigin,
       events: supplierCrudEvents,
