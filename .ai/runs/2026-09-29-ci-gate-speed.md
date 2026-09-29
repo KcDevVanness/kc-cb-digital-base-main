@@ -95,6 +95,18 @@ parallel, then the fan-in 2s.
 The run is now bounded by the `build` slice instead of the sum of every step, and the `checks` slice
 finishes ~80s before it rather than delaying it.
 
+After, warm caches (run `36520762983`, second run on the same lockfile/tsconfig — both incremental
+records restored): **166s** total.
+
+| Slice | Job wall | Steps |
+|---|---|---|
+| `checks` | 148s | install 65 → generate 14 → **typecheck 11** → lint 25 → lessons 0 → ds:check 0 → test 12 |
+| `build` | 139s | install 59 → **build 62** (`generate` + `next build`, whose internal type check now reuses its record) |
+
+344s → 225s cold → 166s warm (2:46). The remaining fat is `yarn install` (59–65s per slice, paid
+twice): caching `node_modules` (~1.8G) was left out as a non-goal because a restore of that size is
+not obviously cheaper than linking from the warm Yarn cache — worth measuring separately.
+
 Gate-shape evidence, all on this PR:
 
 | Run | Tree | Result |
@@ -102,6 +114,7 @@ Gate-shape evidence, all on this PR:
 | `36519752486` | docs-only diff | `scope` success, both slices skipped, `validate` **success** in 13s |
 | `36519938204` | deliberate failing test | `checks` **failure**, `build` **failure**, `validate` **failure** |
 | `36520357923` | final tree, cold | all four jobs success, 225s |
+| `36520762983` | final tree, warm | all four jobs success, 166s |
 
 ## Source doc
 
@@ -129,4 +142,4 @@ tracker has no issues.
 - [x] 3.1 local snippet harness (scope ranges + fan-in permutations)
 - [x] 3.2 docs-only PR run → skip path green — run `36519752486`: `validate` success in 13s
 - [x] 3.3 deliberate failure → `validate` red — run `36519938204`: `checks` + `build` failure
-- [ ] 3.4 final tree → green, timings recorded
+- [x] 3.4 final tree → green, timings recorded — runs `36520357923` (225s cold) and `36520762983` (166s warm)
