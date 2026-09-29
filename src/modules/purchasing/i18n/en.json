@@ -33,6 +33,7 @@
   "purchasing.suppliers.form.currencyLoadFailed": "Could not load the currency list",
   "purchasing.suppliers.form.field.isActive": "Active",
   "purchasing.suppliers.form.field.notes": "Notes",
+  "purchasing.suppliers.form.group.bank": "Bank details",
   "purchasing.audit.suppliers.create": "Create supplier",
   "purchasing.audit.suppliers.update": "Update supplier",
   "purchasing.audit.suppliers.delete": "Delete supplier",

@@ -33,6 +33,7 @@
   "purchasing.suppliers.form.currencyLoadFailed": "币种列表加载失败",
   "purchasing.suppliers.form.field.isActive": "启用",
   "purchasing.suppliers.form.field.notes": "备注",
+  "purchasing.suppliers.form.group.bank": "银行信息",
   "purchasing.audit.suppliers.create": "创建供应商",
   "purchasing.audit.suppliers.update": "更新供应商",
   "purchasing.audit.suppliers.delete": "删除供应商",

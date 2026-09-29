@@ -98,6 +98,15 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 - 发票优先是**逐行**、且只认 `confirmed`：草稿/作废发票不影响合同；作废后自动回退为按单价计算。
 - 合同头的三列由 `lib/contractRecalc.ts` 在写入行的同一事务内重算，命令层不自己写算术。
 
+## 对方：方向决定命名空间（2026-09-29）
+
+- **`direction` 是唯一真源**：合同/单据 `purchase ⇒ supplier`、`sales ⇒ customer`；税务发票 `inbound ⇒ supplier`、`outbound ⇒ customer`。`counterpartyKind` 由命令推导（`lib/counterpartyRefs.ts` 的 `resolveCounterpartyKind`）：调用方不传即按方向落库，传了相冲突的值 400；update 一律写推导值，因此旧行在编辑时被顺带修正。三套 create/update schema 都会在两半同时出现时提前 400。
+- **`counterpartyId` 归属校验**：非空时必须存在于对应命名空间（supplier → `purchasing_suppliers`；customer → `parties_parties`）、未软删、且属于**命令作用域（所选组织）**；否则 400 `counterparty_not_found`。不建跨模块外键（标量 id + scoped Kysely 只读）。
+- **选择器**（`components/CounterpartyPicker.tsx`，bare group）：按方向加载唯一来源——采购读 `purchasing/suppliers`（可带 `organizationId` 收窄），销售读 `/api/parties/options?roles=buyer,branch`（`buyer`/`branch` 两来源合并，标签前缀 `分公司：`/`外部客户：`）。切换方向会清空已选对方与打印块；选中即用 `GET /api/parties/{id}`（客户）或 `GET /api/purchasing/suppliers/{id}`（供应商）回填名称/地址/联系人，并给出该主体的银行账户（默认账户优先）。存储的 id 在当前列表解析不到时（已删/收窄/历史）仍以一个种子选项显示，标签取快照名称。
+- **快照**：对方快照仍是打印副本——`{name,address,contact,bank}`，从主数据选定时追加 `bankAccountId`（与 `our_party_snapshot` 同口径；`bank` 为银行名+账号+SWIFT 的合并文本，打印模板读它）。
+- **部分更新不再重放创建默认值（缺陷修复）**：三套 update schema 由**默认无关**的字段表 `partial()` 生成，默认值只由 create schema 施加——此前 `.partial()` 会保留 `.default()`，`PUT {id, notes}` 会覆写 `direction`/`counterpartyKind`/`currencyCode` 并把 `lines:[]` 交给行写入而**清空全部行**。商业发票「必须销售方向」的守卫也补到了 update。
+- **内联新建客户**：销售方向的「新增客户」对话框（`components/CustomerQuickCreateDialog.tsx`）走既有 `POST /api/parties`（`roles:['buyer']`，可选一行默认银行），保存后自动选中；按钮按 `parties.manage` 显示（chrome 未就绪时不隐藏），无权限时降级为提示。
+
 ## 规则（有意为之）
 
 - **合同是聚合根**：行只能通过合同的 create/update 写入（行接口只读），行号由命令 1..n 分配。

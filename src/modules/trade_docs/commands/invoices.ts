@@ -21,8 +21,13 @@ import {
   invoiceCreateSchema,
   invoiceTransitionSchema,
   invoiceUpdateSchema,
+  COUNTERPARTY_KIND_BY_INVOICE_DIRECTION,
   type InvoiceLineInput,
 } from '../data/validators'
+import {
+  resolveCounterpartyKind,
+  assertCounterpartyReference,
+} from '../lib/counterpartyRefs'
 import { invalidateInvoiceCaches } from '../lib/cacheInvalidation'
 import { ensureScope, invoiceFilter, loadContract, loadDocument, loadInvoice, type TradeDocsScope } from '../lib/scope'
 import { recomputeContractHead } from '../lib/contractRecalc'
@@ -278,6 +283,13 @@ const createInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
     const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
+    const counterpartyKind = resolveCounterpartyKind(
+      parsed.direction,
+      parsed.counterpartyKind,
+      COUNTERPARTY_KIND_BY_INVOICE_DIRECTION,
+    )
+    await assertCounterpartyReference(em, scope, counterpartyKind, parsed.counterpartyId ?? null)
+
     const contractId = parsed.contractId ?? null
     await assertContractVisible(em, scope, contractId)
     const lines = await resolveInvoiceLines(em, scope, contractId, parsed.lines)
@@ -297,7 +309,7 @@ const createInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
               invoiceKind: parsed.invoiceKind ?? null,
               direction: parsed.direction,
               status: 'draft',
-              counterpartyKind: parsed.counterpartyKind,
+              counterpartyKind,
               counterpartyId: parsed.counterpartyId ?? null,
               counterpartySnapshot: parsed.counterpartySnapshot,
               contract: contractId ? em.getReference(TradeDocsContract, contractId) : null,
@@ -407,6 +419,19 @@ const updateInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
       request: ctx.request ?? null,
     })
 
+    const mergedDirection = parsed.direction ?? invoice.direction
+    const counterpartyKind = resolveCounterpartyKind(
+      mergedDirection,
+      parsed.counterpartyKind,
+      COUNTERPARTY_KIND_BY_INVOICE_DIRECTION,
+    )
+    await assertCounterpartyReference(
+      em,
+      scope,
+      counterpartyKind,
+      parsed.counterpartyId !== undefined ? parsed.counterpartyId : invoice.counterpartyId ?? null,
+    )
+
     const previousContractId = contractIdFrom(invoice.contract)
     const contractId = parsed.contractId === undefined ? previousContractId : parsed.contractId
     await assertContractVisible(em, scope, contractId)
@@ -423,7 +448,8 @@ const updateInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
               if (parsed.number !== undefined) entity.number = parsed.number
               if (parsed.invoiceKind !== undefined) entity.invoiceKind = parsed.invoiceKind
               if (parsed.direction !== undefined) entity.direction = parsed.direction
-              if (parsed.counterpartyKind !== undefined) entity.counterpartyKind = parsed.counterpartyKind
+              // The kind is derived, so an update heals a row stored before the rule existed.
+              entity.counterpartyKind = counterpartyKind
               if (parsed.counterpartyId !== undefined) entity.counterpartyId = parsed.counterpartyId
               if (parsed.counterpartySnapshot !== undefined) entity.counterpartySnapshot = parsed.counterpartySnapshot
               if (parsed.contractId !== undefined) {

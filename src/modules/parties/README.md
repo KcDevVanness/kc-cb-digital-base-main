@@ -54,8 +54,12 @@ Decisions: [`docs/dev/business-architecture.md`](../../../docs/dev/business-arch
 
 ## Consumed by
 
-- `trade_docs` — contract/invoice counterparty picker reads `/api/parties/options` (Phase 3 of the
-  spec; before that it read `customers/companies`).
+- `trade_docs` — the contract / PI / CI / tax-invoice counterparty picker reads
+  `/api/parties/options?roles=buyer,branch` (narrowed to the selected organization) and the printed
+  block from `GET /api/parties/{id}`. Each option item carries the party's `roles`, so a merged picker
+  can label a group branch (`分公司：`) and an external customer (`外部客户：`) apart; the same picker's
+  「新增客户」 dialog posts to `POST /api/parties` with `roles:['buyer']` (2026-09-29,
+  [`.ai/specs/2026-09-29-counterparty-picker-and-master-data.md`](../../../.ai/specs/2026-09-29-counterparty-picker-and-master-data.md)).
 - `internal_sales` — the buyer picker's external half reads `/api/parties/options?roles=buyer`
   (external customers only; a branch's `branch`-role record is addressed as an organization, not
   through this list) and `GET /api/parties/[id]` for the printed buyer name, and writes the party id
