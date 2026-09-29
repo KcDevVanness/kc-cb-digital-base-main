@@ -2,7 +2,7 @@
 title: "The sidebar group key is the role boundary, and only one module may order the groups"
 modules: ["sourcing", "purchasing", "cross_border", "export_finance", "internal_sales", "trade_docs", "boss_cockpit", "finance", "ru_sync"]
 areas: ["backend-ui", "architecture"]
-topics: ["navigation", "page-group-key", "menu-taxonomy", "sidebar-preferences", "module-overrides", "audience-split", "untranslated-fallback", "group-order"]
+topics: ["navigation", "page-group-key", "sidebar-preferences", "untranslated-fallback", "group-order", "audience-split"]
 ---
 
 # The sidebar group key is the role boundary, and only one module may order the groups
