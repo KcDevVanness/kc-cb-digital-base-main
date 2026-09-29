@@ -25,6 +25,7 @@ app 自有模块。把多张采购单**拼柜**成一张发运单，跟踪在途
 - **里程碑单调**：`advance-milestone` 只允许前进，回退返回 **422**；历史节点保留可查。
 - **收货幂等**：`receive` 写 `wms` 余额并回写采购单行已收数量，重复收货不重复计数（按采购单行累加）。
 - **单证是弱类型集合**：类型枚举校验（`customs_declaration` / `packing_list` / `commercial_invoice` / `bill_of_lading` / `so` / `telex_release` / `domestic_freight_receipt` / `booking_charges_receipt` / `other`），非法类型返回 **400**；`so` 与 `telex_release` 的单号落在单头 `booking_number`、不写单证行，两种 receipt 一类收多份就是多行；单证文件走 `attachments`，行里只存 `attachment_id`。
+- **PL 是单证、发运单不是 PL（2026-09-29）**：外贸口径的 **PL（装箱单）在本模块是一类出口单证**（`packing_list`，登记单号/签发日/附件，界面标签「装箱单（PL）」/ "Packing list (PL)"），不独立成页；发运单是**这批货的承运批次**（拼柜来源 + 销售分摊 + 柜型/箱号/封签 + 里程碑 + 单证区），列表页描述已点名「装箱单（PL）…在详情页的单证区登记」。CI（商业发票）同样不再走单证槽位（`commercial_invoice` 枚举只读保留，见下条）。
 - **货柜型号读字典**：单头 `container_type` 的选项来自本模块播种的 `container_type` 字典（`setup.ts` 幂等写入七种型号），字典里没有的型号存不进单据；字典缺失或不可读时选择器给空列表（字段可空，不挡发运）。柜号 / 封签号 / 订舱号是自由文本。
 - **港口与承运人读字典、允许例外**：单头 `departurePort` / `carrierName` 的选项来自本模块播种的 `port` / `carrier`
   字典（`setup.ts` 幂等写入，`yarn mercato seed:defaults --module cross_border`），界面是带建议的下拉——

@@ -198,7 +198,7 @@
 | 业务说的 | 系统里是 | 承载 / 状态 |
 |---|---|---|
 | 采购订单（PO） | 采购单 `/backend/purchasing/orders`，单号 `PO-<年>-<4位>` | `purchasing_purchase_orders` |
-| 内部销售订单（PO） | 「总部 → 分公司」的销售订单，界面在 `internal_sales`（引擎仍是 installed `sales`），单号 `ORDER-` | installed `sales` 单据；本期两处都挂缩写 PO，按上下文区分 |
+| 内部销售订单（PO） | 「总部 → 分公司」的销售订单，界面在 `internal_sales`（引擎仍是 installed `sales`），单号 `ORDER-` | installed `sales` 单据；界面名挂缩写 PO（2026-09-29 落到字典；采购组的采购单**未挂**，只靠 `PO-` 单号区分，见上行） |
 | 形式发票（PI） | 形式发票（PI）——发货前开给分公司/供应商的收款依据，单号 `PI-<年>-<4位>`（签发时按组织发号） | **已实现（2026-09-28，Phase 1）**：`trade_docs_documents(kind='proforma')` + `/backend/trade-docs/proformas`，见 [`.ai/specs/2026-09-24-pi-ci-tax-invoice-documents.md`](../../.ai/specs/2026-09-24-pi-ci-tax-invoice-documents.md) |
 | 商业发票（CI） | 商业发票（CI）——出口报关/清关用，单号 `CI-<年>-<4位>`（签发时按组织发号） | **已实现（2026-09-28，Phase 2）**：`trade_docs_documents(kind='commercial')` + `/backend/trade-docs/commercial-invoices`；明细按发运单的销售分摊汇总（无销售分摊时回退采购分摊），逐行留来源；旧槽位（发运单详情的 `commercial_invoice`）只读保留、不再新建 |
 | 税务发票（增值税专用 / 普通 / 出口发票） | 税务发票台账 `/backend/trade-docs/invoices`（「财务」组），销项单号 `TI-<年>-<4位>`（确认时发号） | `trade_docs_invoices`；**已实现（2026-09-28，Phase 3）**：票种 + 税率/税额/价税合计（`lib/invoiceTax.ts`）；出口发票（0%）不参与合同财务金额 |
@@ -206,8 +206,9 @@
 | 内部销售报价 | 内部销售报价单 `/backend/internal-sales/quotes`（**≠ PI**） | installed `sales` 报价 |
 | 合同 | 购销合同（采购 `PC-` / 销售 `SC-`）`/backend/trade-docs/contracts` | `trade_docs_contracts` |
 | 发运单 / 柜 | 发运单 `/backend/cross_border/shipments` | `cross_border_shipments` |
+| 装箱单（PL） | 装箱单——**没有独立页面**，是发运单详情「单证区」里的一类出口单证（`packing_list`），登记单号/签发日/附件；界面标签「装箱单（PL）」/ "Packing list (PL)"（2026-09-29） | `cross_border_export_documents`；订单档案的「采购·合同类」清单另有一条 `packingList` 位（供应商箱单） |
 
-> 界面命名口径（2026-09-28）：业务缩写进界面名，用括号形式（`内部销售订单（PO）`、`供应商报价单（SQ）`）；报价单不挂缩写，因为它不是 PI。括号内的拉丁缩写按注释处理，不算第二种语言（[`i18n.md`](./i18n.md)）。
+> 界面命名口径（2026-09-28，PL 2026-09-29 补）：业务缩写进界面名，用括号形式（`内部销售订单（PO）`、`形式发票（PI）`、`商业发票（CI）`、`供应商报价单（SQ）`）；报价单不挂缩写，因为它不是 PI。**PL 不挂在菜单名上**：发运单不是装箱单，PL 是它单证区里的一类单证，只在单证类型标签上写「装箱单（PL）」、在发运单列表页描述里点名。括号内的拉丁缩写按注释处理，不算第二种语言（[`i18n.md`](./i18n.md)）。
 
 ## 开放问题
 
