@@ -25,10 +25,13 @@ below already used the correct target (`listHrefFor`).
   choice).
 - `src/modules/internal_sales/README.md`: the behavior note under 「与官方动态页的关系」.
 - `.ai/lessons/edit-page-is-not-its-own-back-target.md` + its `.ai/lessons.md` catalog row.
+- `src/modules/internal_sales/components/InternalSalesTable.tsx`: its hand-built
+  `/backend/internal-sales/orders/${id}/edit` redirect and its own list-href ternary now call the
+  shared helpers, so the module has one place where those routes are written down.
 - `.ai/runs/2026-09-29-internal-sales-edit-nav.md` (this file) — the run record the PR tracks.
 - Non-goals: no new per-document detail page (that would be a feature, not this bug fix); no change
   to the create page's post-save redirect (it correctly lands on the new document's edit page); no
-  change to list/table navigation; no migration, no data change.
+  change to which rows/actions the table renders; no migration, no data change.
 
 ## Implementation Plan
 
@@ -38,9 +41,12 @@ below already used the correct target (`listHrefFor`).
   `fix/internal-sales-edit-nav` off `origin/dev`.
 - 1.2 `backHref`/`cancelHref` of `EditForm` → `listHrefFor(kind)`, matching `CreateForm` and the
   other app-owned edit surfaces (`products`, `parties`, `finance`).
-- 1.3 Rename `documentDetailHref` → `documentEditHref` (2 call sites in the same file) and rewrite
-  its doc comment to state the hazard.
+- 1.3 Rename `documentDetailHref` → `documentEditHref` (three usages, all in the same file: the
+  post-create redirect plus the two edit-page targets) and rewrite its doc comment to state the
+  hazard.
 - 1.4 README behavior note; lesson record + catalog row (count 51 → 52).
+- 1.5 `InternalSalesTable`: the post-convert redirect and the list href call `documentEditHref` /
+  `listHrefFor` instead of repeating the route strings.
 
 ### Phase 2: verify
 
@@ -54,8 +60,16 @@ below already used the correct target (`listHrefFor`).
 
 ## Risks
 
-- A wrong target would now navigate away from unsaved edits: verified against `CreateForm` and five
-  other app-owned edit forms, all of which use the list href, and by the smoke click in 2.2.
+- A wrong target would now navigate away from unsaved edits: every app-owned edit form was checked
+  and none points back at the route that renders it (`products`, `parties`, `finance`,
+  `cross_border`, `platform_ops`, `export_finance` and this module's `CreateForm` use their list;
+  `purchasing`'s purchase-order edit form uses its document detail page, which is also non-self) —
+  and `CrudForm` installs a capture-phase dirty guard that prompts before any same-origin
+  navigation while the form is dirty, so the change cannot silently drop edits.
+- Review pass (independent read-only agent, 2026-09-29): no correctness finding; the remaining
+  findings were documentation accuracy (fixed in this run), a hand-built href copy in the table
+  (1.5), a pre-existing breadcrumb that points at the installed sales list, and a pre-existing
+  missing-i18n-key gap in the buyer picker — both recorded on the PR as follow-ups, not fixed here.
 - Naming-only rename: `documentDetailHref` was imported nowhere else (checked repo-wide, including
   tests).
 

@@ -22,6 +22,7 @@ import { createDictionaryMap, DictionaryValue, type DictionaryMap } from '@open-
 import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionaries/lib/clientEntries'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import type { InternalSalesKind } from './InternalSalesForm'
+import { documentEditHref, listHrefFor } from './InternalSalesForm'
 
 /**
  * App-owned list for the internal-sales documents.
@@ -148,7 +149,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
     && canManage
     && (!chromeReady || hasFeature(chromePayload?.grantedFeatures, 'sales.orders.manage'))
 
-  const listHref = kind === 'quote' ? '/backend/internal-sales/quotes' : '/backend/internal-sales/orders'
+  const listHref = listHrefFor(kind)
   const apiPath = kind === 'quote' ? 'sales/quotes' : 'sales/orders'
 
   const queryKey = React.useMemo(
@@ -204,7 +205,9 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
       const orderId = typeof result?.orderId === 'string' && result.orderId ? result.orderId : row.id
       flash(t('internal_sales.list.actions.convertDone'), 'success')
       await queryClient.invalidateQueries({ queryKey })
-      router.push(`/backend/internal-sales/orders/${orderId}/edit`)
+      // The converted document is an order now, so it opens on this module's order edit page —
+      // built from the shared helper rather than by hand, so a route move cannot drift here.
+      router.push(documentEditHref('order', orderId))
     } catch (conversionError) {
       const message = conversionError instanceof Error && conversionError.message
         ? conversionError.message

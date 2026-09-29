@@ -24,6 +24,10 @@ rendering the link. When a module has no detail page, the target is the list hre
 instead of composing one from the record href. Name helpers after the page they return (`documentEditHref`), never
 after the concept they resemble, so the next author cannot build a self-link out of one.
 
-**Applies to**: app-owned modules that render their own `CrudForm` create/edit surfaces and keep navigation inside
-their own routes (`internal_sales`, `products`, `parties`, `finance`, `purchasing`, `cross_border`, `platform_ops`,
-`export_finance`); every `backHref` / `cancelHref` / `successRedirect` / row-action href in those modules.
+**Applies to**: every app-owned module that renders its own `CrudForm` create/edit surface and keeps
+navigation inside its own routes — `internal_sales`, `products`, `parties`, `finance`, `purchasing`,
+`cross_border`, `export_finance`, `platform_ops`, `trade_docs`, `sourcing`, `product_codes`,
+`example` — and every `backHref` / `cancelHref` / `successRedirect` / `deleteRedirect` / row-action
+href in them. A module that *does* ship a detail page points the edit form's back/cancel at that
+detail page (`purchasing`'s purchase-order edit form); the rule is the same either way: never at the
+route that renders the link.
