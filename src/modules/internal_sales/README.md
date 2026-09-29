@@ -46,6 +46,9 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
 - 一个可搜索选择器、两个来源，**来源写在选项标签最前**（`关联组织：名字` / `外部客户：CODE — name`，
   lesson `merged-picker-source-belongs-in-the-label`）；选中后**买方名称自动回填**（组织 = 组织名；
   档案 = `GET /api/parties/{id}` 的 `name`），名称字段仍可编辑——没有档案的买方仍可直接手填（旧能力保留）。
+  前缀/占位符/两处失败提示五个串都在模块字典里（`internal_sales.form.buyer.{relatedOrgPrefix,externalPrefix,
+  selectPlaceholder,orgLoadFailed,partyLoadFailed}`，en/zh 各一份）；**2026-09-29 之前这几个 key 漏了两份字典**，
+  组件只能渲染英文兜底——中文界面里的「Related organization: 俄罗斯 AB 有限公司」就是这么来的。
 - **可见性 fail-closed，不在表单里写业务规则**：分公司账号的切换器 payload 只有它自己（加上不可选的祖先上下文），
   排除自身后自然没有任何「关联组织」选项；总部账号只见自己的下级。所以「总部 → 分公司」由平台的组织可见性
   直接成立，「分公司不能向上/同级」不需要额外判断。
@@ -121,6 +124,13 @@ customerSnapshot = {
 「取消」三个链接全部指回当前地址栏的 URL，点击没有任何反应（2026-09-29 真机报告）。该 helper 同时更名为
 `documentEditHref`，避免下一个作者再按「详情页」去拼返回目标；教训见
 [`.ai/lessons/edit-page-is-not-its-own-back-target.md`](../../../.ai/lessons/edit-page-is-not-its-own-back-target.md)。
+
+**四个 create/edit 页的面包屑（2026-09-29 修正）**：`quotes|orders/create` 与 `quotes|orders/[id]/edit` 的
+面包屑此前是 `{ labelKey: 'internal_sales.page.title', href: '/backend/sales/{quotes,orders}' }`——标签是
+「内部销售单据」一类的中性名，却链到**官方**列表，与本模块的列表/编辑页不同源。现在与 `purchasing`/`parties`
+同款：面包屑第一级就是它要落到的**本模块列表**（`internal_sales.list.quote.title` →
+`/backend/internal-sales/quotes`，订单侧同理），指向的页面与标签一致，也不再离开自建界面。
+`internal_sales.page.title` 由此没有任何引用，两份字典里一并删掉（key 集合仍逐键一致）。
 
 ## 验证
 

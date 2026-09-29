@@ -1,5 +1,4 @@
 {
-  "internal_sales.page.title": "内部销售单据",
   "internal_sales.form.quote.createTitle": "新建内部销售报价",
   "internal_sales.form.quote.editTitle": "编辑内部销售报价",
   "internal_sales.form.order.createTitle": "新建内部销售订单（PO）",
@@ -29,6 +28,11 @@
   "internal_sales.form.linesRequired": "至少要有一行商品明细。",
   "internal_sales.form.field.customerName": "买方名称（无客户档案时填写）",
   "internal_sales.form.customerRequired": "请选择客户或填写买方名称。",
+  "internal_sales.form.buyer.relatedOrgPrefix": "关联组织：",
+  "internal_sales.form.buyer.externalPrefix": "外部客户：",
+  "internal_sales.form.buyer.selectPlaceholder": "搜索关联组织或外部客户…",
+  "internal_sales.form.buyer.orgLoadFailed": "关联组织加载失败",
+  "internal_sales.form.buyer.partyLoadFailed": "外部客户加载失败",
   "internal_sales.list.quote.title": "内部销售报价单",
   "internal_sales.list.quote.description": "总部对分公司的报价单据，不是对外收款依据的形式发票（PI）；行引用自建商品，保存后可在本模块直接编辑。",
   "internal_sales.list.order.title": "内部销售订单（PO）",

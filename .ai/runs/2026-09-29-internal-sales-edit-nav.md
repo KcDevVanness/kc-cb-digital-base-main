@@ -29,6 +29,12 @@ below already used the correct target (`listHrefFor`).
   `/backend/internal-sales/orders/${id}/edit` redirect and its own list-href ternary now call the
   shared helpers, so the module has one place where those routes are written down.
 - `.ai/runs/2026-09-29-internal-sales-edit-nav.md` (this file) — the run record the PR tracks.
+- Review follow-ups found by the independent pass on this PR (Phase 3):
+  `src/modules/internal_sales/backend/internal-sales/{quotes,orders}/{create,[id]/edit}/page.meta.ts`
+  breadcrumbs pointed at the **installed** sales lists while naming a neutral label; the buyer picker's
+  five strings (`internal_sales.form.buyer.*`) were missing from both module dictionaries, so the
+  Chinese UI rendered the component's English fallbacks; `internal_sales.page.title` becomes unused
+  with the breadcrumb fix and is removed from both dictionaries (key sets stay aligned).
 - Non-goals: no new per-document detail page (that would be a feature, not this bug fix); no change
   to the create page's post-save redirect (it correctly lands on the new document's edit page); no
   change to which rows/actions the table renders; no migration, no data change.
@@ -57,6 +63,16 @@ below already used the correct target (`listHrefFor`).
   address `/backend/internal-sales/{quotes,orders}`, never `…/<id>/edit`), click 「取消」 and watch
   the URL leave the edit page.
 - 2.3 Gate: `yarn test`, `yarn build`.
+
+### Phase 3: review follow-ups
+
+- 3.1 The four create/edit breadcrumbs name and link to this module's own list
+  (`internal_sales.list.{quote,order}.title` → `/backend/internal-sales/{quotes,orders}`).
+- 3.2 Buyer picker strings in both module dictionaries
+  (`internal_sales.form.buyer.{relatedOrgPrefix,externalPrefix,selectPlaceholder,orgLoadFailed,partyLoadFailed}`),
+  and drop the then-unused `internal_sales.page.title`; `yarn generate` refreshes the shards.
+- 3.3 Verify: dictionary key-set parity, language-purity test, `yarn i18n:check-hardcoded`, the full
+  gate, and a browser smoke that reads the rendered breadcrumb href and the picker's Chinese labels.
 
 ## Risks
 
@@ -98,3 +114,9 @@ PR: #29
 - [x] 2.1 Targeted checks (generate, lessons, typecheck, lint, ds:check, jest) — b04123c
 - [x] 2.2 Live smoke: rendered hrefs + click-through on the worktree dev server — b04123c
 - [x] 2.3 Broad gate (`yarn test`, `yarn build`) — bdf148c
+
+### Phase 3: review follow-ups
+
+- [ ] 3.1 Breadcrumbs → this module's lists
+- [ ] 3.2 Buyer picker keys in both dictionaries; drop `internal_sales.page.title`
+- [ ] 3.3 Verify (key-set parity, purity test, gate, browser smoke)
