@@ -92,13 +92,14 @@ type InvoiceQueryRow = {
   updated_at: Date | string | null
 }
 
-function toContractRow(row: ContractQueryRow): ContractRow {
+function toContractRow(row: ContractQueryRow, linkedPurchaseOrderIds: string[]): ContractRow {
   return {
     id: String(row.id),
     direction: String(row.direction ?? 'purchase'),
     status: String(row.status ?? 'draft'),
     sourceKind: row.source_kind ?? null,
     sourceId: row.source_id ? String(row.source_id) : null,
+    linkedPurchaseOrderIds,
     financeTotal: String(row.finance_total ?? '0'),
     currencyCode: String(row.currency_code ?? 'CNY'),
     exchangeRate: row.exchange_rate ?? null,
@@ -303,27 +304,57 @@ export async function loadOrderFiles(
         .execute()) as Array<{ shipment_id: string; doc_type: string; attachment_id: string | null }>)
     : []
 
-  const contracts = (await db
-    .selectFrom('trade_docs_contracts as c')
-    .select([
-      'c.id as id',
-      'c.direction as direction',
-      'c.status as status',
-      'c.source_kind as source_kind',
-      'c.source_id as source_id',
-      'c.finance_total as finance_total',
-      'c.currency_code as currency_code',
-      'c.exchange_rate as exchange_rate',
-      'c.attachment_id as attachment_id',
-      'c.generated_attachment_id as generated_attachment_id',
-      'c.updated_at as updated_at',
-    ])
-    .where('c.source_id', 'in', orderIds)
-    .where('c.source_kind', '=', 'purchase_order')
-    .where('c.tenant_id', '=', params.tenantId)
-    .where('c.organization_id', 'in', params.organizationIds)
-    .where('c.deleted_at', 'is', null)
-    .execute()) as ContractQueryRow[]
+  // Contracts reach an order two ways: the historical single anchor (`source_kind`/`source_id`) and
+  // the link table introduced with the contract hub. Both are read so the KC figures of orders
+  // filed either way stay correct.
+  const contractLinks = orderIds.length > 0
+    ? ((await db
+        .selectFrom('trade_docs_contract_orders as l')
+        .select(['l.contract_id as contract_id', 'l.order_id as order_id'])
+        .where('l.order_id', 'in', orderIds)
+        .where('l.order_kind', '=', 'purchase_order')
+        .where('l.tenant_id', '=', params.tenantId)
+        .where('l.organization_id', 'in', params.organizationIds)
+        .execute()) as Array<{ contract_id: string; order_id: string }>)
+    : []
+  const linkedContractIds = Array.from(new Set(contractLinks.map((row) => String(row.contract_id))))
+  const linkedOrdersByContract = new Map<string, string[]>()
+  for (const row of contractLinks) {
+    const contractId = String(row.contract_id)
+    const orders = linkedOrdersByContract.get(contractId) ?? []
+    orders.push(String(row.order_id))
+    linkedOrdersByContract.set(contractId, orders)
+  }
+
+  const contracts = (orderIds.length > 0 || linkedContractIds.length > 0)
+    ? ((await db
+        .selectFrom('trade_docs_contracts as c')
+        .select([
+          'c.id as id',
+          'c.direction as direction',
+          'c.status as status',
+          'c.source_kind as source_kind',
+          'c.source_id as source_id',
+          'c.finance_total as finance_total',
+          'c.currency_code as currency_code',
+          'c.exchange_rate as exchange_rate',
+          'c.attachment_id as attachment_id',
+          'c.generated_attachment_id as generated_attachment_id',
+          'c.updated_at as updated_at',
+        ])
+        .where((eb) =>
+          linkedContractIds.length > 0
+            ? eb.or([
+                eb.and([eb('c.source_kind', '=', 'purchase_order'), eb('c.source_id', 'in', orderIds)]),
+                eb('c.id', 'in', linkedContractIds),
+              ])
+            : eb.and([eb('c.source_kind', '=', 'purchase_order'), eb('c.source_id', 'in', orderIds)]),
+        )
+        .where('c.tenant_id', '=', params.tenantId)
+        .where('c.organization_id', 'in', params.organizationIds)
+        .where('c.deleted_at', 'is', null)
+        .execute()) as ContractQueryRow[])
+    : []
 
   const contractIds = contracts.map((row) => String(row.id))
 
@@ -451,7 +482,12 @@ export async function loadOrderFiles(
         return left.shipmentId < right.shipmentId ? -1 : 1
       })[0] ?? null
 
-    const orderContracts = contracts.filter((row) => String(row.source_id) === orderId).map(toContractRow)
+    const orderContracts = contracts
+      .filter(
+        (row) =>
+          String(row.source_id) === orderId || (linkedOrdersByContract.get(String(row.id)) ?? []).includes(orderId),
+      )
+      .map((row) => toContractRow(row, linkedOrdersByContract.get(String(row.id)) ?? []))
     const kcContract = selectKcContract(orderContracts, orderId)
     const purchaseContract = orderContracts.find((contract) => contract.direction === 'purchase') ?? null
     const kcInvoices = kcContract
