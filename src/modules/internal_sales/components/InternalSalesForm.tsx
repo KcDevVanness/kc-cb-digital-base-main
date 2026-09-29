@@ -46,14 +46,14 @@ import {
   encodeBuyerRef,
   isUuid,
 } from '../lib/buyer'
-import { useTradeTypeChannels } from '../lib/tradeTypeChannels'
+import { useTradeTypeChannels, type TradeTypeChannelMap } from '../lib/tradeTypeChannels'
 import {
   SALES_TRADE_TYPES,
   channelIdForTradeType,
   isSalesTradeType,
   resolveRowTradeType,
+  salesEntryFromPathname,
   tradeTypeFromBuyerKind,
-  tradeTypeFromPathname,
   type SalesTradeType,
 } from '../lib/tradeType'
 import {
@@ -139,21 +139,6 @@ function linesFilterFor(kind: InternalSalesKind, documentId: string): Record<str
 /** The installed list a document belongs to (where the operator goes after cancelling). */
 export function listHrefFor(kind: InternalSalesKind): string {
   return kind === 'quote' ? QUOTES_HREF : ORDERS_HREF
-}
-
-/**
- * This module's own edit page for a document — the **only** per-document page it ships.
- *
- * The list row, its row action and the post-create redirect all land here; keeping them inside the
- * app-owned surface is a design choice, not a workaround (the installed sales viewer
- * `/backend/sales/{quotes,orders}/[id]` stays resolvable, it is simply not part of this flow).
- *
- * Because this *is* the document's page, it can never be the back/cancel target of itself: that
- * link points at the page the operator is already on and nothing happens on click. Back/cancel go
- * to `listHrefFor(kind)`.
- */
-export function documentEditHref(kind: InternalSalesKind, documentId: string): string {
-  return `${listHrefFor(kind)}/${documentId}/edit`
 }
 
 /**
@@ -808,8 +793,8 @@ function InternalSalesLinesEditor(
 /**
  * `fixedTradeType` locks the control to one value: the external menu (`/backend/external-sales/**`)
  * is the entry for trade with local customers, so that surface must not be able to write an internal
- * document (and the other way round the internal entry stays editable for legacy reasons only when
- * the route says internal — see `tradeTypeFromPathname`).
+ * document. The sales entry passes `null` — it owns both types, and switching a document's type
+ * there is how a mis-typed one is corrected.
  */
 function useFields(t: TranslateFn, fixedTradeType: SalesTradeType | null = null): CrudField[] {
   return React.useMemo<CrudField[]>(() => [
@@ -866,12 +851,16 @@ function useFields(t: TranslateFn, fixedTradeType: SalesTradeType | null = null)
  */
 function useGroups(
   t: TranslateFn,
-  { withQuoteLoad = false, mode = 'create' as 'create' | 'edit', autoLoadFrom = null, tradeType = 'internal' as SalesTradeType }: {
+  { withQuoteLoad = false, mode = 'create' as 'create' | 'edit', autoLoadFrom = null, tradeType = 'internal' as SalesTradeType, channelIds = {}, adoptQuoteType = true }: {
     withQuoteLoad?: boolean
     mode?: 'create' | 'edit'
     autoLoadFrom?: string | null
     /** The entry's trade type, so the panel's quote link stays inside the entry it was opened from. */
     tradeType?: SalesTradeType
+    /** The organization's trade-type channels, so the quote picker offers this order's own type. */
+    channelIds?: TradeTypeChannelMap
+    /** Whether loading a quote may adopt the quote's trade type — false on a locked entry. */
+    adoptQuoteType?: boolean
   } = {},
 ): CrudFormGroup[] {
   return React.useMemo<CrudFormGroup[]>(() => [
@@ -887,6 +876,8 @@ function useGroups(
               mode={mode}
               autoLoadFrom={autoLoadFrom}
               quoteEditHref={(quoteId) => documentEditHrefForTradeType('quote', quoteId, tradeType)}
+              channelIds={channelIds}
+              adoptQuoteType={adoptQuoteType}
             />
           ),
         }]
@@ -898,17 +889,20 @@ function useGroups(
       bare: true,
       component: (context) => <InternalSalesLinesEditor {...context} t={t} />,
     },
-  ], [autoLoadFrom, mode, t, tradeType, withQuoteLoad])
+  ], [adoptQuoteType, autoLoadFrom, channelIds, mode, t, tradeType, withQuoteLoad])
 }
 
 /**
- * The trade type this route is dedicated to, or `null` when the entry is the generic internal one.
- * `/backend/external-sales/**` is the external surface; the internal pages keep the switch so a
- * legacy internal operator can still fix a mis-typed document before the backfill runs.
+ * The trade type this route fixes its documents to, or `null` when the entry leaves the choice to
+ * the operator.
+ *
+ * `/backend/external-sales/**` is the external-only entry, so it must not be able to write an
+ * internal document. The sales entry keeps the switch: it owns both types, and that is also what
+ * lets an internal operator correct a document that was typed wrong before the backfill ran.
  */
 function useFixedTradeType(): SalesTradeType | null {
   const pathname = usePathname()
-  return tradeTypeFromPathname(pathname) === 'external' ? 'external' : null
+  return salesEntryFromPathname(pathname) === 'external' ? 'external' : null
 }
 
 function CreateForm({ kind }: { kind: InternalSalesKind }) {
@@ -926,6 +920,8 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
     mode: 'create',
     autoLoadFrom: fromQuote,
     tradeType: entryTradeType,
+    channelIds: channels,
+    adoptQuoteType: fixedTradeType === null,
   })
 
   const handleSubmit = React.useCallback(async (values: InternalSalesFormValues) => {
@@ -1001,7 +997,13 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
   const { channels, hasAll: hasAllChannels, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
   const entryTradeType: SalesTradeType = fixedTradeType ?? 'internal'
   const entryHref = listHrefForTradeType(kind, entryTradeType)
-  const groups = useGroups(t, { withQuoteLoad: kind === 'order', mode: 'edit', tradeType: entryTradeType })
+  const groups = useGroups(t, {
+    withQuoteLoad: kind === 'order',
+    mode: 'edit',
+    tradeType: entryTradeType,
+    channelIds: channels,
+    adoptQuoteType: fixedTradeType === null,
+  })
   const [initial, setInitial] = React.useState<InternalSalesFormValues | null>(null)
   const [loadedLineIds, setLoadedLineIds] = React.useState<string[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -1129,7 +1131,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
       )}
       titleHeadingLevel={1}
       // This module has no per-document detail view — the edit page *is* the document's page.
-      // Back/cancel must therefore leave for the list; built from `documentEditHref` they
+      // Back/cancel must therefore leave for the list; built from the document's own edit href they
       // addressed the page the operator was already on and clicking them did nothing.
       backHref={entryHref}
       fields={fields}

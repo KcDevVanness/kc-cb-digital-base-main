@@ -21,6 +21,7 @@ function contract(overrides: Partial<ContractRow>): ContractRow {
     status: 'issued',
     sourceKind: 'purchase_order',
     sourceId: 'order-1',
+    linkedPurchaseOrderIds: [],
     financeTotal: '70000.0000',
     currencyCode: 'CNY',
     exchangeRate: null,
@@ -274,6 +275,55 @@ describe('selectKcContract', () => {
     const otherOrder = contract({ id: 'c2', sourceId: 'order-2', updatedAt: '2026-09-08T00:00:00.000Z' })
     const purchase = contract({ id: 'c3', direction: 'purchase', updatedAt: '2026-09-07T00:00:00.000Z' })
     expect(selectKcContract([cancelled, otherOrder, purchase], 'order-1')).toBeNull()
+  })
+
+  // TEST-203: the three states a contract can reach an order in. The link table is the relation
+  // contracts use today; the anchor has to keep working so figures filed before it existed do not
+  // regress; and a contract in neither set must not become the KC price.
+  it('takes a sales contract that covers the order through the link table', () => {
+    const linked = contract({
+      id: 'c-linked',
+      sourceKind: null,
+      sourceId: null,
+      linkedPurchaseOrderIds: ['order-1'],
+      updatedAt: '2026-09-10T00:00:00.000Z',
+    })
+    expect(selectKcContract([linked], 'order-1')?.id).toBe('c-linked')
+  })
+
+  it('still takes a sales contract that only carries the legacy anchor', () => {
+    const anchored = contract({ id: 'c-anchored', sourceKind: 'purchase_order', sourceId: 'order-1' })
+    expect(selectKcContract([anchored], 'order-1')?.id).toBe('c-anchored')
+  })
+
+  it('picks the newest contract when one is linked and the other anchored', () => {
+    const anchored = contract({ id: 'c-anchored', updatedAt: '2026-09-05T00:00:00.000Z' })
+    const linked = contract({
+      id: 'c-linked',
+      sourceKind: null,
+      sourceId: null,
+      linkedPurchaseOrderIds: ['order-1'],
+      updatedAt: '2026-09-11T00:00:00.000Z',
+    })
+    expect(selectKcContract([anchored, linked], 'order-1')?.id).toBe('c-linked')
+    expect(selectKcContract([linked, anchored], 'order-1')?.id).toBe('c-linked')
+  })
+
+  it('ignores links to another order and a cancelled contract that covers this one', () => {
+    const otherOrder = contract({
+      id: 'c-other',
+      sourceKind: null,
+      sourceId: null,
+      linkedPurchaseOrderIds: ['order-2'],
+    })
+    const cancelled = contract({
+      id: 'c-cancelled',
+      status: 'cancelled',
+      sourceKind: null,
+      sourceId: null,
+      linkedPurchaseOrderIds: ['order-1'],
+    })
+    expect(selectKcContract([otherOrder, cancelled], 'order-1')).toBeNull()
   })
 })
 

@@ -38,7 +38,7 @@ import {
   readShipmentSalesAllocations,
 } from '../../cross_border/lib/shipmentSalesReads'
 import { invalidateDocumentCaches } from '../lib/cacheInvalidation'
-import { documentFilter, ensureScope, loadDocument, type TradeDocsScope } from '../lib/scope'
+import { documentFilter, ensureScope, loadDocument, resolveContractLink, type TradeDocsScope } from '../lib/scope'
 import { productSnapshotPayload, readProductSnapshots } from '../lib/productSnapshots'
 import { computeLineAmounts, sumAmounts } from '../lib/money'
 import { buildDocumentSheet, DOCUMENT_TEMPLATE_IDS } from '../lib/documentTemplate'
@@ -85,6 +85,8 @@ export type SerializedDocument = {
   sourceKind: string | null
   sourceId: string | null
   sourceSnapshot: Record<string, unknown> | null
+  contractId: string | null
+  contractSnapshot: Record<string, unknown> | null
   issuedAt: string | null
   generatedAttachmentId: string | null
   generatedAt: string | null
@@ -128,6 +130,8 @@ function serializeDocument(entity: TradeDocsDocument): SerializedDocument {
     sourceKind: entity.sourceKind ?? null,
     sourceId: entity.sourceId ? String(entity.sourceId) : null,
     sourceSnapshot: entity.sourceSnapshot ?? null,
+    contractId: entity.contractId ? String(entity.contractId) : null,
+    contractSnapshot: entity.contractSnapshot ?? null,
     issuedAt: toDateOnly(entity.issuedAt),
     generatedAttachmentId: entity.generatedAttachmentId ? String(entity.generatedAttachmentId) : null,
     generatedAt: toIsoTimestamp(entity.generatedAt),
@@ -334,6 +338,7 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
       COUNTERPARTY_KIND_BY_DIRECTION,
     )
     await assertCounterpartyReference(em, scope, counterpartyKind, parsed.counterpartyId ?? null)
+    const contractLink = await resolveContractLink(em, scope, parsed.contractId)
 
     const lines = await resolveDocumentLines(em, scope, parsed.lines)
     let document!: TradeDocsDocument
@@ -365,6 +370,8 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
               sourceKind: parsed.sourceKind ?? null,
               sourceId: parsed.sourceId ?? null,
               sourceSnapshot: parsed.sourceSnapshot,
+              contractId: contractLink.contractId,
+              contractSnapshot: contractLink.contractSnapshot,
               notes: parsed.notes,
             },
           })
@@ -480,6 +487,9 @@ const updateDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
     )
 
     const currencyCode = parsed.currencyCode ?? document.currencyCode
+    const contractLink = parsed.contractId !== undefined
+      ? await resolveContractLink(em, scope, parsed.contractId)
+      : null
     const lines = parsed.lines
       ? await resolveDocumentLines(em, scope, parsed.lines)
       : null
@@ -509,6 +519,10 @@ const updateDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
               if (parsed.sourceKind !== undefined) entity.sourceKind = parsed.sourceKind
               if (parsed.sourceId !== undefined) entity.sourceId = parsed.sourceId
               if (parsed.sourceSnapshot !== undefined) entity.sourceSnapshot = parsed.sourceSnapshot
+              if (contractLink) {
+                entity.contractId = contractLink.contractId
+                entity.contractSnapshot = contractLink.contractSnapshot
+              }
               if (parsed.notes !== undefined) entity.notes = parsed.notes
             },
           })

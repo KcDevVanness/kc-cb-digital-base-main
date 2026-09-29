@@ -28,10 +28,10 @@ import { useTradeTypeChannels } from '../lib/tradeTypeChannels'
 import {
   channelIdForTradeType,
   resolveRowTradeType,
-  tradeTypeFromPathname,
+  salesEntryFromPathname,
   type SalesTradeType,
 } from '../lib/tradeType'
-import { documentEditHref, listHrefFor } from './InternalSalesForm'
+import { documentEditHrefForTradeType, listHrefForTradeType } from './InternalSalesForm'
 
 /**
  * App-owned list for the internal-sales documents.
@@ -92,21 +92,18 @@ function buildColumns(
   locale: string,
   kind: InternalSalesKind,
   statusMap: DictionaryMap | null,
-  showTradeType: boolean,
 ): ColumnDef<DocumentRecord>[] {
   return [
-    ...(showTradeType
-      ? [{
-          id: 'tradeType',
-          header: t('internal_sales.list.columns.tradeType'),
-          enableSorting: false,
-          cell: ({ row }: { row: { original: DocumentRecord } }) => (
-            row.original.tradeType
-              ? t(`internal_sales.form.tradeType.${row.original.tradeType}`)
-              : <span className="text-xs text-muted-foreground">—</span>
-          ),
-        } as ColumnDef<DocumentRecord>]
-      : []),
+    {
+      id: 'tradeType',
+      header: t('internal_sales.list.columns.tradeType'),
+      enableSorting: false,
+      cell: ({ row }: { row: { original: DocumentRecord } }) => (
+        row.original.tradeType
+          ? t(`internal_sales.form.tradeType.${row.original.tradeType}`)
+          : <span className="text-xs text-muted-foreground">—</span>
+      ),
+    },
     {
       accessorKey: 'number',
       header: t(kind === 'quote' ? 'internal_sales.list.columns.quoteNumber' : 'internal_sales.list.columns.orderNumber'),
@@ -160,9 +157,11 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
   const locale = useLocale()
   const router = useRouter()
   const pathname = usePathname()
-  // One implementation, two menus: the route prefix decides which trade type this page shows, so
-  // the external pages can be plain re-exports of the internal ones.
-  const tradeType = tradeTypeFromPathname(pathname)
+  // One implementation, two menus: the route prefix decides which entry this page is, so the
+  // external pages can be plain re-exports of the internal ones. The generic entry owns **both**
+  // trade types and lists them together; the external entry is the external-only view.
+  const entry = salesEntryFromPathname(pathname)
+  const external = entry === 'external'
   const { channels } = useTradeTypeChannels(kind)
   const scopeVersion = useOrganizationScopeVersion()
   const [search, setSearch] = React.useState('')
@@ -180,12 +179,14 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
     && canManage
     && (!chromeReady || hasFeature(chromePayload?.grantedFeatures, 'sales.orders.manage'))
 
-  const listHref = tradeType === 'external' ? listHrefFor(kind).replace('/internal-sales/', '/external-sales/') : listHrefFor(kind)
+  const entryTradeType: SalesTradeType = external ? 'external' : 'internal'
+  const listHref = listHrefForTradeType(kind, entryTradeType)
+  const ordersCreateHref = `${listHrefForTradeType('order', entryTradeType)}/create`
   const apiPath = kind === 'quote' ? 'sales/quotes' : 'sales/orders'
 
   const queryKey = React.useMemo(
-    () => [`internal-sales-${kind}`, tradeType, channels.internal ?? '', channels.external ?? '', page, search, scopeVersion],
-    [channels.external, channels.internal, kind, page, scopeVersion, search, tradeType],
+    () => [`internal-sales-${kind}`, entry, channels.internal ?? '', channels.external ?? '', page, search, scopeVersion],
+    [channels.external, channels.internal, entry, kind, page, scopeVersion, search],
   )
 
   const { data, isLoading, error } = useQuery({
@@ -198,14 +199,17 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
       // unfiltered list *with* the 类型 column: no channel resolved (an unseeded organization), and
       // documents that predate the marker — hiding those would make the entry look empty while the
       // backfill has not run yet. The hint under the table says which state it is.
-      const channelId = channelIdForTradeType(tradeType, channels)
+      const channelId = channelIdForTradeType('external', channels)
+      // The external entry keeps the engine's own server-side filter: an internal document must
+      // never appear in the external-only view. Documents that predate the marker carry no channel
+      // at all — the generic entry still lists them (its Type column shows a dash), and the hint
+      // above the table tells the operator how many the external entry therefore cannot show.
+      if (external && channelId) params.set('channelId', channelId)
       const probe = await fetchCrudList<Record<string, unknown>>(apiPath, {
         channelIdsEmpty: 'true',
         pageSize: 1,
       })
-      const unmarkedCount = Number((probe as { total?: unknown }).total ?? 0)
-      const hasUnmarked = Number.isFinite(unmarkedCount) && unmarkedCount > 0
-      if (channelId && !hasUnmarked) params.set('channelId', channelId)
+      const unmarkedCount = Number.isFinite(probe.total) ? probe.total : 0
       const payload = await fetchCrudList<Record<string, unknown>>(apiPath, Object.fromEntries(params))
       return {
         ...payload,
@@ -254,14 +258,14 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
       await queryClient.invalidateQueries({ queryKey })
       // The converted document is an order now, so it opens on this module's order edit page —
       // built from the shared helper rather than by hand, so a route move cannot drift here.
-      router.push(documentEditHref('order', orderId))
+      router.push(documentEditHrefForTradeType('order', orderId, entryTradeType))
     } catch (conversionError) {
       const message = conversionError instanceof Error && conversionError.message
         ? conversionError.message
         : t('internal_sales.list.actions.convertFailed')
       flash(message, 'error')
     }
-  }, [confirm, queryClient, queryKey, router, t])
+  }, [confirm, entryTradeType, queryClient, queryKey, router, t])
   // Statuses are the tenant's own dictionary, so the column resolves labels from it rather than
   // hard-coding the seeded values. An unreadable dictionary degrades to a dash / raw code.
   const { data: salesStatusEntries } = useQuery({
@@ -273,16 +277,13 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
     () => (salesStatusEntries ? createDictionaryMap(salesStatusEntries) : null),
     [salesStatusEntries],
   )
-  // The column only earns its width when the rows can be of more than one type: a filtered list is
-  // single-type by construction, an unseeded organization's list is not.
   const unmarkedCount = data?.unmarkedCount ?? 0
+  // The Type column is the list's own vocabulary — the generic entry shows both types side by side,
+  // and an unmarked document shows a dash in either entry — so it never hides.
   const columns = React.useMemo(
-    () => buildColumns(t, locale, kind, statusMap, unmarkedCount > 0 || !channelIdForTradeType(tradeType, channels)),
-    [channels, kind, locale, statusMap, t, tradeType, unmarkedCount],
+    () => buildColumns(t, locale, kind, statusMap),
+    [kind, locale, statusMap, t],
   )
-
-  // The same implementation serves both menus: every label follows the entry's trade type.
-  const external = tradeType === 'external'
   const titleKey = kind === 'quote'
     ? (external ? 'internal_sales.list.externalQuote.title' : 'internal_sales.list.quote.title')
     : (external ? 'internal_sales.list.externalOrder.title' : 'internal_sales.list.order.title')
@@ -300,11 +301,17 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
     <>
       {unmarkedCount > 0 ? (
         <p className="mb-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          {t(
-            'internal_sales.list.unmarkedHint',
-            '{{count}} document(s) here predate the trade-type marker, so this list is not filtered. Run: yarn mercato internal_sales backfill-trade-type --apply',
-            { count: unmarkedCount },
-          )}
+          {external
+            ? t(
+                'internal_sales.list.unmarkedHintFiltered',
+                'This organization has {{count}} document(s) that predate the trade-type marker and carry no type, so they are not listed here. Classify them with: yarn mercato internal_sales backfill-trade-type --apply',
+                { count: unmarkedCount },
+              )
+            : t(
+                'internal_sales.list.unmarkedHint',
+                '{{count}} document(s) here predate the trade-type marker, so the Type column shows a dash for them. Classify them with: yarn mercato internal_sales backfill-trade-type --apply',
+                { count: unmarkedCount },
+              )}
         </p>
       ) : null}
       <DataTable<DocumentRecord>
@@ -358,7 +365,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
                   {
                     id: 'new-order-from-quote',
                     label: t('internal_sales.list.actions.newOrderFromQuote'),
-                    href: `${tradeType === 'external' ? '/backend/external-sales' : '/backend/internal-sales'}/orders/create?fromQuote=${row.id}`,
+                    href: `${ordersCreateHref}?fromQuote=${row.id}`,
                   },
                   {
                     id: 'convert-to-order',

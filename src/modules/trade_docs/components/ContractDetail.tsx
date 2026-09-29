@@ -24,22 +24,99 @@ import {
 import { EmptyState } from '@open-mercato/ui/primitives/empty-state'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
-import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primitives/date-format'
+import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { AMOUNT_SCALE, toScaledUnits } from '../lib/money'
 import { contractStatusLabel, directionLabel, invoiceStatusLabel, type ContractStatus } from './contractLabels'
+import { ContractOrdersDialog, orderKindLabel } from './ContractOrdersDialog'
 import { invoiceKindLabel } from './InvoicesTable'
 import { downloadApiFile } from './downloadFile'
 
 const CONTRACTS_API_PATH = 'trade_docs/contracts'
 const CONTRACT_LINES_API_PATH = 'trade_docs/contracts/lines'
 const CONTRACT_TRANSITIONS_API_PATH = 'trade_docs/contracts/transitions'
+const CONTRACT_ORDERS_API_PATH = 'trade_docs/contracts/orders'
 const INVOICES_API_PATH = 'trade_docs/invoices'
+const DOCUMENTS_API_PATH = 'trade_docs/documents'
 const CONTRACT_ATTACH_API_PATH = 'trade_docs/contracts/attach'
 const CONTRACT_DOCUMENT_API_PATH = '/api/trade_docs/contracts'
+const SHIPMENTS_API_PATH = 'cross_border/shipments'
+const SHIPMENT_DOCUMENTS_API_PATH = 'cross_border/shipments/documents'
 const LIST_HREF = '/backend/trade-docs/contracts'
 const INVOICES_HREF = '/backend/trade-docs/invoices'
+const SHIPMENTS_HREF = '/backend/cross_border/shipments'
+const PACKING_LISTS_HREF = '/backend/cross_border/packing-lists'
+const PROFORMAS_HREF = '/backend/trade-docs/proformas'
+const COMMERCIAL_INVOICES_HREF = '/backend/trade-docs/commercial-invoices'
+
+/**
+ * The hub sections are previews, not ledgers: each reads one page of its collection, shows the
+ * newest few rows and hands the rest to the filtered list page behind 「查看全部」.
+ */
+const RELATED_PAGE_SIZE = 20
+const RELATED_ROW_LIMIT = 5
+
+/** Kind → badge tone, so the purchase side reads apart from the two sales families at a glance. */
+const ORDER_KIND_VARIANT: Record<string, 'info' | 'success' | 'neutral'> = {
+  purchase_order: 'info',
+  internal_sales_order: 'success',
+  external_sales_order: 'neutral',
+}
+
+/**
+ * The shipment status wording is the logistics module's own catalog (`cross_border.shipments.status.*`,
+ * which `ShipmentForm`'s `shipmentStatusLabel` reads). The hub reads the same keys rather than
+ * importing that module: it owns the whole shipment form — allocations, milestones, editors — which
+ * this page has no other use for.
+ */
+const SHIPMENT_STATUS_LABEL: Record<string, { key: string; fallback: string }> = {
+  draft: { key: 'cross_border.shipments.status.draft', fallback: 'Draft' },
+  in_transit: { key: 'cross_border.shipments.status.in_transit', fallback: 'In transit' },
+  received: { key: 'cross_border.shipments.status.received', fallback: 'Received' },
+  cancelled: { key: 'cross_border.shipments.status.cancelled', fallback: 'Cancelled' },
+}
+
+const SHIPMENT_STATUS_VARIANT: Record<string, 'neutral' | 'info' | 'success' | 'error'> = {
+  draft: 'neutral',
+  in_transit: 'info',
+  received: 'success',
+  cancelled: 'error',
+}
+
+/** The three states a PI/CI can be in; the wording is `trade_docs.documents.status.*`. */
+const DOCUMENT_STATUS_LABEL: Record<string, { key: string; fallback: string }> = {
+  draft: { key: 'trade_docs.documents.status.draft', fallback: 'Draft' },
+  issued: { key: 'trade_docs.documents.status.issued', fallback: 'Issued' },
+  void: { key: 'trade_docs.documents.status.void', fallback: 'Void' },
+}
+
+const DOCUMENT_STATUS_VARIANT: Record<string, 'neutral' | 'success' | 'error'> = {
+  draft: 'neutral',
+  issued: 'success',
+  void: 'error',
+}
+
+function shipmentStatusLabel(t: TranslateFn, status: string): string {
+  const entry = SHIPMENT_STATUS_LABEL[status]
+  return entry ? t(entry.key, entry.fallback) : status
+}
+
+function documentStatusLabel(t: TranslateFn, status: string): string {
+  const entry = DOCUMENT_STATUS_LABEL[status]
+  return entry ? t(entry.key, entry.fallback) : status
+}
+
+/**
+ * `etd`, `issued_at` and `ordered_at` are date-only columns written as UTC midnight, so their day is
+ * read back the way it was written (`toUtcDateInputValue`) before formatting — parsing the instant in
+ * the reader's own zone would name the previous day west of UTC.
+ */
+function dateOnlyLabel(value: string | null, locale?: string): string | null {
+  const day = toUtcDateInputValue(value)
+  return day ? formatDisplayDate(day, locale) : null
+}
 
 /**
  * Attachment assignment entity id of the stamped scan; the partition resolves to the platform's
@@ -111,6 +188,40 @@ type InvoiceRecord = {
   currencyCode: string
   issuedAt: string | null
   attachmentId: string | null
+}
+
+/** One link of the contract ↔ order relation, with the order's frozen display snapshot. */
+type ContractOrderRecord = {
+  id: string
+  orderKind: string
+  orderId: string
+  orderNumber: string | null
+  counterpartyName: string | null
+  orderedAt: string | null
+}
+
+type ContractShipmentRecord = {
+  id: string
+  number: string | null
+  status: string
+  carrierName: string | null
+  etd: string | null
+}
+
+/** A packing list, which belongs to a contract through its shipment; the number and date travel. */
+type ContractPackingListRecord = {
+  id: string
+  documentNumber: string | null
+  issuedAt: string | null
+}
+
+/** A PI/CI bound to the contract (`trade_docs_documents.contract_id`). */
+type ContractDocumentRecord = {
+  id: string
+  number: string | null
+  status: string
+  total: string
+  currencyCode: string
 }
 
 /** Which transitions the current status allows — mirrors the command's table, never widens it. */
@@ -190,6 +301,121 @@ function toInvoice(item: Record<string, unknown>): InvoiceRecord {
     issuedAt: (item.issuedAt ?? null) as string | null,
     attachmentId: (item.attachmentId ?? null) as string | null,
   }
+}
+
+function toContractOrder(item: Record<string, unknown>): ContractOrderRecord {
+  return {
+    id: String(item.id),
+    orderKind: String(item.orderKind ?? 'purchase_order'),
+    orderId: String(item.orderId ?? ''),
+    orderNumber: (item.orderNumber ?? null) as string | null,
+    counterpartyName: (item.counterpartyName ?? null) as string | null,
+    orderedAt: (item.orderedAt ?? null) as string | null,
+  }
+}
+
+function toContractShipment(item: Record<string, unknown>): ContractShipmentRecord {
+  return {
+    id: String(item.id),
+    number: (item.number ?? null) as string | null,
+    status: String(item.status ?? 'draft'),
+    carrierName: (item.carrierName ?? null) as string | null,
+    etd: (item.etd ?? null) as string | null,
+  }
+}
+
+function toContractPackingList(item: Record<string, unknown>): ContractPackingListRecord {
+  return {
+    id: String(item.id),
+    documentNumber: (item.documentNumber ?? null) as string | null,
+    issuedAt: (item.issuedAt ?? null) as string | null,
+  }
+}
+
+function toContractDocument(item: Record<string, unknown>): ContractDocumentRecord {
+  return {
+    id: String(item.id),
+    number: (item.number ?? null) as string | null,
+    status: String(item.status ?? 'draft'),
+    total: String(item.total ?? '0'),
+    currencyCode: String(item.currencyCode ?? 'CNY'),
+  }
+}
+
+/** A preview page of one related collection, plus the collection's total for the 「查看全部」 link. */
+type RelatedPage<T> = { items: T[]; total: number }
+
+/**
+ * One hub section reads its own collection through its owner's list API — the shipment and packing
+ * list from `cross_border`, the orders and the PI/CI from this module's own routes. The row mapper
+ * keeps each section's display shape explicit; the `total` decides whether 「查看全部」 is offered.
+ */
+async function loadRelatedPage<T>(
+  apiPath: string,
+  params: Record<string, unknown>,
+  mapItem: (item: Record<string, unknown>) => T,
+): Promise<RelatedPage<T>> {
+  const payload = await fetchCrudList<Record<string, unknown>>(apiPath, {
+    pageSize: RELATED_PAGE_SIZE,
+    ...params,
+  })
+  return { items: (payload.items ?? []).map(mapItem), total: payload.total ?? 0 }
+}
+
+type RelatedSectionProps = {
+  title: string
+  /** The 'new' or 'manage' entry in the header; omitted where the relation has no writer. */
+  action?: React.ReactNode
+  isLoading: boolean
+  failed: boolean
+  isEmpty: boolean
+  emptyLabel: string
+  /** Set only when the collection holds more rows than the preview shows. */
+  viewAllHref?: string | null
+  children: React.ReactNode
+}
+
+/**
+ * One hub section: a header with its action, then exactly one of loading, error, empty or rows.
+ * The five collections differ only in their rows and links, so the four states live here once; the
+ * invoice section above predates this and keeps its own markup.
+ */
+function RelatedSection({
+  title,
+  action,
+  isLoading,
+  failed,
+  isEmpty,
+  emptyLabel,
+  viewAllHref,
+  children,
+}: RelatedSectionProps) {
+  const t = useT()
+  return (
+    <section className="space-y-3">
+      <SectionHeader title={title} action={action} />
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">
+          {t('trade_docs.contracts.detail.related.loading', 'Loading…')}
+        </p>
+      ) : failed ? (
+        <p className="text-sm text-destructive">
+          {t('trade_docs.contracts.detail.related.loadFailed', 'Could not load this section.')}
+        </p>
+      ) : isEmpty ? (
+        <p className="text-sm text-muted-foreground">{emptyLabel}</p>
+      ) : (
+        <>
+          {children}
+          {viewAllHref ? (
+            <Link className="text-sm font-medium hover:underline" href={viewAllHref}>
+              {t('trade_docs.contracts.detail.related.viewAll', 'View all')}
+            </Link>
+          ) : null}
+        </>
+      )}
+    </section>
+  )
 }
 
 function SummaryField({ label, children }: { label: string; children: React.ReactNode }) {
@@ -437,6 +663,7 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
   const [isMutating, setIsMutating] = React.useState(false)
   const [isGenerating, setIsGenerating] = React.useState(false)
   const [isDownloading, setIsDownloading] = React.useState(false)
+  const [ordersDialogOpen, setOrdersDialogOpen] = React.useState(false)
 
   const headQuery = useQuery({
     queryKey: ['trade-docs-contract', contractId],
@@ -472,13 +699,56 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
     },
   })
 
+  // The hub's five related collections. Each is its own read so a section a viewer cannot see (a
+  // missing cross_border feature, say) fails alone instead of blanking the page.
+  const ordersQuery = useQuery({
+    queryKey: ['trade-docs-contract-orders', contractId],
+    queryFn: () => loadRelatedPage(CONTRACT_ORDERS_API_PATH, { contractId }, toContractOrder),
+  })
+
+  const shipmentsQuery = useQuery({
+    queryKey: ['trade-docs-contract-shipments', contractId],
+    queryFn: () => loadRelatedPage(SHIPMENTS_API_PATH, { contractId }, toContractShipment),
+  })
+
+  const packingListsQuery = useQuery({
+    queryKey: ['trade-docs-contract-packing-lists', contractId],
+    queryFn: () => loadRelatedPage(
+      SHIPMENT_DOCUMENTS_API_PATH,
+      { contractId, docType: 'packing_list' },
+      toContractPackingList,
+    ),
+  })
+
+  const proformasQuery = useQuery({
+    queryKey: ['trade-docs-contract-documents', contractId, 'proforma'],
+    queryFn: () => loadRelatedPage(DOCUMENTS_API_PATH, { contractId, kind: 'proforma' }, toContractDocument),
+  })
+
+  const commercialInvoicesQuery = useQuery({
+    queryKey: ['trade-docs-contract-documents', contractId, 'commercial'],
+    queryFn: () => loadRelatedPage(DOCUMENTS_API_PATH, { contractId, kind: 'commercial' }, toContractDocument),
+  })
+
   const head = headQuery.data ?? null
   const lines = linesQuery.data ?? []
   const invoices = invoicesQuery.data ?? []
+  const orders = ordersQuery.data ?? { items: [], total: 0 }
+  const shipments = shipmentsQuery.data ?? { items: [], total: 0 }
+  const packingLists = packingListsQuery.data ?? { items: [], total: 0 }
+  const proformas = proformasQuery.data ?? { items: [], total: 0 }
+  const commercialInvoices = commercialInvoicesQuery.data ?? { items: [], total: 0 }
+  const locale = useLocale()
   const columns = React.useMemo(
     () => buildLineColumns(t, head?.currencyCode ?? 'CNY'),
     [head?.currencyCode, t],
   )
+
+  /** Refreshes the section the dialog writes, plus the head (a save may move the contract's version). */
+  const refreshOrderLinks = React.useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['trade-docs-contract-orders', contractId] })
+    await queryClient.invalidateQueries({ queryKey: ['trade-docs-contract', contractId] })
+  }, [contractId, queryClient])
 
   const runTransition = React.useCallback(
     async (action: 'issue' | 'sign' | 'close' | 'cancel', reason?: string) => {
@@ -722,6 +992,212 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
         )}
       </section>
 
+      <RelatedSection
+        title={t('trade_docs.contracts.detail.orders.title', 'Linked orders')}
+        action={head.status === 'cancelled' ? undefined : (
+          <Button type="button" variant="outline" onClick={() => setOrdersDialogOpen(true)}>
+            {t('trade_docs.contracts.detail.orders.manage', 'Manage order links')}
+          </Button>
+        )}
+        isLoading={ordersQuery.isLoading}
+        failed={Boolean(ordersQuery.error)}
+        isEmpty={orders.items.length === 0}
+        emptyLabel={t('trade_docs.contracts.detail.orders.empty', 'No orders linked yet.')}
+      >
+        <ul className="divide-y divide-border rounded-lg border border-border">
+          {orders.items.slice(0, RELATED_ROW_LIMIT).map((order) => {
+            const orderedAt = dateOnlyLabel(order.orderedAt, locale)
+            return (
+              <li key={order.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  {/*
+                    The number is text, not a link: the installed purchasing and sales engines have no
+                    order detail page of their own, and a guessed URL would 404 on the operator.
+                  */}
+                  <span className="text-sm font-medium">{order.orderNumber ?? order.orderId.slice(0, 8)}</span>
+                  <StatusBadge variant={ORDER_KIND_VARIANT[order.orderKind] ?? 'neutral'}>
+                    {orderKindLabel(t, order.orderKind)}
+                  </StatusBadge>
+                  {order.counterpartyName ? (
+                    <span className="text-xs text-muted-foreground">{order.counterpartyName}</span>
+                  ) : null}
+                </div>
+                {orderedAt ? (
+                  <span className="text-xs tabular-nums text-muted-foreground">{orderedAt}</span>
+                ) : null}
+              </li>
+            )
+          })}
+        </ul>
+      </RelatedSection>
+
+      <RelatedSection
+        title={t('trade_docs.contracts.detail.shipments.title', 'Linked shipments')}
+        action={(
+          <Button asChild variant="outline">
+            <Link href={`${SHIPMENTS_HREF}/create?contractId=${encodeURIComponent(head.id)}`}>
+              {t('trade_docs.contracts.detail.shipments.add', 'New shipment')}
+            </Link>
+          </Button>
+        )}
+        isLoading={shipmentsQuery.isLoading}
+        failed={Boolean(shipmentsQuery.error)}
+        isEmpty={shipments.items.length === 0}
+        emptyLabel={t('trade_docs.contracts.detail.shipments.empty', 'No shipments linked yet.')}
+        viewAllHref={
+          shipments.total > RELATED_ROW_LIMIT
+            ? `${SHIPMENTS_HREF}?contractId=${encodeURIComponent(head.id)}`
+            : null
+        }
+      >
+        <ul className="divide-y divide-border rounded-lg border border-border">
+          {shipments.items.slice(0, RELATED_ROW_LIMIT).map((shipment) => {
+            const etd = dateOnlyLabel(shipment.etd, locale)
+            return (
+              <li key={shipment.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Link className="text-sm font-medium hover:underline" href={`${SHIPMENTS_HREF}/${shipment.id}`}>
+                    {shipment.number ?? shipment.id.slice(0, 8)}
+                  </Link>
+                  <StatusBadge variant={SHIPMENT_STATUS_VARIANT[shipment.status] ?? 'neutral'}>
+                    {shipmentStatusLabel(t, shipment.status)}
+                  </StatusBadge>
+                  {shipment.carrierName ? (
+                    <span className="text-xs text-muted-foreground">{shipment.carrierName}</span>
+                  ) : null}
+                </div>
+                {etd ? <span className="text-xs tabular-nums text-muted-foreground">{etd}</span> : null}
+              </li>
+            )
+          })}
+        </ul>
+      </RelatedSection>
+
+      <RelatedSection
+        title={t('trade_docs.contracts.detail.packingLists.title', 'Linked packing lists')}
+        action={(
+          <Button asChild variant="outline">
+            <Link href={`${PACKING_LISTS_HREF}/create?contractId=${encodeURIComponent(head.id)}`}>
+              {t('trade_docs.contracts.detail.packingLists.add', 'New packing list')}
+            </Link>
+          </Button>
+        )}
+        isLoading={packingListsQuery.isLoading}
+        failed={Boolean(packingListsQuery.error)}
+        isEmpty={packingLists.items.length === 0}
+        emptyLabel={t('trade_docs.contracts.detail.packingLists.empty', 'No packing lists linked yet.')}
+        viewAllHref={
+          packingLists.total > RELATED_ROW_LIMIT
+            ? `${PACKING_LISTS_HREF}?contractId=${encodeURIComponent(head.id)}`
+            : null
+        }
+      >
+        <ul className="divide-y divide-border rounded-lg border border-border">
+          {packingLists.items.slice(0, RELATED_ROW_LIMIT).map((packingList) => {
+            const issuedAt = dateOnlyLabel(packingList.issuedAt, locale)
+            return (
+              <li key={packingList.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                <Link
+                  className="text-sm font-medium hover:underline"
+                  href={`${PACKING_LISTS_HREF}/${packingList.id}`}
+                >
+                  {packingList.documentNumber ?? packingList.id.slice(0, 8)}
+                </Link>
+                {issuedAt ? (
+                  <span className="text-xs tabular-nums text-muted-foreground">{issuedAt}</span>
+                ) : null}
+              </li>
+            )
+          })}
+        </ul>
+      </RelatedSection>
+
+      <RelatedSection
+        title={t('trade_docs.contracts.detail.proformas.title', 'Proforma invoice (PI)')}
+        action={(
+          <Button asChild variant="outline">
+            <Link href={`${PROFORMAS_HREF}/create?contractId=${encodeURIComponent(head.id)}`}>
+              {t('trade_docs.contracts.detail.proformas.add', 'New PI')}
+            </Link>
+          </Button>
+        )}
+        isLoading={proformasQuery.isLoading}
+        failed={Boolean(proformasQuery.error)}
+        isEmpty={proformas.items.length === 0}
+        emptyLabel={t('trade_docs.contracts.detail.proformas.empty', 'No proforma invoices linked yet.')}
+        viewAllHref={
+          proformas.total > RELATED_ROW_LIMIT
+            ? `${PROFORMAS_HREF}?contractId=${encodeURIComponent(head.id)}`
+            : null
+        }
+      >
+        <ul className="divide-y divide-border rounded-lg border border-border">
+          {proformas.items.slice(0, RELATED_ROW_LIMIT).map((proforma) => (
+            <li key={proforma.id} className="flex items-center justify-between gap-3 px-3 py-2">
+              <div className="flex items-center gap-3">
+                <Link className="text-sm font-medium hover:underline" href={`${PROFORMAS_HREF}/${proforma.id}`}>
+                  {proforma.number ?? proforma.id.slice(0, 8)}
+                </Link>
+                <StatusBadge variant={DOCUMENT_STATUS_VARIANT[proforma.status] ?? 'neutral'}>
+                  {documentStatusLabel(t, proforma.status)}
+                </StatusBadge>
+              </div>
+              <MoneyAmount
+                currencyCode={proforma.currencyCode}
+                amount={proforma.total}
+                className="items-end text-sm"
+              />
+            </li>
+          ))}
+        </ul>
+      </RelatedSection>
+
+      <RelatedSection
+        title={t('trade_docs.contracts.detail.commercialInvoices.title', 'Commercial invoice (CI)')}
+        action={(
+          <Button asChild variant="outline">
+            <Link href={`${COMMERCIAL_INVOICES_HREF}/create?contractId=${encodeURIComponent(head.id)}`}>
+              {t('trade_docs.contracts.detail.commercialInvoices.add', 'New CI')}
+            </Link>
+          </Button>
+        )}
+        isLoading={commercialInvoicesQuery.isLoading}
+        failed={Boolean(commercialInvoicesQuery.error)}
+        isEmpty={commercialInvoices.items.length === 0}
+        emptyLabel={t(
+          'trade_docs.contracts.detail.commercialInvoices.empty',
+          'No commercial invoices linked yet.',
+        )}
+        viewAllHref={
+          commercialInvoices.total > RELATED_ROW_LIMIT
+            ? `${COMMERCIAL_INVOICES_HREF}?contractId=${encodeURIComponent(head.id)}`
+            : null
+        }
+      >
+        <ul className="divide-y divide-border rounded-lg border border-border">
+          {commercialInvoices.items.slice(0, RELATED_ROW_LIMIT).map((commercialInvoice) => (
+            <li key={commercialInvoice.id} className="flex items-center justify-between gap-3 px-3 py-2">
+              <div className="flex items-center gap-3">
+                <Link
+                  className="text-sm font-medium hover:underline"
+                  href={`${COMMERCIAL_INVOICES_HREF}/${commercialInvoice.id}`}
+                >
+                  {commercialInvoice.number ?? commercialInvoice.id.slice(0, 8)}
+                </Link>
+                <StatusBadge variant={DOCUMENT_STATUS_VARIANT[commercialInvoice.status] ?? 'neutral'}>
+                  {documentStatusLabel(t, commercialInvoice.status)}
+                </StatusBadge>
+              </div>
+              <MoneyAmount
+                currencyCode={commercialInvoice.currencyCode}
+                amount={commercialInvoice.total}
+                className="items-end text-sm"
+              />
+            </li>
+          ))}
+        </ul>
+      </RelatedSection>
+
       <section className="space-y-3">
         <SectionHeader title={t('trade_docs.contracts.detail.attachment.title')} />
         <div className="flex flex-wrap items-center gap-3">
@@ -817,6 +1293,14 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
           </div>
         </DialogContent>
       </Dialog>
+      <ContractOrdersDialog
+        open={ordersDialogOpen}
+        onOpenChange={setOrdersDialogOpen}
+        contractId={head.id}
+        contractUpdatedAt={head.updatedAt}
+        cancelled={head.status === 'cancelled'}
+        onSaved={refreshOrderLinks}
+      />
       {ConfirmDialogElement}
     </div>
   )

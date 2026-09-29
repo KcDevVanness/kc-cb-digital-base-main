@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Trash2 } from 'lucide-react'
 import {
   CrudForm,
@@ -176,6 +176,29 @@ export async function loadShipmentOptions(t: TranslateFn, query?: string): Promi
   return (payload.items ?? [])
     .map(toShipmentRecord)
     .map((shipment) => ({ value: shipment.id, label: shipmentDisplayLabel(t, shipment) }))
+}
+
+/**
+ * The same picker narrowed to one contract's shipments — the entry point from a contract's hub,
+ * where every candidate container is already known to belong to that contract.
+ */
+export async function loadContractShipmentOptions(
+  t: TranslateFn,
+  contractId: string,
+  query?: string,
+): Promise<CrudFieldOption[]> {
+  const payload = await fetchCrudList<Record<string, unknown>>(SHIPMENTS_API_PATH, {
+    contractId,
+    page: '1',
+    pageSize: String(SHIPMENT_OPTION_PAGE_SIZE),
+    sortField: 'created_at',
+    sortDir: 'desc',
+  })
+  const term = query?.trim().toLowerCase() ?? ''
+  return (payload.items ?? [])
+    .map(toShipmentRecord)
+    .map((shipment) => ({ value: shipment.id, label: shipmentDisplayLabel(t, shipment) }))
+    .filter((option) => (term ? option.label.toLowerCase().includes(term) : true))
 }
 
 type ShipmentContractLink = {
@@ -654,12 +677,52 @@ type PackingListFormProps = {
 export default function PackingListForm({ mode, documentId }: PackingListFormProps) {
   const t = useT()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const contractId = searchParams.get('contractId')?.trim() ?? ''
   const [record, setRecord] = React.useState<ShipmentDocumentRecord | null>(null)
   const [initialValues, setInitialValues] = React.useState<PackingListFormValues | null>(
-    mode === 'create' ? EMPTY_PACKING_LIST_VALUES : null,
+    mode === 'create' && !contractId ? EMPTY_PACKING_LIST_VALUES : null,
   )
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [shipmentRef, setShipmentRef] = React.useState<{ id: string; label: string } | null>(null)
+
+  /**
+   * Arriving from a contract's hub (`?contractId=`): the list is already narrowed to that
+   * contract's shipments, so a single candidate is selected for the operator instead of asking
+   * them to find the container they just clicked through. Several candidates (or none) leave the
+   * picker to them — guessing among containers would file the list against the wrong shipment.
+   */
+  React.useEffect(() => {
+    if (mode !== 'create' || !contractId) return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const payload = await fetchCrudList<Record<string, unknown>>(SHIPMENTS_API_PATH, {
+          contractId,
+          page: '1',
+          pageSize: '2',
+          sortField: 'created_at',
+          sortDir: 'desc',
+        })
+        const shipments = (payload.items ?? []).map(toShipmentRecord)
+        if (cancelled) return
+        if (shipments.length === 1) {
+          setShipmentRef({ id: shipments[0].id, label: shipmentDisplayLabel(t, shipments[0]) })
+          setInitialValues({ ...EMPTY_PACKING_LIST_VALUES, shipmentId: shipments[0].id })
+          return
+        }
+        setInitialValues(EMPTY_PACKING_LIST_VALUES)
+      } catch {
+        if (cancelled) return
+        // A failed narrowing must not block the create flow: fall back to the unrestricted picker.
+        setInitialValues(EMPTY_PACKING_LIST_VALUES)
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [contractId, mode, t])
 
   React.useEffect(() => {
     if (mode !== 'edit' || !documentId) return
@@ -726,7 +789,8 @@ export default function PackingListForm({ mode, documentId }: PackingListFormPro
           type: 'combobox',
           required: true,
           allowCustomValues: false,
-          loadOptions: (query) => loadShipmentOptions(t, query),
+          loadOptions: (query) =>
+            contractId ? loadContractShipmentOptions(t, contractId, query) : loadShipmentOptions(t, query),
         }
     return [
       shipmentField,
@@ -760,7 +824,7 @@ export default function PackingListForm({ mode, documentId }: PackingListFormPro
         type: 'textarea',
       },
     ]
-  }, [mode, shipmentRef, t])
+  }, [contractId, mode, shipmentRef, t])
 
   const groups = React.useMemo<CrudFormGroup[]>(() => [
     {

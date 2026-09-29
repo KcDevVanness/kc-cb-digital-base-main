@@ -37,6 +37,8 @@ const documentListItemSchema = z
     deliveryDate: z.string().nullable().optional(),
     sourceKind: z.string().nullable().optional(),
     sourceId: z.string().uuid().nullable().optional(),
+    contractId: z.string().uuid().nullable().optional(),
+    contractSnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
     generatedAttachmentId: z.string().uuid().nullable().optional(),
     attachmentId: z.string().uuid().nullable().optional(),
     created_at: z.string().nullable().optional(),
@@ -81,6 +83,17 @@ export function counterpartyNameFrom(snapshot: unknown): string | null {
   return null
 }
 
+/**
+ * The contract's business number from the frozen snapshot. A snapshot taken while the contract was
+ * still a draft has no number yet, so the caller falls back to the generic label rather than
+ * printing `null`.
+ */
+export function contractNumberFrom(snapshot: unknown): string | null {
+  if (!snapshot || typeof snapshot !== 'object') return null
+  const value = (snapshot as Record<string, unknown>).number
+  return typeof value === 'string' && value.trim().length > 0 ? value : null
+}
+
 export const documentListFields = [
   'id',
   'kind',
@@ -106,6 +119,8 @@ export const documentListFields = [
   'source_kind',
   'source_id',
   'source_snapshot',
+  'contract_id',
+  'contract_snapshot',
   'generated_attachment_id',
   'attachment_id',
   'updated_at',
@@ -153,6 +168,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       if (query.counterpartyId) filters.counterparty_id = query.counterpartyId
       if (query.sourceKind) filters.source_kind = query.sourceKind
       if (query.sourceId) filters.source_id = query.sourceId
+      if (query.contractId) filters.contract_id = query.contractId
       if (query.search && query.search.trim().length > 0) {
         filters.number = { $ilike: `%${escapeLikePattern(query.search.trim())}%` }
       }
@@ -183,6 +199,9 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       sourceKind: asNullableString(item.source_kind),
       sourceId: asNullableString(item.source_id),
       sourceSnapshot: item.source_snapshot ?? null,
+      contractId: asNullableString(item.contract_id),
+      contractName: contractNumberFrom(item.contract_snapshot),
+      contractSnapshot: item.contract_snapshot ?? null,
       issuedAt: toDateOnly(item.issued_at),
       validUntil: toDateOnly(item.valid_until),
       deliveryDate: toDateOnly(item.delivery_date),
