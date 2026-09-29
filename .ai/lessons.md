@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 51 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 52 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -79,3 +79,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [A branch that keeps taking PRs after its squash merge strands that work](lessons/squash-merged-base-strands-later-prs.md) — area:spec-pr; module:platform; topic:branch-hygiene,squash-merge,stacked-pull-requests,integration-branch,catch-up,worktree
 - [A squash-promoted release branch lags main, and its PR to main misreports the size](lessons/squash-promoted-release-branch-lags-main.md) — area:spec-pr; module:platform; topic:branch-hygiene,squash-merge,release-branch,merge-conflicts,branch-protection
 - [A permanent integration trunk survives only on a reset after each landing and a loud drift report](lessons/permanent-trunk-needs-reset-and-drift-report.md) — area:spec-pr; module:platform; topic:integration-branch,trunk,branch-hygiene,reset,force-with-lease,parallel-development
+- [A page that is the record's own surface is never its own back/cancel target](lessons/edit-page-is-not-its-own-back-target.md) — area:backend-ui,debugging; module:internal_sales,platform; topic:navigation,back-link,cancel-link,dead-link,crud-form,href-helpers

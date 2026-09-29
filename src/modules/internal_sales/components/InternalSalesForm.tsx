@@ -123,14 +123,17 @@ export function listHrefFor(kind: InternalSalesKind): string {
 }
 
 /**
- * This module's own edit page for a document.
+ * This module's own edit page for a document — the **only** per-document page it ships.
  *
- * Deliberately not the installed viewer: the installed dynamic sales pages (`/backend/sales/
- * documents/[id]`, `quotes/[id]`, `orders/[id]`) answer 404 in this deployment while their list
- * pages render, so pointing an operator there would strand them right after a save. Keeping the
- * destination inside the app-owned surface also means list → edit → save never leaves it.
+ * The list row, its row action and the post-create redirect all land here; keeping them inside the
+ * app-owned surface is a design choice, not a workaround (the installed sales viewer
+ * `/backend/sales/{quotes,orders}/[id]` stays resolvable, it is simply not part of this flow).
+ *
+ * Because this *is* the document's page, it can never be the back/cancel target of itself: that
+ * link points at the page the operator is already on and nothing happens on click. Back/cancel go
+ * to `listHrefFor(kind)`.
  */
-export function documentDetailHref(kind: InternalSalesKind, documentId: string): string {
+export function documentEditHref(kind: InternalSalesKind, documentId: string): string {
   return `${listHrefFor(kind)}/${documentId}/edit`
 }
 
@@ -891,7 +894,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       const id = typeof created.result?.id === 'string' ? created.result.id : null
       pushWithFlash(
         router,
-        id ? documentDetailHref(kind, id) : listHrefFor(kind),
+        id ? documentEditHref(kind, id) : listHrefFor(kind),
         t('internal_sales.form.saved'),
         'success',
       )
@@ -1020,7 +1023,10 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
     <CrudForm<InternalSalesFormValues>
       title={t(kind === 'quote' ? 'internal_sales.form.quote.editTitle' : 'internal_sales.form.order.editTitle')}
       titleHeadingLevel={1}
-      backHref={documentDetailHref(kind, documentId)}
+      // This module has no per-document detail view — the edit page *is* the document's page.
+      // Back/cancel must therefore leave for the list; built from `documentEditHref` they
+      // addressed the page the operator was already on and clicking them did nothing.
+      backHref={listHrefFor(kind)}
       fields={fields}
       groups={groups}
       initialValues={initial ?? fallback}
@@ -1028,7 +1034,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
       // version and every line call carries the row's, so the form must not attach one globally.
       disableOptimisticLock
       submitLabel={t('internal_sales.form.save')}
-      cancelHref={documentDetailHref(kind, documentId)}
+      cancelHref={listHrefFor(kind)}
       isLoading={loading}
       onSubmit={handleSubmit}
     />

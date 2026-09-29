@@ -115,6 +115,13 @@ customerSnapshot = {
 本模块自己的新建/保存后跳转**仍然指向自己的编辑页**（`/backend/internal-sales/{quotes,orders}/[id]/edit`），
 不依赖官方动态页——这是设计选择，不是绕开坏页面。
 
+**编辑页的返回/取消（2026-09-29 修正）**：本模块没有单据详情页，编辑页**就是**该单据的页面，所以编辑页的
+`backHref`/`cancelHref` 指向**列表**（`listHrefFor`，与新建页一致）。此前两处取的是
+`documentDetailHref`——它返回的正是编辑页自身（`${listHref}/${id}/edit`），于是页头「← 返回」与页头/页脚的
+「取消」三个链接全部指回当前地址栏的 URL，点击没有任何反应（2026-09-29 真机报告）。该 helper 同时更名为
+`documentEditHref`，避免下一个作者再按「详情页」去拼返回目标；教训见
+[`.ai/lessons/edit-page-is-not-its-own-back-target.md`](../../../.ai/lessons/edit-page-is-not-its-own-back-target.md)。
+
 ## 验证
 
 ```bash
