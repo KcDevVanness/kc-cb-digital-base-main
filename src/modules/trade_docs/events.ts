@@ -16,6 +16,7 @@ const events = [
   { id: 'trade_docs.contract.closed', label: 'Contract Closed', entity: 'contract', category: 'lifecycle', clientBroadcast: true },
   { id: 'trade_docs.contract.cancelled', label: 'Contract Cancelled', entity: 'contract', category: 'lifecycle', clientBroadcast: true },
   { id: 'trade_docs.contract.document.generated', label: 'Contract Document Generated', entity: 'contract', category: 'lifecycle', clientBroadcast: true },
+  { id: 'trade_docs.contract.orders.updated', label: 'Contract Order Links Updated', entity: 'contract', category: 'lifecycle', clientBroadcast: true },
   { id: 'trade_docs.invoice.created', label: 'Invoice Created', entity: 'invoice', category: 'crud', clientBroadcast: true },
   { id: 'trade_docs.invoice.updated', label: 'Invoice Updated', entity: 'invoice', category: 'crud', clientBroadcast: true },
   { id: 'trade_docs.invoice.deleted', label: 'Invoice Deleted', entity: 'invoice', category: 'crud', clientBroadcast: true },
