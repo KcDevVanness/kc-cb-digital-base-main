@@ -143,9 +143,10 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
   const { payload: chromePayload, isReady: chromeReady } = useBackendChrome()
   const manageFeature = kind === 'quote' ? 'sales.quotes.manage' : 'sales.orders.manage'
   const canManage = !chromeReady || hasFeature(chromePayload?.grantedFeatures, manageFeature)
-  // Converting a quote calls `sales.quotes.convert_to_order`, whose route requires both manage
-  // features — hide the action from an operator who holds only one of them.
-  const canConvertToOrder = kind === 'quote'
+  // Both quote→order actions write an order (convert converts the quote in place; the loader
+  // creates a new one), so both need the order's manage feature on top of the quote's: hide them
+  // from an operator who holds only one of the two.
+  const canOrderFromQuote = kind === 'quote'
     && canManage
     && (!chromeReady || hasFeature(chromePayload?.grantedFeatures, 'sales.orders.manage'))
 
@@ -276,12 +277,19 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
             ...(canManage
               ? [{ id: 'edit', label: t('internal_sales.list.actions.edit'), href: `${listHref}/${row.id}/edit` }]
               : []),
-            ...(canConvertToOrder
-              ? [{
-                  id: 'convert-to-order',
-                  label: t('internal_sales.list.actions.convert'),
-                  onSelect: () => { void handleConvertToOrder(row) },
-                }]
+            ...(canOrderFromQuote
+              ? [
+                  {
+                    id: 'new-order-from-quote',
+                    label: t('internal_sales.list.actions.newOrderFromQuote'),
+                    href: `/backend/internal-sales/orders/create?fromQuote=${row.id}`,
+                  },
+                  {
+                    id: 'convert-to-order',
+                    label: t('internal_sales.list.actions.convert'),
+                    onSelect: () => { void handleConvertToOrder(row) },
+                  },
+                ]
               : []),
           ]}
         />
