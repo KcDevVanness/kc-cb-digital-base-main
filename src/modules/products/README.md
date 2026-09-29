@@ -110,6 +110,23 @@ app 自有模块。业务商品主数据的**唯一来源**：产品线 → 产�
 它不是装饰：**发货与海外仓收货按商品变体入账**（`wms.inventory.receive`），变体经官方目录解析，
 所以没链接的商品只能下单、不能发运/收货（分摊命令会明确报错）。链接可清空；指向不存在/跨组织的目录商品会被 400 拒绝。
 
+**目录行从哪来（2026-09-28 查清并已落地）**：官方目录的商品/分类页在 `src/modules.ts` 里是 **`navHidden: true`**（不是 `null`）--
+**不进侧边栏，但 URL 仍可解析**：实测 `/backend/catalog/products` 与 `/backend/catalog/products/create` 均 **200**（`/backend/catalog/variants` 该路径不存在 → 404）。之所以用 `navHidden`：`catalog.product.low_stock` 通知的
+`linkHref` 指向 `/backend/catalog/products/{id}`，摘除路由会打断已存链接。供应商产品的 `promote` 只写商品主数据、
+**不建目录行**（`supplierProductPromotion.ts`：主数据带链接、链接本身不由它创建）。因此目录行有三条路：
+① 打开被隐藏的 `/backend/catalog/products/create` 直接建（页面含 **Variants** 步骤，变体才是收货的落点）；
+② 调 API（`POST /api/catalog/products` + `POST /api/catalog/variants`）；
+③ app 侧按 SKU 镜像建行 + 回填链接。
+**本部署已按 ③ 完成（2026-09-28）**：5 件正式商品 P4108 / P4108-UVC / P4114 / P4161 / P570 各建 1 条目录商品
+（`title` = 商品名、`sku` = 商品 SKU、`defaultUnit: pc`）+ 1 个默认启用变体（`<sku>-V`）并回填 `catalogProductId`；
+实测以 `hq-operator` 账号选 P4161 建报价单 → 行 `productVariantId` 自动填 `e248edbf-…`（该变体）✓。
+**重复商品口径与清理（2026-09-28 已执行）**：`eversweet-3-pro` / `eversweet-3-pro-uvc` 与
+`P4108` / `P4108-UVC` 是同一件商品的重复行（前者无规格、后者有完整申报要素），**以 P 码为准**：
+6 行重复（总部 2 + 俄罗斯 2 + 东南亚 2，后者是分发副本）已**软删除**，未镜像进目录；`eversweet-*` 不再出现在
+任何商品列表与选品器里。唯一受影响的引用：一张**无编号的采购草稿单**的行仍挂着被删的 `eversweet-3-pro-uvc`——
+该行的显示走它自己冻结的 `product_snapshot`（采购单行的既有口径），重新编辑该行时重新选品即可；
+采购单行接口是只读投影（`/api/purchasing/purchase-orders/lines` 只有 GET），改引用要走订单更新命令，故未代改。
+
 ## 商品 SKU 的校验与「祖父条款」（2026-09-24）
 
 `products_products.sku` 的字符集/长度规则是 `^[A-Za-z0-9._\-/]{1,64}$`（`data/validators.ts` 的 `SKU_PATTERN`）。

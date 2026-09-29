@@ -45,6 +45,8 @@ currencies together.
 | `GET /api/boss_cockpit/summary` | the same aggregation as JSON |
 | widgets `boss_cockpit.dashboard.{supplyGap,inTransit,overstock,drr}` | one figure each, reading the same endpoint |
 
+**Navigation (2026-09-28)**: `/backend/boss-cockpit` anchors the sidebar group 「经营概览」 / "Executive overview" (`pageGroupKey: executive_overview.nav.group`; the label key `executive_overview.nav.group` lives in this module's `i18n/{zh,en}.json`). The `finance` module's 月损益 / SKU 毛利 / 库存资金占用 sit in the same group.
+
 ## Verification
 
 - `yarn test` covers the money-formatting rules this module reuses; the aggregation itself is a

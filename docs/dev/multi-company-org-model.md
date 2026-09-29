@@ -40,6 +40,7 @@ tenant: 广州凯翠国际贸易有限公司        ← 隔离边界，全集团
 | `ru-admin` / `sea-admin` | `ru-admin@acme.com` / `sea-admin@acme.com` | `auth.users.list/create/edit/delete`、`auth.roles.list/manage`、`auth.acl.manage`、`directory.organizations.view` |
 | `ru-operator` / `sea-operator` | `ru-operator@acme.com` / `sea-operator@acme.com` | `sales.orders.view/manage`、`sales.quotes.view/manage`、`sales.shipments.manage`、`sales.channels.view/manage`、`products.items.view`、`parties.view`、`parties.manage`、`catalog.products.view`、`wms.view`、`currencies.view` |
 | `ru-warehouse` / `sea-warehouse` | `ru-warehouse@acme.com` / `sea-warehouse@acme.com` | `wms.view`、`wms.receive_inventory`、`wms.manage_inventory`、`wms.adjust_inventory`、`wms.cycle_count`、`wms.manage_reservations`、`wms.manage_locations`、`catalog.products.view` |
+| `hq-operator`（总部侧，2026-09-28 建） | `hq-operator@acme.com`（**dev 密码 `HqOperator2026!`**，投产前必须改） | `sales.orders.view/manage`、`sales.quotes.view/manage`、`sales.shipments.manage`、`sales.channels.view/manage`、`products.items.view/manage`、`products.prices.manage`、`parties.view/manage`、`catalog.products.view`、`directory.organizations.view`、`wms.view`、`currencies.view`（组织范围留空） |
 
 - 相对角色矩阵的两处**补充**（都写在功能位一列里）：operator 多 `parties.manage`（分公司维护**自己**的外部客户档案）与 `currencies.view`（币种下拉的门禁，见「配置步骤」第 3 条的括号说明）。
 - **分公司打印档案**：`parties` 里的 `RU-AB` / `SEA-AB`（角色只给 `branch`，建在**主体**组织的档案里）——供合同/PI/CI 的对手方打印块；银行与地址待业务补录。内部销售单据的买方是**组织**（「关联组织」），不走这份档案，因此它不会出现在内部销售买方下拉的「外部客户」分组（该分组只列角色 `buyer` 的档案，见 [`.ai/specs/2026-09-28-internal-sales-buyer-linkage.md`](../../.ai/specs/2026-09-28-internal-sales-buyer-linkage.md)）。
@@ -76,6 +77,7 @@ tenant: 广州凯翠国际贸易有限公司        ← 隔离边界，全集团
 | `<分公司>-admin` | 本公司组织 | `auth.users.list/create/edit/delete`、`auth.roles.list/manage`、`auth.acl.manage`、`directory.organizations.view` | **不给** `directory.organizations.manage` |
 | `<分公司>-operator` | 本公司组织 | `sales.orders.view/manage`、`sales.quotes.view/manage`、`sales.shipments.manage`、`sales.channels.view/manage`、`products.items.view`、`parties.view`、`catalog.products.view`、`wms.view` | 日常运营（跨境电商） |
 | `<分公司>-warehouse` | 本公司组织 | `wms.view`、`wms.receive_inventory`、`wms.manage_inventory`、`wms.adjust_inventory`、`wms.cycle_count`、`wms.manage_reservations`、`wms.manage_locations`、`catalog.products.view` | 收货入库、盘点；收货按变体入账，需能读目录商品 |
+| `hq-operator` | **留空**（= 全部组织；默认视图为总部 + 全部下级） | `sales.orders.view/manage`、`sales.quotes.view/manage`、`sales.shipments.manage`、`sales.channels.view/manage`、`products.items.view/manage`、`products.prices.manage`、`parties.view/manage`、`catalog.products.view`、`directory.organizations.view`、`wms.view`、`currencies.view` | 总部业务员：开内部销售单（买方 = 分公司）+ 维护商品主数据 + 分发到分公司。`products.types/categories.manage` **不给**（分类树是管理动作）；`directory.organizations.manage` 也不给 |
 
 ## 配置步骤
 

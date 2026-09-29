@@ -60,6 +60,8 @@ key for it, so the row's own `sku` (verbatim, it may be an unparseable factory c
 | `notifications: ru_sync.pull_failed` | raised through `ru_sync.pull.failed` when a walk fails |
 | `notifications: ru_sync.alert.*` (4) | 断货 / 超储 / ДРР 破线 / 未识别在途, evaluated after the endpoint whose data decides them (`lib/alerts.ts`) |
 
+**Navigation (2026-09-28)**: `/backend/ru-sync/sku-map` and `/backend/ru-sync/health` moved out of 「财务」 into the sidebar group 「数据同步」 / "Data sync" (`pageGroupKey: ru_sync.nav.group`; the label key `ru_sync.nav.group` lives in this module's `i18n/{zh,en}.json`) — they are pipeline-maintenance pages, not finance-desk or boss pages.
+
 The pull itself is a `data_sync` run for provider `ru_petkit` (`/api/integrations/ru_petkit/credentials`
 holds the base URL, the bearer token and the private-host flag; the token is encrypted and never
 returned). `lib/adapter.ts` emits `ru_sync.pull.failed` before rethrowing, which is what the

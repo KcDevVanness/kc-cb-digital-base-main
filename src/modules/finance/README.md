@@ -48,6 +48,8 @@ because there is no split on disk.
 | `GET /api/finance/profit-loss` / `sku-margin` | the same derivations as JSON |
 | `mercato finance due-reminders --org … --tenant …` | 逾期未付款 / 逾期未发运 / 库存低于阈值 → notifications |
 
+**导航分组（2026-09-28 按受众拆分）**：`shipment-costs`、`landed-costs`、`expenses`、`payables`、`receivables` 留在侧边栏「财务」(`export_finance.nav.group`，财务人员作业与台账)；`profit-loss`、`sku-margin`、`inventory-value` 移入「经营概览」(`executive_overview.nav.group`，老板视角，与 `boss_cockpit` 的驾驶舱同组)。
+
 ## The two rules that are load-bearing
 
 1. **One allocation rule.** Shares are `HALF_UP(fee × wᵢ / Σw, 4)`, the rounding remainder lands on
