@@ -95,20 +95,36 @@ export function cellToText(value: unknown): string {
   return normalizeWhitespace(String(value))
 }
 
+const NUMBER_TOKEN_PATTERN = /-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/i
+
 /**
- * Parses a numeric cell. Handles numbers, numeric strings, thousands separators,
- * currency symbols and a trailing unit word (`230 CNY`, `1,250.5`, `0.405 kg`).
- * Returns null for empty tokens and for values with no usable number.
+ * The numeric token a cell carries, **as written**. Currency symbols, thousands separators and a
+ * trailing unit word (`230 CNY`, `1,250.5`, `0.405 kg`) are stripped, but the digits themselves are
+ * never re-read through a binary float: a price cell goes on to the money engine from this token,
+ * so a supplier's `341.2382` is quantized from the sheet's own digits instead of from
+ * `String(Number('341.2382'))`. Returns null for empty tokens and for values with no usable number.
  */
-export function parseNumberCell(value: unknown): number | null {
+export function extractNumberToken(value: unknown): string | null {
   if (value === null || value === undefined) return null
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : null
   const text = cellToText(value)
   if (isNullToken(text)) return null
   const cleaned = text.replace(CURRENCY_PREFIX_PATTERN, '').replace(/,/g, '').replace(/\s+/g, ' ').trim()
-  const match = cleaned.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/i)
-  if (!match) return null
-  const parsed = Number(match[0])
+  return cleaned.match(NUMBER_TOKEN_PATTERN)?.[0] ?? null
+}
+
+/**
+ * Parses a numeric cell as a JavaScript number. Handles numbers, numeric strings, thousands
+ * separators, currency symbols and a trailing unit word (`230 CNY`, `1,250.5`, `0.405 kg`).
+ * Returns null for empty tokens and for values with no usable number.
+ *
+ * Only shapes that are not money — quantities, dimensions, carton counts — may go through this
+ * float; a quoted price is read with `extractNumberToken` and quantized by the money engine.
+ */
+export function parseNumberCell(value: unknown): number | null {
+  const token = extractNumberToken(value)
+  if (token === null) return null
+  const parsed = Number(token)
   return Number.isFinite(parsed) ? parsed : null
 }
 

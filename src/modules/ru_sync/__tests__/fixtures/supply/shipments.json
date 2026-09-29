@@ -1,0 +1,35 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 1,
+  "items": [
+    {
+      "number": "PK26H07P248SJ",
+      "po_number": "PO-2026-0003",
+      "status": "in_transit",
+      "total_qty": "1141",
+      "total_amount": {
+        "amount": "51918.00",
+        "currency": "USD"
+      },
+      "eta": "2026-10-05",
+      "docs_complete": false,
+      "missing_docs": [
+        "packing_list"
+      ],
+      "lines": [
+        {
+          "model": "PK44",
+          "sku": "PK44",
+          "qty": "1141",
+          "unit_price": {
+            "amount": "45.50",
+            "currency": "USD"
+          }
+        }
+      ],
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    }
+  ]
+}

@@ -52,3 +52,10 @@ and an **already-migrated database must have its ledger re-filed**, because the 
 name: the row moved from `mikro_orm_migrations_purchasing` to `mikro_orm_migrations_sourcing` (same
 `executed_at`), after which `yarn db:migrate` reports no pending migrations for either chain. Proof of the fresh
 path is the ephemeral run reaching "Initializing application data (includes migrations)" and building the app.
+
+**Recurrence (2026-09-28)**: the amount-caliber migration (`numeric(18,6) → numeric(18,4)` on
+`unit_price`) was first generated into `Migration20260928073630_purchasing.ts` and broke the ephemeral
+initializer with `relation "purchasing_supplier_product_prices" does not exist` — the same ordering trap,
+detected because the ephemeral environment starts empty. The statement moved to
+`Migration20260928082000_sourcing.ts` (this chain, after `Migration20260923043000_sourcing`); the purchasing
+snapshot still carries the 4-decimal column, so `yarn db:generate` stays a no-op for both modules.

@@ -1,0 +1,34 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 2,
+  "items": [
+    {
+      "sku": "PK44",
+      "cost": {
+        "price": "29149.0000",
+        "currency": "RUB"
+      },
+      "purchase_price": {
+        "price": "162.0000",
+        "currency": "RUB"
+      },
+      "fee_rates": null,
+      "note": null,
+      "updated_at": "2026-09-28T03:00:00+03:00"
+    },
+    {
+      "sku": null,
+      "cost": null,
+      "purchase_price": null,
+      "fee_rates": {
+        "acquiring_percent": 4.41,
+        "logistics_percent": 2.42,
+        "effective_from": "2026-09-28"
+      },
+      "note": "60 days of facts",
+      "updated_at": "2026-09-28T03:00:00+03:00"
+    }
+  ]
+}

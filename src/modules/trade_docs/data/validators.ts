@@ -3,15 +3,28 @@ import { z } from 'zod'
 // `products` product and quote one of its tiers, so the three codes stay defined in exactly one
 // place. The dependency never points back — `products` knows nothing about contracts.
 import { PRODUCT_PRICE_TIERS } from '../../products/lib/tiers'
+// The money engine owns the system-wide caliber, so the input schemas quote its constants instead
+// of repeating the numbers: an amount is 2 decimals, a unit price 4, and both are compared as
+// scaled integers (never through a float).
+import { AMOUNT_SCALE, PRICE_SCALE, toScaledUnits } from '../lib/money'
 
 /**
- * Input contracts for contracts and invoices.
+ * Input contracts for contracts, invoices and PI/CI documents.
  *
- * Decimal columns arrive as strings and keep every digit the column holds: a quantity or unit
- * price with more decimals than `numeric(18,6)` is rejected instead of silently rounded, because
- * the amount calibers are derived from exactly these two numbers. All amount columns on the head
- * (`contract_total`, `finance_total`, `difference_total`, `total`) are **derived server-side** and
- * are deliberately absent from every input schema — a client cannot post a total.
+ * Decimal columns arrive as strings and keep every digit the column holds: a value with more
+ * decimals than its column is rejected (a 400 at the API) instead of silently rounded, because the
+ * line amount is derived from exactly the quantity and the unit price. The calibers are the
+ * deployment-wide money caliber — quantity `numeric(18,6)`, unit price `numeric(18,4)`
+ * (`PRICE_SCALE`), amount `numeric(18,2)` (`AMOUNT_SCALE`), tax rate `numeric(6,3)`, exchange rate
+ * `numeric(18,8)`. Values within their caliber are zero-padded to the column scale, so the command
+ * and the entity never disagree about formatting.
+ *
+ * Imported/integrated data does not come through here; those paths quantize explicitly with the
+ * engine and log a warning (see the module's import paths).
+ *
+ * All amount columns on the head (`contract_total`, `finance_total`, `difference_total`, `total`)
+ * are **derived server-side** and are deliberately absent from every input schema — a client
+ * cannot post a total.
  */
 
 const DECIMAL_PATTERN = /^-?\d+(?:\.\d+)?$/
@@ -34,7 +47,9 @@ function decimalSchema(scale: number, options: { min?: string; allowNegative?: b
         ctx.addIssue({ code: 'custom', message: 'value must not be negative' })
         return
       }
-      if (options.min !== undefined && Number(value) < Number(options.min)) {
+      // The bound is compared as scaled integers: the value already carries at most `scale`
+      // decimals at this point, so the comparison is exact and never at the mercy of a float.
+      if (options.min !== undefined && toScaledUnits(value, scale) < toScaledUnits(options.min, scale)) {
         ctx.addIssue({ code: 'custom', message: `value must be at least ${options.min}` })
       }
     })
@@ -88,6 +103,22 @@ export const COUNTERPARTY_KINDS = ['supplier', 'customer'] as const
 export const INVOICE_DIRECTIONS = ['inbound', 'outbound'] as const
 export const INVOICE_STATUSES = ['draft', 'confirmed', 'void'] as const
 export const INVOICE_TRANSITIONS = ['confirm', 'void'] as const
+/**
+ * Tax invoice kinds: `vat_special` (增值税专用发票) | `vat_general` (增值税普通发票) | `export`
+ * (出口发票, 0% for a tax refund). The column is nullable on purpose — a `null` kind is a
+ * historical/uncategorized ledger row and is never numbered.
+ */
+export const INVOICE_KINDS = ['vat_special', 'vat_general', 'export'] as const
+/**
+ * What an invoice was registered against. `shipment` anchors an export invoice to a container, the
+ * key the per-container tax-refund file (`export_finance`) cross-links on (F-304).
+ */
+export const INVOICE_SOURCE_KINDS = ['purchase_order', 'sales_order', 'shipment', 'trade_document', 'manual'] as const
+export const TRADE_DOCUMENT_KINDS = ['proforma', 'commercial'] as const
+export const TRADE_DOCUMENT_DIRECTIONS = ['sales', 'purchase'] as const
+export const TRADE_DOCUMENT_STATUSES = ['draft', 'issued', 'void'] as const
+export const TRADE_DOCUMENT_TRANSITIONS = ['issue', 'void'] as const
+export const TRADE_DOCUMENT_SOURCE_KINDS = ['sales_order', 'purchase_order', 'shipment', 'trade_document', 'manual'] as const
 
 // ---------------------------------------------------------------------------------------
 // Contracts
@@ -102,7 +133,7 @@ export const contractLineInputSchema = z.object({
   spec: nullableText(500),
   unit: nullableText(24),
   quantity: decimalSchema(6, { min: '0' }),
-  unitPrice: decimalSchema(6, { min: '0' }),
+  unitPrice: decimalSchema(PRICE_SCALE, { min: '0' }),
   note: nullableText(500),
 })
 
@@ -122,6 +153,7 @@ export const contractCreateSchema = z.object({
   deliveryDate: dateOnlySchema,
   paymentTerms: nullableText(500),
   shippingMethod: nullableText(200),
+  incoterms: nullableText(200),
   destination: nullableText(200),
   marks: nullableText(500),
   notes: nullableText(2000),
@@ -193,20 +225,25 @@ export const invoiceLineInputSchema = z.object({
   sku: nullableText(64),
   unit: nullableText(24),
   quantity: decimalSchema(6, { min: '0' }),
-  unitPrice: decimalSchema(6, { min: '0' }),
+  unitPrice: decimalSchema(PRICE_SCALE, { min: '0' }),
   /** The figure printed on the invoice; may differ from `quantity × unitPrice`. */
-  amount: decimalSchema(4, { min: '0' }),
+  amount: decimalSchema(AMOUNT_SCALE, { min: '0' }),
+  /** Percentage (`13` = 13%); the tax **amount** is never posted — the server computes it. */
+  taxRate: decimalSchema(3, { min: '0' }).default('0'),
+  /** Whether the printed `amount` already includes tax; the server derives `taxAmount` from it. */
+  priceIncludesTax: z.boolean().default(true),
   contractLineId: z.string().uuid().nullable().optional(),
 })
 
 export const invoiceCreateSchema = z.object({
   number: nullableText(64),
+  invoiceKind: z.enum(INVOICE_KINDS).nullable().optional(),
   direction: z.enum(INVOICE_DIRECTIONS).default('inbound'),
   counterpartyKind: z.enum(COUNTERPARTY_KINDS).default('supplier'),
   counterpartyId: z.string().uuid().nullable().optional(),
   counterpartySnapshot: snapshotSchema,
   contractId: z.string().uuid().nullable().optional(),
-  sourceKind: z.enum(['purchase_order', 'sales_order', 'manual']).nullable().optional(),
+  sourceKind: z.enum(INVOICE_SOURCE_KINDS).nullable().optional(),
   sourceId: z.string().uuid().nullable().optional(),
   sourceSnapshot: snapshotSchema,
   currencyCode: currencyCodeSchema.default('CNY'),
@@ -230,6 +267,16 @@ export const invoiceAttachSchema = z.object({
   attachmentId: z.string().uuid().nullable(),
 })
 
+/**
+ * One-shot copy of a PI/CI into a draft invoice. The source is named explicitly rather than read
+ * off the invoice's own `sourceId`, so the operator can cross-copy (e.g. CI → invoice) without the
+ * link having to pre-exist.
+ */
+export const invoiceCopySchema = z.object({
+  id: z.string().uuid(),
+  sourceDocumentId: z.string().uuid(),
+})
+
 export const invoiceListSchema = z.object({
   id: z.string().uuid().optional(),
   ids: z.string().optional(),
@@ -238,8 +285,11 @@ export const invoiceListSchema = z.object({
   search: z.string().max(200).optional(),
   direction: z.enum(INVOICE_DIRECTIONS).optional(),
   status: z.enum(INVOICE_STATUSES).optional(),
+  invoiceKind: z.enum(INVOICE_KINDS).optional(),
   contractId: z.string().uuid().optional(),
   counterpartyId: z.string().uuid().optional(),
+  sourceKind: z.enum(INVOICE_SOURCE_KINDS).optional(),
+  sourceId: z.string().uuid().optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(200).default(50),
   sortField: z.enum(['id', 'number', 'status', 'total', 'issued_at', 'created_at', 'updated_at']).optional().default('created_at'),
@@ -256,6 +306,125 @@ export const invoiceLineListSchema = z.object({
   sortDir: z.enum(['asc', 'desc']).optional().default('asc'),
 })
 
+// ---------------------------------------------------------------------------------------
+// Documents (PI / CI) — one family, discriminated by `kind`
+// ---------------------------------------------------------------------------------------
+
+export const documentLineInputSchema = z.object({
+  productId: z.string().uuid().nullable().optional(),
+  productSnapshot: snapshotSchema,
+  name: nullableText(300),
+  sku: nullableText(64),
+  model: nullableText(120),
+  spec: nullableText(500),
+  unit: nullableText(24),
+  quantity: decimalSchema(6, { min: '0' }),
+  unitPrice: decimalSchema(PRICE_SCALE, { min: '0' }),
+  /** The face amount; defaults to `quantity × unitPrice` server-side but may be overridden. */
+  amount: decimalSchema(AMOUNT_SCALE, { min: '0' }).optional(),
+  /** What the line was copied/raised from (product, shipment allocation, …), frozen at write time. */
+  sourceSnapshot: snapshotSchema,
+  note: nullableText(500),
+})
+
+export const documentCreateSchema = z.object({
+  kind: z.enum(TRADE_DOCUMENT_KINDS).default('proforma'),
+  direction: z.enum(TRADE_DOCUMENT_DIRECTIONS).default('sales'),
+  counterpartyKind: z.enum(COUNTERPARTY_KINDS).default('customer'),
+  counterpartyId: z.string().uuid().nullable().optional(),
+  counterpartySnapshot: snapshotSchema,
+  ourPartySnapshot: snapshotSchema,
+  consigneeSnapshot: snapshotSchema,
+  notifyPartySnapshot: snapshotSchema,
+  currencyCode: currencyCodeSchema.default('CNY'),
+  exchangeRate: nullableDecimalSchema(8, { min: '0' }),
+  paymentTerms: nullableText(500),
+  incoterms: nullableText(200),
+  validUntil: dateOnlySchema,
+  deliveryDate: dateOnlySchema,
+  marks: nullableText(500),
+  sourceKind: z.enum(TRADE_DOCUMENT_SOURCE_KINDS).nullable().optional(),
+  sourceId: z.string().uuid().nullable().optional(),
+  sourceSnapshot: snapshotSchema,
+  notes: nullableText(2000),
+  lines: z.array(documentLineInputSchema).max(500).default([]),
+})
+
+export const documentUpdateSchema = documentCreateSchema.partial().extend({
+  id: z.string().uuid(),
+})
+
+export const documentTransitionSchema = z.object({
+  id: z.string().uuid(),
+  action: z.enum(TRADE_DOCUMENT_TRANSITIONS),
+  reason: z.string().trim().max(500).optional(),
+})
+
+export const documentDocumentSchema = z.object({
+  id: z.string().uuid(),
+})
+
+/**
+ * One-shot roll-up of a shipment's allocations into a draft CI. `sourceId` overrides the anchor the
+ * document already carries; when neither is present the caller has to name the shipment.
+ */
+export const documentAggregateSchema = z.object({
+  id: z.string().uuid(),
+  sourceId: z.string().uuid().optional(),
+})
+
+/**
+ * One-shot copy of a PI into a draft CI (or PI → PI). The source may be in any status — copying an
+ * issued proforma into a new draft commercial invoice is the point of the flow — while the target
+ * has to be a draft. The copy is never a live sync.
+ */
+export const documentCopySchema = z.object({
+  id: z.string().uuid(),
+  sourceDocumentId: z.string().uuid(),
+})
+
+/**
+ * Binds (or clears) the uploaded replacement of a PI/CI (stamped/re-signed/customs copy).
+ * `attachmentId: null` unbinds it; the generated XLSX keeps `generated_attachment_id`.
+ */
+export const documentAttachSchema = z.object({
+  id: z.string().uuid(),
+  attachmentId: z.string().uuid().nullable(),
+})
+
+export const documentLinesReplaceSchema = z.object({
+  documentId: z.string().uuid(),
+  lines: z.array(documentLineInputSchema).max(500),
+})
+
+export const documentListSchema = z.object({
+  id: z.string().uuid().optional(),
+  ids: z.string().optional(),
+  /** Narrows a picker to the selected organization; see `contractListSchema`. */
+  organizationId: z.string().uuid().optional(),
+  kind: z.enum(TRADE_DOCUMENT_KINDS).optional(),
+  status: z.enum(TRADE_DOCUMENT_STATUSES).optional(),
+  direction: z.enum(TRADE_DOCUMENT_DIRECTIONS).optional(),
+  counterpartyId: z.string().uuid().optional(),
+  sourceKind: z.enum(TRADE_DOCUMENT_SOURCE_KINDS).optional(),
+  sourceId: z.string().uuid().optional(),
+  search: z.string().max(200).optional(),
+  page: z.coerce.number().min(1).default(1),
+  pageSize: z.coerce.number().min(1).max(200).default(50),
+  sortField: z.enum(['id', 'number', 'kind', 'status', 'total', 'issued_at', 'created_at', 'updated_at']).optional().default('created_at'),
+  sortDir: z.enum(['asc', 'desc']).optional().default('desc'),
+})
+
+/** Read-only query for a document's lines (the detail page's lines surface). */
+export const documentLineListSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    documentId: z.string().uuid().optional(),
+    page: z.coerce.number().min(1).default(1),
+    pageSize: z.coerce.number().min(1).max(100).default(50),
+  })
+  .passthrough()
+
 export type ContractCreateInput = z.infer<typeof contractCreateSchema>
 export type ContractUpdateInput = z.infer<typeof contractUpdateSchema>
 export type ContractLineInput = z.infer<typeof contractLineInputSchema>
@@ -266,3 +435,8 @@ export type InvoiceUpdateInput = z.infer<typeof invoiceUpdateSchema>
 export type InvoiceLineInput = z.infer<typeof invoiceLineInputSchema>
 export type InvoiceTransitionInput = z.infer<typeof invoiceTransitionSchema>
 export type InvoiceListQuery = z.infer<typeof invoiceListSchema>
+export type DocumentCreateInput = z.infer<typeof documentCreateSchema>
+export type DocumentUpdateInput = z.infer<typeof documentUpdateSchema>
+export type DocumentLineInput = z.infer<typeof documentLineInputSchema>
+export type DocumentTransitionInput = z.infer<typeof documentTransitionSchema>
+export type DocumentListQuery = z.infer<typeof documentListSchema>

@@ -1,0 +1,24 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 2,
+  "items": [
+    {
+      "ru_code": "PK39_2PK39sklad",
+      "canonical_sku": "PK39_2",
+      "variant_suffix": "sklad",
+      "map_status": "mapped",
+      "note": null,
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    },
+    {
+      "ru_code": "РК56",
+      "canonical_sku": null,
+      "variant_suffix": null,
+      "map_status": "pending",
+      "note": "no catalog card",
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    }
+  ]
+}

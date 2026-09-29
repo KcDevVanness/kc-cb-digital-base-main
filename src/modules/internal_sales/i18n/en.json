@@ -42,5 +42,11 @@
   "internal_sales.list.columns.total": "Amount (net)",
   "internal_sales.list.columns.lines": "Lines",
   "internal_sales.list.columns.createdAt": "Created",
-  "internal_sales.list.actions.edit": "Edit"
+  "internal_sales.list.actions.edit": "Edit",
+  "internal_sales.form.linePrecision": "Line {line}: quantity and unit price accept at most 4 decimal places.",
+  "internal_sales.list.actions.convert": "Convert to order",
+  "internal_sales.list.actions.convertConfirmTitle": "Convert this quote into an order?",
+  "internal_sales.list.actions.convertConfirmBody": "The quote becomes an order in place: it keeps its lines and its buyer snapshot and gets a new order number, but the quote itself no longer exists — this cannot be undone.",
+  "internal_sales.list.actions.convertDone": "Quote converted to an order.",
+  "internal_sales.list.actions.convertFailed": "Could not convert the quote."
 }

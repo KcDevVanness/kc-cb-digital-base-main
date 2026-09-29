@@ -1,63 +1,13 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
 import { badRequest } from '@open-mercato/shared/lib/crud/errors'
-import { resolveCurrencyScale } from './money'
 
 /**
- * Scoped reads this module needs from its neighbours.
+ * Display snapshots of the products a contract/invoice/document line references.
  *
- * Raw Kysely reads on purpose: the app-wide rule forbids cross-module ORM relations, and each
- * query is filtered by the same tenant + organization the caller is acting in. Nothing here
- * writes — peer state changes go through their commands.
+ * Raw Kysely reads on purpose: the app-wide rule forbids cross-module ORM relations, and each query
+ * is filtered by the same tenant + organization the caller is acting in. Nothing here writes — peer
+ * state changes go through their commands.
  */
-
-export type CurrencyScaleInfo = {
-  /** Rounding scale used for the financial caliber. */
-  scale: number
-  /** False when no `currencies` row exists for the code, so the fallback of 2 was used. */
-  configured: boolean
-}
-
-/** Rounding scale for a currency, read from the FX master's `decimal_places`. */
-export async function readCurrencyScale(
-  em: EntityManager,
-  scope: { tenantId: string; organizationId: string },
-  currencyCode: string,
-): Promise<number> {
-  const info = await readCurrencyScaleInfo(em, scope, currencyCode)
-  return info.scale
-}
-
-/**
- * Same read, but it also reports **why** the scale is what it is.
- *
- * The contract surfaces show the fallback as a hint: an organization whose currency rows have not
- * been seeded yet silently rounds to two decimals, and finance must know that the financial
- * amount was rounded by the fallback rather than by the currency's own definition.
- */
-export async function readCurrencyScaleInfo(
-  em: EntityManager,
-  scope: { tenantId: string; organizationId: string },
-  currencyCode: string,
-): Promise<CurrencyScaleInfo> {
-  const rows = (await (em.fork().getKysely<any>())
-    .selectFrom('currencies')
-    .select(['decimal_places'])
-    .where('code', '=', currencyCode.toUpperCase())
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', '=', scope.organizationId)
-    .where('deleted_at', 'is', null)
-    .limit(1)
-    .execute()) as Array<{ decimal_places: number | string | null }>
-
-  const raw = rows[0]?.decimal_places
-  if (raw === null || raw === undefined) {
-    return { scale: resolveCurrencyScale(null), configured: false }
-  }
-  return {
-    scale: resolveCurrencyScale(typeof raw === 'number' ? raw : Number(raw)),
-    configured: true,
-  }
-}
 
 export type ProductSnapshot = {
   productId: string

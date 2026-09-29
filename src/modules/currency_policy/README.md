@@ -11,7 +11,7 @@ app 自有模块，**无实体、无 UI、无迁移，但有一个只读路由**
 
 | 文件 | 作用 |
 |---|---|
-| `lib/policy.ts` | 政策定义：启用币种清单（16 个，四个地区）、本位币 `BASE_CURRENCY_CODE` 与显示格式（小数位/分隔符） |
+| `lib/policy.ts` | 政策定义：启用币种清单（16 个，四个地区）、本位币 `BASE_CURRENCY_CODE` 与显示格式元数据（`Currency.decimal_places`；金额恒 2 位、单价恒 4 位，该列不再驱动金额舍入，见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](../../../.ai/specs/2026-09-28-money-scale-2dp-unification.md)） |
 | `lib/apply.ts` | 收敛实现（对字典与汇率主数据做幂等对齐） |
 | `setup.ts` | `seedDefaults`：由框架在模块启用时调用 |
 | `cli.ts` | 手工重跑入口（不依赖重新播种），子命令 `apply` |

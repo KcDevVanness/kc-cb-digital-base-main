@@ -92,6 +92,8 @@ yarn mercato currency_policy apply --org <organizationId>
 | 显示组件 | `src/lib/money/{format.ts,useCnyRates.ts,MoneyAmount.tsx}` | 一处实现：金额格式、`≈ ¥…` 换算行、`1 USD = 6.7226 CNY · 日期` 说明行；每页一次请求（react-query 缓存）。原先三处各自手写的 `Intl` 金额格式化器已全部收敛到这里 |
 | 汇率页 | `src/modules.ts` | `/backend/exchange-rates`（+ create/detail）与 `/backend/config/currency-fetching` 不再 `navHidden`——能力一直在，只是被菜单藏了 |
 
+**金额标度（2026-09-28 统一口径，见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](../../.ai/specs/2026-09-28-money-scale-2dp-unification.md)）：** 全系统金额恒 **2 位**、单价恒 **4 位**，HALF_UP（远离零），与币种无关（JPY 也 2 位）。`Currency.decimal_places` 只作展示元数据，不再驱动金额舍入；CNY 换算金额也按 2 位 HALF_UP 量化（金额引擎 `trade_docs/lib/money.ts` 单点）。
+
 **触发抓取**：安装层 `currencies` 没有 worker/scheduler，所以 `is_enabled`/`sync_time` 只是意图记录。
 可用入口：
 

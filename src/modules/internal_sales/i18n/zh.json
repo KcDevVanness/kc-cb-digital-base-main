@@ -42,5 +42,11 @@
   "internal_sales.list.columns.total": "金额（未税）",
   "internal_sales.list.columns.lines": "行数",
   "internal_sales.list.columns.createdAt": "创建时间",
-  "internal_sales.list.actions.edit": "编辑"
+  "internal_sales.list.actions.edit": "编辑",
+  "internal_sales.form.linePrecision": "第 {line} 行：数量与单价最多 4 位小数。",
+  "internal_sales.list.actions.convert": "转为订单",
+  "internal_sales.list.actions.convertConfirmTitle": "把这张报价单转为订单？",
+  "internal_sales.list.actions.convertConfirmBody": "报价单会就地变成订单：保留行与买方快照、拿到新的订单号，但报价单本身不再存在——此操作不可撤销。",
+  "internal_sales.list.actions.convertDone": "报价单已转为订单。",
+  "internal_sales.list.actions.convertFailed": "报价单转换失败。"
 }

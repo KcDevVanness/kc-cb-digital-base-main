@@ -151,14 +151,15 @@ describe('buildContractSheet', () => {
     expect(sheet.rows[lineHeaderIndex + 6]?.[0]).toBe('Amount in words')
   })
 
-  it('writes amounts as numbers so Excel can sum the column', () => {
+  it('prints the amount caliber: unit price at 4 decimals, amount at 2, as fixed strings', () => {
     const sheet = buildContractSheet(input, ENGLISH)
     const lineHeaderIndex = sheet.rows.findIndex((row) => row[0] === 'No.')
     const lineRow = sheet.rows[lineHeaderIndex + 1]!
-    expect(typeof lineRow[7]).toBe('number')
-    expect(lineRow[7]).toBe(3601.2)
-    expect(typeof sheet.rows[lineHeaderIndex + 3]?.[7]).toBe('number')
-    expect(sheet.rows[lineHeaderIndex + 3]?.[7]).toBe(3601.2)
+    expect(lineRow[6]).toBe('1200.4000')
+    expect(lineRow[7]).toBe('3601.20')
+    expect(sheet.rows[lineHeaderIndex + 3]?.[7]).toBe('3601.20')
+    expect(sheet.rows[lineHeaderIndex + 4]?.[7]).toBe('3600.00')
+    expect(sheet.rows[lineHeaderIndex + 5]?.[7]).toBe('1.20')
   })
 
   it('prints both word forms of the amount, as the bank/customs convention requires', () => {

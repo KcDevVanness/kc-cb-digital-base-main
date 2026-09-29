@@ -6,6 +6,7 @@ import type { CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/l
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import { PlatformOpsChannel, PlatformOpsOrderMirror } from '../data/entities'
 import { orderIngestSchema } from '../data/validators'
+import { amountsEqual, resolvePlatformAmounts } from '../lib/money'
 import { ensureScope, type Scope } from '../lib/scope'
 import { eventsConfig } from '../events'
 
@@ -34,10 +35,6 @@ export type OrderIngestResult = {
   unchanged: number
 }
 
-function amountsEqual(left: string | null | undefined, right: string): boolean {
-  return Math.abs(Number.parseFloat(left ?? '0') - Number.parseFloat(right)) < 1e-6
-}
-
 async function loadChannel(em: EntityManager, scope: Scope, channelId: string): Promise<PlatformOpsChannel> {
   const channel = await em.fork().findOne(PlatformOpsChannel, {
     id: channelId,
@@ -57,8 +54,10 @@ async function loadChannel(em: EntityManager, scope: Scope, channelId: string): 
  * A re-posted batch therefore reports `unchanged` and writes nothing — the property the whole
  * reconciliation depends on.
  *
- * Platform-supplied numbers are stored verbatim. `netAmount` falls back to `gross − fee` only when
- * the payload omits it, because some marketplaces do not send a net figure at all.
+ * Platform-supplied numbers are quantized to the system amount caliber (2 decimals, HALF_UP) on the
+ * way in; a payload carrying finer amounts is warned about by `resolvePlatformAmounts`.
+ * `netAmount` falls back to the exact `gross − fee` only when the payload omits it, because some
+ * marketplaces do not send a net figure at all.
  */
 const ingestOrdersCommand: CommandHandler<Record<string, unknown>, OrderIngestResult> = {
   id: 'platform_ops.orders.ingest',
@@ -88,9 +87,7 @@ const ingestOrdersCommand: CommandHandler<Record<string, unknown>, OrderIngestRe
 
     for (const order of parsed.orders) {
       const currencyCode = order.currencyCode ?? channel.currencyCode
-      const gross = (order.grossAmount ?? 0).toFixed(4)
-      const fee = (order.feeAmount ?? 0).toFixed(4)
-      const net = (order.netAmount ?? (order.grossAmount ?? 0) - (order.feeAmount ?? 0)).toFixed(4)
+      const { gross, fee, net } = resolvePlatformAmounts(order, `orders.${order.externalOrderId}`)
       const placedAt = order.placedAt ? new Date(order.placedAt) : null
       const current = byExternalId[order.externalOrderId]
 

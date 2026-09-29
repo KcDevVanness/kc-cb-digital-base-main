@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { exactDecimalToString, parseExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
 
 export const RECONCILIATION_KINDS = ['missing_in_erp', 'amount_mismatch', 'duplicate_line'] as const
 export type ReconciliationKind = (typeof RECONCILIATION_KINDS)[number]
@@ -8,7 +9,29 @@ export const RECONCILIATION_STATUSES = ['open', 'resolved', 'ignored'] as const
 const uuid = () => z.string().uuid()
 const optionalText = (max: number) => z.string().trim().max(max).nullable().optional()
 const optionalDate = () => z.string().min(1).nullable().optional()
-const amount = () => z.coerce.number()
+
+/**
+ * Amounts arrive from marketplaces either as JSON numbers or as decimal strings; both are accepted
+ * and normalized to a decimal string.
+ *
+ * The value is **never rounded here**: platform data is external integration traffic, so a payload
+ * carrying more than the amount caliber's 2 decimals is quantized explicitly — and warned about —
+ * by the ingest command, where the extra precision stays visible instead of being silently
+ * truncated by the validator.
+ */
+const amount = (label: string, options: { nonNegative?: boolean } = {}) =>
+  z.union([z.string(), z.number()]).transform((value, ctx) => {
+    const parsed = parseExactDecimal(value)
+    if (!parsed) {
+      ctx.addIssue({ code: 'custom', message: `${label} must be a finite decimal` })
+      return z.NEVER
+    }
+    if (options.nonNegative && parsed.units < 0n) {
+      ctx.addIssue({ code: 'custom', message: `${label} must not be negative` })
+      return z.NEVER
+    }
+    return exactDecimalToString(parsed)
+  })
 
 export const channelCreateSchema = z.object({
   name: z.string().trim().min(1).max(200),
@@ -49,9 +72,9 @@ export const platformOrderInputSchema = z.object({
   externalOrderId: z.string().trim().min(1).max(200),
   status: optionalText(80),
   currencyCode: z.string().trim().regex(/^[A-Za-z]{3}$/).transform((value) => value.toUpperCase()).optional(),
-  grossAmount: amount().min(0).optional(),
-  feeAmount: amount().min(0).optional(),
-  netAmount: amount().optional(),
+  grossAmount: amount('grossAmount', { nonNegative: true }).optional(),
+  feeAmount: amount('feeAmount', { nonNegative: true }).optional(),
+  netAmount: amount('netAmount').optional(),
   placedAt: optionalDate(),
   shipmentId: uuid().nullable().optional(),
   shipmentNumber: optionalText(120),
@@ -75,9 +98,9 @@ export const orderListSchema = z.object({
 
 export const settlementLineInputSchema = z.object({
   externalOrderId: z.string().trim().min(1).max(200),
-  grossAmount: amount().min(0).optional(),
-  feeAmount: amount().min(0).optional(),
-  netAmount: amount().optional(),
+  grossAmount: amount('grossAmount', { nonNegative: true }).optional(),
+  feeAmount: amount('feeAmount', { nonNegative: true }).optional(),
+  netAmount: amount('netAmount').optional(),
 })
 
 export const settlementImportSchema = z.object({
@@ -87,9 +110,9 @@ export const settlementImportSchema = z.object({
     periodStart: optionalDate(),
     periodEnd: optionalDate(),
     currencyCode: z.string().trim().regex(/^[A-Za-z]{3}$/).transform((value) => value.toUpperCase()).optional(),
-    grossAmount: amount().optional(),
-    feeAmount: amount().optional(),
-    netAmount: amount().optional(),
+    grossAmount: amount('settlement.grossAmount').optional(),
+    feeAmount: amount('settlement.feeAmount').optional(),
+    netAmount: amount('settlement.netAmount').optional(),
     receivedAt: optionalDate(),
   }),
   lines: z.array(settlementLineInputSchema).min(1).max(2000),

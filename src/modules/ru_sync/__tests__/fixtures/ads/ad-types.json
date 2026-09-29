@@ -1,0 +1,38 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 1,
+  "items": [
+    {
+      "ad_type": "rsa",
+      "sub_count": 7,
+      "period_start": "2026-09-21",
+      "period_end": "2026-09-27",
+      "spend": {
+        "amount": "526699.00",
+        "currency": "RUB"
+      },
+      "purchases_revenue": {
+        "amount": "934439.00",
+        "currency": "RUB"
+      },
+      "purchases_qty": 66,
+      "drr_percent": 56.4,
+      "cpo": {
+        "amount": "7980.00",
+        "currency": "RUB"
+      },
+      "carts": 104,
+      "shows": 1278552,
+      "ctr_percent": 1.25,
+      "clicks": 15940,
+      "cpc": {
+        "amount": "33.04",
+        "currency": "RUB"
+      },
+      "cpm": null,
+      "updated_at": "2026-09-28T03:00:00+03:00"
+    }
+  ]
+}

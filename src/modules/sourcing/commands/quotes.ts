@@ -20,7 +20,7 @@ import { assertCurrencyKnown } from '../lib/currencyDictionary'
 import { loadSupplierName } from '../lib/purchasingReads'
 import type { ColumnMap, DetectedColumnMapping } from '../lib/columnMapping'
 import { analyzeSheet, summarizeWorkbook, type SheetAnalysis, type SheetSummary } from '../lib/quoteAnalysis'
-import { loadProfileName, readWorkbookForQuote } from '../lib/quoteSource'
+import { loadProfileName, readWorkbookForQuote, resolveSourceFileName } from '../lib/quoteSource'
 import eventsConfig from '../events'
 import {
   QUOTE_RESOURCE_KIND,
@@ -224,7 +224,7 @@ async function applySourceMetadata(input: {
   em: EntityManager
   quote: SourcingQuote
   attachmentId: string
-  fileName: string
+  fileName: string | null
   sheetName: string
   headerRowIndex: number
   columnMap: ColumnMap
@@ -397,7 +397,7 @@ const parseQuoteCommand: CommandHandler<Record<string, unknown>, QuoteParseOutco
       })
     }
 
-    const workbook = await readWorkbookForQuote({
+    const { workbook, fileName: attachmentFileName } = await readWorkbookForQuote({
       container: ctx.container,
       auth: ctx.auth,
       quote,
@@ -446,7 +446,7 @@ const parseQuoteCommand: CommandHandler<Record<string, unknown>, QuoteParseOutco
       em,
       quote,
       attachmentId: parsed.attachmentId,
-      fileName: quote.sourceFileName ?? 'workbook',
+      fileName: resolveSourceFileName(quote.sourceFileName, attachmentFileName),
       sheetName: analysis.sheetName,
       headerRowIndex: analysis.headerRowIndex,
       columnMap: analysis.columnMap,
@@ -504,7 +504,7 @@ const remapQuoteCommand: CommandHandler<Record<string, unknown>, QuoteParseOutco
       throw new CrudHttpError(422, { error: 'Upload a workbook before mapping its columns', code: 'attachment_missing' })
     }
 
-    const workbook = await readWorkbookForQuote({
+    const { workbook, fileName: attachmentFileName } = await readWorkbookForQuote({
       container: ctx.container,
       auth: ctx.auth,
       quote,
@@ -547,7 +547,7 @@ const remapQuoteCommand: CommandHandler<Record<string, unknown>, QuoteParseOutco
       em,
       quote,
       attachmentId: quote.sourceAttachmentId,
-      fileName: quote.sourceFileName ?? 'workbook',
+      fileName: resolveSourceFileName(quote.sourceFileName, attachmentFileName),
       sheetName: analysis.sheetName,
       headerRowIndex: analysis.headerRowIndex,
       columnMap: analysis.columnMap,

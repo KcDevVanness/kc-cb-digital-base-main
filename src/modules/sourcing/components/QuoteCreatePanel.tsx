@@ -3,11 +3,14 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
+import { parseISO } from 'date-fns/parseISO'
 import { Plus, Trash2 } from 'lucide-react'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { ComboboxInput } from '@open-mercato/ui/backend/inputs/ComboboxInput'
+import { toDateInputValue } from '@open-mercato/ui/primitives/date-format'
+import { DatePicker } from '@open-mercato/ui/primitives/date-picker'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { Label } from '@open-mercato/ui/primitives/label'
 import {
@@ -188,7 +191,11 @@ export function QuoteCreatePanel({ initialMode = 'import' }: { initialMode?: 'ma
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="sourcing-quote-date">{t('sourcing.quotes.list.columns.quoteDate', 'Quote date')}</Label>
-              <Input id="sourcing-quote-date" type="date" value={quoteDate} onChange={(event) => setQuoteDate(event.target.value)} />
+              <DatePicker
+                id="sourcing-quote-date"
+                value={quoteDate ? parseISO(quoteDate) : null}
+                onChange={(date) => setQuoteDate(toDateInputValue(date) ?? '')}
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="sourcing-currency">{t('sourcing.quotes.list.columns.currency', 'Currency')}</Label>

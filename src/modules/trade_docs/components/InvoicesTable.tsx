@@ -20,6 +20,7 @@ import { Button } from '@open-mercato/ui/primitives/button'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
 import { formatDate } from '@open-mercato/ui/utils/format'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
+import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { INVOICE_DIRECTIONS, INVOICE_STATUSES, directionLabel, invoiceStatusLabel, type InvoiceStatus } from './contractLabels'
@@ -30,16 +31,63 @@ const PAGE_SIZE = 50
 const QUERY_KEY_ROOT = 'trade-docs-invoices'
 const ALL = 'all'
 
+/**
+ * The tax-invoice kinds a ledger row can carry, mirroring the data layer's `INVOICE_KINDS` the same
+ * way the status list above mirrors the command's own (the UI never imports from `data/**`).
+ *
+ * An absent kind is a historical registration — or one the operator explicitly declared unclassified
+ * — and stays a first-class value here: `vat_special` = 增值税专用发票, `vat_general` = 增值税普通发票,
+ * `export` = 出口发票 (the 0% tax-refund document).
+ */
+export const INVOICE_KINDS = ['vat_special', 'vat_general', 'export'] as const
+export type InvoiceKind = (typeof INVOICE_KINDS)[number]
+
+/**
+ * The form select's value for "no kind": Radix drops options with an empty-string value, so a `null`
+ * kind needs a real sentinel to render the explicit 「未分类」 choice; `buildInvoicePayload` maps it
+ * back to `null` before the API sees it.
+ */
+export const INVOICE_KIND_UNCLASSIFIED = 'unclassified'
+
+const INVOICE_KIND_KEYS: Record<string, string> = {
+  vat_special: 'trade_docs.invoices.kind.vat_special',
+  vat_general: 'trade_docs.invoices.kind.vat_general',
+  export: 'trade_docs.invoices.kind.export',
+  [INVOICE_KIND_UNCLASSIFIED]: 'trade_docs.invoices.kind.unclassified',
+}
+
+const INVOICE_KIND_FALLBACKS: Record<string, string> = {
+  vat_special: 'VAT special invoice',
+  vat_general: 'VAT general invoice',
+  export: 'Export invoice',
+  [INVOICE_KIND_UNCLASSIFIED]: 'Unclassified',
+}
+
+/** Narrows an API value to a known kind; anything else (including `null`) means "unclassified". */
+export function asInvoiceKind(value: unknown): InvoiceKind | null {
+  return typeof value === 'string' && (INVOICE_KINDS as readonly string[]).includes(value)
+    ? (value as InvoiceKind)
+    : null
+}
+
+export function invoiceKindLabel(t: TranslateFn, kind: string | null | undefined): string {
+  const key = typeof kind === 'string' && kind in INVOICE_KIND_KEYS ? kind : INVOICE_KIND_UNCLASSIFIED
+  return t(INVOICE_KIND_KEYS[key], INVOICE_KIND_FALLBACKS[key])
+}
+
 export type InvoiceRecord = {
   id: string
   number: string | null
   direction: string
+  invoiceKind: InvoiceKind | null
   status: InvoiceStatus
   counterpartyName: string | null
   contractId: string | null
   contractNumber: string | null
   currencyCode: string
   total: string
+  taxTotal: string
+  grossTotal: string
   issuedAt: string | null
   attachmentId: string | null
   updatedAt: string | null
@@ -57,12 +105,15 @@ export function toInvoiceRecord(item: Record<string, unknown>): InvoiceRecord {
     id: String(item.id),
     number: (item.number ?? null) as string | null,
     direction: String(item.direction ?? 'inbound'),
+    invoiceKind: asInvoiceKind(item.invoiceKind ?? item.invoice_kind),
     status: (INVOICE_STATUSES as readonly string[]).includes(status) ? (status as InvoiceStatus) : 'draft',
     counterpartyName: (item.counterpartyName ?? null) as string | null,
     contractId: (item.contractId ?? null) as string | null,
     contractNumber: (item.contractNumber ?? null) as string | null,
     currencyCode: String(item.currencyCode ?? 'CNY'),
     total: String(item.total ?? '0'),
+    taxTotal: String(item.taxTotal ?? item.tax_total ?? '0'),
+    grossTotal: String(item.grossTotal ?? item.gross_total ?? '0'),
     issuedAt: (item.issuedAt ?? null) as string | null,
     attachmentId: (item.attachmentId ?? null) as string | null,
     updatedAt: (item.updatedAt ?? item.updated_at ?? null) as string | null,
@@ -85,17 +136,29 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<InvoiceRecord>[
       cell: ({ row }) => directionLabel(t, row.original.direction),
     },
     {
+      accessorKey: 'invoiceKind',
+      header: t('trade_docs.invoices.list.columns.kind', 'Invoice kind'),
+      enableSorting: false,
+      meta: { priority: 3 },
+      cell: ({ row }) =>
+        row.original.invoiceKind ? (
+          <span className="text-sm">{invoiceKindLabel(t, row.original.invoiceKind)}</span>
+        ) : (
+          <span className="text-xs text-muted-foreground">{invoiceKindLabel(t, null)}</span>
+        ),
+    },
+    {
       accessorKey: 'counterpartyName',
       header: t('trade_docs.invoices.list.columns.counterparty'),
       enableSorting: false,
-      meta: { priority: 3, truncate: true, maxWidth: 240 },
+      meta: { priority: 4, truncate: true, maxWidth: 240 },
       cell: ({ row }) => row.original.counterpartyName ?? <span className="text-xs text-muted-foreground">—</span>,
     },
     {
       id: 'contract',
       header: t('trade_docs.invoices.list.columns.contract'),
       enableSorting: false,
-      meta: { priority: 4 },
+      meta: { priority: 5 },
       cell: ({ row }) =>
         row.original.contractId ? (
           <Link className="text-sm hover:underline" href={`/backend/trade-docs/contracts/${row.original.contractId}`}>
@@ -109,7 +172,7 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<InvoiceRecord>[
       accessorKey: 'status',
       header: t('trade_docs.invoices.list.columns.status'),
       enableSorting: false,
-      meta: { priority: 5 },
+      meta: { priority: 6 },
       cell: ({ row }) => (
         <StatusBadge variant={STATUS_VARIANT[row.original.status]} dot>
           {invoiceStatusLabel(t, row.original.status)}
@@ -119,33 +182,57 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<InvoiceRecord>[
     {
       accessorKey: 'total',
       header: t('trade_docs.invoices.list.columns.total'),
-      meta: { priority: 6 },
+      meta: { priority: 7 },
       cell: ({ row }) => (
         <MoneyAmount currencyCode={row.original.currencyCode} amount={row.original.total} />
+      ),
+    },
+    {
+      accessorKey: 'taxTotal',
+      header: t('trade_docs.invoices.list.columns.taxTotal', 'Tax amount'),
+      enableSorting: false,
+      meta: { priority: 8 },
+      cell: ({ row }) => (
+        <MoneyAmount currencyCode={row.original.currencyCode} amount={row.original.taxTotal} />
+      ),
+    },
+    {
+      accessorKey: 'grossTotal',
+      header: t('trade_docs.invoices.list.columns.grossTotal', 'Gross total'),
+      enableSorting: false,
+      meta: { priority: 9 },
+      cell: ({ row }) => (
+        <MoneyAmount currencyCode={row.original.currencyCode} amount={row.original.grossTotal} />
       ),
     },
     {
       accessorKey: 'issuedAt',
       header: t('trade_docs.invoices.list.columns.issuedAt'),
       enableSorting: false,
-      meta: { priority: 7 },
+      meta: { priority: 10 },
       cell: ({ row }) => row.original.issuedAt ?? <span className="text-xs text-muted-foreground">—</span>,
     },
     {
       id: 'attachment',
       header: t('trade_docs.invoices.list.columns.attachment'),
       enableSorting: false,
-      meta: { priority: 8 },
+      meta: { priority: 11 },
       cell: ({ row }) =>
         row.original.attachmentId ? (
-          <a
-            className="text-sm hover:underline"
-            href={`/api/attachments/file/${encodeURIComponent(row.original.attachmentId)}?download=1`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t('trade_docs.invoices.list.attachment.yes')}
-          </a>
+          <div className="flex flex-wrap items-center gap-3">
+            <AttachmentPreviewLink
+              attachmentId={row.original.attachmentId}
+              label={t('trade_docs.invoices.list.attachment.yes')}
+            />
+            <a
+              className="text-sm hover:underline"
+              href={`/api/attachments/file/${encodeURIComponent(row.original.attachmentId)}?download=1`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('trade_docs.invoices.list.attachment.download')}
+            </a>
+          </div>
         ) : (
           <span className="text-xs text-muted-foreground">{t('trade_docs.invoices.list.attachment.no')}</span>
         ),
@@ -153,7 +240,7 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<InvoiceRecord>[
     {
       accessorKey: 'updatedAt',
       header: t('trade_docs.contracts.list.columns.updatedAt'),
-      meta: { priority: 9 },
+      meta: { priority: 12 },
       cell: ({ row }) => formatDate(row.original.updatedAt, locale) ?? '—',
     },
   ]
@@ -169,6 +256,7 @@ export default function InvoicesTable() {
   const [search, setSearch] = React.useState('')
   const [status, setStatus] = React.useState<string>(ALL)
   const [direction, setDirection] = React.useState<string>(ALL)
+  const [kind, setKind] = React.useState<string>(ALL)
   const [sorting, setSorting] = React.useState<SortingState>([{ id: 'updated_at', desc: true }])
   const [page, setPage] = React.useState(1)
 
@@ -183,8 +271,9 @@ export default function InvoicesTable() {
     if (trimmed) params.set('search', trimmed)
     if (status !== ALL) params.set('status', status)
     if (direction !== ALL) params.set('direction', direction)
+    if (kind !== ALL) params.set('invoiceKind', kind)
     return params
-  }, [direction, page, search, sorting, status])
+  }, [direction, kind, page, search, sorting, status])
 
   const queryKey = React.useMemo(
     () => [QUERY_KEY_ROOT, queryParams.toString(), scopeVersion],
@@ -257,6 +346,12 @@ export default function InvoicesTable() {
         searchAlign="right"
         filters={[
           {
+            id: 'invoiceKind',
+            label: t('trade_docs.invoices.list.filter.kind', 'Invoice kind'),
+            type: 'select',
+            options: INVOICE_KINDS.map((value) => ({ value, label: invoiceKindLabel(t, value) })),
+          },
+          {
             id: 'direction',
             label: t('trade_docs.invoices.list.filter.direction'),
             type: 'select',
@@ -270,15 +365,18 @@ export default function InvoicesTable() {
           },
         ]}
         filterValues={{
+          ...(kind === ALL ? {} : { invoiceKind: kind }),
           ...(direction === ALL ? {} : { direction }),
           ...(status === ALL ? {} : { status }),
         }}
         onFiltersApply={(values: FilterValues) => {
+          setKind(typeof values.invoiceKind === 'string' && values.invoiceKind.length ? values.invoiceKind : ALL)
           setDirection(typeof values.direction === 'string' && values.direction.length ? values.direction : ALL)
           setStatus(typeof values.status === 'string' && values.status.length ? values.status : ALL)
           setPage(1)
         }}
         onFiltersClear={() => {
+          setKind(ALL)
           setDirection(ALL)
           setStatus(ALL)
           setPage(1)

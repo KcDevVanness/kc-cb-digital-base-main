@@ -1,16 +1,31 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
+import { parseExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
+import { divideHalfUp, toAmountString } from '../../trade_docs/lib/money'
 
 /**
  * The one implementation of "what is one unit of this currency worth in CNY".
  *
  * Both sides of the display need a *rate*, but only the server ever needs the *direction*: the read
- * route resolves it here and hands the client a number to multiply. That is deliberate — a second
+ * route resolves it here and hands the client a decimal string to multiply. That is deliberate — a second
  * direction implementation in a component is how a USD price ends up divided instead of multiplied
  * (see `.ai/specs/2026-09-24-cny-equivalent-amounts.md`, D7).
+ *
+ * Rates are money-adjacent and therefore never touch a binary float: the direct direction is the stored
+ * string, the inverse goes through the BigInt engine (`divideHalfUp`) and is quantized HALF_UP to
+ * `RATE_SCALE` — `1 / Number(...)` would make the converted amount depend on the machine's arithmetic.
  */
 
 /** The display currency. Fixed by policy, not by the master's `is_base` (D1). */
 export const CNY_DISPLAY_CURRENCY = 'CNY' as const
+
+/**
+ * The scale of `exchange_rates.rate` (`numeric(18,8)`) — and of every rate this lookup returns.
+ *
+ * A rate is not an amount (amounts are always 2 decimals, see
+ * `.ai/specs/2026-09-28-money-scale-2dp-unification.md`): it keeps its column scale so a converted
+ * amount is computed from the exact stored figure.
+ */
+export const RATE_SCALE = 8
 
 /** One stored rate row, as the lookup needs it. */
 type RateRow = {
@@ -23,7 +38,7 @@ type RateRow = {
 
 export type CnyRate = {
   currencyCode: string
-  /** CNY per **one unit** of `currencyCode` — `6.7226` for USD. */
+  /** CNY per **one unit** of `currencyCode`, an exact `RATE_SCALE`-decimal string — `6.72264388` for USD. */
   rate: string
   /** When the rate was published (`exchange_rates.date`), so the display can print it. */
   date: Date
@@ -63,19 +78,41 @@ export function resolveCnyRate(currencyCode: string, rows: readonly RateRow[]): 
   if (!chosen) return null
 
   const direct = chosen.fromCurrencyCode === code
-  const numeric = Number.parseFloat(chosen.rate)
-  if (!Number.isFinite(numeric) || numeric <= 0) return null
-  const rate = direct ? numeric : 1 / numeric
-  if (!Number.isFinite(rate) || rate <= 0) return null
+  // Direct: the stored `numeric(18,8)` string is used verbatim. Inverse: the engine's exact division.
+  const rate = direct ? chosen.rate.trim() : invertRate(chosen.rate)
+  if (!rate) return null
+
+  // A stored rate is trusted only when it parses as a positive decimal; a broken row means "no rate".
+  const parsed = parseExactDecimal(rate)
+  if (!parsed || parsed.units <= 0n) return null
 
   return {
     currencyCode: code,
-    // `numeric(18,8)` is the column's scale; the conversion keeps more digits than any display needs.
-    rate: rate.toString(),
+    rate,
     date: chosen.date,
     source: chosen.source,
     inverted: !direct,
   }
+}
+
+/**
+ * `1 / rate` at `RATE_SCALE` decimals, half away from zero — and `null` when `rate` is not a positive
+ * decimal.
+ *
+ * `rate = units / 10^scale`, so `1 / rate = 10^scale / units` and the scaled result is
+ * `round(10^(scale + RATE_SCALE) / units)`: one BigInt division with no intermediate float. The stored
+ * rate is authoritative, so its own scale (not a fixed 8) drives the numerator — `0.148751` inverts to
+ * `6.72264388`, the same figure the direct USD row carries.
+ *
+ * Exported because the feed needs the same inversion when it publishes the `X→CNY` direction of a
+ * `CNY→X` quote (`lib/providers/openErApi.ts`); a float `1 / n` at the source would let the two write
+ * paths disagree in the ninth decimal.
+ */
+export function invertRate(rate: string | number): string | null {
+  const stored = parseExactDecimal(rate)
+  if (!stored || stored.units <= 0n) return null
+  const units = divideHalfUp(10n ** BigInt(stored.scale + RATE_SCALE), stored.units)
+  return toAmountString({ units, scale: RATE_SCALE }, RATE_SCALE)
 }
 
 /**

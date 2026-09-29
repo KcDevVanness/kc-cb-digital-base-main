@@ -1,7 +1,6 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
 import { sql } from 'kysely'
 import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern'
-import { readCurrencyScaleInfo } from '../../trade_docs/lib/currencyScale'
 import {
   aggregateRefundStatus,
   allocateTaxRefund,
@@ -13,7 +12,6 @@ import {
   snapshotName,
   sumAllocationShares,
   toIsoTimestamp,
-  toScaledUnits,
   toTime,
   type AllocationOrder,
   type ContractRow,
@@ -22,7 +20,7 @@ import {
   type OrderFileListParams,
   type OrderFileRow,
 } from './fileRules'
-import { STORED_AMOUNT_SCALE } from '../../trade_docs/lib/money'
+import { AMOUNT_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
 
 /**
  * 订单档案 — the read-only projection of one purchase order.
@@ -134,8 +132,8 @@ function toInvoiceRow(row: InvoiceQueryRow): InvoiceRow {
  */
 function compareOrderRows(left: OrderFileRow, right: OrderFileRow, sortField: OrderFileListParams['sortField'], direction: 1 | -1): number {
   if (sortField === 'total') {
-    const leftUnits = toScaledUnits(left.finance.orderAmount, STORED_AMOUNT_SCALE)
-    const rightUnits = toScaledUnits(right.finance.orderAmount, STORED_AMOUNT_SCALE)
+    const leftUnits = toScaledUnits(left.finance.orderAmount, AMOUNT_SCALE)
+    const rightUnits = toScaledUnits(right.finance.orderAmount, AMOUNT_SCALE)
     if (leftUnits !== rightUnits) return leftUnits < rightUnits ? -direction : direction
     return left.purchaseOrderId < right.purchaseOrderId ? -1 : 1
   }
@@ -352,12 +350,24 @@ export async function loadOrderFiles(
 
   const collections = (await db
     .selectFrom('export_finance_collections as fc')
-    .select(['fc.id as id', 'fc.purchase_order_id as purchase_order_id', 'fc.collection_status as collection_status'])
+    .select([
+      'fc.id as id',
+      'fc.purchase_order_id as purchase_order_id',
+      'fc.collection_status as collection_status',
+      'fc.amount as collected_amount',
+      'fc.received_at as received_at',
+    ])
     .where('fc.purchase_order_id', 'in', orderIds)
     .where('fc.tenant_id', '=', params.tenantId)
     .where('fc.organization_id', 'in', params.organizationIds)
     .where('fc.deleted_at', 'is', null)
-    .execute()) as Array<{ id: string; purchase_order_id: string; collection_status: string }>
+    .execute()) as Array<{
+    id: string
+    purchase_order_id: string
+    collection_status: string
+    collected_amount: string | null
+    received_at: Date | string | null
+  }>
 
   const collectionIds = collections.map((row) => String(row.id))
 
@@ -397,21 +407,12 @@ export async function loadOrderFiles(
 
   const refundsByShipment = new Map(refunds.map((row) => [String(row.shipment_id), row]))
 
-  const currencyScales = new Map<string, number>()
-  for (const order of orders) {
-    const code = String(order.currency_code ?? 'CNY')
-    if (currencyScales.has(code)) continue
-    const info = await readCurrencyScaleInfo(em, scope, code)
-    currencyScales.set(code, info.scale)
-  }
-
   const pickedUpShipments = new Set(
     milestones.filter((row) => row.milestone === 'picked_up').map((row) => String(row.shipment_id)),
   )
 
   const items: OrderFileRow[] = orders.map((order) => {
     const orderId = String(order.id)
-    const currencyScale = currencyScales.get(String(order.currency_code ?? 'CNY')) ?? 2
 
     const containers: OrderContainerRef[] = allocations
       .filter((row) => String(row.purchase_order_id) === orderId)
@@ -521,8 +522,9 @@ export async function loadOrderFiles(
         total: String(order.total ?? '0'),
         depositAmount: order.deposit_amount ?? null,
         depositPercent: order.deposit_percent ?? null,
-        currencyScale,
         paymentAmounts: payments.filter((row) => String(row.order_id) === orderId).map((row) => String(row.amount ?? '0')),
+        collectedAmount: collection ? collection.collected_amount ?? null : null,
+        collectedAt: collection ? toIsoTimestamp(collection.received_at) : null,
         kcPriceAmount: kcContract?.financeTotal ?? null,
         kcPriceCurrency: kcContract?.currencyCode ?? null,
         subsidiaryInvoiceAmount: subsidiaryInvoice?.total ?? null,

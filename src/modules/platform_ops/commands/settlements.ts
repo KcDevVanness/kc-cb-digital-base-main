@@ -11,6 +11,12 @@ import {
   PlatformOpsSettlementLine,
 } from '../data/entities'
 import { reconciliationIgnoreSchema, reconciliationResolveSchema, settlementImportSchema } from '../data/validators'
+import {
+  amountsDiffer,
+  quantizePlatformAmount,
+  resolvePlatformAmounts,
+  shouldRaiseReconciliationItem,
+} from '../lib/money'
 import { ensureScope, type Scope } from '../lib/scope'
 import { eventsConfig } from '../events'
 
@@ -19,10 +25,6 @@ export type SettlementImportResult = {
   lines: number
   raised: number
   linked: number
-}
-
-function amountsDiffer(left: string | null | undefined, right: string): boolean {
-  return Math.abs(Number.parseFloat(left ?? '0') - Number.parseFloat(right)) >= 1e-6
 }
 
 async function loadChannel(em: EntityManager, scope: Scope, channelId: string): Promise<PlatformOpsChannel> {
@@ -41,9 +43,10 @@ async function loadChannel(em: EntityManager, scope: Scope, channelId: string): 
  *
  * "Already known" spans every status, not just `open`: re-importing the same settlement after an
  * operator resolved (or ignored) a difference must not resurrect it as a new item, or a nightly
- * import would fill the queue with copies of decisions already taken. The comparison is on the
- * amounts, so a problem whose numbers *changed* is genuinely new and does raise a fresh item —
- * which is the only case where the operator has something new to look at.
+ * import would fill the queue with copies of decisions already taken. The comparison is on both
+ * amounts (scaled integers, never floats), so a problem whose *expected or actual* number changed is
+ * genuinely new and does raise a fresh item — which is the only case where the operator has
+ * something new to look at.
  */
 async function raiseItem(
   em: EntityManager,
@@ -68,9 +71,14 @@ async function raiseItem(
     } as FilterQuery<PlatformOpsReconciliationItem>,
     { orderBy: { createdAt: 'desc' } },
   )
-  const sameAmount = (left: string | null | undefined, right: string | null | undefined): boolean =>
-    (left ?? null) === (right ?? null)
-  if (previous && sameAmount(previous.actualAmount, input.actualAmount ?? null)) return false
+  if (
+    !shouldRaiseReconciliationItem(previous, {
+      expectedAmount: input.expectedAmount ?? null,
+      actualAmount: input.actualAmount ?? null,
+    })
+  ) {
+    return false
+  }
 
   em.persist(
     em.create(PlatformOpsReconciliationItem, {
@@ -135,9 +143,18 @@ const importSettlementCommand: CommandHandler<Record<string, unknown>, Settlemen
     settlement.periodStart = parsed.settlement.periodStart ? new Date(parsed.settlement.periodStart) : null
     settlement.periodEnd = parsed.settlement.periodEnd ? new Date(parsed.settlement.periodEnd) : null
     settlement.currencyCode = currencyCode
-    settlement.grossAmount = (parsed.settlement.grossAmount ?? 0).toFixed(4)
-    settlement.feeAmount = (parsed.settlement.feeAmount ?? 0).toFixed(4)
-    settlement.netAmount = (parsed.settlement.netAmount ?? 0).toFixed(4)
+    settlement.grossAmount = quantizePlatformAmount(
+      parsed.settlement.grossAmount,
+      `settlements.${parsed.settlement.externalSettlementId}.grossAmount`,
+    )
+    settlement.feeAmount = quantizePlatformAmount(
+      parsed.settlement.feeAmount,
+      `settlements.${parsed.settlement.externalSettlementId}.feeAmount`,
+    )
+    settlement.netAmount = quantizePlatformAmount(
+      parsed.settlement.netAmount,
+      `settlements.${parsed.settlement.externalSettlementId}.netAmount`,
+    )
     settlement.receivedAt = parsed.settlement.receivedAt ? new Date(parsed.settlement.receivedAt) : null
     settlement.raw = parsed.settlement as unknown as Record<string, unknown>
     if (!existing) em.persist(settlement)
@@ -159,9 +176,7 @@ const importSettlementCommand: CommandHandler<Record<string, unknown>, Settlemen
     let linked = 0
 
     for (const line of parsed.lines) {
-      const gross = (line.grossAmount ?? 0).toFixed(4)
-      const fee = (line.feeAmount ?? 0).toFixed(4)
-      const net = (line.netAmount ?? (line.grossAmount ?? 0) - (line.feeAmount ?? 0)).toFixed(4)
+      const { gross, fee, net } = resolvePlatformAmounts(line, `lines.${line.externalOrderId}`)
       const mirror = mirrorByExternalId[line.externalOrderId]
 
       seen[line.externalOrderId] = (seen[line.externalOrderId] ?? 0) + 1

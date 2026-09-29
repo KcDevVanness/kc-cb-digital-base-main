@@ -17,13 +17,15 @@ import { SectionHeader } from '@open-mercato/ui/backend/SectionHeader'
 import { FormHeader } from '@open-mercato/ui/backend/forms'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
-import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
+import { apiCall, apiCallOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { pushWithFlash } from '@open-mercato/ui/backend/utils/flash'
 import { Button } from '@open-mercato/ui/primitives/button'
+import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
 import { EmptyState } from '@open-mercato/ui/primitives/empty-state'
 import { IconButton } from '@open-mercato/ui/primitives/icon-button'
 import { Input } from '@open-mercato/ui/primitives/input'
+import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import { FieldLabel } from '@open-mercato/ui/primitives/label'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
@@ -31,12 +33,21 @@ import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { directionLabel, invoiceStatusLabel, INVOICE_DIRECTIONS, type InvoiceStatus } from './contractLabels'
 import {
+  INVOICE_KIND_UNCLASSIFIED,
+  INVOICE_KINDS,
+  asInvoiceKind,
+  invoiceKindLabel,
+} from './InvoicesTable'
+import { documentKindLabel, documentListHref, type DocumentKind } from './DocumentsTable'
+import { DocumentCopyFromDialog } from './DocumentDetail'
+import {
   loadContractLineOptions,
   loadContractOptions,
   loadCounterpartyOptions,
   loadCurrencyOptions,
   loadProductOptions,
   readText,
+  snapshotText,
   type ProductOption,
 } from './formOptions'
 
@@ -46,6 +57,8 @@ const INVOICE_TRANSITIONS_API_PATH = 'trade_docs/invoices/transitions'
 const INVOICE_ATTACH_API_PATH = 'trade_docs/invoices/attach'
 const CONTRACTS_HREF = '/backend/trade-docs/contracts'
 const LIST_HREF = '/backend/trade-docs/invoices'
+/** A shipment's own page is where its per-container tax-refund package is filed (REQ-006 anchor). */
+const SHIPMENTS_HREF = '/backend/cross_border/shipments'
 
 /** Attachment assignment entity id; the partition resolves to the platform's private default. */
 const ATTACHMENT_ENTITY_ID = 'trade_docs:trade_docs_invoice'
@@ -58,6 +71,12 @@ export type InvoiceLineValues = {
   quantity: string
   unitPrice: string
   amount: string
+  /** Tax rate as a percentage (`13` = 13%), the same caliber the purchase-order lines use. */
+  taxRate: string
+  /** Whether `amount` already includes the tax; the server derives the line's tax amount from it. */
+  priceIncludesTax: boolean
+  /** Server-computed tax for the line (`amount − amount/(1+rate)` or `amount × rate`). Read-only. */
+  taxAmount: string
   contractLineId: string
 }
 
@@ -65,6 +84,8 @@ export type InvoiceFormValues = {
   id?: string
   number: string
   direction: string
+  /** `''` until chosen, a real kind, or `INVOICE_KIND_UNCLASSIFIED` for a row without one. */
+  invoiceKind: string
   counterpartyKind: string
   counterpartyId: string
   counterpartyName: string
@@ -84,12 +105,16 @@ const EMPTY_LINE: InvoiceLineValues = {
   quantity: '1',
   unitPrice: '0',
   amount: '0',
+  taxRate: '0',
+  priceIncludesTax: true,
+  taxAmount: '0',
   contractLineId: '',
 }
 
 const EMPTY_INVOICE_VALUES: InvoiceFormValues = {
   number: '',
   direction: 'inbound',
+  invoiceKind: '',
   counterpartyKind: 'supplier',
   counterpartyId: '',
   counterpartyName: '',
@@ -105,6 +130,30 @@ function trimmedOrNull(value: string): string | null {
   return trimmed.length > 0 ? trimmed : null
 }
 
+/**
+ * The family of a copied source document, read from the frozen `sourceSnapshot.documentKind` a
+ * `trade_docs.invoices.copy-from` writes. An unknown/absent value yields null so the invoice prints
+ * the snapshot text instead of a link to a guessed route.
+ */
+function readSourceDocumentKind(snapshot: Record<string, unknown> | null): DocumentKind | null {
+  const value = snapshotText(snapshot, 'documentKind')
+  return value === 'proforma' || value === 'commercial' ? value : null
+}
+
+/**
+ * Reads a boolean that may arrive as a real boolean (the API's projection) or a string (a form
+ * round trip); anything else falls back to the caller's default.
+ */
+function readBoolean(source: Record<string, unknown>, keys: string[], fallback: boolean): boolean {
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'boolean') return value
+    if (value === 'true') return true
+    if (value === 'false') return false
+  }
+  return fallback
+}
+
 export function toInvoiceFormValues(
   item: Record<string, unknown>,
   lines: InvoiceLineValues[] = [],
@@ -114,6 +163,7 @@ export function toInvoiceFormValues(
     id: readText(item, 'id'),
     number: readText(item, 'number'),
     direction: readText(item, 'direction') || 'inbound',
+    invoiceKind: asInvoiceKind(item.invoiceKind ?? item.invoice_kind) ?? INVOICE_KIND_UNCLASSIFIED,
     counterpartyKind: readText(item, 'counterpartyKind', 'counterparty_kind') || 'supplier',
     counterpartyId: readText(item, 'counterpartyId', 'counterparty_id'),
     counterpartyName: readText(item, 'counterpartyName', 'counterparty_name'),
@@ -135,6 +185,9 @@ export function toInvoiceLineValues(item: Record<string, unknown>): InvoiceLineV
     quantity: readText(item, 'quantity') || '0',
     unitPrice: readText(item, 'unitPrice', 'unit_price') || '0',
     amount: readText(item, 'amount') || '0',
+    taxRate: readText(item, 'taxRate', 'tax_rate') || '0',
+    priceIncludesTax: readBoolean(item, ['priceIncludesTax', 'price_includes_tax'], true),
+    taxAmount: readText(item, 'taxAmount', 'tax_amount') || '0',
     contractLineId: readText(item, 'contractLineId', 'contract_line_id'),
   }
 }
@@ -151,12 +204,15 @@ export function buildInvoicePayload(values: InvoiceFormValues): Record<string, u
       quantity: line.quantity.trim() ? line.quantity.trim() : '0',
       unitPrice: line.unitPrice.trim() ? line.unitPrice.trim() : '0',
       amount: line.amount.trim() ? line.amount.trim() : '0',
+      taxRate: line.taxRate.trim() ? line.taxRate.trim() : '0',
+      priceIncludesTax: line.priceIncludesTax === true,
       contractLineId: line.contractLineId.trim() ? line.contractLineId.trim() : null,
     }))
 
   return {
     number: trimmedOrNull(values.number),
     direction: values.direction,
+    invoiceKind: invoiceKindPayload(values.invoiceKind),
     counterpartyKind: values.counterpartyKind,
     counterpartyId: values.counterpartyId.trim() ? values.counterpartyId.trim() : null,
     counterpartySnapshot: values.counterpartyName.trim() ? { name: values.counterpartyName.trim() } : null,
@@ -166,6 +222,13 @@ export function buildInvoicePayload(values: InvoiceFormValues): Record<string, u
     notes: trimmedOrNull(values.notes),
     lines,
   }
+}
+
+/** `未分类` (and a not-yet-chosen select) travels to the API as a real `null`, never a made-up kind. */
+function invoiceKindPayload(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === INVOICE_KIND_UNCLASSIFIED) return null
+  return trimmed
 }
 
 function InvoiceLinesEditor(
@@ -319,6 +382,26 @@ function InvoiceLinesEditor(
                 onChange={(event) => updateLine(index, { amount: event.target.value })}
               />
             </div>
+            <div className="space-y-1.5 md:col-span-2">
+              <FieldLabel htmlFor={`invoice-line-tax-rate-${index}`}>
+                {t('trade_docs.invoices.form.lines.taxRate', 'Tax rate (%)')}
+              </FieldLabel>
+              <Input
+                id={`invoice-line-tax-rate-${index}`}
+                inputMode="decimal"
+                value={line.taxRate}
+                onChange={(event) => updateLine(index, { taxRate: event.target.value })}
+              />
+            </div>
+            <div className="flex items-end md:col-span-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox
+                  checked={line.priceIncludesTax}
+                  onCheckedChange={(next) => updateLine(index, { priceIncludesTax: next === true })}
+                />
+                {t('trade_docs.invoices.form.lines.priceIncludesTax', 'Amount is tax-inclusive')}
+              </label>
+            </div>
             <div className="space-y-1.5 md:col-span-5">
               <FieldLabel htmlFor={`invoice-line-binding-${index}`}>
                 {t('trade_docs.invoices.form.lines.contractLine')}
@@ -346,7 +429,7 @@ function InvoiceLinesEditor(
   )
 }
 
-function useInvoiceFields(t: TranslateFn): CrudField[] {
+function useInvoiceFields(t: TranslateFn, mode: 'create' | 'edit'): CrudField[] {
   const { organizationId } = useOrganizationScopeDetail()
   return React.useMemo<CrudField[]>(() => [
     { id: 'number', label: t('trade_docs.invoices.form.field.number'), type: 'text', layout: 'half' },
@@ -356,6 +439,22 @@ function useInvoiceFields(t: TranslateFn): CrudField[] {
       type: 'select',
       required: true,
       options: INVOICE_DIRECTIONS.map((value) => ({ value, label: directionLabel(t, value) })),
+      layout: 'half',
+    },
+    {
+      id: 'invoiceKind',
+      label: t('trade_docs.invoices.form.field.invoiceKind', 'Invoice kind'),
+      type: 'select',
+      /*
+       * Required while creating (the ledger must say which tax document this is), but never on edit:
+       * a historical row's kind is `null` and re-saving it must keep working untouched. The explicit
+       * 「未分类」 option is a real value the operator can pick, so "required" still means "choose one".
+       */
+      required: mode === 'create',
+      options: [
+        ...INVOICE_KINDS.map((value) => ({ value, label: invoiceKindLabel(t, value) })),
+        { value: INVOICE_KIND_UNCLASSIFIED, label: invoiceKindLabel(t, null) },
+      ],
       layout: 'half',
     },
     {
@@ -404,7 +503,7 @@ function useInvoiceFields(t: TranslateFn): CrudField[] {
     },
     { id: 'issuedAt', label: t('trade_docs.invoices.form.field.issuedAt'), type: 'date', layout: 'half' },
     { id: 'notes', label: t('trade_docs.invoices.form.field.notes'), type: 'textarea', layout: 'half' },
-  ], [t, organizationId])
+  ], [t, mode, organizationId])
 }
 
 function useInvoiceGroups(t: TranslateFn): CrudFormGroup[] {
@@ -412,7 +511,7 @@ function useInvoiceGroups(t: TranslateFn): CrudFormGroup[] {
     {
       id: 'header',
       column: 1,
-      fields: ['number', 'direction', 'counterpartyKind', 'counterpartyId', 'counterpartyName', 'contractId', 'currencyCode', 'issuedAt', 'notes'],
+      fields: ['number', 'direction', 'invoiceKind', 'counterpartyKind', 'counterpartyId', 'counterpartyName', 'contractId', 'currencyCode', 'issuedAt', 'notes'],
     },
     {
       id: 'lines',
@@ -427,7 +526,7 @@ function InvoiceCreateForm() {
   const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const fields = useInvoiceFields(t)
+  const fields = useInvoiceFields(t, 'create')
   const groups = useInvoiceGroups(t)
   const initialValues = React.useMemo<InvoiceFormValues>(() => {
     const contractId = searchParams.get('contractId') ?? ''
@@ -542,14 +641,20 @@ function InvoiceAttachmentSection({ invoiceId, attachmentId, updatedAt, onChange
           {attachmentId ? t('trade_docs.invoices.form.attachment.retry') : t('trade_docs.invoices.form.attachment.upload')}
         </Button>
         {attachmentId ? (
-          <a
-            className="text-sm font-medium hover:underline"
-            href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t('trade_docs.invoices.form.attachment.open')}
-          </a>
+          <>
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              label={t('trade_docs.invoices.form.attachment.open')}
+            />
+            <a
+              className="text-sm font-medium hover:underline"
+              href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('trade_docs.invoices.form.attachment.download')}
+            </a>
+          </>
         ) : (
           <span className="text-sm text-muted-foreground">{t('trade_docs.invoices.list.attachment.no')}</span>
         )}
@@ -575,15 +680,22 @@ export default function InvoiceForm({ mode, invoiceId }: { mode: 'create' | 'edi
 function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
   const t = useT()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
-  const fields = useInvoiceFields(t)
+  const fields = useInvoiceFields(t, 'edit')
   const groups = useInvoiceGroups(t)
   const [initial, setInitial] = React.useState<InvoiceFormValues | null>(null)
   const [head, setHead] = React.useState<{
     status: InvoiceStatus
     total: string
+    taxTotal: string
+    grossTotal: string
+    invoiceKind: string | null
+    ourNumber: string | null
     currencyCode: string
     contractId: string | null
     contractNumber: string | null
+    sourceKind: string | null
+    sourceId: string | null
+    sourceSnapshot: Record<string, unknown> | null
     attachmentId: string | null
     updatedAt: string | null
   } | null>(null)
@@ -592,6 +704,7 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
   const [isNotFound, setIsNotFound] = React.useState(false)
   const [isMutating, setIsMutating] = React.useState(false)
   const [reloadToken, setReloadToken] = React.useState(0)
+  const [copyOpen, setCopyOpen] = React.useState(false)
 
   React.useEffect(() => {
     let cancelled = false
@@ -619,9 +732,16 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
         setHead({
           status: String(item.status ?? 'draft') as InvoiceStatus,
           total: String(item.total ?? '0'),
+          taxTotal: String(item.taxTotal ?? item.tax_total ?? '0'),
+          grossTotal: String(item.grossTotal ?? item.gross_total ?? '0'),
+          invoiceKind: asInvoiceKind(item.invoiceKind ?? item.invoice_kind),
+          ourNumber: (item.ourNumber ?? item.our_number ?? null) as string | null,
           currencyCode: String(item.currencyCode ?? 'CNY'),
           contractId: (item.contractId ?? null) as string | null,
           contractNumber: (item.contractNumber ?? null) as string | null,
+          sourceKind: (item.sourceKind ?? item.source_kind ?? null) as string | null,
+          sourceId: (item.sourceId ?? item.source_id ?? null) as string | null,
+          sourceSnapshot: (item.sourceSnapshot ?? item.source_snapshot ?? null) as Record<string, unknown> | null,
           attachmentId: (item.attachmentId ?? null) as string | null,
           updatedAt: (item.updatedAt ?? null) as string | null,
         })
@@ -675,12 +795,64 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
     }
   }, [initial, invoiceId, reload, t])
 
+  /**
+   * One-shot copy of a commercial invoice's head + lines into this draft tax invoice — the
+   * "从商业发票复制" flow. The command maps the document's lines onto invoice lines (VAT rate left at
+   * its default for the operator) and freezes a link back; the totals are recomputed server-side, so
+   * a reload is all the UI has to do. Running it again replaces the lines, never duplicates them.
+   */
+  const handleCopyFrom = React.useCallback(
+    async (sourceDocumentId: string) => {
+      try {
+        await apiCallOrThrow<{ ok: true; lineCount: number }>(
+          `/api/trade_docs/invoices/${encodeURIComponent(invoiceId)}/copy-from`,
+          {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sourceDocumentId }),
+          },
+          { errorMessage: t('trade_docs.invoices.detail.copy.failed', 'Could not copy from the commercial invoice') },
+        )
+        flash(
+          t('trade_docs.invoices.detail.copy.success', "Copied the commercial invoice's head and lines"),
+          'success',
+        )
+        await reload()
+      } catch (copyError) {
+        flash(
+          copyError instanceof Error && copyError.message
+            ? copyError.message
+            : t('trade_docs.invoices.detail.copy.failed', 'Could not copy from the commercial invoice'),
+          'error',
+        )
+        throw copyError
+      }
+    },
+    [invoiceId, reload, t],
+  )
+
   if (loading) return <LoadingMessage label={t('trade_docs.common.loading')} />
   if (isNotFound) return <RecordNotFoundState label={t('trade_docs.invoices.form.notFound')} backHref={LIST_HREF} />
   if (error) return <ErrorMessage label={error} />
   if (!initial || !head) return null
 
   const isDraft = head.status === 'draft'
+  const isExportInvoice = head.invoiceKind === 'export'
+  const isShipmentAnchor =
+    head.sourceKind === 'shipment' && typeof head.sourceId === 'string' && head.sourceId.length > 0
+  // A trade-document source is linked by its frozen family + number; a draft source (no number) is
+  // labelled by its family, and a snapshot without a known family degrades to the plain snapshot text.
+  const isDocumentAnchor = head.sourceKind === 'trade_document'
+  const sourceDocumentKind = isDocumentAnchor ? readSourceDocumentKind(head.sourceSnapshot) : null
+  const sourceNumber = snapshotText(head.sourceSnapshot, 'number') || null
+  const sourceHref =
+    sourceDocumentKind && head.sourceId
+      ? `${documentListHref(sourceDocumentKind)}/${encodeURIComponent(head.sourceId)}`
+      : null
+  const sourceLabel = sourceDocumentKind
+    ? [documentKindLabel(t, sourceDocumentKind), sourceNumber].filter(Boolean).join(' ')
+    : (sourceNumber ?? '—')
 
   return (
     <div className="space-y-6">
@@ -688,11 +860,27 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
         mode="detail"
         backHref={LIST_HREF}
         entityTypeLabel={t('trade_docs.invoices.page.title')}
-        title={initial.number || t(`trade_docs.invoices.status.${head.status}`)}
+        title={(
+          <span className="flex flex-wrap items-baseline gap-2">
+            <span>{initial.number || t(`trade_docs.invoices.status.${head.status}`)}</span>
+            {head.ourNumber ? (
+              <span className="text-sm font-normal text-muted-foreground">
+                {t('trade_docs.invoices.detail.ourNumber', 'Our number')}
+                {': '}
+                <span className="font-medium tabular-nums text-foreground">{head.ourNumber}</span>
+              </span>
+            ) : null}
+          </span>
+        )}
         statusBadge={(
-          <StatusBadge variant={head.status === 'confirmed' ? 'success' : head.status === 'void' ? 'error' : 'neutral'} dot>
-            {invoiceStatusLabel(t, head.status)}
-          </StatusBadge>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge variant={head.status === 'confirmed' ? 'success' : head.status === 'void' ? 'error' : 'neutral'} dot>
+              {invoiceStatusLabel(t, head.status)}
+            </StatusBadge>
+            <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+              {invoiceKindLabel(t, head.invoiceKind)}
+            </span>
+          </div>
         )}
         actionsContent={(
           <div className="flex flex-wrap items-center gap-2">
@@ -730,6 +918,11 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
                 {t('trade_docs.invoices.transitions.void')}
               </Button>
             ) : null}
+            {isDraft ? (
+              <Button type="button" variant="outline" onClick={() => setCopyOpen(true)}>
+                {t('trade_docs.invoices.detail.copy.action', 'Copy from a commercial invoice')}
+              </Button>
+            ) : null}
           </div>
         )}
       />
@@ -748,6 +941,27 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
             */}
             <div className="text-lg font-semibold">
               <MoneyAmount currencyCode={head.currencyCode} amount={head.total} showRate />
+            </div>
+          </div>
+          {/*
+            Both figures are the server's (`tax_total` = Σ line tax, `gross_total` = Σ tax-inclusive
+            line amounts, recomputed by the command on every save), so they print read-only here and
+            the browser never derives a tax of its own.
+          */}
+          <div className="space-y-0.5">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              {t('trade_docs.invoices.detail.taxTotal', 'Tax amount')}
+            </p>
+            <div className="text-sm">
+              <MoneyAmount currencyCode={head.currencyCode} amount={head.taxTotal} />
+            </div>
+          </div>
+          <div className="space-y-0.5">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              {t('trade_docs.invoices.detail.grossTotal', 'Gross total')}
+            </p>
+            <div className="text-sm">
+              <MoneyAmount currencyCode={head.currencyCode} amount={head.grossTotal} />
             </div>
           </div>
           <div className="space-y-0.5">
@@ -769,7 +983,55 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
               {t('trade_docs.invoices.detail.influence.title')}
             </p>
             <p className="text-xs text-muted-foreground">{t('trade_docs.invoices.detail.influence.hint')}</p>
+            {isExportInvoice ? (
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'trade_docs.invoices.detail.influence.exportHint',
+                  'An export invoice is a tax-refund document, not a settlement one: it leaves the contract totals untouched.',
+                )}
+              </p>
+            ) : null}
           </div>
+          {isShipmentAnchor ? (
+            <div className="space-y-0.5">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('trade_docs.invoices.detail.refundAnchor.title', 'Tax-refund anchor')}
+              </p>
+              <p className="text-sm">
+                <Link className="hover:underline" href={`${SHIPMENTS_HREF}/${head.sourceId}`}>
+                  {t('trade_docs.invoices.detail.refundAnchor.shipment', 'Shipment')}
+                </Link>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'trade_docs.invoices.detail.refundAnchor.hint',
+                  'The tax-refund package is filed per container and hangs off this shipment; the link is read-only.',
+                )}
+              </p>
+            </div>
+          ) : null}
+          {isDocumentAnchor ? (
+            <div className="space-y-0.5">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('trade_docs.invoices.detail.source.title', 'Source document')}
+              </p>
+              <p className="text-sm">
+                {sourceHref ? (
+                  <Link className="hover:underline" href={sourceHref}>
+                    {sourceLabel}
+                  </Link>
+                ) : (
+                  sourceLabel
+                )}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'trade_docs.invoices.detail.source.hint',
+                  'After copying, this invoice and its source are independent and never sync.',
+                )}
+              </p>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -818,12 +1080,40 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
                   <MoneyAmount currencyCode={head.currencyCode} amount={row.original.amount} />
                 ),
               },
+              {
+                id: 'taxRate',
+                header: t('trade_docs.invoices.form.lines.taxRate', 'Tax rate (%)'),
+                cell: ({ row }) => <span className="tabular-nums">{row.original.taxRate}</span>,
+              },
+              {
+                id: 'taxAmount',
+                header: t('trade_docs.invoices.form.lines.taxAmount', 'Tax amount'),
+                cell: ({ row }) => (
+                  <MoneyAmount currencyCode={head.currencyCode} amount={row.original.taxAmount} />
+                ),
+              },
             ]}
             data={initial.lines.map((line, index) => ({ ...line, id: line.contractLineId || `line-${index}` }))}
             emptyState={<EmptyState title={t('trade_docs.invoices.form.lines.empty')} />}
           />
         </section>
       )}
+      <DocumentCopyFromDialog
+        open={copyOpen}
+        sourceKind="commercial"
+        title={t('trade_docs.invoices.detail.copy.title', 'Copy from a commercial invoice')}
+        description={t(
+          'trade_docs.invoices.detail.copy.description',
+          "Copies the selected CI's head and lines into this invoice once; the tax rate and price-includes-tax stay at their defaults for you to set here.",
+        )}
+        searchPlaceholder={t(
+          'trade_docs.invoices.detail.copy.searchPlaceholder',
+          'Search commercial invoices by number',
+        )}
+        confirmLabel={t('trade_docs.invoices.detail.copy.confirm', 'Copy')}
+        onOpenChange={setCopyOpen}
+        onSubmit={handleCopyFrom}
+      />
       {ConfirmDialogElement}
     </div>
   )

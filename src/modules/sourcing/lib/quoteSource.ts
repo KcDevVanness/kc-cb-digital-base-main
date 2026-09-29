@@ -30,14 +30,21 @@ export async function loadQuoteForSource(
   } as FilterQuery<SourcingQuote>)
 }
 
+export type QuoteWorkbookSource = {
+  workbook: ParsedWorkbook
+  /** The uploaded file's own name — the archive's evidence for "which file was this?". */
+  fileName: string | null
+}
+
 export async function readWorkbookForQuote(input: {
   container: { resolve: (token: string) => unknown }
   auth: unknown
   quote: SourcingQuote
   attachmentId: string
-}): Promise<ParsedWorkbook> {
+}): Promise<QuoteWorkbookSource> {
   const service = input.container.resolve('attachmentService') as AttachmentService
   let buffer: Buffer
+  let fileName: string | null = null
   try {
     const file = await service.readScoped({
       attachmentId: input.attachmentId,
@@ -45,6 +52,7 @@ export async function readWorkbookForQuote(input: {
       expectedOwner: { entityId: QUOTE_ATTACHMENT_ENTITY_ID, recordId: String(input.quote.id) },
     })
     buffer = file.buffer
+    fileName = file.fileName?.trim() ? file.fileName.trim() : null
   } catch {
     throw new CrudHttpError(422, {
       error: 'The uploaded workbook could not be read back from storage',
@@ -52,7 +60,7 @@ export async function readWorkbookForQuote(input: {
     })
   }
   try {
-    return readWorkbook(buffer)
+    return { workbook: readWorkbook(buffer), fileName }
   } catch (error) {
     if (error instanceof WorkbookReadError) {
       const code =
@@ -65,6 +73,24 @@ export async function readWorkbookForQuote(input: {
     }
     throw error
   }
+}
+
+/**
+ * The file name the archive records for a workbook.
+ *
+ * A name the operator typed wins; otherwise the attachment's own name is used. The parse path used
+ * to fall back to the literal `workbook` whenever the quotation had no name of its own — which is
+ * every imported quotation — so every version in the archive displayed the same placeholder, and a
+ * name is exactly what a "what changed since last time?" view is asked to explain.
+ */
+export function resolveSourceFileName(
+  stored: string | null | undefined,
+  attachmentFileName: string | null | undefined,
+): string | null {
+  const current = (stored ?? '').trim()
+  if (current && current.toLowerCase() !== 'workbook') return current
+  const fromAttachment = (attachmentFileName ?? '').trim()
+  return fromAttachment || null
 }
 
 /** Display name of a mapping profile, so the wizard can label a profile hit without an id. */

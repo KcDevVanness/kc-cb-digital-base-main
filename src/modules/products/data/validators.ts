@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import { parseBooleanToken } from '@open-mercato/shared/lib/boolean'
+import { PRICE_SCALE } from '../../trade_docs/lib/money'
 import { PRODUCT_PRICE_TIERS } from '../lib/tiers'
 
 /**
  * Input contracts for the products module.
  *
  * Decimal columns are submitted as strings so no value ever passes through a binary float:
- * a numeric(18,6) price typed as `26.500001` must reach the database unchanged. More decimals
+ * a numeric(18,4) price typed as `26.5001` must reach the database unchanged. More decimals
  * than the column holds are rejected instead of silently rounded, because a silently rounded
  * price is indistinguishable from an operator's typo.
  */
@@ -309,7 +310,7 @@ export const productPriceRowSchema = z
     priceTier: z.enum(PRODUCT_PRICE_TIERS),
     currencyCode: productCurrencyCodeSchema,
     minQuantity: z.coerce.number().int().min(1).default(1),
-    unitPrice: decimalSchema(6, { min: '0' }),
+    unitPrice: decimalSchema(PRICE_SCALE, { min: '0' }),
     startsAt: z.string().min(1).nullable().optional(),
     endsAt: z.string().min(1).nullable().optional(),
     isActive: z.boolean().default(true),
@@ -340,6 +341,17 @@ export const productPriceListSchema = z.object({
   sortDir: z.enum(['asc', 'desc']).optional().default('asc'),
 })
 
+/**
+ * Product distribution to other organizations
+ * (`.ai/specs/2026-09-28-product-distribution-to-branches.md`): copies the listed products — or
+ * every non-deleted product of the current organization when `productIds` is omitted — into the
+ * target organizations. The caps bound one request; repeating it is an idempotent update.
+ */
+export const productDistributeSchema = z.object({
+  productIds: z.array(z.string().uuid()).max(200).optional(),
+  organizationIds: z.array(z.string().uuid()).min(1).max(50),
+})
+
 export type ProductTypeCreateInput = z.infer<typeof productTypeCreateSchema>
 export type ProductTypeUpdateInput = z.infer<typeof productTypeUpdateSchema>
 export type ProductCategoryCreateInput = z.infer<typeof productCategoryCreateSchema>
@@ -350,3 +362,4 @@ export type ProductPriceRowInput = z.infer<typeof productPriceRowSchema>
 export type ProductVariantInput = z.infer<typeof productVariantSchema>
 export type ProductPricesReplaceInput = z.infer<typeof productPricesReplaceSchema>
 export type ProductListQuery = z.infer<typeof productListSchema>
+export type ProductDistributeInput = z.infer<typeof productDistributeSchema>

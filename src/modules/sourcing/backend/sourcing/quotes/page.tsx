@@ -1,11 +1,11 @@
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
-import QuotesTable from '../../../components/QuotesTable'
+import SourcingQuotesTabs from '../../../components/SourcingQuotesTabs'
 
 export default function SourcingQuotesPage() {
   return (
     <Page>
       <PageBody>
-        <QuotesTable />
+        <SourcingQuotesTabs />
       </PageBody>
     </Page>
   )

@@ -6,6 +6,7 @@ import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/
 import { TradeDocsInvoice } from '../../data/entities'
 import {
   INVOICE_DIRECTIONS,
+  INVOICE_KINDS,
   INVOICE_STATUSES,
   invoiceCreateSchema,
   invoiceListSchema,
@@ -19,6 +20,8 @@ const invoiceListItemSchema = z
   .object({
     id: z.string().uuid(),
     number: z.string().nullable().optional(),
+    invoiceKind: z.enum(INVOICE_KINDS).nullable().optional(),
+    ourNumber: z.string().nullable().optional(),
     direction: z.enum(INVOICE_DIRECTIONS),
     status: z.enum(INVOICE_STATUSES),
     counterpartyKind: z.string(),
@@ -26,9 +29,13 @@ const invoiceListItemSchema = z
     counterpartyName: z.string().nullable().optional(),
     contractId: z.string().uuid().nullable().optional(),
     contractNumber: z.string().nullable().optional(),
+    sourceKind: z.string().nullable().optional(),
+    sourceId: z.string().uuid().nullable().optional(),
     currencyCode: z.string(),
     subtotal: z.string(),
     total: z.string(),
+    taxTotal: z.string(),
+    grossTotal: z.string(),
     issuedAt: z.string().nullable().optional(),
     attachmentId: z.string().uuid().nullable().optional(),
     created_at: z.string().nullable().optional(),
@@ -86,6 +93,8 @@ function counterpartyNameFrom(snapshot: unknown): string | null {
 const listFields = [
   'id',
   'number',
+  'invoice_kind',
+  'our_number',
   'direction',
   'status',
   'counterparty_kind',
@@ -95,9 +104,12 @@ const listFields = [
   'contract',
   'source_kind',
   'source_id',
+  'source_snapshot',
   'currency_code',
   'subtotal',
   'total',
+  'tax_total',
+  'gross_total',
   'issued_at',
   'attachment_id',
   'notes',
@@ -143,8 +155,11 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       if (query.organizationId) filters.organization_id = query.organizationId
       if (query.direction) filters.direction = query.direction
       if (query.status) filters.status = query.status
+      if (query.invoiceKind) filters.invoice_kind = query.invoiceKind
       if (query.contractId) filters.contract_id = query.contractId
       if (query.counterpartyId) filters.counterparty_id = query.counterpartyId
+      if (query.sourceKind) filters.source_kind = query.sourceKind
+      if (query.sourceId) filters.source_id = query.sourceId
       if (query.search && query.search.trim().length > 0) {
         filters.number = { $ilike: `%${escapeLikePattern(query.search.trim())}%` }
       }
@@ -153,6 +168,8 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
     transformItem: (item: Record<string, unknown>) => ({
       id: String(item.id),
       number: asNullableString(item.number),
+      invoiceKind: asNullableString(item.invoice_kind),
+      ourNumber: asNullableString(item.our_number),
       direction: String(item.direction ?? 'inbound'),
       status: String(item.status ?? 'draft'),
       counterpartyKind: String(item.counterparty_kind ?? 'supplier'),
@@ -160,9 +177,15 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       counterpartyName: counterpartyNameFrom(item.counterparty_snapshot),
       contractId: referenceId(item.contract_id ?? item.contract),
       contractNumber: referenceNumber(item.contract),
+      sourceKind: asNullableString(item.source_kind),
+      sourceId: asNullableString(item.source_id),
+      // The snapshot is what the detail renders when the source document was renamed or is gone.
+      sourceSnapshot: item.source_snapshot ?? null,
       currencyCode: String(item.currency_code ?? 'CNY'),
       subtotal: String(item.subtotal ?? '0'),
       total: String(item.total ?? '0'),
+      taxTotal: String(item.tax_total ?? '0'),
+      grossTotal: String(item.gross_total ?? '0'),
       issuedAt: toDateOnly(item.issued_at),
       attachmentId: asNullableString(item.attachment_id),
       notes: asNullableString(item.notes),
