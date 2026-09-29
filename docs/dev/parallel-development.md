@@ -170,11 +170,17 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
    `.ai/trackers/github.md` 的 `ensure-label-taxonomy` 建好 `review`/`changes-requested`/`qa`/
    `qa-failed`/`merge-queue`/`blocked`/`do-not-merge`/`needs-qa`/`skip-qa`/`in-progress`/
    `priority-*`/`risk-*` 等标签；流水线技能按状态自动打标，N 个 PR 卡在哪一步可以直接筛出来。
-7. **分支保护现状**：`main` 要求走 PR、要求 `validate` + `guard-tree` 通过、要求线性历史，禁止 force push 与
-   删除分支；必需评审数 0（单人仓不会把自己锁死），`enforce_admins=false`（管理员可应急绕过）。
+7. **分支保护现状**：`main` 与 `production` 从 2026-09-29 起套用**同一套**——要求走 PR、要求
+   `validate` + `guard-tree` 通过、要求线性历史，禁止 force push 与删除分支；必需评审数 0（单人仓
+   不会把自己锁死），`enforce_admins=false`（管理员可应急绕过，`docs/deploy/cicd.md` 的 force push
+   回滚路径因此仍然可用）。
    仓库只允许 **squash** 合并，合并后自动删远端分支。**直推 `main` / `production` 一律禁止**：
    `main` 的 admin bypass 是应急口子、不是日常通道，`production` 是部署分支（`deploy.yml` 由它的
    push 触发），两者都只接受 PR。
+   特例要当心 **head 就是 `production` 的 PR**（`production` → `main` 的同步 PR，PR #21 的形状）：
+   `delete_branch_on_merge` 会把 head 当成合并后要删的分支，所以合并前先确认删除保护生效
+   （`allow_deletions=false`），或按 2026-09-29 的先例临时关掉该设置、合并后立刻恢复——当时
+   `production` 还没有保护，处置就是后者（`.ai/runs/2026-09-29-production-sync.md`）。
 8. **CI 偶发**：`Install dependencies` 步骤见过一次 Yarn 4 的 `onCancel handler was attached after
    the promise settled`（网络抖动，非代码问题）。先 `gh run rerun <run-id> --failed` 重跑一次再改代码。
 

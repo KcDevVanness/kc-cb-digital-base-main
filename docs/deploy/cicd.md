@@ -13,8 +13,10 @@
 | `feat/*` | 特性分支 | 开 PR 时跑 `validate.yml` |
 | `production` | **发布分支，唯一会部署的分支** | `deploy.yml`（构建镜像 → 部署到 AWS） |
 
-部署不是「合并到 main 的副作用」：把某个提交提升到生产是一次显式的
-`git push origin main:production`（或把 main 合并进 production）。这样 main 上的
+部署不是「合并到 main 的副作用」：把某个提交提升到生产是一次显式的动作——日常走**从 `production`
+切出的同步分支 → PR（base `production`）→ squash 合并**（PR #19/#22 的形状），合并即触发部署；
+`git push origin main:production` 只是管理员应急通道（`production` 与 `main` 同保护、
+`enforce_admins=false`，推送会被 bypass 并在远端留下记录）。这样 main 上的
 验证失败或半成品提交不会自动上线。
 
 ## 流水线（`.github/workflows/deploy.yml`）
@@ -252,8 +254,10 @@ git push --force origin <good-sha>:production
 流水线会用那个 SHA 重建镜像并部署（构建缓存命中，通常几分钟）。**数据库迁移是向前-only 的**，
 涉及迁移的回滚不能只回退代码。
 
-`production` 分支没有开启保护规则，所以仓库管理员可以直接 force push；`main` 有保护
-（要求 PR + `validate` 通过），提升版本时管理员推送会被 bypass 并在远端留下记录。
+`production` 从 2026-09-29 起与 `main` 同保护（要求 PR、要求 `validate` + `guard-tree` 通过、要求线性
+历史、禁止 force push 与删除分支、必需评审数 0、`enforce_admins=false`），所以上面的 force push
+回滚仍由**仓库管理员绕过执行**；非管理员回滚要走 PR（把 `<good-sha>` 作为分支推上去、开 PR 到
+`production`，`validate` + `guard-tree` 绿后 squash 合并）。两条路都会在远端留下记录。
 
 ## 已知取舍
 
