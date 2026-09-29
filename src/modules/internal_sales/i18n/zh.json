@@ -67,5 +67,12 @@
   "internal_sales.form.quoteLoad.forbidden": "没有读取报价单的权限。",
   "internal_sales.form.quoteLoad.emptyLines": "该报价单没有明细，请补录明细。",
   "internal_sales.form.sourceQuote.label": "来源报价单",
+  "internal_sales.form.sourceQuote.previewAria": "预览来源报价单 {number}",
+  "internal_sales.form.sourceQuote.previewLoading": "正在读取报价单…",
+  "internal_sales.form.sourceQuote.previewFailed": "报价单预览加载失败。",
+  "internal_sales.form.sourceQuote.previewMissing": "该报价单已不存在。",
+  "internal_sales.form.sourceQuote.previewLines": "报价单明细",
+  "internal_sales.form.sourceQuote.previewOpen": "打开报价单",
+  "internal_sales.form.sourceQuote.noLines": "该报价单没有明细。",
   "internal_sales.list.actions.newOrderFromQuote": "按此报价新建订单"
 }

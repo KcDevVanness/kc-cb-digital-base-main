@@ -70,11 +70,23 @@ export function rekeyLines(lines: InternalSalesLineValues[]): InternalSalesLineV
   return lines.map((line, index) => ({ ...line, key: `line-${index + 1}` }))
 }
 
+/** What a loaded quote yields: the form half, the reference, and the engine's own projection. */
+export type QuoteDraft = {
+  values: InternalSalesFormValues
+  sourceQuote: SourceQuoteRef
+  lineCount: number
+  /**
+   * The quote as the installed read returned it. The form values are the loader's half; the preview
+   * needs the engine's fields (`status`, `total`) that the form itself has no use for.
+   */
+  record: Record<string, unknown>
+}
+
 /** Pure half of the draft: document records in, form values out. */
 export function quoteDraftFromRecords(
   quote: Record<string, unknown>,
   lines: Record<string, unknown>[],
-): { values: InternalSalesFormValues; sourceQuote: SourceQuoteRef; lineCount: number } {
+): QuoteDraft {
   const mapped = rekeyLines(lines.map(toInternalSalesLineValues))
   const values = toInternalSalesFormValues(quote, mapped)
   const sourceQuote: SourceQuoteRef = {
@@ -85,6 +97,47 @@ export function quoteDraftFromRecords(
     values: { ...values, sourceQuote },
     sourceQuote,
     lineCount: lines.length,
+    record: quote,
+  }
+}
+
+/**
+ * The read-only preview of a source quote — what the drawer shows before the operator loads it into
+ * the form or opens it in the quotes module.
+ *
+ * Pure and total: a field the projection does not carry renders empty rather than throwing, because
+ * the preview is a convenience view over data whose full read the operator may not be allowed.
+ */
+export type SourceQuotePreview = {
+  id: string
+  number: string
+  buyerName: string
+  currencyCode: string
+  status: string
+  total: string
+  customerReference: string
+  comments: string
+  lines: InternalSalesLineValues[]
+}
+
+export function sourceQuotePreviewFromDraft(draft: QuoteDraft): SourceQuotePreview {
+  const record = draft.record ?? {}
+  return {
+    id: draft.sourceQuote.id,
+    // The stored `{ id, number }` snapshot is what the order shows; the record's own number is the
+    // fallback for a reference written before the snapshot existed.
+    number: draft.sourceQuote.number || readText(record, 'number', 'quoteNumber', 'quote_number'),
+    buyerName: draft.values.customerName,
+    currencyCode: draft.values.currencyCode,
+    status: readText(record, 'status'),
+    total: readText(record, 'total'),
+    customerReference: draft.values.customerReference,
+    comments: draft.values.comments,
+    // The loader hands the form a starter row when the quote has none; a preview of the *quote*
+    // must not present that placeholder as one of its lines.
+    lines: draft.values.lines.filter(
+      (line) => line.productId.trim().length > 0 || line.name.trim().length > 0,
+    ),
   }
 }
 
@@ -103,9 +156,7 @@ export function hasOperatorInput(values: InternalSalesFormValues): boolean {
 }
 
 /** Reads the quote and its lines; the caller decides how to report a failure. */
-export async function loadQuoteDraft(
-  quoteId: string,
-): Promise<{ values: InternalSalesFormValues; sourceQuote: SourceQuoteRef; lineCount: number }> {
+export async function loadQuoteDraft(quoteId: string): Promise<QuoteDraft> {
   // `id` (singular) is the installed single-document read: same route, full projection — the
   // list projection drops `metadata`, which is where the source quote is read back from.
   const quotePayload = await fetchCrudList<Record<string, unknown>>(QUOTES_API_PATH, {
