@@ -54,8 +54,12 @@ Mechanics and the shared-file conflict list: `docs/dev/parallel-development.md`;
    already has a branch/worktree/PR, continue that one (`om-auto-continue-pr`) instead of opening a
    second; the same module or spec slice is never worked twice in parallel.
 2. **Isolate.** `git worktree add ../kc-cb-digital-base-min-<slug> -b feat/<slug> origin/main`
-   (bugfix `fix/<slug>`), then `yarn install && yarn generate` and a `.env` copy with its own port
-   block. Never work a unit inside another unit's tree; never nest worktrees.
+   (bugfix `fix/<slug>`, process/tooling `chore/<slug>`), then `yarn install && yarn generate` and a
+   `.env` copy with its own port block. Branch base is always `origin/main`; the only exception is a
+   stack declared in the PR's `## Assumptions` (child base = parent branch), and the child is
+   retargeted to `main` (`gh pr edit <child> --base main`) the moment the parent merges. Never point
+   a PR at a branch that is already merged into `main` — everything merged into it afterwards stays
+   out of `main`. Never work a unit inside another unit's tree; never nest worktrees.
 3. **Commit per slice.** One coherent change per commit, conventional subject, the affected subset of
    `Validation` before each commit, push after every phase so an interrupted run is resumable. Other
    sessions' uncommitted files are read-only for you; never rewrite a pushed shared branch.
@@ -66,10 +70,16 @@ Mechanics and the shared-file conflict list: `docs/dev/parallel-development.md`;
    tracker has no issues; the spec/run path is the requirement record — add `Closes #N`/`Refs #N` the
    day issues exist), `## Goal` (problem + root cause), `## What Changed`, `## Assumptions`,
    `## 🧪 Tests` (commands + result counts), `## 💥 Breaking Changes`, `## Rollback`, `## 📋 Progress`.
-6. **Labels + disclosure.** Apply the pipeline/category/priority/risk labels from
+   Docs, specs and module READMEs ride in the same branch and PR as the code they describe; never a
+   separate `docs/*` branch for the same unit.
+6. **Clean up after the merge.** The remote branch is auto-deleted (`delete_branch_on_merge`); run
+   `yarn branches:cleanup --apply` for the local branch and its clean worktree. An integration branch
+   (base of stacked PRs) is finished only when `git diff --diff-filter=A --name-only origin/main
+   <branch>` is empty — land the remainder first, then delete it.
+7. **Labels + disclosure.** Apply the pipeline/category/priority/risk labels from
    `.ai/agentic.config.json`; AI-authored commits carry an `[AI-Generated]` trailer in the body (never
    in the subject) and run comments open with the `🤖` marker.
-7. **Never commit or push to `main` or `production`** — every change enters through a PR, and the
+8. **Never commit or push to `main` or `production`** — every change enters through a PR, and the
    `main` admin bypass is not a shortcut for routine work.
 
 ## Three-Axis Context Assembler
