@@ -88,6 +88,7 @@
 | E-6 | 合同 Excel（**已实现**） | 已签发合同可生成 XLSX 落附件并下载（`trade_docs.contracts.generate-document` + `/api/trade_docs/contracts/[id]/document`）；金额列为数字便于求和；栏位以 `lib/contractTemplate.ts` 常量为准 |
 | E-9 | 商品变体（SKU） | `products_variants` 表（含 partial unique 默认变体索引）+ 商品表单步骤「变体/SKU」+ `GET /api/products/variants/options`；发运/海外仓收货切换到自建变体延后到 wms 轮 |
 | E-10 | 自产 / 委托加工商品按普通商品建库（2026-09-23） | 外购、自产、委托加工商品共用一套主数据与三档价格；货源只影响品牌 / 型号 / 成本价的填法（`brand` 无默认值、`manufacturer_model` 业务名「型号」、`purchase` 档标签「成本价（采购 / 自产）」）；发运/收货仍要求一张采购单 + 商品的官方目录链接；不做 BOM/工单/成本核算（成本只是 `purchase` 档参考价） |
+| E-11 | 订单从报价单载入（引用加载，2026-09-29） | 订单新建页「从报价单载入」或报价列表「按此报价新建订单」：报价的抬头与全部行一次性填入新订单、保存前可改；报价保留、可出多张订单（分批/多柜）；新订单在 `metadata.internalSales.sourceQuote` 记来源并在编辑页可见；「转为订单」就地转换（报价消失）保留不变 |
 
 ### F. sourcing（供应商报价单与 Excel 报价导入，**已实现并验证**）
 

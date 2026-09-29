@@ -18,16 +18,18 @@
 现状（2026-09-28 实测）：引擎的 `sales.quotes.convert_to_order` 由 `POST /api/sales/quotes/convert {quoteId}`
 暴露（门禁 `sales.quotes.manage` + `sales.orders.manage`），调用返回 **200** 且**单据就地转换**——
 同一个 id 从 `sales_quotes` 变成 `sales_orders`、拿到新的 `ORDER-…` 号、行与买方快照随行。
-但**两个界面都没有入口**：安装层单据详情页的 Actions 菜单里没有它，本模块的报价列表行操作只有「编辑」。
+但**当时本模块没有入口**：报价列表行操作只有「编辑」（安装层报价详情页的 Actions 里其实有 Convert to order，
+见下方 Changelog 的 2026-09-29 更正）。
 操作员因此只能：把报价单当对外报价文本、另建一张订单（行要重录），或直接调 REST。
-见 `src/modules/internal_sales/README.md`「报价 → 订单的转换：引擎有、界面没有」。
+见 `src/modules/internal_sales/README.md` 的「报价 → 订单有两条路」。
+（另一条路——保留报价、以报价为模板新建订单——见 [`.ai/specs/2026-09-29-internal-sales-order-from-quote.md`](2026-09-29-internal-sales-order-from-quote.md)。）
 
 ## Overview and Success Measures
 
 - **Primary outcome:** 报价列表出现「转为订单」行操作；确认后单据成为订单，并跳到本模块订单编辑页；报价不再出现在报价列表。
 - **Leading indicators:** 转换失败（403/404/网络）给出可读提示且单据不变。
 - **Baseline:** 今天该操作只能靠 REST（无界面入口）。
-- **Market / product reference:** 平台自身的单据详情页未提供该动作；本切片不照搬任何外部产品。
+- **Market / product reference:** 安装层报价详情页有同款动作（`backend/sales/documents/[id]/page.tsx` 的 `handleConvert`，2026-09-29 核对安装源 `@open-mercato/core@0.8.0`）；本切片只是把入口带到操作员实际使用的自建列表，不照搬任何外部产品。
 
 ## Goals
 
@@ -81,3 +83,4 @@
 ## Changelog
 
 | 2026-09-28 | 首版：报价列表新增「转为订单」行操作（不可撤销确认 + 就地转换 + 跳订单编辑页）。 |
+| 2026-09-29 | **记录更正（文档修正，行为未变）**：原文写「安装层单据详情页的 Actions 菜单里没有它」，与安装源不符——`@open-mercato/core@0.8.0` 的 `backend/sales/documents/[id]/page.tsx` 对报价提供 Convert to order（`handleConvert` → `POST /api/sales/quotes/convert`）。同时补上另一条路径（订单从报价载入、报价保留）的 spec 交叉引用。 |
