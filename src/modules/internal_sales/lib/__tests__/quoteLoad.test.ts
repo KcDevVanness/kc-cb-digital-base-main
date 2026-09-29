@@ -12,6 +12,7 @@ import {
   quoteDraftFromRecords,
   quoteOptionFromRecord,
   rekeyLines,
+  sourceQuotePreviewFromDraft,
 } from '../quoteLoad'
 
 /**
@@ -31,6 +32,7 @@ const LINE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
 function formValues(patch: Partial<InternalSalesFormValues> = {}): InternalSalesFormValues {
   return {
+    tradeType: 'internal',
     buyerRef: '',
     customerName: '',
     currencyCode: '',
@@ -126,6 +128,65 @@ describe('quote draft mapping', () => {
       [],
     )
     expect(values.buyerRef).toBe(`party:${PARTY_ID}`)
+  })
+})
+
+describe('source quote preview', () => {
+  // The engine's own projection: what the drawer shows that the form values never carry.
+  const quote = {
+    id: QUOTE_ID,
+    number: 'QUOTE-20260929-00007',
+    status: 'confirmed',
+    total: '318.00',
+    currencyCode: 'USD',
+    customerSnapshot: {
+      name: '俄罗斯 AB 有限公司',
+      customer: { displayName: '俄罗斯 AB 有限公司' },
+      internalSales: { organizationId: BRANCH_ID },
+    },
+  }
+  const lines = [
+    {
+      id: LINE_ID,
+      name: 'P4108-UVC',
+      quantity: '12.0000',
+      unit_price_net: '26.5000',
+      catalog_snapshot: { sku: 'P4108-UVC', spec: 'UVC 灯管' },
+    },
+  ]
+
+  it('carries the record the form values have no use for, and maps the lines', () => {
+    const draft = quoteDraftFromRecords(quote, lines)
+
+    expect(draft.record).toBe(quote)
+    expect(sourceQuotePreviewFromDraft(draft)).toMatchObject({
+      id: QUOTE_ID,
+      number: 'QUOTE-20260929-00007',
+      buyerName: '俄罗斯 AB 有限公司',
+      currencyCode: 'USD',
+      status: 'confirmed',
+      total: '318.00',
+      customerReference: '',
+      comments: '',
+    })
+    expect(
+      sourceQuotePreviewFromDraft(draft).lines.map((line) => [line.name, line.quantity, line.unitPriceNet, line.sku]),
+    ).toEqual([['P4108-UVC', '12.0000', '26.5000', 'P4108-UVC']])
+  })
+
+  it('falls back to the record number when the stored reference carries none', () => {
+    const draft = quoteDraftFromRecords(quote, lines)
+    const preview = sourceQuotePreviewFromDraft({ ...draft, sourceQuote: { id: QUOTE_ID, number: '' } })
+    expect(preview.number).toBe('QUOTE-20260929-00007')
+  })
+
+  it('shows no lines for a quote without any, and degrades missing fields to empty strings', () => {
+    // The loader hands the form a starter row for an empty quote; the preview must not show it.
+    const preview = sourceQuotePreviewFromDraft(quoteDraftFromRecords({ id: QUOTE_ID, currencyCode: 'USD' }, []))
+    expect(preview.lines).toEqual([])
+    expect(preview.status).toBe('')
+    expect(preview.total).toBe('')
+    expect(preview.buyerName).toBe('')
   })
 })
 

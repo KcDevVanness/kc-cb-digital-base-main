@@ -120,6 +120,58 @@ export const TRADE_DOCUMENT_STATUSES = ['draft', 'issued', 'void'] as const
 export const TRADE_DOCUMENT_TRANSITIONS = ['issue', 'void'] as const
 export const TRADE_DOCUMENT_SOURCE_KINDS = ['sales_order', 'purchase_order', 'shipment', 'trade_document', 'manual'] as const
 
+/**
+ * The direction decides what the counterparty can be: we buy from a supplier and we sell to a
+ * customer (a group branch's printable record is a `customer` too — Q-P-006 keeps the stored
+ * vocabulary `supplier | customer` for reads, printing and filters).
+ *
+ * The kind stays a column rather than being derived on read so historical rows and their list
+ * filters keep working; the pairing is enforced on every write, in the schema when both fields
+ * travel together and in the command against the merged entity (partial updates send one half).
+ */
+export const COUNTERPARTY_KIND_BY_DIRECTION: Record<
+  (typeof CONTRACT_DIRECTIONS)[number],
+  (typeof COUNTERPARTY_KINDS)[number]
+> = {
+  purchase: 'supplier',
+  sales: 'customer',
+}
+
+export const COUNTERPARTY_KIND_BY_INVOICE_DIRECTION: Record<
+  (typeof INVOICE_DIRECTIONS)[number],
+  (typeof COUNTERPARTY_KINDS)[number]
+> = {
+  inbound: 'supplier',
+  outbound: 'customer',
+}
+
+/**
+ * The message both layers share, or `null` when the pair is consistent. An absent half never fails
+ * here: only the command sees the merged entity and is the authority for partial updates.
+ */
+export function counterpartyKindDirectionIssue(
+  value: { direction?: unknown; counterpartyKind?: unknown },
+  kindByDirection: Record<string, (typeof COUNTERPARTY_KINDS)[number]>,
+): string | null {
+  const direction = typeof value.direction === 'string' ? value.direction : undefined
+  const kind = typeof value.counterpartyKind === 'string' ? value.counterpartyKind : undefined
+  if (!direction || !kind) return null
+  const expected = kindByDirection[direction]
+  if (!expected || kind === expected) return null
+  return `counterpartyKind must be "${expected}" when direction is "${direction}"`
+}
+
+function withCounterpartyKindRule<T extends z.ZodObject<z.ZodRawShape>>(
+  schema: T,
+  kindByDirection: Record<string, (typeof COUNTERPARTY_KINDS)[number]>,
+) {
+  return schema.superRefine((value, ctx) => {
+    const message = counterpartyKindDirectionIssue(value as { direction?: unknown; counterpartyKind?: unknown }, kindByDirection)
+    if (!message) return
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['counterpartyKind'], message })
+  })
+}
+
 // ---------------------------------------------------------------------------------------
 // Contracts
 // ---------------------------------------------------------------------------------------
@@ -135,16 +187,27 @@ export const contractLineInputSchema = z.object({
   quantity: decimalSchema(6, { min: '0' }),
   unitPrice: decimalSchema(PRICE_SCALE, { min: '0' }),
   note: nullableText(500),
+  /** Frozen provenance when the row was copied from an order/quote; `null` on a typed row. */
+  sourceSnapshot: snapshotSchema,
 })
 
-export const contractCreateSchema = z.object({
-  direction: z.enum(CONTRACT_DIRECTIONS).default('purchase'),
-  counterpartyKind: z.enum(COUNTERPARTY_KINDS).default('supplier'),
+/**
+ * Shared field list of a contract head. `counterpartyKind` is **derived from the direction** by the
+ * command (`resolveCounterpartyKind`) and only accepted when the caller spells out the same value —
+ * so it carries no default here.
+ *
+ * Defaults live on the create schema alone: `z.object(...).partial()` keeps them, and an update that
+ * silently re-injected them would rewrite `direction`/`counterpartyKind`/`currencyCode` on every
+ * partial PUT and — because `lines` defaulted to `[]`, which is truthy — wipe every line.
+ */
+const contractBase = {
+  direction: z.enum(CONTRACT_DIRECTIONS),
+  counterpartyKind: z.enum(COUNTERPARTY_KINDS).optional(),
   counterpartyId: z.string().uuid().nullable().optional(),
   counterpartySnapshot: snapshotSchema,
   ourPartySnapshot: snapshotSchema,
   priceTier: z.enum(PRODUCT_PRICE_TIERS).nullable().optional(),
-  currencyCode: currencyCodeSchema.default('CNY'),
+  currencyCode: currencyCodeSchema,
   exchangeRate: nullableDecimalSchema(8, { min: '0' }),
   sourceKind: z.enum(['purchase_order', 'sales_order', 'manual']).nullable().optional(),
   sourceId: z.string().uuid().nullable().optional(),
@@ -157,12 +220,25 @@ export const contractCreateSchema = z.object({
   destination: nullableText(200),
   marks: nullableText(500),
   notes: nullableText(2000),
-  lines: z.array(contractLineInputSchema).max(500).default([]),
-})
+  lines: z.array(contractLineInputSchema).max(500),
+}
 
-export const contractUpdateSchema = contractCreateSchema.partial().extend({
-  id: z.string().uuid(),
-})
+export const contractCreateSchema = withCounterpartyKindRule(
+  z.object({
+    ...contractBase,
+    direction: contractBase.direction.default('purchase'),
+    currencyCode: contractBase.currencyCode.default('CNY'),
+    lines: contractBase.lines.default([]),
+  }),
+  COUNTERPARTY_KIND_BY_DIRECTION,
+)
+
+export const contractUpdateSchema = withCounterpartyKindRule(
+  z.object(contractBase).partial().extend({
+    id: z.string().uuid(),
+  }),
+  COUNTERPARTY_KIND_BY_DIRECTION,
+)
 
 export const contractTransitionSchema = z.object({
   id: z.string().uuid(),
@@ -235,26 +311,39 @@ export const invoiceLineInputSchema = z.object({
   contractLineId: z.string().uuid().nullable().optional(),
 })
 
-export const invoiceCreateSchema = z.object({
+const invoiceBase = {
   number: nullableText(64),
   invoiceKind: z.enum(INVOICE_KINDS).nullable().optional(),
-  direction: z.enum(INVOICE_DIRECTIONS).default('inbound'),
-  counterpartyKind: z.enum(COUNTERPARTY_KINDS).default('supplier'),
+  direction: z.enum(INVOICE_DIRECTIONS),
+  counterpartyKind: z.enum(COUNTERPARTY_KINDS).optional(),
   counterpartyId: z.string().uuid().nullable().optional(),
   counterpartySnapshot: snapshotSchema,
   contractId: z.string().uuid().nullable().optional(),
   sourceKind: z.enum(INVOICE_SOURCE_KINDS).nullable().optional(),
   sourceId: z.string().uuid().nullable().optional(),
   sourceSnapshot: snapshotSchema,
-  currencyCode: currencyCodeSchema.default('CNY'),
+  currencyCode: currencyCodeSchema,
   issuedAt: dateOnlySchema,
   notes: nullableText(2000),
-  lines: z.array(invoiceLineInputSchema).max(500).default([]),
-})
+  lines: z.array(invoiceLineInputSchema).max(500),
+}
 
-export const invoiceUpdateSchema = invoiceCreateSchema.partial().extend({
-  id: z.string().uuid(),
-})
+export const invoiceCreateSchema = withCounterpartyKindRule(
+  z.object({
+    ...invoiceBase,
+    direction: invoiceBase.direction.default('inbound'),
+    currencyCode: invoiceBase.currencyCode.default('CNY'),
+    lines: invoiceBase.lines.default([]),
+  }),
+  COUNTERPARTY_KIND_BY_INVOICE_DIRECTION,
+)
+
+export const invoiceUpdateSchema = withCounterpartyKindRule(
+  z.object(invoiceBase).partial().extend({
+    id: z.string().uuid(),
+  }),
+  COUNTERPARTY_KIND_BY_INVOICE_DIRECTION,
+)
 
 export const invoiceTransitionSchema = z.object({
   id: z.string().uuid(),
@@ -327,16 +416,16 @@ export const documentLineInputSchema = z.object({
   note: nullableText(500),
 })
 
-export const documentCreateSchema = z.object({
-  kind: z.enum(TRADE_DOCUMENT_KINDS).default('proforma'),
-  direction: z.enum(TRADE_DOCUMENT_DIRECTIONS).default('sales'),
-  counterpartyKind: z.enum(COUNTERPARTY_KINDS).default('customer'),
+const documentBase = {
+  kind: z.enum(TRADE_DOCUMENT_KINDS),
+  direction: z.enum(TRADE_DOCUMENT_DIRECTIONS),
+  counterpartyKind: z.enum(COUNTERPARTY_KINDS).optional(),
   counterpartyId: z.string().uuid().nullable().optional(),
   counterpartySnapshot: snapshotSchema,
   ourPartySnapshot: snapshotSchema,
   consigneeSnapshot: snapshotSchema,
   notifyPartySnapshot: snapshotSchema,
-  currencyCode: currencyCodeSchema.default('CNY'),
+  currencyCode: currencyCodeSchema,
   exchangeRate: nullableDecimalSchema(8, { min: '0' }),
   paymentTerms: nullableText(500),
   incoterms: nullableText(200),
@@ -347,12 +436,26 @@ export const documentCreateSchema = z.object({
   sourceId: z.string().uuid().nullable().optional(),
   sourceSnapshot: snapshotSchema,
   notes: nullableText(2000),
-  lines: z.array(documentLineInputSchema).max(500).default([]),
-})
+  lines: z.array(documentLineInputSchema).max(500),
+}
 
-export const documentUpdateSchema = documentCreateSchema.partial().extend({
-  id: z.string().uuid(),
-})
+export const documentCreateSchema = withCounterpartyKindRule(
+  z.object({
+    ...documentBase,
+    kind: documentBase.kind.default('proforma'),
+    direction: documentBase.direction.default('sales'),
+    currencyCode: documentBase.currencyCode.default('CNY'),
+    lines: documentBase.lines.default([]),
+  }),
+  COUNTERPARTY_KIND_BY_DIRECTION,
+)
+
+export const documentUpdateSchema = withCounterpartyKindRule(
+  z.object(documentBase).partial().extend({
+    id: z.string().uuid(),
+  }),
+  COUNTERPARTY_KIND_BY_DIRECTION,
+)
 
 export const documentTransitionSchema = z.object({
   id: z.string().uuid(),
