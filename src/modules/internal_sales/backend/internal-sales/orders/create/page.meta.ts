@@ -11,7 +11,7 @@ export const metadata = {
   pageOrder: 311,
   icon: 'shopping-cart',
   breadcrumb: [
-    { label: 'Internal sales list', labelKey: 'internal_sales.page.title', href: '/backend/sales/orders' },
+    { label: 'Internal sales orders (PO)', labelKey: 'internal_sales.list.order.title', href: '/backend/internal-sales/orders' },
     { label: 'Create', labelKey: 'internal_sales.form.order.createTitle' },
   ],
 }

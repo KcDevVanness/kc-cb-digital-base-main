@@ -12,7 +12,7 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
 |---|---|
 | 页面 | `/backend/internal-sales/quotes`、`/quotes/create`、`/quotes/[id]/edit`；`/backend/internal-sales/orders`、`/orders/create`、`/orders/[id]/edit`（六个页面的 `pageGroupKey` 都是 `cross_border.nav.group`，即侧边栏「出口业务」组——2026-09-28 由「外贸」改名，只改 label；本模块没有自己的导航分组）。订单页标题带业务缩写「内部销售订单（PO）」（N-1）：**2026-09-29 起真正落到界面**——`internal_sales.list.order.title` 与 `form.order.{create,edit}Title` 两个语言的字典都带「（PO）」/「(PO)」，`backend/internal-sales/orders/**/page.meta.ts` 的 `pageTitle` 兜底串同步（此前只有 page.meta 的兜底串带 PO，字典仍是「内部销售订单」，而侧边栏/页面标题取的是 `pageTitleKey` → 字典值）。报价单按 N-1 **不挂缩写**，改由页面描述说明它不是 PI（`internal_sales.list.quote.description`：「总部对分公司的报价单据，不是对外收款依据的形式发票（PI）…」） |
 | 列表状态列（2026-09-28；表头文案 2026-09-29 补齐） | 列表新增「状态」列：读官方 `GET /api/sales/{quotes,orders}` 的 `status`（字典**值**，可为 null），经租户字典 `sales.order_status`（`loadDictionaryEntriesByKey` + `createDictionaryMap` + `DictionaryValue`）渲染标签与字典色点；无状态渲染 `—`，字典读不到时保留原值。报价与订单共用该字典（引擎口径）。**表头字段的 i18n key 当时漏了 zh/en 两份字典**（`internal_sales.list.columns.status`），列头渲染出裸 key；2026-09-29 已补「状态」/「Status」 |
-| 组件 | `components/InternalSalesTable.tsx`（列表）、`components/InternalSalesForm.tsx`（抬头 + 行编辑器 + 买方选择器，一次提交整单）、`lib/buyer.ts`（买方值协议与快照编解码，纯函数） |
+| 组件 | `components/InternalSalesTable.tsx`（列表）、`components/InternalSalesForm.tsx`（抬头 + 行编辑器 + 买方选择器 + 报价载入面板挂载，一次提交整单）、`components/QuoteLoadPanel.tsx`（从报价单载入的按钮/对话框/来源行）、`lib/buyer.ts`（买方值协议与快照编解码）、`lib/documentValues.ts`（单据 ↔ 表单值编解码，纯函数）、`lib/quoteLoad.ts`（报价载入 loader，纯函数 + 两次读请求） |
 | 买方选项 | 关联组织：`GET /api/directory/organization-switcher`（requireAuth，无额外功能位）；外部客户：`GET /api/parties/options?roles=buyer` 与 `GET /api/parties/{id}`（均需 `parties.view`） |
 | 读 | 官方 `GET /api/sales/{quotes,orders}`（抬头）与 `GET /api/sales/{quote,order}-lines?quoteId\|orderId=`（行，**snake_case** 列名，`pageSize` 上限 **100**） |
 | 新建写 | 官方 `POST /api/sales/{quotes,orders}`（抬头 + 行一次提交；命令 `sales.quotes\|orders.create`） |
@@ -31,7 +31,35 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
 
 > **金额口径（REQ-006，见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](../../../.ai/specs/2026-09-28-money-scale-2dp-unification.md)）：** 本模块是内置 `sales` 的**边界适配层**——入口只发**金额 2 位、单价 4 位**；`InternalSalesForm` 在提交前校验每行「数量与单价最多 4 位小数」（`Line {line}: quantity and unit price accept at most 4 decimal places`），超位即拒。内核 `sales_*` 列仍 18,4 属实现细节，展示与导出统一按 2 位（`MoneyAmount`）。
 
-> **报价 → 订单的转换：引擎有、界面没有（2026-09-28 实测）。** 官方命令 `sales.quotes.convert_to_order` 由 REST `POST /api/sales/quotes/convert {quoteId}` 暴露（门禁 `sales.quotes.manage` + `sales.orders.manage`），实测 **200** 且**单据就地转换**（同一个 id 从 `sales_quotes` 变成 `sales_orders`、拿到新的 `ORDER-…` 号、行与买方快照随行）。**安装层的单据详情页与本模块都没有这个入口**（官方详情页的 Actions 菜单里没有它）。因此当前流程是：要么直接在本模块新建订单（报价只作对外报价文本），要么走上面这条 REST；要在本模块加「转为订单」行操作，需要先立 spec（转换后原报价 URL 失效，需跳转到订单编辑页）。
+> **报价 → 订单有两条路：就地转换与引用加载（2026-09-29 更新）。** 官方命令 `sales.quotes.convert_to_order`
+> 由 REST `POST /api/sales/quotes/convert {quoteId}` 暴露（门禁 `sales.quotes.manage` + `sales.orders.manage`），
+> **单据就地转换**：同一个 id 从 `sales_quotes` 变成 `sales_orders`、拿到新的 `ORDER-…` 号、行与买方快照随行，
+> 报价本身被引擎硬删（安装源 `commands/documents.ts:6733-6737`），不可撤销；本模块报价列表的「转为订单」行操作
+> 即此路径（spec [`.ai/specs/2026-09-28-internal-sales-quote-to-order.md`](../../../.ai/specs/2026-09-28-internal-sales-quote-to-order.md)）。
+> **更正（2026-09-29）**：安装层报价详情页的 Actions 里**是有** Convert to order 的（安装源
+> `backend/sales/documents/[id]/page.tsx` 的 `handleConvert`，`@open-mercato/core@0.8.0`）——此前
+> 「安装层详情页与本模块都没有这个入口」的记录与当前安装版本不符。另一条路是**引用加载**：
+> 订单新建页「从报价单载入」与报价列表「按此报价新建订单」——报价保留、内容可改、可出多张订单
+> （spec [`.ai/specs/2026-09-29-internal-sales-order-from-quote.md`](../../../.ai/specs/2026-09-29-internal-sales-order-from-quote.md)）。
+
+## 订单从报价单载入（引用加载，2026-09-29）
+
+订单新建页顶部有「从报价单载入」：选一张报价 → 抬头（币种/买方链接与名称/客户参考号/备注）与**全部行**
+一次性填入表单，改完保存为新订单；报价单本身不改不删。报价列表的行操作「按此报价新建订单」是同一 loader 的
+快捷入口（跳 `/backend/internal-sales/orders/create?fromQuote=<id>`，进页自动载入）。与「转为订单」的分工：
+转换 = 报价即最终版、就地不可逆；载入 = 以报价为模板、报价保留、可出多张订单（owner 2026-09-29 确认的业务事实：
+一张订单可能分批发运/分多柜，多张订单也可能合一条柜）。
+
+- **来源记录**：载入后保存的订单写 `metadata.internalSales.sourceQuote = { id, number }`——引擎的 `metadata` 是
+  文档上的自由 jsonb，更新路径不携带该键时引擎「缺席不改」，所以编辑订单不会清掉它；订单编辑页显示
+  「来源报价单 QUOTE-…」并可跳回报价编辑页。载入是一次性的：之后报价与订单互不影响。
+- **映射**：复用编辑页同一组纯函数（`lib/documentValues.ts` 的 `toInternalSalesFormValues` /
+  `toInternalSalesLineValues` + `lib/buyer.ts` 的 `readBuyerSnapshot`）；行 key 重新发为本地 `line-N`（新建载荷
+  不能带源行 id）；空报价只载抬头并提示补明细；表单已有输入时先弹覆盖确认。
+- **读路径**：编辑页的单文档读由 `?ids=` 改为 `?id=`——安装层工厂只有 `id`（单数）返回**含 `metadata`** 的完整
+  投影，`ids` 走的是去掉 metadata 的 grid 投影（安装源 `api/documents/factory.ts` 的 `resolveListFields`）。
+- **权限与失败**：读报价要安装层复数功能位 `sales.quotes.view`；缺位/读失败 → 面板行内提示（+ 自动载入时 flash），
+  表单内容不变，**载入不发任何写请求**。
 
 ## 买方：关联组织 + 外部客户（2026-09-28）
 
@@ -46,6 +74,9 @@ app 自有**界面层**模块：为「总部 → 分公司」的内部销售提�
 - 一个可搜索选择器、两个来源，**来源写在选项标签最前**（`关联组织：名字` / `外部客户：CODE — name`，
   lesson `merged-picker-source-belongs-in-the-label`）；选中后**买方名称自动回填**（组织 = 组织名；
   档案 = `GET /api/parties/{id}` 的 `name`），名称字段仍可编辑——没有档案的买方仍可直接手填（旧能力保留）。
+  前缀/占位符/两处失败提示五个串都在模块字典里（`internal_sales.form.buyer.{relatedOrgPrefix,externalPrefix,
+  selectPlaceholder,orgLoadFailed,partyLoadFailed}`，en/zh 各一份）；**2026-09-29 之前这几个 key 漏了两份字典**，
+  组件只能渲染英文兜底——中文界面里的「Related organization: 俄罗斯 AB 有限公司」就是这么来的。
 - **可见性 fail-closed，不在表单里写业务规则**：分公司账号的切换器 payload 只有它自己（加上不可选的祖先上下文），
   排除自身后自然没有任何「关联组织」选项；总部账号只见自己的下级。所以「总部 → 分公司」由平台的组织可见性
   直接成立，「分公司不能向上/同级」不需要额外判断。
@@ -115,11 +146,25 @@ customerSnapshot = {
 本模块自己的新建/保存后跳转**仍然指向自己的编辑页**（`/backend/internal-sales/{quotes,orders}/[id]/edit`），
 不依赖官方动态页——这是设计选择，不是绕开坏页面。
 
+**编辑页的返回/取消（2026-09-29 修正）**：本模块没有单据详情页，编辑页**就是**该单据的页面，所以编辑页的
+`backHref`/`cancelHref` 指向**列表**（`listHrefFor`，与新建页一致）。此前两处取的是
+`documentDetailHref`——它返回的正是编辑页自身（`${listHref}/${id}/edit`），于是页头「← 返回」与页头/页脚的
+「取消」三个链接全部指回当前地址栏的 URL，点击没有任何反应（2026-09-29 真机报告）。该 helper 同时更名为
+`documentEditHref`，避免下一个作者再按「详情页」去拼返回目标；教训见
+[`.ai/lessons/edit-page-is-not-its-own-back-target.md`](../../../.ai/lessons/edit-page-is-not-its-own-back-target.md)。
+
+**四个 create/edit 页的面包屑（2026-09-29 修正）**：`quotes|orders/create` 与 `quotes|orders/[id]/edit` 的
+面包屑此前是 `{ labelKey: 'internal_sales.page.title', href: '/backend/sales/{quotes,orders}' }`——标签是
+「内部销售单据」一类的中性名，却链到**官方**列表，与本模块的列表/编辑页不同源。现在与 `purchasing`/`parties`
+同款：面包屑第一级就是它要落到的**本模块列表**（`internal_sales.list.quote.title` →
+`/backend/internal-sales/quotes`，订单侧同理），指向的页面与标签一致，也不再离开自建界面。
+`internal_sales.page.title` 由此没有任何引用，两份字典里一并删掉（key 集合仍逐键一致）。
+
 ## 验证
 
 ```bash
 yarn generate && yarn typecheck && yarn lint && yarn ds:check
-npx jest src/modules/internal_sales                     # 买方值协议 / 快照 / 组织选项装配的单元测试
+npx jest src/modules/internal_sales                     # 买方值协议 / 快照 / 组织选项装配 / 报价载入的单元测试（2 suites / 27 tests）
 # 冒烟（dev server 在跑时）：
 #  UI 新建报价/订单（选自建商品 + 数量 + 未税单价）→ 201；落库行 productId=products_products.id、
 #  有官方目录链接的商品 productVariantId 自动填默认变体、catalogSnapshot 有 sku/name/spec；
@@ -135,6 +180,18 @@ npx jest src/modules/internal_sales                     # 买方值协议 / 快�
 #  商品 P4108-UVC（无目录链接 → 变体留空）→ `ORDER-20260928-00004`（合计 176）→ 列表行操作进编辑页 →
 #  改数量保存 `PUT orders` 200 + `PUT order-lines` 200、行 id 不变、快照与变体状态保留（探针单已删）。
 #  /backend/sales/documents/create 只做 `navHidden`：不在侧边栏，但 URL 仍可解析（不是 404）。
+#  从报价单载入（2026-09-29 真机，dev + @open-mercato/core@0.8.0；探针单已删）：
+#  报价 QUOTE-20260929-00022（买方=关联组织「俄罗斯 AB 有限公司」、USD、客户参考号 BR-42、备注、
+#  1 行 LOWMOQ-1790586676106（变体 96861c70-…）12 × 26.5）→ 订单新建页「从报价单载入」→
+#  选择器列出「QUOTE-20260929-00022 — 俄罗斯 AB 有限公司」→ 载入后抬头与行全部填入（含备注）、
+#  flash「已从报价单 … 载入」+ 来源行 → 改数量 7 → 保存 → ORDER-20260929-00008，落库
+#  metadata.internalSales.sourceQuote = { id, number }，行 product_id/product_variant_id/数量=7 保留；
+#  订单编辑页显示「来源报价单 QUOTE-20260929-00022」并链接回报价编辑页；报价未变（仍在列表、行仍 12）。
+#  报价列表行操作「按此报价新建订单」→ /orders/create?fromQuote=<id> 自动载入（同款结果）；表单已有输入时
+#  载入先弹覆盖确认（destructive）。
+#  403 分支（拦截 GET /api/sales/quotes → 403）：面板行内提示「没有读取报价单的权限。」、表单保持为空；
+#  载入期间只发读请求。窄屏 420px 与深色模式已核对；读路径对照：同一订单 `?ids=` 返回 metadata=null、
+#  `?id=` 返回已存来源键。
 ```
 
 ## 回滚

@@ -11,7 +11,7 @@ export const metadata = {
   pageOrder: 301,
   icon: 'file-text',
   breadcrumb: [
-    { label: 'Internal sales list', labelKey: 'internal_sales.page.title', href: '/backend/sales/quotes' },
+    { label: 'Internal sales quotes', labelKey: 'internal_sales.list.quote.title', href: '/backend/internal-sales/quotes' },
     { label: 'Create', labelKey: 'internal_sales.form.quote.createTitle' },
   ],
 }
