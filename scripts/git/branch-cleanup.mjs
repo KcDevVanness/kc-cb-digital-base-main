@@ -23,14 +23,24 @@
  *
  * A deleted tip stays reachable through GitHub's pull refs: `git fetch origin pull/<n>/head`.
  *
+ * The report also covers the long-lived trunks (`production`, `dev`), measured as *content* against
+ * the mainline: `behind` means the trunk holds nothing the mainline lacks — reset it; `carrying` /
+ * `diverged` mean it does — close the wave (`<trunk> → main`), or bring the mainline back in first.
+ * Trunks are reported on every run and are never deletion candidates.
+ *
  * Usage: node scripts/git/branch-cleanup.mjs [--apply] [--remote] [--no-fetch]
  *                                            [--cover <ref>]… [--keep <name>]…
  */
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 const DEFAULT_COVER_REFS = ['origin/main']
-const DEFAULT_KEEP = ['main', 'production']
+const DEFAULT_KEEP = ['main', 'production', 'dev']
 const PULL_REQUEST_LIMIT = 300
+/** Long-lived integration lines kept in step with the mainline: reported, never deleted. */
+const TRUNK_REFS = ['production', 'dev']
+const CONFIG_PATH = '.ai/agentic.config.json'
 
 function usage() {
   console.error(`Usage: node scripts/git/branch-cleanup.mjs [options]
@@ -40,7 +50,8 @@ function usage() {
   --deep           also accept content that exists only in a cover ref's history (slow; for branches
                    whose file was renamed or rewritten after they were cut)
   --no-fetch       skip \`git fetch --prune origin\`
-  --cover <ref>    cover ref to test landings against, repeatable (default: ${DEFAULT_COVER_REFS.join(', ')})
+  --cover <ref>    cover ref to test landings against, repeatable (default: ${DEFAULT_COVER_REFS.join(', ')}
+                   plus the \`baseBranch\` from ${CONFIG_PATH} while it names another branch)
   --keep <name>    protect one more branch name, repeatable (default: ${DEFAULT_KEEP.join(', ')})
   -h, --help       print this help`)
 }
@@ -63,7 +74,6 @@ function parseArgs(argv) {
       throw new Error(`unknown argument: ${arg}`)
     }
   }
-  if (options.cover.length === 0) options.cover = [...DEFAULT_COVER_REFS]
   options.keep = [...new Set([...DEFAULT_KEEP, ...options.keep])]
   return options
 }
@@ -146,6 +156,22 @@ function readPullRequests() {
   }
 }
 
+/**
+ * The pipeline's configured base branch (`baseBranch` in .ai/agentic.config.json) when it names an
+ * explicit branch — `"auto"` means the default branch, which is already a cover ref.
+ */
+function readConfiguredBaseBranch() {
+  const root = git(['rev-parse', '--show-toplevel'], { allowFailure: true })
+  if (root === null) return null
+  try {
+    const config = JSON.parse(readFileSync(join(root, CONFIG_PATH), 'utf8'))
+    const base = typeof config.baseBranch === 'string' ? config.baseBranch.trim() : ''
+    return base === '' || base === 'auto' ? null : base
+  } catch {
+    return null
+  }
+}
+
 /** Paths of `ref` whose content exists in no cover ref (tip, or history when `deepShas` is given). */
 function uniquePaths(ref, coverRefs, deepShas) {
   const listing = git(['ls-tree', '-r', ref], { allowFailure: true })
@@ -213,6 +239,64 @@ function classify({ name, ref, coverRefs, deepShas, prByHead }) {
   }
 }
 
+/**
+ * A long-lived trunk's drift, measured as *content* per path against the mainline — commit counts
+ * are useless here, because a squash-only mainline never becomes an ancestor of a trunk it landed.
+ *
+ * `carrying` (only this trunk has the file) → close the wave; `behind` (only the mainline has it,
+ * nothing here is unique) → reset the trunk; `diverged` (both sides hold versions the other lacks)
+ * → reconcile by hand, never by the reset alone.
+ */
+function classifyTrunk({ name, ref, mainline, mainlineName }) {
+  const status = git(['diff', '--name-status', mainline, ref], { allowFailure: true })
+  if (status === null) {
+    return { verdict: 'no-ref', eligible: false, uniquePaths: [], pullRequest: null, detail: `${ref} does not resolve — trunk not created` }
+  }
+  const added = []
+  const deleted = []
+  const modified = []
+  for (const line of status.split('\n')) {
+    if (line === '') continue
+    const fields = line.split('\t')
+    if (fields[0].startsWith('R') || fields[0].startsWith('C')) {
+      added.push(fields[2])
+      deleted.push(fields[1])
+    } else if (fields[0] === 'A') added.push(fields[1])
+    else if (fields[0] === 'D') deleted.push(fields[1])
+    else modified.push(fields[1])
+  }
+  const base = { uniquePaths: [...added, ...deleted, ...modified], pullRequest: null }
+  if (base.uniquePaths.length === 0) {
+    return { ...base, verdict: 'in-sync', eligible: false, detail: `content already in ${mainline}` }
+  }
+  const trunkSide = [...added, ...modified]
+  const mainlineSide = [...deleted, ...modified]
+  if (trunkSide.length === 0) {
+    return {
+      ...base,
+      verdict: 'behind',
+      eligible: false,
+      detail: `${mainlineSide.length} file(s) in ${mainline} and not here (first: ${mainlineSide[0]}), nothing unique here; reset it: git push --force-with-lease origin ${mainline}:${name}`,
+    }
+  }
+  const oldest = git(['log', '--reverse', '--format=%cI', `${mainline}..${ref}`]).split('\n').filter(Boolean)[0]
+  const age = oldest === undefined ? 'unknown age' : `${Math.floor((Date.now() - Date.parse(oldest)) / 86_400_000)}d old`
+  if (mainlineSide.length === 0) {
+    return {
+      ...base,
+      verdict: 'carrying',
+      eligible: false,
+      detail: `${trunkSide.length} file(s) here and not in ${mainline} (first: ${trunkSide[0]}, oldest ${age}); open the ${name} → ${mainlineName} PR when the wave closes`,
+    }
+  }
+  return {
+    ...base,
+    verdict: 'diverged',
+    eligible: false,
+    detail: `${trunkSide.length} file(s) here not in ${mainline} (first: ${trunkSide[0]}) and ${mainlineSide.length} the other way (first: ${mainlineSide[0]}); reconcile by hand, then land or reset`,
+  }
+}
+
 function printRow(row) {
   console.log(
     `  ${`${row.kind}/${row.name}`.padEnd(46)} ${row.verdict.padEnd(14)}`
@@ -227,8 +311,15 @@ if (options.fetch && git(['fetch', '--prune', 'origin'], { allowFailure: true })
   console.error('branch-cleanup: `git fetch --prune origin` failed — continuing against local refs')
 }
 
+const mainline = DEFAULT_COVER_REFS[0]
+const mainlineName = shortRef(mainline)
+const configuredBase = readConfiguredBaseBranch()
+const coverCandidates = options.cover.length > 0
+  ? options.cover
+  : [...DEFAULT_COVER_REFS, ...(configuredBase !== null && configuredBase !== mainlineName ? [`origin/${configuredBase}`] : [])]
+
 const coverRefs = []
-for (const ref of options.cover) {
+for (const ref of coverCandidates) {
   const tree = readTree(ref)
   if (tree === null) {
     console.error(`branch-cleanup: cover ref ${ref} does not resolve — skipped`)
@@ -256,6 +347,23 @@ console.log(`branch-cleanup: cover refs ${coverRefs.map((cover) => cover.ref).jo
   + `${options.apply ? ' (apply)' : ' (report)'}${options.deep ? ' (deep)' : ''}`)
 
 const deepShas = options.deep ? readDeepShas(coverRefs.map((cover) => cover.ref)) : null
+
+console.log(`branch-cleanup: trunks measured against ${mainline} (reported, never deleted)`)
+let trunksNeedingAction = 0
+for (const name of TRUNK_REFS) {
+  const ref = `origin/${name}`
+  const row = {
+    kind: 'trunk',
+    name,
+    ref,
+    ...(git(['rev-parse', '--verify', '--quiet', ref], { allowFailure: true }) === null
+      ? { verdict: 'no-ref', eligible: false, uniquePaths: [], pullRequest: null, detail: `${ref} does not resolve — trunk not created` }
+      : classifyTrunk({ name, ref, mainline, mainlineName })),
+  }
+  printRow(row)
+  if (row.verdict !== 'in-sync') trunksNeedingAction += 1
+}
+console.log(`  trunks: ${TRUNK_REFS.length - trunksNeedingAction} in-sync, ${trunksNeedingAction} need action`)
 
 const localRows = []
 for (const name of git(['for-each-ref', 'refs/heads', '--format=%(refname:short)']).split('\n').filter(Boolean)) {
@@ -310,3 +418,4 @@ if (options.remote) {
 }
 
 console.log('  review rows are never deleted automatically: land their paths (or add a cover ref with --cover) first')
+console.log(`  trunks are reset onto ${mainline} after a landing, never deleted: git push --force-with-lease origin ${mainline}:<trunk>`)
