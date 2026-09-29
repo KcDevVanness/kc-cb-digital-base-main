@@ -1,14 +1,14 @@
 # 财务模块完善 · 数据打通 · 老板驾驶舱 (Finance Ledger, RU Data Sync and Boss Cockpit)
 
 **Date**: 2026-09-28
-**Status**: Ready for implementation — **Phase 1–8 全部交付**；Phase 1–5 已在 dev 实测，Phase 8 的 FLOW-G1 端到端链路已在**全新一次性库**上绿（见 `TEST-FLOW-G1`），Phase 3 的 ads 实拉 / Phase 4 / 6 / 7 的页面实测待本机 dev 服务重启后补（细节见 Changelog）
-**Source docs**: `.ai/specs/2026-09-28-three-system-metric-reconciliation.md`（承接其 supply 同步 + 驾驶舱范围）· `docs/ru-petkit/supply-sync-tech.md`（16 端点唯一契约）· `docs/ru-petkit/field-mapping.md`（六域锚点）· `docs/ru-petkit/prd.md`（RU 功能 F-01…F-11）· `docs/plans/cross-border-erp.md`（既有链路现状）
+**Status**: Ready for implementation — **Phase 1–8 全部交付并实测**：17 端点全量实拉（8 supply + 9 ads，同 `as_of` 重放幂等）、四预警各触发一次且去重、三条到期提醒、FLOW-G1 端到端链路在**全新一次性库**上绿（见 `TEST-FLOW-G1`）、11 个页面与 4 个 widget 渲染真实数据；实测查出并修掉四个真实缺陷（通知 uuid 列、跨模块缓存失效、金额卡丢 footer、ДРР widget 占位符）。细节见 Changelog
+**Source docs**: `.ai/specs/2026-09-28-three-system-metric-reconciliation.md`（承接其 supply 同步 + 驾驶舱范围）· `docs/ru-petkit/supply-sync-tech.md`（17 端点唯一契约：supply 8 + ads 9）· `docs/ru-petkit/field-mapping.md`（六域锚点）· `docs/ru-petkit/prd.md`（RU 功能 F-01…F-11）· `docs/plans/cross-border-erp.md`（既有链路现状）
 
-> **用户决议（2026-09-28，硬约束）**：交付范围 = 需求 + 一路做到驾驶舱可看（多阶段）；成本口径 = 采购价 + 到岸成本**双口径**；RU 对接顺序 = **先 supply 7 端点，后 ads 9 端点**；账本深度 = 业务台账 + 派生损益，**不做**凭证/科目/总账/账期/账龄。
+> **用户决议（2026-09-28，硬约束）**：交付范围 = 需求 + 一路做到驾驶舱可看（多阶段）；成本口径 = 采购价 + 到岸成本**双口径**；RU 对接顺序 = **先 supply 8 端点（§1–§7 + §1.1），后 ads 9 端点**；账本深度 = 业务台账 + 派生损益，**不做**凭证/科目/总账/账期/账龄。
 
 ## TLDR
 
-在既有跨境 ERP 的采购（`purchasing`）、外贸（`cross_border`/`trade_docs`）、收汇退税（`export_finance`）三条链之上，补一层**钱**：柜级费用台账、到岸成本（读时派生）、期间费用、应付/应收/库存资金占用/损益只读台账；补一层**数据**：RU petkit 16 端点（先 supply 7）的 `DataSyncAdapter` 同步、快照投影、游标、SKU 映射；补一层**看**：只读老板驾驶舱（六类数一页 + 四预警 + 下钻）。全部复用平台一方机制：`makeCrudRoute`/`CrudForm`/`DataTable`、命令 + 事件 + 订阅者、`data_sync` 的 `DataSyncAdapter`、`dashboards` 的 `DashboardWidgetModule`、`notifications` 的类型注册、`platform_ops.reconciliation` 的对账队列。最小闭环：老板每天看到缺货/在途/积压/ДРР 四数，数字与 RU 页一致、与 CN 账本对得上；且柜费用→到岸成本→应付/应收→损益每一步可复算。
+在既有跨境 ERP 的采购（`purchasing`）、外贸（`cross_border`/`trade_docs`）、收汇退税（`export_finance`）三条链之上，补一层**钱**：柜级费用台账、到岸成本（读时派生）、期间费用、应付/应收/库存资金占用/损益只读台账；补一层**数据**：RU petkit 17 端点（先 supply 8）的 `DataSyncAdapter` 同步、快照投影、游标、SKU 映射；补一层**看**：只读老板驾驶舱（六类数一页 + 四预警 + 下钻）。全部复用平台一方机制：`makeCrudRoute`/`CrudForm`/`DataTable`、命令 + 事件 + 订阅者、`data_sync` 的 `DataSyncAdapter`、`dashboards` 的 `DashboardWidgetModule`、`notifications` 的类型注册、`platform_ops.reconciliation` 的对账队列。最小闭环：老板每天看到缺货/在途/积压/ДРР 四数，数字与 RU 页一致、与 CN 账本对得上；且柜费用→到岸成本→应付/应收→损益每一步可复算。
 
 ## Problem Statement
 
