@@ -39,14 +39,16 @@ plan, and the open decisions — written so it can be pasted into Feishu as-is (
 
 ## Progress
 
+PR: #58
+
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
 ### Phase 1: 文档落地
 
-- [ ] 1.1 写 `docs/reports/progress.md`
-- [ ] 1.2 写目录契约与 `docs/README.md` 索引行
+- [x] 1.1 写 `docs/reports/progress.md` — 5761621
+- [x] 1.2 写目录契约与 `docs/README.md` 索引行 — 5761621
 
 ### Phase 2: 校验与交付
 
-- [ ] 2.1 链接存在性检查 + diff 复读
-- [ ] 2.2 提交、推送、PR、标签
+- [x] 2.1 链接存在性检查 + diff 复读 — 5761621（32 条相对链接 0 缺失）
+- [x] 2.2 提交、推送、PR、标签
