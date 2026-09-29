@@ -71,13 +71,13 @@ pages); requirement record `.ai/specs/2026-09-22-products-and-trade-docs.md` Pha
 
 ### Phase 1: fix
 
-- [ ] 1.1 Worktree + branch off `origin/dev`
-- [ ] 1.2 Point the edit page's back/cancel at the list href
-- [ ] 1.3 Rename `documentDetailHref` → `documentEditHref`
-- [ ] 1.4 README note + lesson record + catalog row
+- [x] 1.1 Worktree + branch off `origin/dev` — 2c2f3ea
+- [x] 1.2 Point the edit page's back/cancel at the list href — b04123c
+- [x] 1.3 Rename `documentDetailHref` → `documentEditHref` — b04123c
+- [x] 1.4 README note + lesson record + catalog row — b04123c
 
 ### Phase 2: verify
 
-- [ ] 2.1 Targeted checks (generate, lessons, typecheck, lint, ds:check, jest)
-- [ ] 2.2 Live smoke: rendered hrefs + click-through on the worktree dev server
-- [ ] 2.3 Broad gate (`yarn test`, `yarn build`)
+- [x] 2.1 Targeted checks (generate, lessons, typecheck, lint, ds:check, jest) — b04123c
+- [x] 2.2 Live smoke: rendered hrefs + click-through on the worktree dev server — b04123c
+- [x] 2.3 Broad gate (`yarn test`, `yarn build`)
