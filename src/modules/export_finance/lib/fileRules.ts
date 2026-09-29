@@ -72,6 +72,13 @@ export type ContractRow = {
   status: string
   sourceKind: string | null
   sourceId: string | null
+  /**
+   * Purchase orders this contract covers through `trade_docs_contract_orders` — the relation
+   * contracts use since 2026-09-29, because a signed contract is executed through several orders
+   * and the single `source_*` anchor cannot express that. The anchor stays readable for the rows
+   * written before the link table existed, so callers test **both**.
+   */
+  linkedPurchaseOrderIds: string[]
   financeTotal: string
   currencyCode: string
   exchangeRate: string | null
@@ -381,16 +388,20 @@ export function aggregateRefundStatus(statuses: string[]): string {
 }
 
 /**
- * KC订单价格 comes from the sales contract sourced from this order — the most recently updated
- * one that is not cancelled. A contract that was cancelled never becomes the KC price.
+ * KC订单价格 comes from the sales contract covering this order — the most recently updated one that
+ * is not cancelled. A contract that was cancelled never becomes the KC price.
+ *
+ * "Covering" is either the order link (`trade_docs_contract_orders`, the relation contracts use
+ * today) or the historical `source_kind`/`source_id` anchor, so the figure does not regress for the
+ * contracts filed before the link table existed.
  */
 export function selectKcContract(contracts: ContractRow[], purchaseOrderId: string): ContractRow | null {
   const candidates = contracts.filter(
     (contract) =>
       contract.direction === 'sales' &&
-      contract.sourceKind === 'purchase_order' &&
-      contract.sourceId === purchaseOrderId &&
-      contract.status !== 'cancelled',
+      contract.status !== 'cancelled' &&
+      ((contract.sourceKind === 'purchase_order' && contract.sourceId === purchaseOrderId) ||
+        contract.linkedPurchaseOrderIds.includes(purchaseOrderId)),
   )
   const sorted = candidates.slice().sort((left, right) => {
     const leftTime = toTime(left.updatedAt)
