@@ -33,3 +33,4 @@
 |---|---|
 | [lookup-field-dropdown.md](./lookup-field-dropdown.md) | 待上游发版（补丁已产出并自验；已确认安装版 `@open-mercato/ui` 0.8.0 未含该改动） |
 | [cross-border-erp.md](./cross-border-erp.md) | 已实现：阶段一~四、六、七完成并验证；阶段五收尾进行中；平台传输层待业务答 Q4 |
+| [finance-and-cockpit.md](./finance-and-cockpit.md) | 已交付：财务模块（费用/到岸成本/台账/损益）+ 俄方数据打通 + 老板驾驶舱；执行口径见 `.ai/specs/2026-09-28-finance-ledger-and-cockpit-data.md`，进度见 [../plans/finance-and-cockpit.md](../plans/finance-and-cockpit.md) |

@@ -343,6 +343,25 @@ function buildFinanceColumns(t: TranslateFn, locale: string): ColumnDef<OrderFil
       cell: ({ row }) => <AmountCell value={row.original.finance.outstandingAmount} />,
     },
     {
+      accessorKey: 'collectedAmount',
+      header: t('export_finance.orders.columns.collectedAmount'),
+      enableSorting: false,
+      meta: { priority: 8, align: 'right' },
+      cell: ({ row }) => <AmountCell value={row.original.finance.collectedAmount} />,
+    },
+    {
+      accessorKey: 'collectedAt',
+      header: t('export_finance.orders.columns.collectedAt'),
+      enableSorting: false,
+      meta: { priority: 12 },
+      cell: ({ row }) =>
+        row.original.finance.collectedAt ? (
+          <span className="tabular-nums">{row.original.finance.collectedAt.slice(0, 10)}</span>
+        ) : (
+          <EmptyCell />
+        ),
+    },
+    {
       accessorKey: 'kcPrice',
       header: t('export_finance.orders.columns.kcPrice'),
       enableSorting: false,

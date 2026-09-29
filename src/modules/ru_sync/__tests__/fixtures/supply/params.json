@@ -1,0 +1,35 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 1,
+  "items": [
+    {
+      "version": "2026-09-27",
+      "production_days": 30,
+      "transit_days": 25,
+      "receiving_days": 2,
+      "order_cycle_days": 57,
+      "coverage_window_days": 30,
+      "safety_days": 10,
+      "horizon_days": 97,
+      "demand_weights": {
+        "d30": 50,
+        "d60": 30,
+        "d90": 20,
+        "d120": 0
+      },
+      "exclude_oos_days": true,
+      "eta_aware": true,
+      "overstock_days": 240,
+      "seasonality": {
+        "profile": "flat",
+        "monthly": {
+          "jan": "1.0",
+          "feb": "1.0"
+        }
+      },
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    }
+  ]
+}

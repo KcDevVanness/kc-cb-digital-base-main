@@ -1,0 +1,48 @@
+{
+  "as_of": "2026-09-27",
+  "page": 1,
+  "page_size": 100,
+  "total": 1,
+  "items": [
+    {
+      "external_settlement_id": "STL-2026-09",
+      "channel": "ozon",
+      "period_start": "2026-09-01",
+      "period_end": "2026-09-30",
+      "currency": "RUB",
+      "gross_amount": {
+        "amount": "3574798.00",
+        "currency": "RUB"
+      },
+      "fee_amount": {
+        "amount": "1849273.00",
+        "currency": "RUB"
+      },
+      "net_amount": {
+        "amount": "1725525.00",
+        "currency": "RUB"
+      },
+      "received_at": "2026-09-25",
+      "lines": [
+        {
+          "external_order_id": "115236",
+          "fee_type": "marketplace_fee",
+          "gross_amount": {
+            "amount": "69190.00",
+            "currency": "RUB"
+          },
+          "fee_amount": {
+            "amount": "35793.00",
+            "currency": "RUB"
+          },
+          "net_amount": {
+            "amount": "33397.00",
+            "currency": "RUB"
+          },
+          "updated_at": "2026-09-27T10:00:00+03:00"
+        }
+      ],
+      "updated_at": "2026-09-27T10:00:00+03:00"
+    }
+  ]
+}

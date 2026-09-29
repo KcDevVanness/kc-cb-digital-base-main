@@ -36,16 +36,20 @@ import { formatDisplayDate, formatDisplayDateTime } from '@open-mercato/ui/primi
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import {
   SHIPMENT_ALLOCATIONS_API_PATH,
   SHIPMENT_ATTACHMENT_ENTITY_ID,
   SHIPMENT_CANCEL_API_PATH,
+  SHIPMENT_COMMERCIAL_INVOICE_HREF,
   SHIPMENT_DEPART_API_PATH,
   SHIPMENT_DOCUMENTS_API_PATH,
   SHIPMENT_DOCUMENT_TYPES,
   SHIPMENT_MILESTONES,
   SHIPMENT_MILESTONES_API_PATH,
   SHIPMENT_RECEIVE_API_PATH,
+  SHIPMENT_SALES_ALLOCATIONS_API_PATH,
+  SHIPMENT_SELECTABLE_DOCUMENT_TYPES,
   SHIPMENTS_API_PATH,
   SHIPMENTS_LIST_HREF,
   ShipmentDestinationFields,
@@ -156,6 +160,35 @@ function toShipmentAllocationRecord(item: Record<string, unknown>): ShipmentAllo
   }
 }
 
+/** A sales allocation as `/api/cross_border/shipments/sales-allocations` projects it. */
+export type ShipmentSalesAllocationRecord = {
+  id: string
+  salesOrderId: string
+  salesOrderNumber: string | null
+  salesOrderLineId: string
+  catalogProductId: string | null
+  productTitle: string | null
+  productSku: string | null
+  quantity: string
+  unitPrice: string | null
+  currencyCode: string | null
+}
+
+function toShipmentSalesAllocationRecord(item: Record<string, unknown>): ShipmentSalesAllocationRecord {
+  return {
+    id: readRecordText(item, 'id'),
+    salesOrderId: readRecordText(item, 'salesOrderId', 'sales_order_id'),
+    salesOrderNumber: readRecordOptionalText(item, 'salesOrderNumber', 'sales_order_number'),
+    salesOrderLineId: readRecordText(item, 'salesOrderLineId', 'sales_order_line_id'),
+    catalogProductId: readRecordOptionalText(item, 'catalogProductId', 'catalog_product_id'),
+    productTitle: readRecordOptionalText(item, 'productTitle', 'product_title'),
+    productSku: readRecordOptionalText(item, 'productSku', 'product_sku'),
+    quantity: readRecordText(item, 'quantity') || '0',
+    unitPrice: readRecordOptionalText(item, 'unitPrice', 'unit_price'),
+    currencyCode: readRecordOptionalText(item, 'currencyCode', 'currency_code'),
+  }
+}
+
 function toShipmentMilestoneRecord(item: Record<string, unknown>): ShipmentMilestoneRecord {
   const milestone = item.milestone
   return {
@@ -244,6 +277,55 @@ function buildAllocationColumns(t: TranslateFn): ColumnDef<ShipmentAllocationRec
 }
 
 /**
+ * The read-only sales allocation table: which internal sales order each allocated line belongs to,
+ * the frozen product and price snapshot. Mirrors the purchase allocation table.
+ */
+function buildSalesAllocationColumns(t: TranslateFn): ColumnDef<ShipmentSalesAllocationRecord>[] {
+  return [
+    {
+      accessorKey: 'salesOrderNumber',
+      header: t('cross_border.shipments.salesAllocations.salesOrder'),
+      enableSorting: false,
+      meta: { priority: 1, truncate: true, maxWidth: 240 },
+      cell: ({ row }) => row.original.salesOrderNumber ?? row.original.salesOrderId ?? EMPTY_CELL,
+    },
+    {
+      accessorKey: 'productTitle',
+      header: t('cross_border.shipments.salesAllocations.product'),
+      enableSorting: false,
+      meta: { priority: 2, truncate: true, maxWidth: 320 },
+      cell: ({ row }) => (
+        <div className="flex flex-col">
+          <span>{row.original.productTitle ?? EMPTY_CELL}</span>
+          {row.original.productSku ? (
+            <span className="text-xs text-muted-foreground">{row.original.productSku}</span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'quantity',
+      header: t('cross_border.shipments.salesAllocations.quantity'),
+      enableSorting: false,
+      meta: { priority: 3, align: 'right' },
+      cell: ({ row }) => trimShipmentQuantity(row.original.quantity),
+    },
+    {
+      accessorKey: 'unitPrice',
+      header: t('cross_border.shipments.salesAllocations.unitPrice'),
+      enableSorting: false,
+      meta: { priority: 4, align: 'right' },
+      cell: ({ row }) => {
+        const price = row.original.unitPrice
+        if (!price) return <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>
+        const currency = row.original.currencyCode ? ` ${row.original.currencyCode}` : ''
+        return `${trimShipmentQuantity(price)}${currency}`
+      },
+    },
+  ]
+}
+
+/**
  * The upload control for a document's file. It talks to the shared attachments endpoint
  * (`POST /api/attachments`, multipart) exactly as the installed attachment surfaces do, and hands
  * the returned id back to the form — the document command stores that id, never a byte of file.
@@ -303,17 +385,24 @@ function ShipmentDocumentAttachmentField({
           {t('cross_border.shipments.documents.field.attachment')}
         </Button>
         {attachmentId ? (
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={disabled}
-            onClick={() => {
-              setValue('')
-              setFileName(null)
-            }}
-          >
-            {t('cross_border.shipments.documents.remove')}
-          </Button>
+          <>
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              fileName={fileName}
+              label={t('cross_border.shipments.documents.preview')}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={disabled}
+              onClick={() => {
+                setValue('')
+                setFileName(null)
+              }}
+            >
+              {t('cross_border.shipments.documents.remove')}
+            </Button>
+          </>
         ) : null}
       </div>
       {fileName ? <p className="text-xs text-muted-foreground">{fileName}</p> : null}
@@ -520,7 +609,10 @@ function ShipmentDocumentsSection({
       label: t('cross_border.shipments.documents.field.docType'),
       type: 'select',
       required: true,
-      options: SHIPMENT_DOCUMENT_TYPES.map((value) => ({ value, label: shipmentDocumentTypeLabel(t, value) })),
+      // `commercial_invoice` is deliberately absent: the structured commercial invoice lives in
+      // `trade_docs` now, and offering the legacy slot here would create a second truth. Existing
+      // rows keep rendering because the label map still knows the type.
+      options: SHIPMENT_SELECTABLE_DOCUMENT_TYPES.map((value) => ({ value, label: shipmentDocumentTypeLabel(t, value) })),
     },
     {
       id: 'documentNumber',
@@ -626,12 +718,18 @@ function ShipmentDocumentsSection({
         const attachmentId = row.original.attachmentId
         if (!attachmentId) return <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>
         return (
-          <Link
-            href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
-            className="text-sm text-primary hover:underline"
-          >
-            {t('cross_border.shipments.documents.field.attachment')}
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <AttachmentPreviewLink
+              attachmentId={attachmentId}
+              label={t('cross_border.shipments.documents.preview')}
+            />
+            <Link
+              href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
+              className="text-sm text-primary hover:underline"
+            >
+              {t('cross_border.shipments.documents.download')}
+            </Link>
+          </div>
         )
       },
     },
@@ -690,6 +788,12 @@ function ShipmentDocumentsSection({
             />
           )}
         />
+        <p className="text-xs text-muted-foreground">
+          {t('cross_border.shipments.documents.commercialInvoiceHint')}{' '}
+          <Link href={SHIPMENT_COMMERCIAL_INVOICE_HREF} className="text-primary hover:underline">
+            {t('cross_border.shipments.documents.commercialInvoiceLink')}
+          </Link>
+        </p>
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -698,6 +802,14 @@ function ShipmentDocumentsSection({
             <DialogTitle>{t('cross_border.shipments.actions.addDocument')}</DialogTitle>
             <DialogDescription>{t('cross_border.shipments.documents.title')}</DialogDescription>
           </DialogHeader>
+          {/* F-203: the commercial invoice is no longer a shipment document slot — it is a
+              structured `trade_docs` document. The dialog says so, and links straight to it. */}
+          <p className="text-xs text-muted-foreground">
+            {t('cross_border.shipments.documents.commercialInvoiceHint')}{' '}
+            <Link href={SHIPMENT_COMMERCIAL_INVOICE_HREF} className="text-primary hover:underline">
+              {t('cross_border.shipments.documents.commercialInvoiceLink')}
+            </Link>
+          </p>
           <CrudForm<ShipmentDocumentFormValues>
             embedded
             fields={fields}
@@ -732,6 +844,7 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const [shipment, setShipment] = React.useState<ShipmentRecord | null>(null)
   const [allocations, setAllocations] = React.useState<ShipmentAllocationRecord[]>([])
+  const [salesAllocations, setSalesAllocations] = React.useState<ShipmentSalesAllocationRecord[]>([])
   const [milestones, setMilestones] = React.useState<ShipmentMilestoneRecord[]>([])
   const [documents, setDocuments] = React.useState<ShipmentDocumentRecord[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -763,9 +876,13 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
     setLoadError(null)
     setNotFound(false)
     try {
-      const [shipmentPayload, allocationPayload, milestonePayload, documentPayload] = await Promise.all([
+      const [shipmentPayload, allocationPayload, salesAllocationPayload, milestonePayload, documentPayload] = await Promise.all([
         fetchCrudList<Record<string, unknown>>(SHIPMENTS_API_PATH, { ids: shipmentId, pageSize: 1 }),
         fetchCrudList<Record<string, unknown>>(SHIPMENT_ALLOCATIONS_API_PATH, {
+          shipmentId,
+          pageSize: ALLOCATION_PAGE_SIZE,
+        }),
+        fetchCrudList<Record<string, unknown>>(SHIPMENT_SALES_ALLOCATIONS_API_PATH, {
           shipmentId,
           pageSize: ALLOCATION_PAGE_SIZE,
         }),
@@ -782,6 +899,7 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
       if (!item) {
         setShipment(null)
         setAllocations([])
+        setSalesAllocations([])
         setMilestones([])
         setDocuments([])
         setNotFound(true)
@@ -789,6 +907,7 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
       }
       setShipment(toShipmentRecord(item))
       setAllocations((allocationPayload.items ?? []).map(toShipmentAllocationRecord))
+      setSalesAllocations((salesAllocationPayload.items ?? []).map(toShipmentSalesAllocationRecord))
       setMilestones((milestonePayload.items ?? []).map(toShipmentMilestoneRecord))
       setDocuments((documentPayload.items ?? []).map(toShipmentDocumentRecord))
     } catch {
@@ -909,6 +1028,7 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
   })
 
   const allocationColumns = React.useMemo(() => buildAllocationColumns(t), [t])
+  const salesAllocationColumns = React.useMemo(() => buildSalesAllocationColumns(t), [t])
 
   if (loading && !shipment) return <LoadingMessage label={t('cross_border.shipments.form.loadFailed')} />
 
@@ -996,6 +1116,19 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
           embedded
           columns={allocationColumns}
           data={allocations}
+          disableRowClick
+        />
+      </div>
+
+      <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
+        <SectionHeader
+          title={t('cross_border.shipments.salesAllocations.title')}
+          count={salesAllocations.length}
+        />
+        <DataTable<ShipmentSalesAllocationRecord>
+          embedded
+          columns={salesAllocationColumns}
+          data={salesAllocations}
           disableRowClick
         />
       </div>

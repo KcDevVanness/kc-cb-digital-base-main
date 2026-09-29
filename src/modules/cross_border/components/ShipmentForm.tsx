@@ -25,7 +25,16 @@ import {
   toUtcDateInputValue,
 } from '@open-mercato/ui/primitives/date-format'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
-import { loadCarrierOptions, loadContainerTypeOptions, loadPortOptions } from './shipmentFormOptions'
+import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
+import { loadProductOption, loadProductOptions, type ProductOption } from '../../products/components/formOptions'
+import {
+  loadCarrierOptions,
+  loadContainerTypeOptions,
+  loadPortOptions,
+  loadSalesOrderLineOptions,
+  loadSalesOrderOptions,
+  type SalesOrderLineOption,
+} from './shipmentFormOptions'
 
 /**
  * This file owns the shipment contract shared with the list and detail surfaces: the record
@@ -37,6 +46,7 @@ import { loadCarrierOptions, loadContainerTypeOptions, loadPortOptions } from '.
 
 export const SHIPMENTS_API_PATH = 'cross_border/shipments'
 export const SHIPMENT_ALLOCATIONS_API_PATH = 'cross_border/shipments/allocations'
+export const SHIPMENT_SALES_ALLOCATIONS_API_PATH = 'cross_border/shipments/sales-allocations'
 export const SHIPMENT_MILESTONES_API_PATH = 'cross_border/shipments/milestones'
 export const SHIPMENT_DOCUMENTS_API_PATH = 'cross_border/shipments/documents'
 export const SHIPMENT_DEPART_API_PATH = 'cross_border/shipments/depart'
@@ -129,6 +139,19 @@ const SHIPMENT_DOCUMENT_TYPE_LABEL_KEYS: Record<ShipmentDocumentType, string> = 
 export function shipmentDocumentTypeLabel(t: TranslateFn, docType: ShipmentDocumentType): string {
   return t(SHIPMENT_DOCUMENT_TYPE_LABEL_KEYS[docType])
 }
+
+/**
+ * The types a *new* document row may be created with. `commercial_invoice` stays in the type list
+ * above so historical rows keep rendering, but it is no longer offered: the commercial invoice now
+ * lives in its own `trade_docs` document (`SHIPMENT_COMMERCIAL_INVOICE_HREF`), and the system must
+ * not carry two truths for one document.
+ */
+export const SHIPMENT_SELECTABLE_DOCUMENT_TYPES = SHIPMENT_DOCUMENT_TYPES.filter(
+  (docType) => docType !== 'commercial_invoice',
+)
+
+/** Where the structured commercial invoice lives now (the `trade_docs` CI list). */
+export const SHIPMENT_COMMERCIAL_INVOICE_HREF = '/backend/trade-docs/commercial-invoices'
 
 /**
  * Attachments are uploaded before the document row exists (the row stores the returned id), so
@@ -431,6 +454,30 @@ export type ShipmentAllocationValues = {
   allocatedQuantity: string
 }
 
+/**
+ * One **sales** allocation row. `key` keeps React anchored to a row while rows are added and
+ * removed; the order/line labels, product snapshot and catalog id are the row's own display and
+ * payload data. The sales order/line and the product snapshot are re-resolved server-side from
+ * `salesOrderLineId`, so a tampered label cannot change what is written.
+ */
+export type ShipmentSalesAllocationValues = {
+  key: string
+  salesOrderId: string
+  salesOrderLabel: string
+  salesOrderLineId: string
+  lineNumber: number
+  /** App-owned product master id, used only to resolve the catalog link in the editor. */
+  productId: string
+  /** Installed-catalog product the line is bridged to; the allocation is stored against it. */
+  catalogProductId: string
+  productTitle: string
+  productSku: string
+  orderedQuantity: string
+  quantity: string
+  unitPrice: string
+  currencyCode: string
+}
+
 export type ShipmentFormValues = {
   carrierName: string
   forwarderContact: string
@@ -446,6 +493,7 @@ export type ShipmentFormValues = {
   destinationWarehouseId: string
   destinationLocationId: string
   allocations: ShipmentAllocationValues[]
+  salesAllocations: ShipmentSalesAllocationValues[]
 }
 
 const EMPTY_SHIPMENT_VALUES: ShipmentFormValues = {
@@ -462,6 +510,7 @@ const EMPTY_SHIPMENT_VALUES: ShipmentFormValues = {
   destinationWarehouseId: '',
   destinationLocationId: '',
   allocations: [],
+  salesAllocations: [],
 }
 
 function newRowKey(): string {
@@ -488,6 +537,29 @@ export function readAllocations(value: unknown): ShipmentAllocationValues[] {
   })
 }
 
+export function readSalesAllocations(value: unknown): ShipmentSalesAllocationValues[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap<ShipmentSalesAllocationValues>((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const row = entry as Record<string, unknown>
+    return [{
+      key: typeof row.key === 'string' && row.key.length ? row.key : newRowKey(),
+      salesOrderId: readText(row, 'salesOrderId'),
+      salesOrderLabel: readText(row, 'salesOrderLabel'),
+      salesOrderLineId: readText(row, 'salesOrderLineId'),
+      lineNumber: typeof row.lineNumber === 'number' ? row.lineNumber : Number(row.lineNumber ?? 0) || 0,
+      productId: readText(row, 'productId'),
+      catalogProductId: readText(row, 'catalogProductId'),
+      productTitle: readText(row, 'productTitle'),
+      productSku: readText(row, 'productSku'),
+      orderedQuantity: readText(row, 'orderedQuantity'),
+      quantity: readText(row, 'quantity'),
+      unitPrice: readText(row, 'unitPrice'),
+      currencyCode: readText(row, 'currencyCode'),
+    }]
+  })
+}
+
 /**
  * Builds the create/update payload: only the contract's keys, every decimal as a string (the
  * command's validators normalize them onto their fixed-scale columns, so no digit is lost to a
@@ -510,9 +582,21 @@ export function buildShipmentPayload(values: ShipmentFormValues): Record<string,
     notes: toOptionalText(values.notes),
     allocations: readAllocations(values.allocations).map((row) => ({
       purchaseOrderLineId: row.purchaseOrderLineId.trim(),
-      // The validator normalizes the quantity onto the column's scale and rejects an over-precise
-      // value, so a float round trip here could only lose a digit the operator typed.
+      // Decimals travel as strings on both allocation paths: the validator normalizes them onto
+      // the quantity column's scale and rejects an over-precise value, so a float round trip here
+      // could only lose a digit the operator typed.
       quantity: row.allocatedQuantity.trim() ? row.allocatedQuantity.trim() : '0',
+    })),
+    // The sales allocation is replaced wholesale on every save (an empty list clears it), exactly
+    // like the purchase side. Decimals stay strings so no digit is lost to a float round trip; the
+    // order number and snapshot are resolved from the line server-side, so they are not sent.
+    salesAllocations: readSalesAllocations(values.salesAllocations).map((row) => ({
+      salesOrderId: row.salesOrderId.trim(),
+      salesOrderLineId: row.salesOrderLineId.trim(),
+      catalogProductId: row.catalogProductId.trim(),
+      quantity: row.quantity.trim() ? row.quantity.trim() : '0',
+      unitPrice: toOptionalText(row.unitPrice),
+      currencyCode: toOptionalText(row.currencyCode),
     })),
   }
 }
@@ -574,9 +658,9 @@ export function buildDocumentPayload(
  * The server reports allocation problems against a nested path (`allocations.0.quantity`), so the
  * editor surfaces the first error it owns instead of only the exact `allocations` key.
  */
-function firstAllocationError(errors: Record<string, string>): string | null {
+function firstAllocationError(errors: Record<string, string>, field = 'allocations'): string | null {
   const key = Object.keys(errors).find(
-    (candidate) => candidate === 'allocations' || candidate.startsWith('allocations.'),
+    (candidate) => candidate === field || candidate.startsWith(`${field}.`),
   )
   return key ? errors[key] ?? null : null
 }
@@ -853,6 +937,246 @@ function ShipmentAllocationEditor({
   )
 }
 
+/**
+ * The **sales** allocation editor: pick an internal sales order, its lines load as candidates,
+ * allocate a quantity per line, and the row carries the line's frozen price/currency. The product
+ * is derived from the picked line — its app-owned product is resolved to the installed catalog
+ * product through the same product picker the rest of the app uses — so a line that is not bridged
+ * to the catalog cannot be allocated (the command refuses it too). A line can only appear once.
+ */
+function ShipmentSalesAllocationEditor({
+  t,
+  values,
+  setValue,
+  errors,
+}: CrudFormGroupComponentProps & { t: TranslateFn }) {
+  const { organizationId } = useOrganizationScopeDetail()
+  const allocations = readSalesAllocations(values.salesAllocations)
+  const [orderId, setOrderId] = React.useState('')
+  const [orderOptions, setOrderOptions] = React.useState<CrudFieldOption[]>([])
+  const [lines, setLines] = React.useState<SalesOrderLineOption[]>([])
+  const [draftQuantities, setDraftQuantities] = React.useState<Record<string, string>>({})
+  const [linesError, setLinesError] = React.useState<string | null>(null)
+  const productCache = React.useRef(new Map<string, ProductOption | null>())
+  const error = firstAllocationError(errors, 'salesAllocations')
+
+  React.useEffect(() => {
+    const scopedOrderId = orderId.trim()
+    if (!scopedOrderId) {
+      setLines([])
+      setLinesError(null)
+      return
+    }
+    let cancelled = false
+    setLinesError(null)
+    loadSalesOrderLineOptions(t('cross_border.shipments.salesAllocations.loadLinesFailed'), scopedOrderId)
+      .then((next) => {
+        if (!cancelled) setLines(next)
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setLinesError(shipmentErrorMessage(cause, t('cross_border.shipments.salesAllocations.loadLinesFailed')))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [orderId, t])
+
+  const allocatedLineIds = React.useMemo(
+    () => new Set(allocations.map((row) => row.salesOrderLineId)),
+    [allocations],
+  )
+
+  const candidates = React.useMemo(
+    () => lines.filter((line) => !allocatedLineIds.has(line.id)),
+    [allocatedLineIds, lines],
+  )
+
+  const resolveProduct = React.useCallback(async (productId: string): Promise<ProductOption | null> => {
+    if (!productId) return null
+    if (productCache.current.has(productId)) return productCache.current.get(productId) ?? null
+    const option = await loadProductOption(
+      productId,
+      t('cross_border.shipments.salesAllocations.loadLinesFailed'),
+      organizationId,
+    ).catch(() => null)
+    productCache.current.set(productId, option)
+    return option
+  }, [organizationId, t])
+
+  const handleOrderChange = React.useCallback((next: string) => {
+    setOrderId(next.trim())
+    setDraftQuantities({})
+  }, [])
+
+  const addAllocation = React.useCallback(async (line: SalesOrderLineOption) => {
+    const option = await resolveProduct(line.productId)
+    const catalogProductId = option?.catalogProductId ?? ''
+    if (!catalogProductId) {
+      // The catalog product is what a commercial invoice aggregates on; a line without the bridge
+      // would be stored against nothing, so it is refused here with the reason instead of at save.
+      flash(t('cross_border.shipments.salesAllocations.notBridged'), 'error')
+      return
+    }
+    const label = orderOptions.find((candidate) => candidate.value === orderId)?.label ?? orderId
+    setValue('salesAllocations', [...allocations, {
+      key: newRowKey(),
+      salesOrderId: orderId,
+      salesOrderLabel: label,
+      salesOrderLineId: line.id,
+      lineNumber: line.lineNumber,
+      productId: line.productId,
+      catalogProductId,
+      productTitle: option?.name || line.productTitle,
+      productSku: option?.sku || line.productSku,
+      orderedQuantity: line.quantity,
+      quantity: draftQuantities[line.id] ?? '',
+      unitPrice: line.unitPrice,
+      currencyCode: line.currencyCode,
+    } satisfies ShipmentSalesAllocationValues])
+    setDraftQuantities((current) => {
+      const next = { ...current }
+      delete next[line.id]
+      return next
+    })
+  }, [allocations, draftQuantities, orderId, orderOptions, resolveProduct, setValue, t])
+
+  const updateAllocation = React.useCallback((index: number, patch: Partial<ShipmentSalesAllocationValues>) => {
+    setValue(
+      'salesAllocations',
+      allocations.map((row, position) => (position === index ? { ...row, ...patch } : row)),
+    )
+  }, [allocations, setValue])
+
+  const removeAllocation = React.useCallback((index: number) => {
+    setValue('salesAllocations', allocations.filter((_, position) => position !== index))
+  }, [allocations, setValue])
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
+      <h3 className="text-sm font-medium">{t('cross_border.shipments.salesAllocations.title')}</h3>
+
+      {error ? <p className="text-xs text-status-error-text" role="alert">{error}</p> : null}
+
+      <div className="space-y-1.5">
+        <FieldLabel>{t('cross_border.shipments.salesAllocations.salesOrder')}</FieldLabel>
+        <ComboboxInput
+          value={orderId}
+          onChange={handleOrderChange}
+          loadSuggestions={async (query) => {
+            const next = await loadSalesOrderOptions(
+              t('cross_border.shipments.salesAllocations.loadLinesFailed'),
+              query,
+            )
+            setOrderOptions(next)
+            return next
+          }}
+          allowCustomValues={false}
+          clearable
+        />
+      </div>
+
+      {linesError ? <p className="text-xs text-status-error-text" role="alert">{linesError}</p> : null}
+
+      {lines.length > 0 && candidates.length === 0 ? (
+        <p className="text-xs text-muted-foreground">{t('cross_border.shipments.salesAllocations.noLines')}</p>
+      ) : null}
+
+      {candidates.map((line) => (
+        <div key={line.id} className="flex flex-wrap items-end gap-3 rounded-md border bg-background p-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm">{line.productTitle || line.id}</p>
+            <p className="text-xs text-muted-foreground">
+              {line.productSku ? `${line.productSku} · ` : ''}
+              {t('cross_border.shipments.salesAllocations.line')}: {line.lineNumber} ·{' '}
+              {t('cross_border.shipments.salesAllocations.ordered')}: {trimShipmentQuantity(line.quantity)}
+            </p>
+          </div>
+          <div className="w-32 space-y-1.5">
+            <FieldLabel>{t('cross_border.shipments.salesAllocations.quantity')}</FieldLabel>
+            <Input
+              type="number"
+              min="0"
+              step="any"
+              value={draftQuantities[line.id] ?? ''}
+              onChange={(event) => {
+                const value = event.target.value
+                setDraftQuantities((current) => ({ ...current, [line.id]: value }))
+              }}
+            />
+          </div>
+          <Button type="button" variant="outline" onClick={() => { void addAllocation(line) }}>
+            <Plus className="size-4" aria-hidden="true" />
+            {t('cross_border.shipments.salesAllocations.add')}
+          </Button>
+        </div>
+      ))}
+
+      {allocations.map((row, index) => (
+        <div key={row.key} className="rounded-md border bg-background p-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div className="md:col-span-3">
+              <FieldLabel>{t('cross_border.shipments.salesAllocations.salesOrder')}</FieldLabel>
+              <p className="text-sm">{row.salesOrderLabel || row.salesOrderId}</p>
+            </div>
+            <div className="md:col-span-3">
+              <FieldLabel>{t('cross_border.shipments.salesAllocations.product')}</FieldLabel>
+              <p className="truncate text-sm" title={row.productTitle}>
+                {row.productTitle || row.salesOrderLineId}
+              </p>
+              {row.productSku ? (
+                <p className="text-xs text-muted-foreground">{row.productSku}</p>
+              ) : null}
+            </div>
+            <div className="md:col-span-1">
+              <FieldLabel>{t('cross_border.shipments.salesAllocations.ordered')}</FieldLabel>
+              <p className="text-sm tabular-nums">{trimShipmentQuantity(row.orderedQuantity)}</p>
+            </div>
+            <div className="space-y-1.5 md:col-span-2">
+              <FieldLabel required>{t('cross_border.shipments.salesAllocations.quantity')}</FieldLabel>
+              <Input
+                type="number"
+                min="0"
+                step="any"
+                value={row.quantity}
+                onChange={(event) => updateAllocation(index, { quantity: event.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5 md:col-span-1">
+              <FieldLabel>{t('cross_border.shipments.salesAllocations.unitPrice')}</FieldLabel>
+              <Input
+                type="number"
+                min="0"
+                step="any"
+                value={row.unitPrice}
+                onChange={(event) => updateAllocation(index, { unitPrice: event.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5 md:col-span-1">
+              <FieldLabel>{t('cross_border.shipments.salesAllocations.currency')}</FieldLabel>
+              <Input
+                maxLength={3}
+                value={row.currencyCode}
+                onChange={(event) => updateAllocation(index, { currencyCode: event.target.value.toUpperCase() })}
+              />
+            </div>
+            <div className="flex items-end justify-end md:col-span-1">
+              <IconButton
+                type="button"
+                variant="ghost"
+                size="lg"
+                aria-label={t('cross_border.shipments.salesAllocations.remove')}
+                onClick={() => removeAllocation(index)}
+              >
+                <Trash2 className="size-4" aria-hidden="true" />
+              </IconButton>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function useShipmentFields(t: TranslateFn): CrudField[] {
   return React.useMemo<CrudField[]>(() => [
     {
@@ -964,6 +1288,12 @@ export default function ShipmentForm() {
       column: 1,
       bare: true,
       component: (context) => <ShipmentAllocationEditor {...context} t={t} />,
+    },
+    {
+      id: 'salesAllocations',
+      column: 1,
+      bare: true,
+      component: (context) => <ShipmentSalesAllocationEditor {...context} t={t} />,
     },
   ], [t])
 

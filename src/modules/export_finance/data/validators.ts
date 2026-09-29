@@ -60,8 +60,8 @@ export const currencyCodeSchema = z
   .transform((value) => value.toUpperCase())
 
 /**
- * A recorded tax refund amount: a strictly positive decimal with at most two decimals — the money
- * caliber (`AMOUNT_SCALE`) the `tax_refund_amount` column stores as `numeric(18,2)`. A third
+ * A recorded amount: a strictly positive decimal with at most two decimals — the money caliber
+ * (`AMOUNT_SCALE`) the `amount` / `tax_refund_amount` columns store as `numeric(18,2)`. A third
  * decimal, a float artifact or a value the string cannot carry is refused here rather than rounded
  * onto the column, and positivity is decided on scaled integers (`toScaledUnits`), never on a
  * float. `null` (and an absent field) means "not recorded", which is what the status enums say; a
@@ -69,17 +69,29 @@ export const currencyCodeSchema = z
  */
 const AMOUNT_PATTERN = /^\d+(?:\.\d{1,2})?$/
 
-export const taxRefundAmountSchema = z
-  .union([z.string(), z.number(), z.null()])
-  .optional()
-  .transform((value) => {
-    if (value === undefined || value === null) return null
-    const text = typeof value === 'number' ? String(value) : value.trim()
-    return text.length === 0 ? null : text
-  })
-  .refine((value) => value === null || (AMOUNT_PATTERN.test(value) && toScaledUnits(value, AMOUNT_SCALE) > 0n), {
-    message: 'amount must be a positive decimal with at most 2 decimal places',
-  })
+function optionalAmountSchema() {
+  return z
+    .union([z.string(), z.number(), z.null()])
+    .optional()
+    .transform((value) => {
+      if (value === undefined || value === null) return null
+      const text = typeof value === 'number' ? String(value) : value.trim()
+      return text.length === 0 ? null : text
+    })
+    .refine((value) => value === null || (AMOUNT_PATTERN.test(value) && toScaledUnits(value, AMOUNT_SCALE) > 0n), {
+      message: 'amount must be a positive decimal with at most 2 decimal places',
+    })
+}
+
+/** 退税金额 — the tax refund recorded against one container. */
+export const taxRefundAmountSchema = optionalAmountSchema()
+
+/**
+ * 已收金额 — the same shape as a tax refund amount: a positive decimal with at most two decimals,
+ * or `null` when nobody has recorded a receipt yet. Absent and null both mean "no answer"; the
+ * command stores null rather than an empty string.
+ */
+export const collectedAmountSchema = optionalAmountSchema()
 
 /**
  * 收汇档案 (order level). The order id is the upsert key; the number and currency travel as
@@ -90,6 +102,8 @@ export const collectionSaveSchema = z.object({
   purchaseOrderNumber: optionalText(64),
   currencyCode: currencyCodeSchema.default('CNY'),
   collectionStatus: z.enum(EXPORT_FINANCE_COLLECTION_STATUSES),
+  collectedAmount: collectedAmountSchema,
+  collectedAt: optionalDate(),
   updatedAt: optionalText(64),
 })
 

@@ -1,8 +1,8 @@
 ---
 title: "The sidebar group key is the role boundary, and only one module may order the groups"
-modules: ["sourcing", "purchasing", "cross_border", "export_finance", "internal_sales", "trade_docs"]
+modules: ["sourcing", "purchasing", "cross_border", "export_finance", "internal_sales", "trade_docs", "boss_cockpit", "finance", "ru_sync"]
 areas: ["backend-ui", "architecture"]
-topics: ["navigation", "page-group-key", "menu-taxonomy", "sidebar-preferences", "module-overrides"]
+topics: ["navigation", "page-group-key", "menu-taxonomy", "sidebar-preferences", "module-overrides", "audience-split"]
 ---
 
 # The sidebar group key is the role boundary, and only one module may order the groups
@@ -34,6 +34,16 @@ groupOrder: [...] } } })` entry — the app's `purchasing` entry in `src/modules
 names are the existing ones, because a group id is also the persisted unit of per-user sidebar
 preferences (`/backend/sidebar-customization`): renaming a key orphans every stored arrangement.
 Verify by counting the rendered groups, not by reading one page's metadata.
+
+**2026-09-28 — a group that mixes audiences splits by adding keys, never by renaming.** The 财务
+group had drifted into three audiences: the finance desk's work (单证档案 / 费用 / 台账 / 发票台账),
+the boss's results (驾驶舱 / 月损益 / SKU 毛利 / 库存资金占用) and the RU pipeline's maintenance pages.
+The split re-pointed those pages' `pageGroupKey` at two **new** ids
+(`executive_overview.nav.group` / 「经营概览」, `ru_sync.nav.group` / 「数据同步」) and added them to the
+one `nav.groupOrder` declaration; `export_finance.nav.group` kept its id **and** its 「财务」 label, so
+stored sidebar preferences survived — renaming it to something like `finance.nav.group` would have
+orphaned every user's arrangement for a cosmetic win. Verify by counting the rendered groups (the
+dev sidebar, 9 groups), not by reading one `page.meta.ts`.
 
 **Applies to**: `src/modules.ts`, every `src/modules/*/backend/**/page.meta.ts`, the modules' i18n
 catalogs (`*.nav.group` keys), and any future regroup or page addition — a new page that forgets its

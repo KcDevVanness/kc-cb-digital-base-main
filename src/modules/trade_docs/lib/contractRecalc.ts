@@ -13,6 +13,12 @@ import { contractFilter, type TradeDocsScope } from './scope'
  * totals: every command that touches a line, an invoice status or a line's `amount` calls it
  * inside its own transaction, so a contract can never carry a stale total.
  *
+ * Only a **confirmed** invoice line bound to a contract line enters the financial caliber, and an
+ * `invoice_kind = 'export'` invoice is excluded outright: an export invoice (出口发票, 0% for a
+ * tax refund) is a refund voucher, not a settlement document, so registering or confirming one
+ * leaves the contract's three columns untouched. A NULL kind (a historical ledger row) and every
+ * other kind participate exactly as they always have. See REQ-007.
+ *
  * The rows are read through the **caller's** `EntityManager` (not a fork) on purpose — a fork owns
  * a separate unit of work, and mutating entities loaded from one would be flushed by nobody.
  * `withAtomicFlush` runs the line writes and the head write as two flush boundaries inside one
@@ -36,6 +42,11 @@ export async function recomputeContractHead(
   const invoiceLines: ConfirmedInvoiceLineRef[] = []
   if (lineIds.length > 0) {
     // Only a *confirmed* invoice moves money; drafts and voided documents are invisible here.
+    //
+    // `invoice_kind = 'export'` is excluded as well: an export invoice (出口发票, 0% for a tax
+    // refund) is a refund voucher, not a settlement document, so it must never touch the
+    // contract's financial caliber — a kind-less historical row or any other kind participates
+    // exactly as it always has (REQ-007).
     const rows = (await (em.getKysely<any>())
       .selectFrom('trade_docs_invoice_lines as l')
       .innerJoin('trade_docs_invoices as i', 'i.id', 'l.invoice_id')
@@ -45,6 +56,7 @@ export async function recomputeContractHead(
       .where('l.organization_id', '=', scope.organizationId)
       .where('i.status', '=', 'confirmed')
       .where('i.deleted_at', 'is', null)
+      .where((eb) => eb.or([eb('i.invoice_kind', 'is', null), eb('i.invoice_kind', '<>', 'export')]))
       .execute()) as Array<{ contract_line_id: string; amount: string }>
     for (const row of rows) {
       invoiceLines.push({ contractLineId: String(row.contract_line_id), amount: String(row.amount) })

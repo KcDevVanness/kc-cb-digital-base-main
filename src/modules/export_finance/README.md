@@ -33,6 +33,12 @@ The order's refund **status** is the least advanced of its containers:
   served by `GET /api/export_finance/order-files` and `GET /api/export_finance/container-files`
   (JSON or CSV), which assemble the 订单档案 from `purchasing`, `cross_border`, `trade_docs` and
   this module.
+- Preview entries next to every download on both document families (collection documents and refund
+  documents, in the tables, their row menus and their dialog fields), through the shared app viewer
+  `src/lib/attachments/AttachmentPreview.tsx`: images render in the dialog, PDFs are drawn to canvas
+  by Mozilla PDF.js (`pdfjs-dist`, an already-declared dependency — the platform serves PDFs as
+  binary attachments, so PDF.js parses the bytes itself), anything else says so and keeps the
+  download.
 
 ## What it deliberately does not do
 
@@ -47,7 +53,7 @@ The order's refund **status** is the least advanced of its containers:
 
 | Surface | What ships |
 |---|---|
-| Backend pages | `/backend/export-finance/orders` (订单档案 list, business/finance tabs, CSV export) and `/backend/export-finance/orders/[id]` (order file detail); `/backend/export-finance/containers` (柜档案 list, CSV export) and `/backend/export-finance/containers/[id]` (container file detail). All four carry `pageGroupKey: export_finance.nav.group` — the sidebar group 「财务」 / "Finance" (`src/modules.ts` puts it third in `nav.groupOrder`, after 采购 and 外贸). |
+| Backend pages | `/backend/export-finance/orders` (订单档案 list, business/finance tabs, CSV export) and `/backend/export-finance/orders/[id]` (order file detail); `/backend/export-finance/containers` (柜档案 list, CSV export) and `/backend/export-finance/containers/[id]` (container file detail). All four carry `pageGroupKey: export_finance.nav.group` — the sidebar group 「财务」 / "Finance" (`src/modules.ts` puts it fourth in `nav.groupOrder`, after 采购 / 出口业务 / 经营概览). 2026-09-28: the trade_docs tax-invoice ledger (`/backend/trade-docs/invoices`, pageOrder 420) also joins this group, and the same day the boss-facing pages (月损益 / SKU 毛利 / 库存资金占用) and the RU pipeline pages moved out to 「经营概览」 (`executive_overview.nav.group`) and 「数据同步」 (`ru_sync.nav.group`) — this group is now the finance desk's work and ledgers only. The key and its label are unchanged, so stored sidebar preferences keep working. |
 | API | `GET\|PUT /api/export_finance/collections` and `GET\|PUT /api/export_finance/refunds` — `GET` is the anchor read, `PUT` runs `collections.save` / `refunds.save`; `GET\|POST\|PUT\|DELETE /api/export_finance/collection-documents` and `…/refund-documents` — `GET` is the list, the three write verbs are the six document commands; `GET /api/export_finance/order-files` and `GET /api/export_finance/container-files` — the two projections, JSON by default, `?format=csv` for the export (the order file also takes `?view=business\|finance`). |
 | Commands | `export_finance.collections.save`, `export_finance.refunds.save`, `export_finance.collection-documents.{create,update,delete}`, `export_finance.refund-documents.{create,update,delete}` |
 | Events | `export_finance.collections.updated`, `export_finance.refunds.updated` — the upsert commands emit only the `updated` form, and both are `clientBroadcast`; `export_finance.{collection,refund}-documents.{created,updated,deleted}` for the document CRUD. All fire after the write committed. |
@@ -96,6 +102,8 @@ yarn jest --config jest.config.cjs src/modules/export_finance
 #   PUT  /api/export_finance/refunds { shipmentId } for a missing/cancelled shipment → 409
 #   POST /api/export_finance/collection-documents               → 201; DELETE → row soft-deleted
 #   GET  /api/export_finance/container-files without export_finance.cabinets.view → 403
+#   preview smoke (2026-09-24): 收汇单证 / 退税资料 rows and their dialog fields show 预览 + 下载;
+#   an image renders in the dialog, a PDF is drawn to canvas by PDF.js, any other type says so and keeps 下载
 ```
 
 ## Rollback

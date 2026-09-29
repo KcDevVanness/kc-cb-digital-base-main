@@ -23,14 +23,20 @@ const collectionItemSchema = z
     purchaseOrderNumber: z.string().nullable().optional(),
     currencyCode: z.string(),
     collectionStatus: z.enum(EXPORT_FINANCE_COLLECTION_STATUSES),
+    /** 已收金额; null when nobody has recorded a receipt (never coerced to "0"). */
+    amount: z.string().nullable().optional(),
+    /** 收款日期, `YYYY-MM-DD`; null when no receipt is recorded. */
+    receivedAt: z.string().nullable().optional(),
     createdAt: z.string().nullable().optional(),
     updatedAt: z.string().nullable().optional(),
   })
   .passthrough()
 
-function toIsoTimestamp(value: Date | null | undefined): string | null {
+function toIsoTimestamp(value: Date | string | null | undefined): string | null {
   if (!value) return null
-  return Number.isNaN(value.getTime()) ? null : value.toISOString()
+  // A `date` column arrives as `YYYY-MM-DD` and a timestamp as a Date; both must survive this.
+  const date = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
 function toCollectionItem(collection: ExportFinanceCollection) {
@@ -40,6 +46,8 @@ function toCollectionItem(collection: ExportFinanceCollection) {
     purchaseOrderNumber: collection.purchaseOrderNumber ?? null,
     currencyCode: collection.currencyCode,
     collectionStatus: collection.collectionStatus,
+    amount: collection.amount === null || collection.amount === undefined ? null : String(collection.amount),
+    receivedAt: collection.receivedAt ? toIsoTimestamp(collection.receivedAt)?.slice(0, 10) ?? null : null,
     createdAt: toIsoTimestamp(collection.createdAt),
     updatedAt: toIsoTimestamp(collection.updatedAt),
   }

@@ -13,6 +13,13 @@ export const features = [
     module: 'trade_docs',
     dependsOn: ['trade_docs.invoices.view'],
   },
+  { id: 'trade_docs.documents.view', title: 'View PI/CI documents', module: 'trade_docs' },
+  {
+    id: 'trade_docs.documents.manage',
+    title: 'Manage PI/CI documents',
+    module: 'trade_docs',
+    dependsOn: ['trade_docs.documents.view'],
+  },
 ]
 
 export default features

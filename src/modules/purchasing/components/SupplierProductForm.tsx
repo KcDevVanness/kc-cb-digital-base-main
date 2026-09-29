@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '@open-mercato/ui/primitives/select'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useAttachmentPreview } from '@/lib/attachments/AttachmentPreview'
 // The unit vocabulary is seeded by this module and read through the app's one client loader; the
 // currency picker is this module's own loader (the same one the supplier and order forms use).
 import { loadUnitOptions } from '../../products/lib/unitOptions'
@@ -412,6 +413,7 @@ function SupplierProductImages({
   const [uploading, setUploading] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement | null>(null)
   const pendingStore = React.useContext(PendingImagesContext)
+  const { openPreview, previewDialog } = useAttachmentPreview()
   const imageIds = readImageIds(values.imageAttachmentIds)
   const pending = pendingStore?.images ?? []
   const totalCount = imageIds.length + pending.length
@@ -531,16 +533,24 @@ function SupplierProductImages({
               {/*
                 `unoptimized` on purpose: the file is served by the attachments route, which
                 authorizes the caller — the optimizer would fetch it server-side without the
-                session and get a 401 instead of an image.
+                session and get a 401 instead of an image. The thumbnail itself is the preview
+                trigger, so a 96px crop is one click away from the full photo.
               */}
-              <Image
-                src={`/api/attachments/file/${encodeURIComponent(attachmentId)}`}
-                alt={t('purchasing.supplierProducts.form.images.alt', 'Product photo')}
-                width={96}
-                height={96}
-                unoptimized
-                className="size-24 rounded-md border object-cover"
-              />
+              <button
+                type="button"
+                className="block cursor-pointer rounded-md focus-visible:outline-none focus-visible:shadow-focus"
+                aria-label={t('purchasing.supplierProducts.form.images.preview', 'Preview this photo')}
+                onClick={() => openPreview(attachmentId)}
+              >
+                <Image
+                  src={`/api/attachments/file/${encodeURIComponent(attachmentId)}`}
+                  alt={t('purchasing.supplierProducts.form.images.alt', 'Product photo')}
+                  width={96}
+                  height={96}
+                  unoptimized
+                  className="size-24 rounded-md border object-cover"
+                />
+              </button>
               <Button
                 type="button"
                 variant="ghost"
@@ -555,6 +565,7 @@ function SupplierProductImages({
           ))}
         </ul>
       )}
+      {previewDialog}
     </div>
   )
 }

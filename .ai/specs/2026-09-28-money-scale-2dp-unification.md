@@ -1,7 +1,7 @@
 # 统一金额口径：金额 2 位、单价 4 位（系统级硬性口径）
 
 **Date**: 2026-09-28
-**Status**: Implemented & verified — Phase 1–5 全部交付（2026-09-28）：引擎/实体标度/迁移应用/写路径/展示/入口校验/文档同步；`yarn generate`、`typecheck`、`lint`(0 error)、`test`(54 suites/439 tests)、`ds:check`(891 files) 全绿；ephemeral 集成 76 passed，全部金额相关用例通过（trade_docs/purchasing/sourcing/products）；开发库 40 个金额/单价列核对 0 偏差，应用前备份于 `/tmp/kc-money-backup/kc-money-20260928.sql`。仅存两类与本变更无关的运行环境/并行在飞失败：`storage_ops` 4 例缺 `STORAGE_OPS_TEST_S3_CONFIG` 门控、`finance-flow` 新规格自身 ACL 接线（403）。本 PR 落地范围＝HEAD 上已存在的模块/表；finance、PI/CI 单证等未提交模块随各自 PR 适配。
+**Status**: Implemented & verified — Phase 1–5 全部交付（2026-09-28）：引擎/实体标度/迁移应用/写路径/展示/入口校验/文档同步；`yarn generate`、`typecheck`、`lint`(0 error)、`test`(54 suites/439 tests)、`ds:check`(891 files) 全绿；ephemeral 集成 76 passed，全部金额相关用例通过（trade_docs/purchasing/sourcing/products）；开发库 40 个金额/单价列核对 0 偏差，应用前备份于 `/tmp/kc-money-backup/kc-money-20260928.sql`。仅存两类与本变更无关的运行环境/并行在飞失败：`storage_ops` 4 例缺 `STORAGE_OPS_TEST_S3_CONFIG` 门控、`finance-flow` 新规格自身 ACL 接线（403）。
 
 ## TLDR
 

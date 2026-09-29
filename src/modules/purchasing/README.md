@@ -84,6 +84,7 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 - **产品库不跨模块 ORM 关联**：对 `wms`、`catalog`、`products`、`sourcing` 只存 ID/快照；报价行只经 `lib/quoteLineReads.ts` 的只读投影读取。
 - **不跨模块 ORM 关联**：对 `wms`、`catalog`、`products` 只存 ID/快照，靠命令与事件联动（商品主数据优先，catalog 只作历史与收货变体桥接）。
 - **界面文案单一语言（2026-09-23）**：`i18n/zh.json` 只写中文、`en.json` 只写英文；组件里 `t()` 的兜底一律用英文（见 [`docs/dev/i18n.md`](../../../docs/dev/i18n.md)）。此前的"中文 + 英文并列"标签（如「供应商货号 Supplier code」）已清掉，`HS CODE`/`MOQ` 这类业务缩写保留；2026-09-24 又把「PK 单价」「KC 单价」两个 PetKit 时代的列名去掉了——那是单个供应商的说法，不是价格类型的名字。
+- **附件可预览（2026-09-24）**：付款水单、采购单证与产品照片的「预览」都打开同一个 app 级查看器（`src/lib/attachments/AttachmentPreview.tsx`），「下载」入口与 `?download=1` 行为不变。图片按容器等比显示；**PDF 用 Mozilla PDF.js（`pdfjs-dist`，Apache-2.0，本 app 已声明的依赖）渲染到 canvas**（`src/lib/attachments/PdfPreview.tsx`，最多 30 页、按舞台宽度缩放、`PDFDocumentLoadingTask.destroy()` 释放）——平台按安全策略把 PDF 当二进制附件下发（`SAFE_INLINE_MIME_TYPES` 只有图片），因此不能把 URL 交给浏览器；PDF.js 自己解析字节，渲染结果是与页面同源的 canvas（可被断言），不依赖任何浏览器插件、也不改平台策略。非图片/PDF 的类型给出说明并保留下载，超过 25 MiB 的文件在读取正文前放弃预览。
 - **选项加载器不得超过列表路由的 `pageSize` 上限**：上限是每个路由自己声明的（供应商 100、产品库/商品/报价行 200、合同行 500），超了是 **400 且下拉框空白且无报错**；规则与清单见 `.ai/lessons/option-loaders-must-respect-page-size-caps.md`。
 
 ## 验证
@@ -93,6 +94,8 @@ yarn generate && yarn typecheck
 yarn test src/modules/purchasing
 yarn test:integration:ephemeral   # 含 purchasing/__integration__/supplier-products.spec.ts（产品库 CRUD/导入/同步/价格/字段/图片）与 supplier-code-issuance.spec.ts（供应商编码发号：连续、不复用、按组织独立、显式码不变）
 # 冒烟（dev server 在跑时）：供应商 201 → 采购单 201 → 付款 201 → 附件 200 → 绑定 200 → 列表 attachment: yes
+# 附件预览冒烟（2026-09-24）：采购单详情 → 单证行「预览」→ 图片在对话框内等比显示 / PDF 由 PDF.js 渲染到 canvas（3 页 PDF 实测 3 个 canvas、每页 960×1358、蓝色块像素数吻合、无控制台报错）/
+#   文本文件显示「此文件类型不支持预览，请下载后用本地程序打开。」+「下载」；行操作菜单与单证表单字段同样有「预览」；产品照片缩略图（aria-label 预览这张照片）点击放大
 # 产品库冒烟：/backend/purchasing/supplier-products 建行（单位下拉、供货价 + 折扣）→ 列表显示中英品名、折后价与商品的内部结算价
 # 折扣冒烟（2026-09-24）：新建页价格组填 折扣 5 + 单价 100 → 行下实时显示「折后价 ¥95.00」→ 保存 → 列表「供应商供货价」显示 ¥95.00、副行「报价 ¥100.00 − 5%」→
 #   建商品档案 → 商品价格档的 purchase（成本价）= 95.000000；本公司报价不再在本页录入，列表该列读商品的 internal 档
