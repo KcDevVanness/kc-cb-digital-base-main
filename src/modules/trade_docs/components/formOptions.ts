@@ -106,63 +106,71 @@ export async function loadCurrencyOptions(errorMessage: string): Promise<CrudFie
 }
 
 /**
- * Suppliers and customer companies in one option list.
+ * Counterparty option loaders, one per direction.
  *
- * Both kinds are offered together because the picker's field cannot depend on the sibling
- * `counterpartyKind` field's live value (the form field contract passes no other field values to
- * `loadOptions`), and an operator signing a sales contract should not first have to change a
- * toggle to see the buyer. Each option is prefixed with its kind's localized label so the two
- * namespaces stay distinguishable.
+ * The two namespaces never mix any more: a purchase reads `purchasing` suppliers and a sale reads
+ * the `parties` master. The direction is known by the form at render time (a bare group component
+ * reads its sibling values), so the picker asks exactly one source instead of merging both and
+ * hoping the operator picks the right half.
  */
-export async function loadCounterpartyOptions(options: {
-  supplierLabel: string
-  customerLabel: string
-  errorMessage: string
-  organizationId?: string | null
-}): Promise<CrudFieldOption[]> {
-  const scope = options.organizationId ? { organizationId: options.organizationId } : {}
-  const partiesUrl = options.organizationId
-    ? `${PARTIES_OPTIONS_URL}?organizationId=${encodeURIComponent(options.organizationId)}`
-    : PARTIES_OPTIONS_URL
-  const [suppliers, parties] = await Promise.all([
-    fetchCrudList<Record<string, unknown>>(SUPPLIERS_API_PATH, {
-      // 100 is the supplier list's `pageSize` cap — a larger value answers 400, not a bigger page
-      // (same limit `purchasing/components/orderFormOptions.ts` documents), which used to make the
-      // whole counterparty picker reject before it could offer either kind.
-      pageSize: 100,
-      sortField: 'name',
-      sortDir: 'asc',
-      isActive: true,
-      ...scope,
-    }),
-    readApiResultOrThrow<{ items?: Array<{ value?: string; label?: string }> }>(
-      partiesUrl,
-      undefined,
-      { errorMessage: options.errorMessage },
-    ),
-  ])
 
-  const toOptions = (items: Array<Record<string, unknown>>, prefix: string, withCode: boolean) =>
-    items.map((item) => {
+/** Roles that may stand as the buying side: an external customer, or a group branch's print record. */
+export const CUSTOMER_COUNTERPARTY_ROLES = ['buyer', 'branch'] as const
+
+export type CustomerCounterpartyOption = CrudFieldOption & { roles: string[] }
+
+/** Purchase-side counterparty: the supplier master. `pageSize: 100` is that route's cap. */
+export async function loadSupplierCounterpartyOptions(
+  errorMessage: string,
+  query?: string,
+  organizationId?: string | null,
+): Promise<CrudFieldOption[]> {
+  const term = query?.trim()
+  const payload = await fetchCrudList<Record<string, unknown>>(SUPPLIERS_API_PATH, {
+    pageSize: 100,
+    sortField: 'name',
+    sortDir: 'asc',
+    isActive: true,
+    ...(term ? { search: term } : {}),
+    ...(organizationId ? { organizationId } : {}),
+  }).catch(() => {
+    throw new Error(errorMessage)
+  })
+  return (payload.items ?? [])
+    .map((item) => {
       const id = String(item.id ?? '')
       const name = readText(item, 'name', 'displayName', 'display_name') || id
-      const code = withCode ? readText(item, 'code') : ''
-      const label = code ? `${code} — ${name}` : name
-      return { value: id, label: `${prefix}: ${label}` }
+      const code = readText(item, 'code')
+      return { value: id, label: code ? `${code} — ${name}` : name }
     })
+    .filter((option) => option.value.length > 0)
+}
 
-  // The parties option source already renders `code — name`, so it only needs the kind prefix.
-  const partyOptions = (parties.items ?? [])
+/**
+ * Sale-side counterparty: external customers (`buyer`) and group branches (`branch`), with their
+ * roles so the picker can say which half an option belongs to.
+ */
+export async function loadCustomerCounterpartyOptions(
+  errorMessage: string,
+  query?: string,
+  organizationId?: string | null,
+): Promise<CustomerCounterpartyOption[]> {
+  const params = new URLSearchParams({ roles: CUSTOMER_COUNTERPARTY_ROLES.join(',') })
+  if (organizationId) params.set('organizationId', organizationId)
+  const term = query?.trim()
+  if (term) params.set('search', term)
+  const payload = await readApiResultOrThrow<{
+    items?: Array<{ value?: string; label?: string; roles?: unknown }>
+  }>(`${PARTIES_OPTIONS_URL}?${params.toString()}`, undefined, { errorMessage })
+  return (payload.items ?? [])
     .map((item) => ({
       value: String(item.value ?? ''),
-      label: `${options.customerLabel}: ${String(item.label ?? '')}`,
+      label: String(item.label ?? ''),
+      roles: Array.isArray(item.roles)
+        ? item.roles.filter((role): role is string => typeof role === 'string')
+        : [],
     }))
     .filter((option) => option.value.length > 0)
-
-  return [
-    ...toOptions(suppliers.items ?? [], options.supplierLabel, true),
-    ...partyOptions,
-  ].sort((left, right) => left.label.localeCompare(right.label))
 }
 
 /** Contracts an invoice may be bound to; an issued contract is the useful choice, drafts are shown too. */
@@ -378,6 +386,77 @@ export async function loadPartyBankAccountOptions(
       return { value, label: account.isDefault === true ? `${label} ★` : label }
     })
     .filter((option) => option.value.length > 0)
+}
+
+/**
+ * The printed counterparty block plus its bank accounts, for either namespace: a sale reads the
+ * app-owned `parties` master, a purchase reads `purchasing` suppliers. Both detail routes decrypt
+ * their own sensitive columns; this loader only shapes the two responses the same way.
+ */
+export type CounterpartyDetail = {
+  id: string
+  name: string
+  address: string
+  contact: string
+  bankAccounts: Array<{
+    id: string
+    beneficiaryBank: string
+    accountNumber: string
+    swiftCode: string
+    bankAddress: string
+    isDefault: boolean
+  }>
+}
+
+function toCounterpartyBankAccounts(value: unknown): CounterpartyDetail['bankAccounts'] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((entry) => {
+      const account = entry as Record<string, unknown>
+      return {
+        id: String(account.id ?? ''),
+        beneficiaryBank: readText(account, 'beneficiaryBank', 'beneficiary_bank'),
+        accountNumber: readText(account, 'accountNumber', 'account_number'),
+        swiftCode: readText(account, 'swiftCode', 'swift_code'),
+        bankAddress: readText(account, 'bankAddress', 'bank_address'),
+        isDefault: account.isDefault === true,
+      }
+    })
+    .filter((account) => account.id.length > 0)
+}
+
+export async function loadCounterpartyDetail(
+  errorMessage: string,
+  kind: 'supplier' | 'customer',
+  counterpartyId: string,
+): Promise<CounterpartyDetail | null> {
+  const scopedId = counterpartyId.trim()
+  if (!scopedId) return null
+  if (kind === 'customer') {
+    const party = await loadPartyDetail(errorMessage, scopedId)
+    if (!party) return null
+    return {
+      id: party.id,
+      name: party.name,
+      address: party.address,
+      contact: party.contact,
+      bankAccounts: party.bankAccounts,
+    }
+  }
+  const payload = await readApiResultOrThrow<{ item?: Record<string, unknown> }>(
+    `/api/purchasing/suppliers/${encodeURIComponent(scopedId)}`,
+    undefined,
+    { errorMessage },
+  )
+  const item = payload.item
+  if (!item) return null
+  return {
+    id: scopedId,
+    name: readText(item, 'name'),
+    address: readText(item, 'address'),
+    contact: readText(item, 'contactName', 'contact_name') || readText(item, 'email'),
+    bankAccounts: toCounterpartyBankAccounts(item.bankAccounts),
+  }
 }
 
 export type PartyDetail = {

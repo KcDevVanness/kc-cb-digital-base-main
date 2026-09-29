@@ -23,8 +23,13 @@ import {
   contractDocumentSchema,
   contractTransitionSchema,
   contractUpdateSchema,
+  COUNTERPARTY_KIND_BY_DIRECTION,
   type ContractLineInput,
 } from '../data/validators'
+import {
+  resolveCounterpartyKind,
+  assertCounterpartyReference,
+} from '../lib/counterpartyRefs'
 import { invalidateContractCaches } from '../lib/cacheInvalidation'
 import { contractFilter, ensureScope, loadContract, type TradeDocsScope } from '../lib/scope'
 import { recomputeContractHead } from '../lib/contractRecalc'
@@ -279,6 +284,13 @@ const createContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
     const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
+    const counterpartyKind = resolveCounterpartyKind(
+      parsed.direction,
+      parsed.counterpartyKind,
+      COUNTERPARTY_KIND_BY_DIRECTION,
+    )
+    await assertCounterpartyReference(em, scope, counterpartyKind, parsed.counterpartyId ?? null)
+
     const lines = await resolveContractLines(em, scope, parsed.lines)
     let contract!: TradeDocsContract
 
@@ -293,7 +305,7 @@ const createContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
               organizationId: scope.organizationId,
               direction: parsed.direction,
               status: 'draft',
-              counterpartyKind: parsed.counterpartyKind,
+              counterpartyKind,
               counterpartyId: parsed.counterpartyId ?? null,
               counterpartySnapshot: parsed.counterpartySnapshot,
               ourPartySnapshot: parsed.ourPartySnapshot,
@@ -405,6 +417,19 @@ const updateContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
       request: ctx.request ?? null,
     })
 
+    const mergedDirection = parsed.direction ?? contract.direction
+    const counterpartyKind = resolveCounterpartyKind(
+      mergedDirection,
+      parsed.counterpartyKind,
+      COUNTERPARTY_KIND_BY_DIRECTION,
+    )
+    await assertCounterpartyReference(
+      em,
+      scope,
+      counterpartyKind,
+      parsed.counterpartyId !== undefined ? parsed.counterpartyId : contract.counterpartyId ?? null,
+    )
+
     const lines = parsed.lines ? await resolveContractLines(em, scope, parsed.lines) : null
 
     await withAtomicFlush(
@@ -416,7 +441,8 @@ const updateContractCommand: CommandHandler<Record<string, unknown>, TradeDocsCo
             where: contractFilter(scope, parsed.id),
             apply: (entity) => {
               if (parsed.direction !== undefined) entity.direction = parsed.direction
-              if (parsed.counterpartyKind !== undefined) entity.counterpartyKind = parsed.counterpartyKind
+              // The kind is derived, so an update heals a row stored before the rule existed.
+              entity.counterpartyKind = counterpartyKind
               if (parsed.counterpartyId !== undefined) entity.counterpartyId = parsed.counterpartyId
               if (parsed.counterpartySnapshot !== undefined) entity.counterpartySnapshot = parsed.counterpartySnapshot
               if (parsed.ourPartySnapshot !== undefined) entity.ourPartySnapshot = parsed.ourPartySnapshot

@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from '@open-mercato/ui/primitives/select'
 import { StepIndicator, type StepIndicatorStep } from '@open-mercato/ui/primitives/step-indicator'
+import { catalogLinkLabel, resolveCatalogLinkLabel } from '../lib/catalogLink'
 import {
   PRODUCT_FORM_STEPS,
   PRODUCT_FORM_STEP_TITLE_KEYS,
@@ -569,9 +570,7 @@ async function loadCatalogLinkOptions(errorMessage: string, query?: string): Pro
   return (payload.items ?? []).flatMap((item) => {
     const value = readText(item, 'id')
     if (!value) return []
-    const title = readText(item, 'title', 'name')
-    const sku = readText(item, 'sku')
-    return [{ value, label: sku && title ? `${sku} — ${title}` : sku || title || value }]
+    return [{ value, label: catalogLinkLabel(item) }]
   })
 }
 
@@ -615,6 +614,7 @@ function CatalogLinkField({ value, onChange, t }: { value: string; onChange: (ne
         loadSuggestions={(query) =>
           loadCatalogLinkOptions(t('products.items.form.catalogLinkLoadFailed'), query)
         }
+        resolveLabel={resolveCatalogLinkLabel}
         allowCustomValues={false}
         clearable
         clearLabel={t('products.items.form.field.catalogProductIdClear')}

@@ -69,6 +69,15 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 | 列表价格列的列宽（2026-09-24） | `DataTable` 默认给**每一列**套 `TruncatedCell`，没有 `maxWidth` 时按 **150px** 截断（`getColumnTruncateConfig` 的兜底分支）。本公司报价格子是三行右对齐（金额 / `≈ ¥…` / 图例「取自商品档案（内部结算价）」，`text-xs` 下 **156px**），溢出的是右对齐子元素、截断容器自己不滚，于是 `scrollWidth == clientWidth`：既不出现省略号也不弹 tooltip，图例的开头被**静默**切掉。修法＝该列 `truncate: false` + 单元格 `whitespace-nowrap`，列宽随内容（实测 188px）——只加 `truncate: false` 而不加 nowrap 会更糟：自动布局把列压到 102px，13 个字的图例断成四行。证据与通则见 `.ai/lessons/datatable-cell-truncates-at-150px.md` |
 | 与 Q-P-004 的关系 | 采购单行价仍是**谈判值**，绝不被产品库价格自动带出；产品库只提供"当前价"清单，报价单仍是谈判文档 |
 
+## 供应商银行账户（2026-09-29）
+
+- **子表 `purchasing_supplier_bank_accounts`**（镜像 `parties_bank_accounts`）：`beneficiary_bank` / `account_number` / `swift_code` / `bank_address` + `is_default`；一个供应商最多一行默认（命令校验 + 部分唯一索引 `purchasing_supplier_bank_accounts_default_unique_idx` 兜住并发），无标记时第一行自动成为默认。
+- **加密**：四个银行列由本模块根的 `encryption.ts` 声明（`purchasing:purchasing_supplier_bank_account`）——付款目标是支付欺诈高危数据；已有租户需要 `yarn mercato entities seed-encryption --tenant <id>` 才会物化映射。列是密文，因此**不参与搜索、排序、唯一索引或列表投影**。
+- **写入**：`purchasing.suppliers.create/update` 接受可选 `bankAccounts[]`（≤10 行；命名 id 更新、无名行新建、缺席行删除；显式 `[]` 清空）。update 的银行块分两个边界写：先删行并把保留下来的行 `is_default` 清掉，再写最终值——否则一次批量更新里「把默认从 A 换到 B」会让部分唯一索引看到两行默认。update 的 undo 快照携带银行行，可精确重建上一版。
+- **读取**：新增 `GET /api/purchasing/suppliers/[id]`（`purchasing.suppliers.view`）返回抬头 + 银行块（经 `findWithDecryption` 解密）；**列表与任何选项源都不含银行字段**。编辑页也改读该路由（列表投影没有银行行，且它同时回传 `updatedAt`）。
+- **选择器收窄**：`supplierListSchema` 新增可选 `organizationId`（`buildFilters` 落到 `organization_id`），与合同/发票列表同一约定——合同的选择器按所选组织收窄，写入命令的对方校验也在同一作用域，不会出现「选得到、存不了」。
+- **表单**：供应商表单的「银行信息」块直接复用 `parties` 的 `BankAccountsEditor`（同一个值对象只留一份交互实现）。
+
 ## 规则（有意为之）
 
 - **供应商编码由系统发号（2026-09-24）**：`purchasing_suppliers.code` 是**我方**给供应商编的内部号（不是对方表格上印的「供应商货号」）。创建时由命令发 `SUP-0001` 形状的下一个号——扫本组织**全部行（含软删行）**取最大序号 +1，唯一索引 `purchasing_suppliers_scope_code_uniq` 是最终保证、撞号在命令内**有界重试（≤5，每次 `em.fork()`）**；因此新建表单**不渲染**编码字段、编辑页只读展示，接口仍接受显式 `code`（导入与集成测试走老契约，非 `SUP-` 形状的历史编号不参与发号计算）。编号永不复用：软删行占号，且编号已冻结进采购单的 `supplier_snapshot`。规则与决策见 [`.ai/specs/2026-09-24-supplier-code-issuance.md`](../../../.ai/specs/2026-09-24-supplier-code-issuance.md)。

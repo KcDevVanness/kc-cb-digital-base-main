@@ -26,8 +26,13 @@ import {
   documentLinesReplaceSchema,
   documentTransitionSchema,
   documentUpdateSchema,
+  COUNTERPARTY_KIND_BY_DIRECTION,
   type DocumentLineInput,
 } from '../data/validators'
+import {
+  resolveCounterpartyKind,
+  assertCounterpartyReference,
+} from '../lib/counterpartyRefs'
 import {
   readShipmentPurchaseAllocations,
   readShipmentSalesAllocations,
@@ -325,6 +330,13 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
     const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
+    const counterpartyKind = resolveCounterpartyKind(
+      parsed.direction,
+      parsed.counterpartyKind,
+      COUNTERPARTY_KIND_BY_DIRECTION,
+    )
+    await assertCounterpartyReference(em, scope, counterpartyKind, parsed.counterpartyId ?? null)
+
     const lines = await resolveDocumentLines(em, scope, parsed.lines)
     let document!: TradeDocsDocument
 
@@ -340,7 +352,7 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
               kind: parsed.kind,
               direction: parsed.direction,
               status: 'draft',
-              counterpartyKind: parsed.counterpartyKind,
+              counterpartyKind,
               counterpartyId: parsed.counterpartyId ?? null,
               counterpartySnapshot: parsed.counterpartySnapshot,
               ourPartySnapshot: parsed.ourPartySnapshot,
@@ -452,6 +464,24 @@ const updateDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
       request: ctx.request ?? null,
     })
 
+    const mergedDirection = parsed.direction ?? document.direction
+    // The create-time rule must survive an edit: flipping a commercial invoice to the purchase side
+    // would leave an export document on the wrong half of the ledger.
+    if (document.kind === 'commercial' && mergedDirection !== 'sales') {
+      throw badRequest('A commercial invoice is always issued on the sales side')
+    }
+    const counterpartyKind = resolveCounterpartyKind(
+      mergedDirection,
+      parsed.counterpartyKind,
+      COUNTERPARTY_KIND_BY_DIRECTION,
+    )
+    await assertCounterpartyReference(
+      em,
+      scope,
+      counterpartyKind,
+      parsed.counterpartyId !== undefined ? parsed.counterpartyId : document.counterpartyId ?? null,
+    )
+
     const currencyCode = parsed.currencyCode ?? document.currencyCode
     const lines = parsed.lines
       ? await resolveDocumentLines(em, scope, parsed.lines)
@@ -466,7 +496,8 @@ const updateDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
             where: documentFilter(scope, parsed.id),
             apply: (entity) => {
               if (parsed.direction !== undefined) entity.direction = parsed.direction
-              if (parsed.counterpartyKind !== undefined) entity.counterpartyKind = parsed.counterpartyKind
+              // The kind is derived, so an update heals a row stored before the rule existed.
+              entity.counterpartyKind = counterpartyKind
               if (parsed.counterpartyId !== undefined) entity.counterpartyId = parsed.counterpartyId
               if (parsed.counterpartySnapshot !== undefined) entity.counterpartySnapshot = parsed.counterpartySnapshot
               if (parsed.ourPartySnapshot !== undefined) entity.ourPartySnapshot = parsed.ourPartySnapshot
