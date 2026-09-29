@@ -96,7 +96,6 @@ describe('buildContractSheet', () => {
     paymentTerms: '30% 定金 + 70% 尾款',
     shippingMethod: '海运',
     destination: '圣彼得堡',
-    marks: 'PK-W5C / 1-40',
     notes: null,
     counterparty: { name: '广州某某代理商' },
     ourParty: { name: '广州总部' },

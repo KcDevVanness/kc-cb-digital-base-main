@@ -306,8 +306,11 @@ function SupplierEditForm({ supplierId }: { supplierId: string }) {
       try {
         // The list projection carries no bank rows (they are encrypted and never part of a list), so
         // the edit form reads the module's own detail route, which also returns `updatedAt`.
+        // The path must be absolute: `readApiResultOrThrow` passes it straight to fetch (unlike the
+        // CRUD helpers, which prepend `/api/`), so a bare `purchasing/suppliers/…` resolves against
+        // the current page and 404s.
         const payload = await readApiResultOrThrow<{ item?: Record<string, unknown> }>(
-          `${API_PATH}/${encodeURIComponent(supplierId)}`,
+          `/api/${API_PATH}/${encodeURIComponent(supplierId)}`,
           undefined,
           { errorMessage: t('purchasing.suppliers.form.loadFailed') },
         )

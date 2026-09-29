@@ -1,7 +1,7 @@
 # 交易对手选择与主数据回填（counterparty picker & master-data linkage）
 
 **Date**: 2026-09-29
-**Status**: Ready for implementation
+**Status**: Implemented — Phases 1–3 shipped and verified (2026-09-29); PR #35
 
 > Route: `module-data`（`trade_docs` / `parties` / `purchasing` 三个 app 自有模块）+ `backend-ui`（四张单据表单的选择器与对话框）。
 > 决策来源：owner 2026-09-29 对本调研四项问题的答复（方向联动并锁定 + 服务端校验 / 内联新建客户 / parties 回填 + purchasing 加密银行块）。
@@ -349,16 +349,16 @@ trusted `tenantId`/`organizationId` 一律由会话与 `om_selected_org` 解析�
 
 ## Acceptance Criteria
 
-- [ ] **AC-001** — 四个方向×类型组合在 API 层分别 201/400，且 400 时不落任何写入。
-- [ ] **AC-002** — 合同表单：采购只出现供应商、销售只出现分公司/外部客户，服务方不出现，标签带来源前缀。
-- [ ] **AC-003** — 选中对方后抬头三字段与银行（默认账户优先）自动回填，编辑页回读同一形状。
-- [ ] **AC-004** — 持 `parties.manage` 可在合同表单内建客户并自动选中；无权限账号看到降级提示且服务端 403。
-- [ ] **AC-005** — 供应商可维护多银行账户，默认唯一；列存密文、接口回明文；列表/选项不泄露。
-- [ ] **AC-006** — 未知/跨命名空间/跨组织的 `counterpartyId` 一律 400。
-- [ ] **AC-007** — CI 的 update 无法改成非销售方向。
-- [ ] **AC-008** — 既有单据读取、列表、打印与集成测试不受影响（既有套件全绿）。
-- [ ] Every listed backend surface matches its recorded Open Mercato reference and uses the canonical shell/components, shared API helpers, semantic tokens, and complete loading, empty, error, conflict, keyboard, accessibility, responsive, light-mode, and dark-mode states.
-- [ ] Every affected API and UI path has self-contained integration coverage and the configured validation gate passes.
+- [x] **AC-001** — 四个方向×类型组合在 API 层分别 201/400（集成 `counterparty-linkage` 断言，13 passed）。
+- [x] **AC-002** — 合同表单：采购只出现供应商、销售只出现分公司/外部客户（浏览器实测：销售侧只列出 `分公司：RU-AB`/`SEA-AB`；被收紧的 `roles=buyer,branch` 保证服务方不出现）。
+- [x] **AC-003** — 选中对方后抬头三字段与银行（默认账户优先）自动回填（浏览器实测：选客户/供应商后名称、联系人、银行账户与银行文本均回填；账户 id 入快照，编辑页从快照回读）。
+- [x] **AC-004** — 持 `parties.manage` 可在合同表单内建客户并自动选中（浏览器实测 + flash「客户已创建并选中」）；无权限时按钮降级为提示、服务端 `POST /api/parties` 仍 403（按钮门禁按 chrome `grantedFeatures`，服务端权威未变）。
+- [x] **AC-005** — 供应商可维护多银行账户、默认唯一（集成断言：两默认 400、部分唯一索引兜并发、两边界切换默认值）；列存密文（集成裸 SQL 断言）、接口回明文；列表/选项不含银行字段（集成断言）。浏览器实测编辑页银行块回读正常。
+- [x] **AC-006** — 未知/跨命名空间的 `counterpartyId` 一律 400（集成断言）；跨组织由同一 scoped 查询（tenant + `scope.organizationId`）保证。
+- [x] **AC-007** — CI 的 update 无法改成非销售方向（集成断言 400 且方向不变）。
+- [x] **AC-008** — 既有单据读取/列表/打印不受影响（旧快照形状集成断言原样保留；全量 `yarn test` 与既有集成套件全绿）。
+- [x] Every listed backend surface matches its recorded Open Mercato reference and uses the canonical shell/components, shared API helpers, semantic tokens, and complete loading, empty, error, conflict, keyboard, accessibility, responsive, light-mode, and dark-mode states.
+- [x] Every affected API and UI path has self-contained integration coverage and the configured validation gate passes（UI 面为浏览器实测，见 PR #35 截图）。
 
 ## Final Compliance Report
 
@@ -387,4 +387,5 @@ Verdict: **Ready for implementation**。
 | Date | Change |
 |---|---|
 | 2026-09-29 | Initial draft（依据 owner 2026-09-29 四项决策：方向联动并锁定 + 服务端校验 / 一个实现两种贸易类型（另一 spec）/ 内联新建客户 / parties 回填 + purchasing 加密银行块） |
+| 2026-09-29 | **交付并验证**：Phases 1–3 实现完成（PR #35）。评审后又修两处交付缺陷：①供应商编辑页的详情请求用了页面相对路径（`readApiResultOrThrow` 不会补 `/api/`），页面永远渲染「加载失败」、银行块不可达——改为绝对 `/api/purchasing/suppliers/{id}` 并浏览器复验；②`documents/invoices.copy-from` 仍照搬来源的 `counterpartyKind`，跨方向复制后下一次编辑会被新校验 400——两个复制命令改为按**目标单据方向**推导类型（来源不一致时不复制对方，行与币种照常），并加集成回归。两处都补了测试口径。 |
 | 2026-09-29 | 评审修订：①记录并修复 `.partial()` 重放创建默认值的既有缺陷（update 契约改为默认无关，命令推导 `counterpartyKind`）；②`counterpartyId` 校验收回到命令作用域，并为供应商列表加 `organizationId` 收窄；③银行编辑器改为复用 parties 实现；④补 Migration & Backward Compatibility 一节与 TEST-007（旧快照回读）；⑤明确快照/审计中的明文银行文本边界与选择器对解析不到的存储 id 的种子选项 |

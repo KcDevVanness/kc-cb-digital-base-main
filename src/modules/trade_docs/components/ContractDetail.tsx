@@ -77,7 +77,6 @@ type ContractHead = {
   incoterms: string | null
   shippingMethod: string | null
   destination: string | null
-  marks: string | null
   notes: string | null
   generatedAttachmentId: string | null
   attachmentId: string | null
@@ -152,7 +151,6 @@ function toHead(item: Record<string, unknown>): ContractHead {
     incoterms: (item.incoterms ?? null) as string | null,
     shippingMethod: (item.shippingMethod ?? null) as string | null,
     destination: (item.destination ?? null) as string | null,
-    marks: (item.marks ?? null) as string | null,
     notes: (item.notes ?? null) as string | null,
     generatedAttachmentId: (item.generatedAttachmentId ?? null) as string | null,
     attachmentId: (item.attachmentId ?? null) as string | null,
@@ -667,7 +665,6 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
           <SummaryField label={t('trade_docs.contracts.form.field.incoterms')}>{head.incoterms ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.shippingMethod')}>{head.shippingMethod ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.destination')}>{head.destination ?? '—'}</SummaryField>
-          <SummaryField label={t('trade_docs.contracts.form.field.marks')}>{head.marks ?? '—'}</SummaryField>
           <SummaryField label={t('trade_docs.contracts.form.field.notes')}>{head.notes ?? '—'}</SummaryField>
         </div>
       </section>

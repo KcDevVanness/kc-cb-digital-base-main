@@ -1,3 +1,4 @@
+import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
@@ -58,7 +59,10 @@ export function useTradeTypeChannels(kind: 'quote' | 'order'): TradeTypeChannels
     queryFn: () => loadTradeTypeChannelIds(kind, t('internal_sales.form.tradeType.channelsLoadFailed')),
     staleTime: 5 * 60 * 1000,
   })
-  const channels = query.data ?? {}
+  // Referentially stable while the query has no data: consumers put this map into effect
+  // dependency arrays, and a fresh `{}` on every render would re-run their effects forever when the
+  // request fails (React Query leaves `data` undefined on failure and during the first renders).
+  const channels = React.useMemo(() => query.data ?? {}, [query.data])
   return {
     channels,
     isLoading: query.isLoading,
