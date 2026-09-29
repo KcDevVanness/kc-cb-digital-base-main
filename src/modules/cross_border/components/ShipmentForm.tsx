@@ -427,6 +427,29 @@ export async function loadAllocatablePurchaseOrderOptions(
   return options
 }
 
+/**
+ * A picked order's display label: the option list's label when the picker on screen already cached
+ * it, otherwise resolved from the order's own option source — so an operator who picks an order
+ * without typing (the suggestions load unfiltered) never sees a raw uuid in a row.
+ */
+export async function resolveOrderOptionLabel(
+  errorMessage: string,
+  kind: 'purchase' | 'sales',
+  orderId: string,
+  cachedLabel?: string | null,
+): Promise<string> {
+  const cached = (cachedLabel ?? '').trim()
+  if (cached && cached !== orderId) return cached
+  try {
+    const options = kind === 'purchase'
+      ? await loadAllocatablePurchaseOrderOptions(errorMessage, '')
+      : await loadSalesOrderOptions(errorMessage, '')
+    return options.find((option) => option.value === orderId)?.label ?? orderId
+  } catch {
+    return orderId
+  }
+}
+
 /** A purchase-order line as `/api/purchasing/purchase-orders/lines` projects it. */
 export type PurchaseOrderLineOption = {
   id: string
@@ -1169,8 +1192,13 @@ function ShipmentAllocationEditor({
     setDraftQuantities({})
   }, [])
 
-  const addAllocation = React.useCallback((line: PurchaseOrderLineOption) => {
-    const label = orderOptions.find((option) => option.value === orderId)?.label ?? orderId
+  const addAllocation = React.useCallback(async (line: PurchaseOrderLineOption) => {
+    const label = await resolveOrderOptionLabel(
+      t('cross_border.shipments.form.loadFailed'),
+      'purchase',
+      orderId,
+      orderOptions.find((option) => option.value === orderId)?.label,
+    )
     setValue('allocations', [...allocations, {
       key: newRowKey(),
       purchaseOrderId: orderId,
@@ -1187,7 +1215,7 @@ function ShipmentAllocationEditor({
       delete next[line.id]
       return next
     })
-  }, [allocations, draftQuantities, orderId, orderOptions, setValue])
+  }, [allocations, draftQuantities, orderId, orderOptions, setValue, t])
 
   const updateAllocation = React.useCallback((index: number, quantity: string) => {
     setValue(
@@ -1208,7 +1236,12 @@ function ShipmentAllocationEditor({
     const byProduct = new Map<string, AllocationReferenceCandidate>()
     const orderIds = Array.from(new Set(allocations.map((row) => row.purchaseOrderId).filter(Boolean)))
     for (const scopedOrderId of orderIds) {
-      const label = allocations.find((row) => row.purchaseOrderId === scopedOrderId)?.purchaseOrderLabel ?? scopedOrderId
+      const label = await resolveOrderOptionLabel(
+        t('cross_border.shipments.form.loadFailed'),
+        'purchase',
+        scopedOrderId,
+        allocations.find((row) => row.purchaseOrderId === scopedOrderId)?.purchaseOrderLabel,
+      )
       const orderLines = await loadPurchaseOrderLines(t('cross_border.shipments.form.loadFailed'), scopedOrderId)
       for (const line of orderLines) {
         if (!line.productId || byProduct.has(line.productId)) continue
@@ -1440,7 +1473,12 @@ function ShipmentSalesAllocationEditor({
       flash(t('cross_border.shipments.salesAllocations.notBridged'), 'error')
       return
     }
-    const label = orderOptions.find((candidate) => candidate.value === orderId)?.label ?? orderId
+    const label = await resolveOrderOptionLabel(
+      t('cross_border.shipments.salesAllocations.loadLinesFailed'),
+      'sales',
+      orderId,
+      orderOptions.find((candidate) => candidate.value === orderId)?.label,
+    )
     setValue('salesAllocations', [...allocations, {
       key: newRowKey(),
       salesOrderId: orderId,
@@ -1480,7 +1518,12 @@ function ShipmentSalesAllocationEditor({
     const byProduct = new Map<string, AllocationReferenceCandidate>()
     const orderIds = Array.from(new Set(allocations.map((row) => row.salesOrderId).filter(Boolean)))
     for (const scopedOrderId of orderIds) {
-      const label = allocations.find((row) => row.salesOrderId === scopedOrderId)?.salesOrderLabel ?? scopedOrderId
+      const label = await resolveOrderOptionLabel(
+        t('cross_border.shipments.salesAllocations.loadLinesFailed'),
+        'sales',
+        scopedOrderId,
+        allocations.find((row) => row.salesOrderId === scopedOrderId)?.salesOrderLabel,
+      )
       const orderLines = await loadSalesOrderLineOptions(t('cross_border.shipments.salesAllocations.loadLinesFailed'), scopedOrderId)
       for (const line of orderLines) {
         if (!line.productId || byProduct.has(line.productId)) continue
