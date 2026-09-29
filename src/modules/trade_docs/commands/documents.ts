@@ -875,6 +875,20 @@ const copyDocumentFromCommand: CommandHandler<Record<string, unknown>, { id: str
       throw conflict('Only a draft document can be edited; void it and issue a new one instead')
     }
     const source = await loadDocument(em, scope, parsed.sourceDocumentId)
+    /**
+     * The copied counterparty must agree with the **target's** direction — copying a sales-side
+     * document into a purchase-side one would store a pair the update validator rejects on the next
+     * edit. The lines and trade terms still copy; the target keeps its own counterparty instead.
+     */
+    const targetCounterpartyKind = resolveCounterpartyKind(
+      document.direction,
+      undefined,
+      COUNTERPARTY_KIND_BY_DIRECTION,
+    )
+    const copyCounterparty = source.counterpartyKind === targetCounterpartyKind
+    if (copyCounterparty && source.counterpartyId) {
+      await assertCounterpartyReference(em, scope, targetCounterpartyKind, source.counterpartyId)
+    }
 
     const sourceLines = await em.find(TradeDocsDocumentLine, {
       document: source.id,
@@ -922,9 +936,12 @@ const copyDocumentFromCommand: CommandHandler<Record<string, unknown>, { id: str
             entity: TradeDocsDocument,
             where: documentFilter(scope, parsed.id),
             apply: (entity) => {
-              entity.counterpartyKind = source.counterpartyKind
-              entity.counterpartyId = source.counterpartyId ?? null
-              entity.counterpartySnapshot = source.counterpartySnapshot ?? null
+              // Derived, and only overwritten when the source agrees with the target's direction.
+              entity.counterpartyKind = targetCounterpartyKind
+              if (copyCounterparty) {
+                entity.counterpartyId = source.counterpartyId ?? null
+                entity.counterpartySnapshot = source.counterpartySnapshot ?? null
+              }
               entity.ourPartySnapshot = source.ourPartySnapshot ?? null
               entity.consigneeSnapshot = source.consigneeSnapshot ?? null
               entity.notifyPartySnapshot = source.notifyPartySnapshot ?? null

@@ -174,7 +174,15 @@ const backfillCommand: ModuleCli = {
     const args = parseArgs(rest)
     const apply = args.apply === true
     const tenantId = typeof args.tenant === 'string' ? args.tenant : typeof args.tenantId === 'string' ? args.tenantId : ''
-    const organizationId = typeof args.org === 'string' ? args.org : typeof args.organizationId === 'string' ? args.organizationId : ''
+    // `--organization` is the documented spelling (spec: "可选 --organization"); the shorter
+    // aliases stay because the sibling app CLIs accept them.
+    const organizationId = typeof args.organization === 'string'
+      ? args.organization
+      : typeof args.org === 'string'
+        ? args.org
+        : typeof args.organizationId === 'string'
+          ? args.organizationId
+          : ''
 
     const container = await createRequestContainer()
     const em = container.resolve<EntityManager>('em')
@@ -248,6 +256,9 @@ const backfillCommand: ModuleCli = {
     }
 
     console.log(`  ✅ marked ${written} document(s)`)
+    console.log(
+      '  note: with ENABLE_CRUD_API_CACHE=true (on in the integration harness), already-warm sales lists keep their pre-backfill rows until the entry expires',
+    )
     for (const failure of failures) console.log(`  ⚠️  ${failure}`)
     const targetCodes = SALES_TRADE_TYPES.map((type) => `${type}=${TRADE_TYPE_CHANNEL_CODES[type]}`).join(', ')
     console.log(`  channels used: ${targetCodes}`)

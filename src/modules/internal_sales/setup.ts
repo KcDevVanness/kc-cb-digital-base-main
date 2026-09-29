@@ -1,6 +1,7 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
 import type { ModuleSetupConfig } from '@open-mercato/shared/modules/setup'
 import { SalesChannel } from '@open-mercato/core/modules/sales/data/entities'
+import { isUniqueViolation } from '@open-mercato/shared/lib/crud/errors'
 import { SALES_TRADE_TYPES, TRADE_TYPE_CHANNEL_CODES, TRADE_TYPE_CHANNEL_NAMES, type SalesTradeType } from './lib/tradeType'
 
 /**
@@ -46,7 +47,24 @@ export async function ensureTradeTypeChannels(
     em.persist(channel)
     created[type] = String(channel.id)
   }
-  await em.flush()
+  try {
+    await em.flush()
+  } catch (error) {
+    // Two overlapping setup runs (the seeder is exactly what the UI tells operators to run, and the
+    // backfill's --apply calls it again) race on `sales_channels_code_unique`: the loser must adopt
+    // the winner's row instead of failing the rest of the run.
+    if (!isUniqueViolation(error)) throw error
+    const rows = await em.find(SalesChannel, {
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+      code: { $in: SALES_TRADE_TYPES.map((type) => TRADE_TYPE_CHANNEL_CODES[type]) },
+      deletedAt: null,
+    })
+    for (const row of rows) {
+      const type = SALES_TRADE_TYPES.find((candidate) => TRADE_TYPE_CHANNEL_CODES[candidate] === row.code)
+      if (type) created[type] = String(row.id)
+    }
+  }
   return created as Record<SalesTradeType, string>
 }
 

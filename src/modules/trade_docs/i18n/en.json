@@ -505,5 +505,6 @@
   "trade_docs.contracts.form.lines.copy.kind.sales_order": "Sales order",
   "trade_docs.contracts.form.lines.copy.kind.sales_quote": "Sales quote",
   "trade_docs.contracts.form.lines.copy.tradeType.internal": "Internal sale",
-  "trade_docs.contracts.form.lines.copy.tradeType.external": "External sale"
+  "trade_docs.contracts.form.lines.copy.tradeType.external": "External sale",
+  "trade_docs.counterparty.picker.organizationRequired": "Select an organization in the top bar before choosing a counterparty."
 }

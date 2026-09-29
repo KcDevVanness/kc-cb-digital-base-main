@@ -228,6 +228,9 @@ export function CounterpartyPicker({
             </Button>
           ) : null}
         </div>
+        {!organizationId ? (
+          <p className="text-xs text-muted-foreground">{t('trade_docs.counterparty.picker.organizationRequired')}</p>
+        ) : null}
         {kind === 'customer' && !canCreateCustomer ? (
           <p className="text-xs text-muted-foreground">{t('trade_docs.counterparty.picker.createHint')}</p>
         ) : null}
