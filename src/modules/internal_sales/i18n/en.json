@@ -1,5 +1,5 @@
 {
-  "internal_sales.form.quote.createTitle": "New Internal Sales Quote",
+  "internal_sales.form.quote.createTitle": "New internal sales quote",
   "internal_sales.form.quote.editTitle": "Edit internal sales quote",
   "internal_sales.form.order.createTitle": "New internal sales order (PO)",
   "internal_sales.form.order.editTitle": "Edit internal sales order (PO)",
@@ -12,7 +12,6 @@
   "internal_sales.form.field.currency": "Currency",
   "internal_sales.form.field.customerReference": "Customer reference",
   "internal_sales.form.field.comments": "Notes",
-  "internal_sales.form.customerLoadFailed": "Could not load customers",
   "internal_sales.form.currencyLoadFailed": "Could not load currencies",
   "internal_sales.form.productLoadFailed": "Could not load products",
   "internal_sales.form.lines.empty": "No lines yet.",
