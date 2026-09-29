@@ -281,3 +281,78 @@ test.describe.serial('trade documents — direction decides the counterparty', (
     expect(outboundWithSupplier.status).toBe(400)
   })
 })
+
+test.describe.serial('copy-from keeps the target direction valid', () => {
+  let api: APIRequestContext
+  let token = ''
+  let orgId = ''
+  const documentIds: string[] = []
+  const invoiceIds: string[] = []
+
+  const scoped = (method: string, path: string, data?: unknown) =>
+    apiRequestWithSelectedOrg(api, method, path, { token, selectedOrgId: orgId, data })
+
+  const create = async (path: string, payload: Record<string, unknown>) => {
+    const response = await scoped('POST', path, payload)
+    const body = await response.text()
+    const id = (JSON.parse(body || '{}') as { id?: string }).id ?? ''
+    return { status: response.status(), id, body }
+  }
+
+  test.beforeAll(async () => {
+    api = await request.newContext()
+    token = await getAuthToken(api, 'superadmin')
+    orgId = getTokenContext(token).organizationId
+  })
+
+  test.afterAll(async () => {
+    for (const id of invoiceIds) {
+      await scoped('POST', '/api/trade_docs/invoices/transitions', { id, action: 'void', reason: 'e2e cleanup' }).catch(() => undefined)
+      await scoped('DELETE', `/api/trade_docs/invoices?id=${encodeURIComponent(id)}`).catch(() => undefined)
+    }
+    for (const id of documentIds) {
+      await scoped('POST', '/api/trade_docs/documents/transitions', { id, action: 'void', reason: 'e2e cleanup' }).catch(() => undefined)
+      await scoped('DELETE', `/api/trade_docs/documents?id=${encodeURIComponent(id)}`).catch(() => undefined)
+    }
+    await api.dispose()
+  })
+
+  test('copying a sales-side document into an inbound invoice keeps the invoice editable', async () => {
+    const source = await create('/api/trade_docs/documents', {
+      kind: 'commercial',
+      direction: 'sales',
+      counterpartyKind: 'customer',
+      counterpartySnapshot: { name: 'Copy source buyer' },
+      currencyCode: 'USD',
+      lines: [{ name: 'Copied line', quantity: '1', unitPrice: '5' }],
+    })
+    expect(source.status, source.body).toBe(201)
+    documentIds.push(source.id)
+
+    const invoice = await create('/api/trade_docs/invoices', {
+      direction: 'inbound',
+      counterpartyKind: 'supplier',
+      counterpartySnapshot: { name: 'Own supplier' },
+      currencyCode: 'CNY',
+      lines: [{ description: 'Own line', quantity: '1', unitPrice: '3', amount: '3' }],
+    })
+    expect(invoice.status, invoice.body).toBe(201)
+    invoiceIds.push(invoice.id)
+
+    const copied = await scoped('POST', `/api/trade_docs/invoices/${invoice.id}/copy-from`, {
+      sourceDocumentId: source.id,
+    })
+    expect(copied.status(), await copied.text()).toBe(200)
+
+    // The copied lines arrive, but the counterparty of the other side must not: an inbound invoice
+    // with a customer/party id would fail the next update's namespace check.
+    const updated = await scoped('PUT', '/api/trade_docs/invoices', { id: invoice.id, notes: 'after copy' })
+    expect(updated.status(), await updated.text()).toBe(200)
+
+    const readBack = await scoped('GET', `/api/trade_docs/invoices?ids=${encodeURIComponent(invoice.id)}&pageSize=1`)
+    const item = (await readJsonSafe<ListPayload<{ counterpartyKind?: string; counterpartyId?: string | null }>>(readBack))
+      ?.items?.[0]
+    expect(item?.counterpartyKind).toBe('supplier')
+    expect(item?.counterpartyId ?? null).toBeNull()
+  })
+})

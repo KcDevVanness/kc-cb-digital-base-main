@@ -490,6 +490,7 @@
   "trade_docs.documents.print.total": "合计",
   "trade_docs.documents.print.inWords": "大写金额",
   "trade_docs.contracts.print.incoterms": "贸易术语",
+<<<<<<< HEAD
   "trade_docs.contracts.form.tradeTypeChannelsLoadFailed": "贸易类型通道加载失败",
   "trade_docs.contracts.form.lines.copy.action": "从订单/报价单复制行",
   "trade_docs.contracts.form.lines.copy.title": "从订单/报价单复制行",
@@ -510,4 +511,7 @@
   "trade_docs.contracts.form.lines.copy.kind.sales_quote": "销售报价单",
   "trade_docs.contracts.form.lines.copy.tradeType.internal": "内部销售",
   "trade_docs.contracts.form.lines.copy.tradeType.external": "对外销售"
+=======
+  "trade_docs.counterparty.picker.organizationRequired": "请先在顶栏选择组织，再选择对方。"
+>>>>>>> 702c8ea (fix(trade-docs,purchasing): review findings — supplier detail URL, copy-from counterparty, picker scope)
 }

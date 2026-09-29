@@ -642,6 +642,21 @@ const copyInvoiceFromCommand: CommandHandler<Record<string, unknown>, { id: stri
       throw conflict('Only a draft invoice can be edited')
     }
     const source = await loadDocument(em, scope, parsed.sourceDocumentId)
+    /**
+     * The copied counterparty must agree with the **target's** direction: a commercial invoice is
+     * always a sale (customer + `parties` id), so copying it into an inbound tax invoice would store
+     * a pair the update validator rejects on the next edit. When the source sits on the other side,
+     * the lines and currency still copy and the target keeps its own counterparty.
+     */
+    const targetCounterpartyKind = resolveCounterpartyKind(
+      invoice.direction,
+      undefined,
+      COUNTERPARTY_KIND_BY_INVOICE_DIRECTION,
+    )
+    const copyCounterparty = source.counterpartyKind === targetCounterpartyKind
+    if (copyCounterparty && source.counterpartyId) {
+      await assertCounterpartyReference(em, scope, targetCounterpartyKind, source.counterpartyId)
+    }
 
     const sourceLines = await em.find(TradeDocsDocumentLine, {
       document: source.id,
@@ -686,9 +701,12 @@ const copyInvoiceFromCommand: CommandHandler<Record<string, unknown>, { id: stri
             entity: TradeDocsInvoice,
             where: invoiceFilter(scope, parsed.id),
             apply: (entity) => {
-              entity.counterpartyKind = source.counterpartyKind
-              entity.counterpartyId = source.counterpartyId ?? null
-              entity.counterpartySnapshot = source.counterpartySnapshot ?? null
+              // Derived, and only overwritten when the source agrees with the target's direction.
+              entity.counterpartyKind = targetCounterpartyKind
+              if (copyCounterparty) {
+                entity.counterpartyId = source.counterpartyId ?? null
+                entity.counterpartySnapshot = source.counterpartySnapshot ?? null
+              }
               entity.currencyCode = source.currencyCode
               entity.sourceKind = 'trade_document'
               entity.sourceId = String(source.id)
@@ -848,6 +866,7 @@ const attachInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
     const invoice = await loadInvoice(em, scope, parsed.id)
+
     enforceCommandOptimisticLock({
       resourceKind: RESOURCE_KIND,
       resourceId: String(invoice.id),
