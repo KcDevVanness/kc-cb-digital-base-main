@@ -31,6 +31,7 @@
     "test:integration:ephemeral:start:verbose": "yarn mercato test:ephemeral --verbose",
     "generate": "yarn mercato generate",
     "install-skills": "node ./scripts/install-skills.mjs",
+    "branches:cleanup": "node ./scripts/git/branch-cleanup.mjs",
     "framework:context": "node ./scripts/framework-context.mjs",
     "harness:validate": "node ./scripts/evaluate-agent-harness.mjs",
     "harness:fixture": "node ./scripts/prepare-agent-harness-fixture.mjs",
