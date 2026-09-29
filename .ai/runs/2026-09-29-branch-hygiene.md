@@ -101,4 +101,5 @@ tracker has no issues.
 
 - [x] 3.1 lessons check + eslint — `Lessons catalog is valid`, eslint OK
 - [x] 3.2 tool smoke (real repo report, scratch-repo guard test) — see Risks / PR body
-- [ ] 3.3 PR draft → ready with `validate` green
+- [x] 3.3 PR draft → ready with `validate` green — PR #17; `validate` run 36510123359 pass (5m25s),
+  `guard-tree` run 36510123375 pass (8s)
