@@ -117,6 +117,6 @@ PR: #29
 
 ### Phase 3: review follow-ups
 
-- [ ] 3.1 Breadcrumbs → this module's lists
-- [ ] 3.2 Buyer picker keys in both dictionaries; drop `internal_sales.page.title`
-- [ ] 3.3 Verify (key-set parity, purity test, gate, browser smoke)
+- [x] 3.1 Breadcrumbs → this module's lists — aed8b82
+- [x] 3.2 Buyer picker keys in both dictionaries; drop `internal_sales.page.title` — aed8b82
+- [x] 3.3 Verify (key-set parity, purity test, gate, browser smoke) — aed8b82
