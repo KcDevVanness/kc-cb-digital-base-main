@@ -19,6 +19,15 @@ import { Button } from '@open-mercato/ui/primitives/button'
 import { FieldLabel } from '@open-mercato/ui/primitives/label'
 import { IconButton } from '@open-mercato/ui/primitives/icon-button'
 import { Input } from '@open-mercato/ui/primitives/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@open-mercato/ui/primitives/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@open-mercato/ui/primitives/dialog'
+import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
 import {
   formatDisplayDate,
@@ -30,9 +39,12 @@ import { loadProductOption, loadProductOptions, type ProductOption } from '../..
 import {
   loadCarrierOptions,
   loadContainerTypeOptions,
+  loadContractLines,
+  loadContractOptions,
   loadPortOptions,
   loadSalesOrderLineOptions,
   loadSalesOrderOptions,
+  type ContractLineOption,
   type SalesOrderLineOption,
 } from './shipmentFormOptions'
 
@@ -45,6 +57,7 @@ import {
  */
 
 export const SHIPMENTS_API_PATH = 'cross_border/shipments'
+export const SHIPMENT_CONTRACTS_API_PATH = 'cross_border/shipments/contracts'
 export const SHIPMENT_ALLOCATIONS_API_PATH = 'cross_border/shipments/allocations'
 export const SHIPMENT_SALES_ALLOCATIONS_API_PATH = 'cross_border/shipments/sales-allocations'
 export const SHIPMENT_MILESTONES_API_PATH = 'cross_border/shipments/milestones'
@@ -414,10 +427,36 @@ export async function loadAllocatablePurchaseOrderOptions(
   return options
 }
 
+/**
+ * A picked order's display label: the option list's label when the picker on screen already cached
+ * it, otherwise resolved from the order's own option source — so an operator who picks an order
+ * without typing (the suggestions load unfiltered) never sees a raw uuid in a row.
+ */
+export async function resolveOrderOptionLabel(
+  errorMessage: string,
+  kind: 'purchase' | 'sales',
+  orderId: string,
+  cachedLabel?: string | null,
+): Promise<string> {
+  const cached = (cachedLabel ?? '').trim()
+  if (cached && cached !== orderId) return cached
+  try {
+    const options = kind === 'purchase'
+      ? await loadAllocatablePurchaseOrderOptions(errorMessage, '')
+      : await loadSalesOrderOptions(errorMessage, '')
+    return options.find((option) => option.value === orderId)?.label ?? orderId
+  } catch {
+    return orderId
+  }
+}
+
 /** A purchase-order line as `/api/purchasing/purchase-orders/lines` projects it. */
 export type PurchaseOrderLineOption = {
   id: string
   lineNumber: number
+  /** Owned-master reference; the contract-line match key (null on historical catalog-only lines). */
+  productId: string
+  catalogProductId: string
   productTitle: string | null
   productSku: string | null
   supplierSku: string | null
@@ -429,6 +468,8 @@ function toPurchaseOrderLineOption(item: Record<string, unknown>): PurchaseOrder
   return {
     id: readText(item, 'id'),
     lineNumber: Number(item.lineNumber ?? 0),
+    productId: readText(item, 'productId', 'product_id'),
+    catalogProductId: readText(item, 'catalogProductId', 'catalog_product_id'),
     productTitle: readOptionalText(item, 'productTitle', 'product_title'),
     productSku: readOptionalText(item, 'productSku', 'product_sku'),
     supplierSku: readOptionalText(item, 'supplierSku', 'supplier_sku'),
@@ -512,8 +553,20 @@ export type ShipmentFormValues = {
   /** Keyed by the destination picker, whose warehouse decides which locations are offered. */
   destinationWarehouseId: string
   destinationLocationId: string
+  contracts: ShipmentContractValues[]
   allocations: ShipmentAllocationValues[]
   salesAllocations: ShipmentSalesAllocationValues[]
+}
+
+/**
+ * One linked-contract row. `key` keeps React anchored to a row while rows are added and removed;
+ * `contractLabel` is display-only and never submitted — the server resolves the contract number
+ * and direction from `contractId` and freezes them on the link row.
+ */
+export type ShipmentContractValues = {
+  key: string
+  contractId: string
+  contractLabel: string
 }
 
 const EMPTY_SHIPMENT_VALUES: ShipmentFormValues = {
@@ -529,6 +582,7 @@ const EMPTY_SHIPMENT_VALUES: ShipmentFormValues = {
   notes: '',
   destinationWarehouseId: '',
   destinationLocationId: '',
+  contracts: [],
   allocations: [],
   salesAllocations: [],
 }
@@ -536,6 +590,25 @@ const EMPTY_SHIPMENT_VALUES: ShipmentFormValues = {
 function newRowKey(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   return `allocation-${Date.now()}-${Math.round(performance.now())}`
+}
+
+/**
+ * Reads the linked-contract rows out of a form value or an API payload. A row the operator added
+ * but has not picked a contract for yet stays visible (it is part of the edited set); the payload
+ * builder drops it so an empty pick never reaches the command. The label is display-only and gets
+ * re-resolved by the picker's option source.
+ */
+export function readContracts(value: unknown): ShipmentContractValues[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap<ShipmentContractValues>((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const row = entry as Record<string, unknown>
+    return [{
+      key: typeof row.key === 'string' && row.key.length ? row.key : newRowKey(),
+      contractId: readText(row, 'contractId', 'contract_id'),
+      contractLabel: readText(row, 'contractLabel', 'contractNumber', 'contract_number'),
+    }]
+  })
 }
 
 export function readAllocations(value: unknown): ShipmentAllocationValues[] {
@@ -600,6 +673,9 @@ export function buildShipmentPayload(values: ShipmentFormValues): Record<string,
     etd: toOptionalText(values.etd),
     eta: toOptionalText(values.eta),
     notes: toOptionalText(values.notes),
+    contracts: readContracts(values.contracts)
+      .filter((row) => row.contractId.trim().length > 0)
+      .map((row) => ({ contractId: row.contractId.trim() })),
     allocations: readAllocations(values.allocations).map((row) => ({
       purchaseOrderLineId: row.purchaseOrderLineId.trim(),
       // Decimals travel as strings on both allocation paths: the validator normalizes them onto
@@ -760,6 +836,308 @@ export function ShipmentDestinationFields({
 }
 
 /**
+ * The linked-contract editor: one picker row per contract, with add and remove.
+ *
+ * A shipment carries **zero or more** contracts — a consolidated container may mix goods from
+ * several, and one contract is usually fulfilled by several shipments — so this is a repeating row
+ * editor rather than a single select. The set is replaced wholesale on save, exactly like the
+ * allocations; the number and direction are frozen server-side from `contractId`, so the picker's
+ * label is display-only and never submitted.
+ */
+export function ShipmentContractEditor({
+  t,
+  values,
+  setValue,
+}: CrudFormGroupComponentProps & { t: TranslateFn }) {
+  const contracts = readContracts(values.contracts)
+  const labelCache = React.useRef(new Map<string, string>())
+
+  const updateRow = React.useCallback((index: number, patch: Partial<ShipmentContractValues>) => {
+    setValue('contracts', contracts.map((row, position) => (position === index ? { ...row, ...patch } : row)))
+  }, [contracts, setValue])
+
+  const removeRow = React.useCallback((index: number) => {
+    setValue('contracts', contracts.filter((_, position) => position !== index))
+  }, [contracts, setValue])
+
+  const addRow = React.useCallback(() => {
+    setValue('contracts', [...contracts, { key: newRowKey(), contractId: '', contractLabel: '' }])
+  }, [contracts, setValue])
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
+      <h3 className="text-sm font-medium">{t('cross_border.shipments.contracts.title')}</h3>
+      <p className="text-xs text-muted-foreground">{t('cross_border.shipments.contracts.help')}</p>
+
+      {contracts.map((row, index) => (
+        <div key={row.key} className="grid grid-cols-1 items-end gap-3 md:grid-cols-12">
+          <div className="space-y-1.5 md:col-span-10">
+            <FieldLabel htmlFor={`shipment-contract-${index}`}>
+              {t('cross_border.shipments.contracts.contract')}
+            </FieldLabel>
+            <ComboboxInput
+              value={row.contractId}
+              onChange={(next) => {
+                updateRow(index, {
+                  contractId: next,
+                  contractLabel: next ? (labelCache.current.get(next) ?? row.contractLabel) : '',
+                })
+              }}
+              placeholder={t('cross_border.shipments.contracts.select')}
+              seedOptions={
+                row.contractId && row.contractLabel
+                  ? [{ value: row.contractId, label: row.contractLabel }]
+                  : undefined
+              }
+              loadSuggestions={async (query) => {
+                const loaded = await loadContractOptions(query)
+                for (const option of loaded) {
+                  labelCache.current.set(option.value, option.label)
+                }
+                return loaded
+              }}
+              allowCustomValues={false}
+              clearable
+            />
+          </div>
+          <div className="flex items-end justify-end md:col-span-2">
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="lg"
+              aria-label={t('cross_border.shipments.contracts.remove')}
+              onClick={() => removeRow(index)}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+            </IconButton>
+          </div>
+        </div>
+      ))}
+
+      <Button type="button" variant="outline" onClick={addRow}>
+        <Plus className="size-4" aria-hidden="true" />
+        {t('cross_border.shipments.contracts.add')}
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * One order line (already selected on this shipment) that a contract line can be matched to.
+ * `productId` is the owned-master id both sides carry, which is the only match key that does not
+ * depend on a supplier's spelling.
+ */
+export type AllocationReferenceCandidate = {
+  orderId: string
+  orderLabel: string
+  lineId: string
+  lineNumber: number
+  productId: string
+  productTitle: string
+  productSku: string
+  orderedQuantity: string
+}
+
+/**
+ * The allocation-side contract reference: pick one of the shipment's contracts, read its line
+ * items, and match each one to an order line the shipment already allocates from (by product
+ * master id). A matched row becomes an allocation in one click; an unmatched row says why and
+ * points at the order picker below, which is where the over-allocation guard lives — the dialog
+ * never invents an order line.
+ */
+function ContractAllocationReferenceDialog({
+  t,
+  contracts,
+  loadCandidates,
+  onAdd,
+}: {
+  t: TranslateFn
+  contracts: ShipmentContractValues[]
+  loadCandidates: () => Promise<Map<string, AllocationReferenceCandidate>>
+  onAdd: (candidate: AllocationReferenceCandidate, quantity: string) => void | Promise<void>
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [contractId, setContractId] = React.useState('')
+  const [lines, setLines] = React.useState<ContractLineOption[]>([])
+  const [candidates, setCandidates] = React.useState<Map<string, AllocationReferenceCandidate>>(new Map())
+  const [addedLineIds, setAddedLineIds] = React.useState<Set<string>>(new Set())
+  const [isLoading, setIsLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const dialogContentRef = React.useRef<HTMLDivElement | null>(null)
+
+  const loadLinesFor = React.useCallback(async (nextContractId: string) => {
+    const scopedContractId = nextContractId.trim()
+    setLines(scopedContractId
+      ? await loadContractLines(t('cross_border.shipments.allocations.reference.loadFailed'), scopedContractId)
+      : [])
+  }, [t])
+
+  const handleOpen = React.useCallback(() => {
+    const presetContractId = contracts.length === 1 ? contracts[0].contractId : ''
+    setOpen(true)
+    setContractId(presetContractId)
+    setLines([])
+    setAddedLineIds(new Set())
+    setError(null)
+    setIsLoading(true)
+    void (async () => {
+      try {
+        setCandidates(await loadCandidates())
+        if (presetContractId) await loadLinesFor(presetContractId)
+      } catch (cause) {
+        setCandidates(new Map())
+        setError(cause instanceof Error && cause.message
+          ? cause.message
+          : t('cross_border.shipments.allocations.reference.loadFailed'))
+      } finally {
+        setIsLoading(false)
+      }
+    })()
+  }, [contracts, loadCandidates, loadLinesFor, t])
+
+  const handleSelectContract = React.useCallback((nextContractId: string) => {
+    setContractId(nextContractId)
+    setLines([])
+    setError(null)
+    setIsLoading(true)
+    void loadLinesFor(nextContractId)
+      .catch(() => setError(t('cross_border.shipments.allocations.reference.loadFailed')))
+      .finally(() => setIsLoading(false))
+  }, [loadLinesFor, t])
+
+  const handleAdd = React.useCallback(async (line: ContractLineOption, candidate: AllocationReferenceCandidate) => {
+    await onAdd(candidate, line.quantity || candidate.orderedQuantity)
+    setAddedLineIds((current) => new Set(current).add(line.id))
+  }, [onAdd])
+
+  const matchedLines = lines.flatMap((line) => {
+    const candidate = line.productId ? candidates.get(line.productId) : undefined
+    return candidate ? [{ line, candidate }] : []
+  })
+
+  const handleAddAll = React.useCallback(async () => {
+    for (const { line, candidate } of matchedLines) {
+      if (addedLineIds.has(line.id)) continue
+      await handleAdd(line, candidate)
+    }
+  }, [addedLineIds, handleAdd, matchedLines])
+
+  const handleDialogKeyDown = useDialogKeyHandler({ onCancel: () => setOpen(false) })
+
+  return (
+    <>
+      <Button type="button" variant="outline" onClick={handleOpen}>
+        {t('cross_border.shipments.allocations.reference.action')}
+      </Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent ref={dialogContentRef} onKeyDown={handleDialogKeyDown}>
+          <DialogHeader>
+            <DialogTitle>{t('cross_border.shipments.allocations.reference.title')}</DialogTitle>
+            <DialogDescription>{t('cross_border.shipments.allocations.reference.description')}</DialogDescription>
+          </DialogHeader>
+
+          {contracts.length > 0 ? (
+            <div className="space-y-1.5">
+              <FieldLabel htmlFor="allocation-reference-contract">
+                {t('cross_border.shipments.allocations.reference.contract')}
+              </FieldLabel>
+              <Select value={contractId} onValueChange={handleSelectContract}>
+                <SelectTrigger id="allocation-reference-contract">
+                  <SelectValue placeholder={t('cross_border.shipments.allocations.reference.selectContract')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {contracts.map((contract) => (
+                    <SelectItem key={contract.contractId} value={contract.contractId}>
+                      {contract.contractLabel || contract.contractId.slice(0, 8)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <FieldLabel htmlFor="allocation-reference-contract-search">
+                {t('cross_border.shipments.allocations.reference.contract')}
+              </FieldLabel>
+              <ComboboxInput
+                value={contractId}
+                onChange={handleSelectContract}
+                placeholder={t('cross_border.shipments.allocations.reference.selectContract')}
+                loadSuggestions={async (query) => loadContractOptions(query)}
+                allowCustomValues={false}
+                clearable
+              />
+              <p className="text-xs text-muted-foreground">
+                {t('cross_border.shipments.allocations.reference.noContracts')}
+              </p>
+            </div>
+          )}
+
+          {error ? <p className="text-xs text-status-error-text" role="alert">{error}</p> : null}
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">{t('cross_border.shipments.allocations.reference.loading')}</p>
+          ) : null}
+          {!isLoading && contractId && lines.length === 0 && !error ? (
+            <p className="text-sm text-muted-foreground">{t('cross_border.shipments.allocations.reference.empty')}</p>
+          ) : null}
+          {!isLoading && lines.length > 0 && matchedLines.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{t('cross_border.shipments.allocations.reference.noneMatched')}</p>
+          ) : null}
+
+          {lines.length > 0 ? (
+            <>
+              <ul className="max-h-72 divide-y divide-border overflow-y-auto rounded-lg border border-border">
+                {lines.map((line) => {
+                  const candidate = line.productId ? candidates.get(line.productId) : undefined
+                  const added = addedLineIds.has(line.id)
+                  return (
+                    <li key={line.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-sm">{line.name || line.sku || line.id.slice(0, 8)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {[line.sku, line.unit, line.quantity].filter(Boolean).join(' · ')}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {candidate
+                            ? t('cross_border.shipments.allocations.reference.matched', {
+                                order: candidate.orderLabel,
+                                line: String(candidate.lineNumber),
+                              })
+                            : t('cross_border.shipments.allocations.reference.unmatched')}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!candidate || added}
+                        onClick={() => { if (candidate) void handleAdd(line, candidate) }}
+                      >
+                        {added
+                          ? t('cross_border.shipments.allocations.reference.added')
+                          : t('cross_border.shipments.allocations.reference.add')}
+                      </Button>
+                    </li>
+                  )
+                })}
+              </ul>
+              {matchedLines.length > 0 ? (
+                <div className="flex justify-end">
+                  <Button type="button" onClick={() => void handleAddAll()}>
+                    {t('cross_border.shipments.allocations.reference.addAll')}
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+/**
  * The allocation editor: pick a purchase order, its lines load as candidates, allocate a
  * quantity per line, and the chosen rows stay editable until the shipment is saved. A line can
  * only appear once — re-adding it is prevented here, and the command rejects it besides.
@@ -814,8 +1192,13 @@ function ShipmentAllocationEditor({
     setDraftQuantities({})
   }, [])
 
-  const addAllocation = React.useCallback((line: PurchaseOrderLineOption) => {
-    const label = orderOptions.find((option) => option.value === orderId)?.label ?? orderId
+  const addAllocation = React.useCallback(async (line: PurchaseOrderLineOption) => {
+    const label = await resolveOrderOptionLabel(
+      t('cross_border.shipments.form.loadFailed'),
+      'purchase',
+      orderId,
+      orderOptions.find((option) => option.value === orderId)?.label,
+    )
     setValue('allocations', [...allocations, {
       key: newRowKey(),
       purchaseOrderId: orderId,
@@ -832,7 +1215,7 @@ function ShipmentAllocationEditor({
       delete next[line.id]
       return next
     })
-  }, [allocations, draftQuantities, orderId, orderOptions, setValue])
+  }, [allocations, draftQuantities, orderId, orderOptions, setValue, t])
 
   const updateAllocation = React.useCallback((index: number, quantity: string) => {
     setValue(
@@ -847,9 +1230,62 @@ function ShipmentAllocationEditor({
     setValue('allocations', allocations.filter((_, position) => position !== index))
   }, [allocations, setValue])
 
+  // Candidates for the contract reference: the lines of the orders this shipment already
+  // allocates from, keyed by the owned product id. First line wins when a product repeats.
+  const loadReferenceCandidates = React.useCallback(async () => {
+    const byProduct = new Map<string, AllocationReferenceCandidate>()
+    const orderIds = Array.from(new Set(allocations.map((row) => row.purchaseOrderId).filter(Boolean)))
+    for (const scopedOrderId of orderIds) {
+      const label = await resolveOrderOptionLabel(
+        t('cross_border.shipments.form.loadFailed'),
+        'purchase',
+        scopedOrderId,
+        allocations.find((row) => row.purchaseOrderId === scopedOrderId)?.purchaseOrderLabel,
+      )
+      const orderLines = await loadPurchaseOrderLines(t('cross_border.shipments.form.loadFailed'), scopedOrderId)
+      for (const line of orderLines) {
+        if (!line.productId || byProduct.has(line.productId)) continue
+        byProduct.set(line.productId, {
+          orderId: scopedOrderId,
+          orderLabel: label,
+          lineId: line.id,
+          lineNumber: line.lineNumber,
+          productId: line.productId,
+          productTitle: line.productTitle ?? '',
+          productSku: line.productSku ?? '',
+          orderedQuantity: line.quantity,
+        })
+      }
+    }
+    return byProduct
+  }, [allocations, t])
+
+  const addReferenceAllocation = React.useCallback((candidate: AllocationReferenceCandidate, quantity: string) => {
+    if (allocations.some((row) => row.purchaseOrderLineId === candidate.lineId)) return
+    setValue('allocations', [...allocations, {
+      key: newRowKey(),
+      purchaseOrderId: candidate.orderId,
+      purchaseOrderLabel: candidate.orderLabel,
+      purchaseOrderLineId: candidate.lineId,
+      productTitle: candidate.productTitle,
+      productSku: candidate.productSku,
+      supplierSku: '',
+      orderedQuantity: candidate.orderedQuantity,
+      allocatedQuantity: quantity,
+    } satisfies ShipmentAllocationValues])
+  }, [allocations, setValue])
+
   return (
     <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
-      <h3 className="text-sm font-medium">{t('cross_border.shipments.allocations.title')}</h3>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-sm font-medium">{t('cross_border.shipments.allocations.title')}</h3>
+        <ContractAllocationReferenceDialog
+          t={t}
+          contracts={readContracts(values.contracts)}
+          loadCandidates={loadReferenceCandidates}
+          onAdd={addReferenceAllocation}
+        />
+      </div>
 
       {error ? <p className="text-xs text-status-error-text" role="alert">{error}</p> : null}
 
@@ -1037,7 +1473,12 @@ function ShipmentSalesAllocationEditor({
       flash(t('cross_border.shipments.salesAllocations.notBridged'), 'error')
       return
     }
-    const label = orderOptions.find((candidate) => candidate.value === orderId)?.label ?? orderId
+    const label = await resolveOrderOptionLabel(
+      t('cross_border.shipments.salesAllocations.loadLinesFailed'),
+      'sales',
+      orderId,
+      orderOptions.find((candidate) => candidate.value === orderId)?.label,
+    )
     setValue('salesAllocations', [...allocations, {
       key: newRowKey(),
       salesOrderId: orderId,
@@ -1071,9 +1512,73 @@ function ShipmentSalesAllocationEditor({
     setValue('salesAllocations', allocations.filter((_, position) => position !== index))
   }, [allocations, setValue])
 
+  // Candidates for the contract reference: the lines of the internal sales orders this shipment
+  // already allocates from, keyed by the owned product id (first line wins on a repeat).
+  const loadReferenceCandidates = React.useCallback(async () => {
+    const byProduct = new Map<string, AllocationReferenceCandidate>()
+    const orderIds = Array.from(new Set(allocations.map((row) => row.salesOrderId).filter(Boolean)))
+    for (const scopedOrderId of orderIds) {
+      const label = await resolveOrderOptionLabel(
+        t('cross_border.shipments.salesAllocations.loadLinesFailed'),
+        'sales',
+        scopedOrderId,
+        allocations.find((row) => row.salesOrderId === scopedOrderId)?.salesOrderLabel,
+      )
+      const orderLines = await loadSalesOrderLineOptions(t('cross_border.shipments.salesAllocations.loadLinesFailed'), scopedOrderId)
+      for (const line of orderLines) {
+        if (!line.productId || byProduct.has(line.productId)) continue
+        byProduct.set(line.productId, {
+          orderId: scopedOrderId,
+          orderLabel: label,
+          lineId: line.id,
+          lineNumber: line.lineNumber,
+          productId: line.productId,
+          productTitle: line.productTitle,
+          productSku: line.productSku,
+          orderedQuantity: line.quantity,
+        })
+      }
+    }
+    return byProduct
+  }, [allocations, t])
+
+  const addReferenceAllocation = React.useCallback(async (candidate: AllocationReferenceCandidate, quantity: string) => {
+    if (allocations.some((row) => row.salesOrderLineId === candidate.lineId)) return
+    const option = await resolveProduct(candidate.productId)
+    const catalogProductId = option?.catalogProductId ?? ''
+    if (!catalogProductId) {
+      // Same rule as the manual add path: a line without a catalog bridge cannot be stored.
+      flash(t('cross_border.shipments.salesAllocations.notBridged'), 'error')
+      return
+    }
+    setValue('salesAllocations', [...allocations, {
+      key: newRowKey(),
+      salesOrderId: candidate.orderId,
+      salesOrderLabel: candidate.orderLabel,
+      salesOrderLineId: candidate.lineId,
+      lineNumber: candidate.lineNumber,
+      productId: candidate.productId,
+      catalogProductId,
+      productTitle: candidate.productTitle,
+      productSku: candidate.productSku,
+      orderedQuantity: candidate.orderedQuantity,
+      quantity: quantity || candidate.orderedQuantity,
+      unitPrice: '',
+      currencyCode: '',
+    } satisfies ShipmentSalesAllocationValues])
+  }, [allocations, resolveProduct, setValue, t])
+
   return (
     <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
-      <h3 className="text-sm font-medium">{t('cross_border.shipments.salesAllocations.title')}</h3>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-sm font-medium">{t('cross_border.shipments.salesAllocations.title')}</h3>
+        <ContractAllocationReferenceDialog
+          t={t}
+          contracts={readContracts(values.contracts)}
+          loadCandidates={loadReferenceCandidates}
+          onAdd={addReferenceAllocation}
+        />
+      </div>
 
       {error ? <p className="text-xs text-status-error-text" role="alert">{error}</p> : null}
 
@@ -1302,6 +1807,12 @@ export default function ShipmentForm() {
       column: 1,
       bare: true,
       component: (context) => <ShipmentDestinationFields {...context} t={t} />,
+    },
+    {
+      id: 'contracts',
+      column: 1,
+      bare: true,
+      component: (context) => <ShipmentContractEditor {...context} t={t} />,
     },
     {
       id: 'allocations',

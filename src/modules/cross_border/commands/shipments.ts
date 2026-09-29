@@ -10,6 +10,7 @@ import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import {
   CrossBorderShipment,
   CrossBorderShipmentAllocation,
+  CrossBorderShipmentContract,
   CrossBorderShipmentMilestone,
   CrossBorderShipmentSalesAllocation,
 } from '../data/entities'
@@ -25,6 +26,7 @@ import {
   type ShipmentMilestone,
 } from '../data/validators'
 import { invalidatePeerCaches, invalidateShipmentCaches, PEER_CACHE_RESOURCES } from '../lib/cacheInvalidation'
+import { loadContractRefs } from '../lib/contractReads'
 import { ensureScope, type Scope } from '../lib/scope'
 import {
   allocationExceedsOrderedQuantity,
@@ -252,6 +254,61 @@ async function replaceSalesAllocations(
   await em.flush()
 }
 
+/**
+ * A validated contract link: the id plus the display snapshot frozen onto the row. The contract is
+ * resolved through a scoped peer read, so a contract from another organization — or a soft-deleted
+ * one — is a 422 and never reaches the table.
+ */
+type ResolvedShipmentContract = {
+  contractId: string
+  contractNumber: string | null
+  contractDirection: string | null
+}
+
+async function resolveShipmentContracts(
+  em: EntityManager,
+  scope: Scope,
+  contracts: ShipmentCreateInput['contracts'],
+): Promise<ResolvedShipmentContract[]> {
+  const ids = contracts.map((contract) => contract.contractId)
+  if (new Set(ids).size !== ids.length) {
+    throw new CrudHttpError(422, { error: 'The same contract is listed twice on this shipment' })
+  }
+  const refs = await loadContractRefs(em, scope, ids)
+  return contracts.map(({ contractId }) => {
+    const ref = refs[contractId]
+    if (!ref) {
+      throw new CrudHttpError(422, { error: `Contract not found in this organization: ${contractId}` })
+    }
+    if (ref.status === 'cancelled') {
+      throw new CrudHttpError(422, { error: `Contract ${ref.number ?? contractId} is cancelled and cannot be linked to a shipment` })
+    }
+    return { contractId, contractNumber: ref.number, contractDirection: ref.direction }
+  })
+}
+
+async function replaceShipmentContracts(
+  em: EntityManager,
+  scope: Scope,
+  shipment: CrossBorderShipment,
+  resolved: ResolvedShipmentContract[],
+): Promise<void> {
+  await em.nativeDelete(CrossBorderShipmentContract, { shipment: shipment.id } as FilterQuery<CrossBorderShipmentContract>)
+  for (const entry of resolved) {
+    em.persist(
+      em.create(CrossBorderShipmentContract, {
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        shipment,
+        contractId: entry.contractId,
+        contractNumber: entry.contractNumber,
+        contractDirection: entry.contractDirection,
+      }),
+    )
+  }
+  await em.flush()
+}
+
 /** `SHP-<year>-<4 digits>`, assigned at depart; the unique constraint is the real guarantee. */
 async function nextShipmentNumber(em: EntityManager, scope: Scope): Promise<string> {
   const year = new Date().getFullYear()
@@ -307,6 +364,7 @@ const createShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
 
     const resolved = await resolveAllocations(em, scope, parsed.allocations)
     const resolvedSales = await resolveSalesAllocations(em, scope, parsed.salesAllocations)
+    const resolvedContracts = await resolveShipmentContracts(em, scope, parsed.contracts)
 
     const shipment = await de.createOrmEntity({
       entity: CrossBorderShipment,
@@ -330,6 +388,7 @@ const createShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
     })
     await replaceAllocations(em, scope, shipment, resolved)
     await replaceSalesAllocations(em, scope, shipment, resolvedSales)
+    await replaceShipmentContracts(em, scope, shipment, resolvedContracts)
 
     await emitCrudSideEffects({
       dataEngine: de,
@@ -407,6 +466,7 @@ const updateShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
 
     const resolved = parsed.allocations ? await resolveAllocations(em, scope, parsed.allocations, String(shipment.id)) : null
     const resolvedSales = parsed.salesAllocations ? await resolveSalesAllocations(em, scope, parsed.salesAllocations) : null
+    const resolvedContracts = parsed.contracts ? await resolveShipmentContracts(em, scope, parsed.contracts) : null
 
     const updated = await de.updateOrmEntity({
       entity: CrossBorderShipment,
@@ -429,6 +489,7 @@ const updateShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
     if (!updated) throw notFound('Shipment not found')
     if (resolved) await replaceAllocations(em, scope, updated, resolved)
     if (resolvedSales) await replaceSalesAllocations(em, scope, updated, resolvedSales)
+    if (resolvedContracts) await replaceShipmentContracts(em, scope, updated, resolvedContracts)
 
     await emitCrudSideEffects({
       dataEngine: de,

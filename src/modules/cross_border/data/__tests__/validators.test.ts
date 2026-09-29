@@ -1,10 +1,11 @@
 import { describe, expect, it } from '@jest/globals'
-import { ALLOCATION_QUANTITY_SCALE, shipmentCreateSchema } from '../validators'
+import { ALLOCATION_QUANTITY_SCALE, documentCreateSchema, documentUpdateSchema, shipmentCreateSchema } from '../validators'
 
 const PURCHASE_LINE_ID = '11111111-1111-4111-8111-111111111111'
 const SALES_ORDER_ID = '22222222-2222-4222-8222-222222222222'
 const SALES_LINE_ID = '33333333-3333-4333-8333-333333333333'
 const CATALOG_PRODUCT_ID = '44444444-4444-4444-8444-444444444444'
+const SECOND_CONTRACT_ID = '77777777-7777-4777-8777-777777777777'
 
 const allocation = (quantity: unknown) => ({
   purchaseOrderLineId: PURCHASE_LINE_ID,
@@ -77,5 +78,93 @@ describe('cross_border sales allocation decimal validator', () => {
     expect(create([allocation('1')], [salesAllocation('1', '341.238200')]).success).toBe(false)
     expect(create([allocation('1')], [salesAllocation('1', '65.59165')]).success).toBe(false)
     expect(create([allocation('1')], [salesAllocation('1', '65.5916')]).success).toBe(true)
+  })
+})
+
+describe('cross_border shipment contract links', () => {
+  const CONTRACT_ID = '55555555-5555-4555-8555-555555555555'
+
+  it('defaults to no links and accepts a list of contract ids', () => {
+    const withoutLinks = create([allocation('1')])
+    expect(withoutLinks.success).toBe(true)
+    if (!withoutLinks.success) return
+    expect(withoutLinks.data.contracts).toEqual([])
+
+    const withLinks = shipmentCreateSchema.safeParse({
+      allocations: [allocation('1')],
+      contracts: [{ contractId: CONTRACT_ID }, { contractId: SECOND_CONTRACT_ID }],
+    })
+    expect(withLinks.success).toBe(true)
+    if (!withLinks.success) return
+    expect(withLinks.data.contracts.map((row) => row.contractId)).toEqual([CONTRACT_ID, SECOND_CONTRACT_ID])
+  })
+
+  it('refuses a link that is not an id', () => {
+    const parsed = shipmentCreateSchema.safeParse({
+      allocations: [allocation('1')],
+      contracts: [{ contractId: 'PC-2026-0001' }],
+    })
+    expect(parsed.success).toBe(false)
+  })
+})
+
+describe('cross_border packing-list line validator', () => {
+  const DOCUMENT_BASE = {
+    shipmentId: '66666666-6666-4666-8666-666666666666',
+    docType: 'packing_list' as const,
+  }
+
+  it('defaults to no lines and normalizes each measurement onto its column scale', () => {
+    const withoutLines = documentCreateSchema.safeParse(DOCUMENT_BASE)
+    expect(withoutLines.success).toBe(true)
+    if (!withoutLines.success) return
+    expect(withoutLines.data.lines).toEqual([])
+
+    const parsed = documentCreateSchema.safeParse({
+      ...DOCUMENT_BASE,
+      lines: [
+        {
+          name: 'Fresh Element',
+          sku: 'P570',
+          quantity: '12',
+          cartons: 3,
+          grossWeight: '1.5',
+          netWeight: '1.2500',
+          volume: 88642,
+        },
+      ],
+    })
+    expect(parsed.success).toBe(true)
+    if (!parsed.success) return
+    expect(parsed.data.lines[0]).toMatchObject({
+      quantity: '12.0000',
+      cartons: '3',
+      grossWeight: '1.5000',
+      netWeight: '1.2500',
+      volume: '88642',
+    })
+  })
+
+  it('refuses a fractional carton or volume and an over-precise quantity', () => {
+    for (const line of [
+      { cartons: '3.5' },
+      { volume: '100.5' },
+      { quantity: '1.23456' },
+      { grossWeight: '1.23456' },
+    ]) {
+      expect(documentCreateSchema.safeParse({ ...DOCUMENT_BASE, lines: [{ name: 'x', ...line }] }).success).toBe(false)
+    }
+  })
+
+  it('keeps the line set untouched when an update omits it and replaces the whole set when present', () => {
+    const omitted = documentUpdateSchema.safeParse({ id: DOCUMENT_BASE.shipmentId })
+    expect(omitted.success).toBe(true)
+    if (!omitted.success) return
+    expect(omitted.data.lines).toBeUndefined()
+
+    const cleared = documentUpdateSchema.safeParse({ id: DOCUMENT_BASE.shipmentId, lines: [] })
+    expect(cleared.success).toBe(true)
+    if (!cleared.success) return
+    expect(cleared.data.lines).toEqual([])
   })
 })

@@ -22,6 +22,17 @@ export const SHIPMENT_CACHE_RESOURCES = {
   salesAllocation: 'cross_border.shipment.sales.allocation',
   milestone: 'cross_border.shipment.milestone',
   exportDocument: 'cross_border.document',
+  contract: 'cross_border.shipment.contract',
+} as const
+
+/**
+ * Collections a **document** write moves. The document list itself is the route's own resource;
+ * its packing-list lines are read by a separate read-only route (`…/documents/lines`), which the
+ * command must flush explicitly — same rule as the shipment's child collections above.
+ */
+export const DOCUMENT_CACHE_RESOURCES = {
+  exportDocument: 'cross_border.document',
+  exportDocumentLine: 'cross_border.export.document.line',
 } as const
 
 /**
@@ -56,6 +67,28 @@ export async function invalidateShipmentCaches(
 ): Promise<void> {
   const resources = Object.values(SHIPMENT_CACHE_RESOURCES)
   const [resource, ...aliases] = resources
+  await runWithCacheTenant(scope.tenantId ?? identifiers.tenantId, async () => {
+    await invalidateCrudCache(
+      scope.container,
+      resource,
+      { id: identifiers.id, tenantId: identifiers.tenantId, organizationId: identifiers.organizationId },
+      scope.tenantId ?? identifiers.tenantId,
+      reason,
+      aliases,
+    )
+  })
+}
+
+/**
+ * Flushes the document collections a document write moved: the document list itself and its
+ * packing-list lines (served by a separate read-only route).
+ */
+export async function invalidateDocumentCaches(
+  scope: CacheScope,
+  identifiers: CacheIdentifiers,
+  reason: string,
+): Promise<void> {
+  const [resource, ...aliases] = Object.values(DOCUMENT_CACHE_RESOURCES)
   await runWithCacheTenant(scope.tenantId ?? identifiers.tenantId, async () => {
     await invalidateCrudCache(
       scope.container,

@@ -3,11 +3,12 @@ import type { CommandHandler } from '@open-mercato/shared/lib/commands'
 import { registerCommand } from '@open-mercato/shared/lib/commands'
 import { emitCrudSideEffects, emitCrudUndoSideEffects, requireId } from '@open-mercato/shared/lib/commands/helpers'
 import { extractUndoPayload } from '@open-mercato/shared/lib/commands/undo'
-import { notFound } from '@open-mercato/shared/lib/crud/errors'
+import { CrudHttpError, notFound } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
-import { CrossBorderExportDocument, CrossBorderShipment } from '../data/entities'
-import { documentCreateSchema, documentUpdateSchema } from '../data/validators'
+import { CrossBorderExportDocument, CrossBorderExportDocumentLine, CrossBorderShipment } from '../data/entities'
+import { documentCreateSchema, documentUpdateSchema, type ExportDocumentLineInput } from '../data/validators'
+import { invalidateDocumentCaches } from '../lib/cacheInvalidation'
 import { ensureScope, type Scope } from '../lib/scope'
 import { eventsConfig } from '../events'
 
@@ -59,6 +60,63 @@ async function loadScopedShipment(
   return shipment
 }
 
+/**
+ * Detailed lines belong to the packing list and to nothing else: every other export paper is a
+ * number, a date and a file. A payload that carries lines for another kind is refused outright
+ * instead of being silently dropped.
+ */
+function assertLinesAllowed(docType: string, lines: unknown[] | undefined): void {
+  if (lines && lines.length > 0 && docType !== 'packing_list') {
+    throw new CrudHttpError(422, { error: 'Detailed lines are only supported on packing lists' })
+  }
+}
+
+/**
+ * Replaces the document's lines wholesale, numbering them 1..n. Called on create and on every
+ * update that carries a `lines` key (`[]` clears the set), mirroring the shipment's allocations.
+ */
+async function replaceDocumentLines(
+  em: EntityManager,
+  scope: Scope,
+  document: CrossBorderExportDocument,
+  lines: ExportDocumentLineInput[],
+): Promise<void> {
+  await em.nativeDelete(CrossBorderExportDocumentLine, { document: document.id } as FilterQuery<CrossBorderExportDocumentLine>)
+  let lineNumber = 1
+  for (const line of lines) {
+    em.persist(
+      em.create(CrossBorderExportDocumentLine, {
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        document,
+        lineNumber: lineNumber++,
+        productId: line.productId ?? null,
+        productSnapshot: line.productSnapshot ?? null,
+        name: line.name ?? null,
+        sku: line.sku ?? null,
+        unit: line.unit ?? null,
+        quantity: line.quantity ?? null,
+        cartons: line.cartons ?? null,
+        grossWeight: line.grossWeight ?? null,
+        netWeight: line.netWeight ?? null,
+        volume: line.volume ?? null,
+        sourceSnapshot: line.sourceSnapshot ?? null,
+        note: line.note ?? null,
+      }),
+    )
+  }
+  await em.flush()
+}
+
+/** Marks a deleted document's lines as deleted too, so the read-only lines route stops serving them. */
+async function softDeleteDocumentLines(em: EntityManager, documentId: string): Promise<void> {
+  await em.nativeUpdate(
+    CrossBorderExportDocumentLine,
+    { document: documentId } as FilterQuery<CrossBorderExportDocumentLine>,
+    { deletedAt: new Date() },
+  )
+}
+
 const createDocumentCommand: CommandHandler<Record<string, unknown>, CrossBorderExportDocument> = {
   id: 'cross_border.documents.create',
   isUndoable: true,
@@ -69,6 +127,7 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, CrossBorder
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
     const shipment = await loadScopedShipment(em, scope, parsed.shipmentId)
+    assertLinesAllowed(parsed.docType, parsed.lines)
 
     const document = await de.createOrmEntity({
       entity: CrossBorderExportDocument,
@@ -84,6 +143,7 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, CrossBorder
         note: parsed.note ?? null,
       },
     })
+    if (parsed.lines.length > 0) await replaceDocumentLines(em, scope, document, parsed.lines)
 
     await emitCrudSideEffects({
       dataEngine: de,
@@ -94,6 +154,11 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, CrossBorder
       events: documentCrudEvents,
       indexer: documentCrudIndexer,
     })
+    await invalidateDocumentCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(document.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'created',
+    )
 
     return document
   },
@@ -141,6 +206,7 @@ const updateDocumentCommand: CommandHandler<Record<string, unknown>, CrossBorder
 
     const existing = await em.fork().findOne(CrossBorderExportDocument, documentFilter(scope, parsed.id))
     if (!existing) throw notFound('Export document not found')
+    assertLinesAllowed(parsed.docType ?? existing.docType, parsed.lines)
 
     const updated = await de.updateOrmEntity({
       entity: CrossBorderExportDocument,
@@ -155,6 +221,7 @@ const updateDocumentCommand: CommandHandler<Record<string, unknown>, CrossBorder
       },
     })
     if (!updated) throw notFound('Export document not found')
+    if (parsed.lines !== undefined) await replaceDocumentLines(em, scope, updated, parsed.lines)
 
     await emitCrudSideEffects({
       dataEngine: de,
@@ -165,6 +232,11 @@ const updateDocumentCommand: CommandHandler<Record<string, unknown>, CrossBorder
       events: documentCrudEvents,
       indexer: documentCrudIndexer,
     })
+    await invalidateDocumentCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(updated.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'updated',
+    )
 
     return updated
   },
@@ -188,6 +260,7 @@ const deleteDocumentCommand: CommandHandler<
   async execute(input, ctx) {
     const id = requireId(input, 'Export document id required')
     const scope = ensureScope(ctx)
+    const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
     const removed = await de.deleteOrmEntity({
@@ -197,6 +270,7 @@ const deleteDocumentCommand: CommandHandler<
       softDeleteField: 'deletedAt',
     })
     if (!removed) throw notFound('Export document not found')
+    await softDeleteDocumentLines(em, id)
 
     await emitCrudSideEffects({
       dataEngine: de,
@@ -207,6 +281,11 @@ const deleteDocumentCommand: CommandHandler<
       events: documentCrudEvents,
       indexer: documentCrudIndexer,
     })
+    await invalidateDocumentCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: String(removed.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'deleted',
+    )
 
     return removed
   },
