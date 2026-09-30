@@ -273,3 +273,27 @@ describe('line and draft helpers', () => {
     expect(first!.quantity).toBe('3')
   })
 })
+
+describe('trade type of a loaded document', () => {
+  const CHANNELS = { internal: 'channel-internal', external: 'channel-external' }
+
+  it('keeps the stored type and gives an unclassified document the entry that opened it', () => {
+    // The marker wins over everything, including the entry the operator is standing in.
+    expect(toInternalSalesFormValues(
+      { id: QUOTE_ID, channelId: 'channel-internal', customerSnapshot: { internalSales: { partyId: PARTY_ID } } },
+      [],
+      CHANNELS,
+      'external',
+    ).tradeType).toBe('internal')
+    // Without a marker the frozen link decides (the same rule the backfill uses) …
+    expect(toInternalSalesFormValues(
+      { id: QUOTE_ID, customerSnapshot: { internalSales: { partyId: PARTY_ID } } },
+      [],
+      CHANNELS,
+      'external',
+    ).tradeType).toBe('external')
+    // … and with neither, the entry does — this is what its save stamps on the document.
+    expect(toInternalSalesFormValues({ id: QUOTE_ID }, [], CHANNELS, 'external').tradeType).toBe('external')
+    expect(toInternalSalesFormValues({ id: QUOTE_ID }, [], CHANNELS, 'internal').tradeType).toBe('internal')
+  })
+})
