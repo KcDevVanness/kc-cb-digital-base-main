@@ -319,5 +319,11 @@
   "export_finance.cabinets.csv.refundOverdue": "Tax refund overdue",
   "export_finance.orders.columns.collectionOverdue": "Collection overdue",
   "export_finance.orders.overdue": "Overdue",
-  "export_finance.orders.csv.collectionOverdue": "Collection overdue"
+  "export_finance.orders.csv.collectionOverdue": "Collection overdue",
+  "export_finance.orders.collection.needsAmount": "A received collection needs its collected amount.",
+  "export_finance.orders.collection.needsDate": "A received collection needs its receipt date.",
+  "export_finance.orders.collection.needsAmountAndDate": "A received collection needs both the collected amount and the receipt date.",
+  "export_finance.orders.collection.mustBeEmpty": "A not-received or unknown collection cannot carry an amount or a receipt date — clear both first.",
+  "export_finance.cabinets.detail.refund.needsAmount": "A completed refund needs its refunded amount.",
+  "export_finance.cabinets.detail.refund.mustBeEmpty": "A not-started or unknown refund cannot carry an amount — clear it first."
 }

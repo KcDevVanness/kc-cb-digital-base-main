@@ -319,5 +319,11 @@
   "export_finance.cabinets.csv.refundOverdue": "退税逾期",
   "export_finance.orders.columns.collectionOverdue": "收款逾期",
   "export_finance.orders.overdue": "逾期",
-  "export_finance.orders.csv.collectionOverdue": "收款逾期"
+  "export_finance.orders.csv.collectionOverdue": "收款逾期",
+  "export_finance.orders.collection.needsAmount": "「已收款」需要填写收款金额。",
+  "export_finance.orders.collection.needsDate": "「已收款」需要填写收款日期。",
+  "export_finance.orders.collection.needsAmountAndDate": "「已收款」需要同时填写收款金额与收款日期。",
+  "export_finance.orders.collection.mustBeEmpty": "「未收款 / 未知」不能带金额或收款日期，请先清空这两项。",
+  "export_finance.cabinets.detail.refund.needsAmount": "「已到账」需要填写退税金额。",
+  "export_finance.cabinets.detail.refund.mustBeEmpty": "「未开始 / 未知」不能带退税金额，请先清空。"
 }
