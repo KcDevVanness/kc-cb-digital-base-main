@@ -512,7 +512,6 @@
   "trade_docs.contracts.form.lines.copy.tradeTypeName.external": "External sale",
   "trade_docs.contracts.form.lines.copy.tradeTypeAligned": "Sources are filtered by this contract's trade type: {{type}}.",
   "trade_docs.contracts.form.lines.copy.tradeTypeUnresolved": "The counterparty has no master link, so its trade type is unresolved; pick the source type (internal or external) that matches the deal.",
-  "trade_docs.contracts.form.lines.copy.preview.action": "Preview",
   "trade_docs.contracts.form.lines.copy.preview.title": "Source document preview",
   "trade_docs.counterparty.picker.organizationRequired": "Select an organization in the top bar before choosing a counterparty.",
   "trade_docs.documents.form.field.contractId": "Contract",
