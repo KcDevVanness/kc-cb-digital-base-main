@@ -177,7 +177,7 @@ export type SalesOrderLineOption = {
 }
 
 /**
- * The lines of one internal sales order — the candidates a sales allocation can be built from.
+ * The lines of one sales order — the candidates a sales allocation can be built from.
  * The product master id is kept so the editor can resolve the product's catalog link; the unit
  * price and currency are the line's own values, offered as the row's editable default.
  */

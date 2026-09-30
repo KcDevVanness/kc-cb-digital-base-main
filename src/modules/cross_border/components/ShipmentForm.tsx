@@ -1490,7 +1490,8 @@ function ShipmentAllocationEditor({
 }
 
 /**
- * The **sales** allocation editor: pick an internal sales order, its lines load as candidates,
+ * The **sales** allocation editor: pick a sales order (either trade type, since 2026-09-30), its
+ * lines load as candidates,
  * allocate a quantity per line, and the row carries the line's frozen price/currency. The product
  * is derived from the picked line — its app-owned product is resolved to the installed catalog
  * product through the same product picker the rest of the app uses — so a line that is not bridged
@@ -1624,8 +1625,8 @@ function ShipmentSalesAllocationEditor({
     setValue('salesAllocations', allocations.filter((_, position) => position !== index))
   }, [allocations, setValue])
 
-  // Candidates for the contract reference: the lines of the internal sales orders this shipment
-  // already allocates from, keyed by the owned product id (first line wins on a repeat).
+  // Candidates for the contract reference: the lines of the sales orders this shipment already
+  // allocates from, keyed by the owned product id (first line wins on a repeat).
   const loadReferenceCandidates = React.useCallback(async () => {
     const byProduct = new Map<string, AllocationReferenceCandidate>()
     const orderIds = Array.from(new Set(allocations.map((row) => row.salesOrderId).filter(Boolean)))
