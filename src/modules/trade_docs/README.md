@@ -91,8 +91,9 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 
 ## 合同行复用（REQ-005）
 
-- 合同明细区「从订单/报价单复制行」（`components/ContractLineSourceDialog.tsx`）：采购方向只列采购订单；销售方向列销售订单/报价单，并按合同对方的**贸易类型**过滤 —— 对方是 `parties` 的 `branch` ⇒ 只列内部销售单据，`buyer` ⇒ 只列对外销售单据（`channelId` 过滤，通道缺失时不展开列表、只给提示）；对方没有主数据链接（手填/供应商）⇒ 两类都列，但每个选项都标出 `内部销售`/`对外销售`。
-- **一次性追加**：复制的行追加到已录入行之后（不清空、不替换），逐行写 `source_snapshot = { kind: 'order_line', id, orderKind, copiedAt }`（`orderKind` = `purchase_order` / `sales_order` / `sales_quote`）；`trade_docs_contract_lines.source_snapshot` 列为本次追加（`Migration20260929073531_trade_docs.ts`）。
+- 合同明细区「从订单/报价单复制行」（`components/ContractLineSourceDialog.tsx`）：采购方向只列采购订单；销售方向按**贸易类型**给出显式命名的来源类型 —— `对内销售订单` / `对内销售报价单` / `对外销售订单` / `对外销售报价单`（词表与合同详情「订单关联」同一套）。合同对方已关联主数据时（`parties` 的 `branch` ⇒ 对内、`buyer` ⇒ 对外）只提供该类型的两个来源类型，并在选择器下说明判据；对方未关联主数据（手填/供应商）时四个类型都由操作员显式选择。来源列表按所选类型的 `channelId` 过滤（通道缺失时不展开列表、只给提示）。
+- **来源预览（2026-09-30）**：选中来源后点「预览」，`SourcePreviewDrawer`（`src/lib/source-preview/SourcePreviewDrawer.tsx`，app 级共享抽屉）读出该单据的抬头（单号/对方/贸易类型/币种/金额/日期）与明细行，只读、不触碰正在编辑的单据；预览读过的行会被随后的复制复用，不重复请求。PI/CI 的「从订单复制行」「从合同引用商品行」两个对话框用同一个抽屉（`components/DocumentsForm.tsx`：`handlePreviewOrder` / `handlePreviewContract` 读抬头 `loadOrderSourceHeadFacts` / `loadContractSourceHeadFacts`，行映射在 `components/sourcePreview.tsx`）。**约定**：凡「从别处快速复制行」的功能都必须带来源预览并复用这个抽屉，不要另造只显示单号的确认框。
+- **一次性追加**：复制的行追加到已录入行之后（不清空、不替换），逐行写 `source_snapshot = { kind: 'order_line', id, orderKind, copiedAt }`（`orderKind` = `purchase_order` / `internal_sales_order` / `internal_sales_quote` / `external_sales_order` / `external_sales_quote`）；`trade_docs_contract_lines.source_snapshot` 列为本次追加（`Migration20260929073531_trade_docs.ts`）。
 - **头部锚点**：首次复制写入 `source_kind`（`purchase_order` / 报价单也算 `sales_order`）+ `source_id` + `source_snapshot = { number, counterparty }`；明细区复制按钮旁只读回显来源，`×` 清除后可重新锚定；从未锚定的合同仍写 `null`（与本次改动前的落库形状一致）。
 - 来源选择规则是纯函数（`lib/contractLineSource.ts`，含单测 `lib/__tests__/contractLineSource.test.ts`），网络读取复用官方 `sales/{orders,quotes,order-lines,quote-lines}` 与 `purchasing/purchase-orders/lines` 只读列表。
 
