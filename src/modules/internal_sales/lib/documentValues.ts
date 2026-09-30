@@ -133,10 +133,17 @@ export function buildDocumentMetadata(sourceQuote: SourceQuoteRef): Record<strin
   return { internalSales: { sourceQuote: { id: sourceQuote.id, number: sourceQuote.number } } }
 }
 
+/**
+ * `fallbackTradeType` is the entry's own type: it is what an unclassified document (one written
+ * before the marker existed, whose snapshot has no link either) shows and gets stamped with. The
+ * caller passes the entry it is rendering, so the entry — not a hard-coded default — decides how
+ * such a document is classified when the operator saves it.
+ */
 export function toInternalSalesFormValues(
   item: Record<string, unknown>,
   lines: InternalSalesLineValues[] = [],
   channelIds: Partial<Record<SalesTradeType, string | null | undefined>> = {},
+  fallbackTradeType: SalesTradeType = 'internal',
 ): InternalSalesFormValues {
   const updatedAt = item.updatedAt ?? item.updated_at
   // The buyer link and its printed name both live in the snapshot (`lib/buyer.ts`); the installed
@@ -145,8 +152,8 @@ export function toInternalSalesFormValues(
   return {
     id: readText(item, 'id'),
     // The channel marker is the truth; a document written before the marker existed falls back to
-    // its frozen snapshot (the same rule the backfill uses).
-    tradeType: resolveRowTradeType(item, channelIds) ?? 'internal',
+    // its frozen snapshot (the same rule the backfill uses), and only then to the entry's type.
+    tradeType: resolveRowTradeType(item, channelIds) ?? fallbackTradeType,
     buyerRef: buyer.ref,
     customerName: buyer.name,
     currencyCode: readText(item, 'currencyCode', 'currency_code'),

@@ -80,7 +80,6 @@ export default function QuoteLoadPanel({
   autoLoadFrom,
   quoteEditHref,
   channelIds,
-  adoptQuoteType,
 }: {
   values: Record<string, unknown>
   setValue: (field: string, value: unknown) => void
@@ -88,10 +87,8 @@ export default function QuoteLoadPanel({
   /** `?fromQuote=<id>` — the quote-list row action's entry, loaded once on mount. */
   autoLoadFrom?: string | null
   quoteEditHref: (quoteId: string) => string
-  /** The organization's trade-type channels, so the picker offers the order's own type. */
+  /** The organization's trade-type channels, so the picker offers this entry's own type. */
   channelIds: TradeTypeChannelMap
-  /** Whether loading may move this form's trade type to the quote's — false on a locked entry. */
-  adoptQuoteType: boolean
 }) {
   const t = useT()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
@@ -178,7 +175,7 @@ export default function QuoteLoadPanel({
       setBusy(true)
       setInlineError(null)
       try {
-        const { number, lineCount } = await applyQuoteDraftToForm(id, setValue, { adoptQuoteType })
+        const { number, lineCount } = await applyQuoteDraftToForm(id, setValue)
         flash(
           t('internal_sales.form.quoteLoad.done', 'Loaded from quote {number}', {
             number: number || id.slice(0, 8),
@@ -206,7 +203,7 @@ export default function QuoteLoadPanel({
         setBusy(false)
       }
     },
-    [adoptQuoteType, confirm, currentValues, setValue, t],
+    [confirm, currentValues, setValue, t],
   )
 
   React.useEffect(() => {
