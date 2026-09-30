@@ -71,18 +71,18 @@ Owner 2026-09-30 反馈：`/backend/external-sales/quotes` 是**专门的对外*
 
 ### Phase 1: 入口 = 单一贸易类型（读/写口径）
 
-- [ ] 1.1 `tradeTypeFromPathname` 取代 `salesEntryFromPathname`
-- [ ] 1.2 列表按入口类型过滤、删「类型」列、通道缺失态
-- [ ] 1.3 表单锁定类型、删 `adoptQuoteType`、编辑页跳转与回退按入口类型
+- [x] 1.1 `tradeTypeFromPathname` 取代 `salesEntryFromPathname` — 6b671f6
+- [x] 1.2 列表按入口类型过滤、删「类型」列、通道缺失态 — 6b671f6
+- [x] 1.3 表单锁定类型、删 `adoptQuoteType`、编辑页跳转与回退按入口类型 — 6b671f6
 
 ### Phase 2: 菜单与字典
 
-- [ ] 2.1 组名与 6 个对内 `page.meta.ts` 同步
-- [ ] 2.2 zh/en 字典改「对内」口径、删三个废弃 key
+- [x] 2.1 组名与 6 个对内 `page.meta.ts` 同步 — 6480219
+- [x] 2.2 zh/en 字典改「对内」口径、删三个废弃 key — 6480219
 
 ### Phase 3: 测试
 
-- [ ] 3.1 单元测试更新 + 模块套件通过
+- [x] 3.1 单元测试更新 + 模块套件通过 — 6b671f6
 
 ### Phase 4: 文档
 
