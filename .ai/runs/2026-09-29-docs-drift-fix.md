@@ -85,5 +85,5 @@ PR: #57
 
 ### Phase 6: Verification and close-out
 
-- [x] 6.1 docs gate + re-verification pass — gate green (`yarn lint` 0 errors / 8 pre-existing warnings, `node scripts/check-lessons.mjs` OK); reviewer pass over the full diff: approve
+- [x] 6.1 docs gate + re-verification pass — gate green (`yarn lint` 0 errors / 8 pre-existing warnings, `node scripts/check-lessons.mjs` OK); reviewer pass over the full diff: approve; second delta pass after 8c52972: approve (A.4 checkbox state + the second escaped-pipe row fixed in that commit)
 - [x] 6.2 PR body refresh, summary comment, ready flip, labels
