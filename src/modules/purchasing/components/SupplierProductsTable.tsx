@@ -15,7 +15,7 @@ import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { apiCall, withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
-import { deleteCrud, fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
+import { deleteCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
 import { Alert } from '@open-mercato/ui/primitives/alert'
 import { Button } from '@open-mercato/ui/primitives/button'
@@ -629,6 +629,72 @@ export default function SupplierProductsTable() {
     }
   }, [confirm, queryClient, t])
 
+  /**
+   * 停用 / 启用 — the one field the status column owns.
+   *
+   * A retired item must stop being offered in the pickers without losing its history, so the row is
+   * neither deleted nor has its prices touched: only `status` flips, through the same update command
+   * the form uses (its optimistic lock is sent as the version header). The submitted payload carries
+   * just the three fields the update contract requires, and the command leaves every omitted field
+   * alone.
+   */
+  const handleToggleStatus = React.useCallback(async (row: SupplierProductListRow) => {
+    const nextStatus: SupplierProductStatus = row.status === 'active' ? 'inactive' : 'active'
+    const confirmed = await confirm({
+      title: nextStatus === 'inactive'
+        ? t('purchasing.supplierProducts.actions.disableConfirmTitle', 'Stop offering this item?')
+        : t('purchasing.supplierProducts.actions.enableConfirmTitle', 'Offer this item again?'),
+      description: nextStatus === 'inactive'
+        ? t(
+            'purchasing.supplierProducts.actions.disableConfirmBody',
+            'The row keeps its codes, prices and photos, but leaves the 活跃 view and the pickers that read it. Nothing is deleted.',
+          )
+        : t(
+            'purchasing.supplierProducts.actions.enableConfirmBody',
+            'The row returns to the 活跃 view and to the pickers that read it.',
+          ),
+      confirmText: nextStatus === 'inactive'
+        ? t('purchasing.supplierProducts.actions.disable', '停用')
+        : t('purchasing.supplierProducts.actions.enable', '启用'),
+    })
+    if (!confirmed) return
+    try {
+      await withScopedApiRequestHeaders(buildOptimisticLockHeader(row.updatedAt), () =>
+        updateCrud(
+          API_PATH,
+          {
+            id: row.id,
+            supplierSku: row.supplierSku,
+            name: row.name,
+            unit: row.unit,
+            status: nextStatus,
+          },
+          {
+            errorMessage: nextStatus === 'inactive'
+              ? t('purchasing.supplierProducts.actions.disableFailed', 'Could not stop this item.')
+              : t('purchasing.supplierProducts.actions.enableFailed', 'Could not re-enable this item.'),
+          },
+        ),
+      )
+      flash(
+        nextStatus === 'inactive'
+          ? t('purchasing.supplierProducts.actions.disabled', 'This item is no longer offered.')
+          : t('purchasing.supplierProducts.actions.enabled', 'This item is offered again.'),
+        'success',
+      )
+      void queryClient.invalidateQueries({ queryKey: [QUERY_KEY_ROOT] })
+    } catch (statusError) {
+      if (surfaceRecordConflict(statusError, t)) {
+        void queryClient.invalidateQueries({ queryKey: [QUERY_KEY_ROOT] })
+        return
+      }
+      const fallback = nextStatus === 'inactive'
+        ? t('purchasing.supplierProducts.actions.disableFailed', 'Could not stop this item.')
+        : t('purchasing.supplierProducts.actions.enableFailed', 'Could not re-enable this item.')
+      flash(statusError instanceof Error && statusError.message ? statusError.message : fallback, 'error')
+    }
+  }, [confirm, queryClient, t])
+
   const filterValues = React.useMemo<FilterValues>(
     () => ({ supplierId, status, linked }),
     [linked, status, supplierId],
@@ -800,6 +866,19 @@ export default function SupplierProductsTable() {
                       label: t('purchasing.supplierProducts.actions.unlink', 'Clear the link'),
                       onSelect: () => {
                         void handleUnlink(row)
+                      },
+                    },
+                  ]
+                : []),
+              ...(canManage
+                ? [
+                    {
+                      id: 'status',
+                      label: row.status === 'active'
+                        ? t('purchasing.supplierProducts.actions.disable', '停用')
+                        : t('purchasing.supplierProducts.actions.enable', '启用'),
+                      onSelect: () => {
+                        void handleToggleStatus(row)
                       },
                     },
                   ]
