@@ -13,7 +13,7 @@
 | Phase 2·C 收款/退税**状态与事实绑定** + 派生逾期标记 | #77 → #79 | 三种非法组合 422 逐条说明；`collectionOverdue`/`refundOverdue` 进列表与 CSV |
 | Phase 3·A 供应商产品库**停用/启用**行操作 | #81 → #82 | 真机：停用后离开活跃视图、可一键恢复；夹具已回滚 |
 | Phase 4·A **逾期清单** `/backend/export-finance/overdue` | #87 → #88 | `overdue=true` 落在行派生标记上：`all=2 / overdue=1 / CSV 1 行` |
-| Phase 4 **转化率** `/backend/internal-sales/quote-conversion` | #95/#96/#98 → #99 | 读订单冻结的 `metadata.internalSales.sourceQuote`；双分母 + 原始计数；夹具验证后回滚 |
+| Phase 4 **转化率** `/backend/internal-sales/quote-conversion` | #95/#96/#98 → #99 → **#130/#131 已移除** | 读订单冻结的 `metadata.internalSales.sourceQuote`；双分母 + 原始计数；**2026-09-30 按要求整块移除**（页面/接口/单测/文案；URL 现为 404），恢复路径见 `internal_sales/README.md` |
 | Phase 4·B **逾期提醒**命令 + 通知类型 + **清单「已提醒」标记** + 部署手册 | #104/#105、#110/#111、#116/#117 | 命令 2 条 → 再跑仍 2 条（刷新）→ `--dry-run` 零写 → 拆夹具回 0；页面两行「已提醒 2026-09-15 判定日」 |
 | 阶段五验证：全量集成套件实跑 / 审计撤销链实测 | #106/#107、#108/#109 | `104 passed / 4 failed / 5 skipped`（4 失败全为 `storage_ops` 的 S3 门禁）；undo 200 → 字段复原、条目 `undone`、令牌不可复用 |
 | 规格/状态板与事实对齐（含 Phase 4·B 草稿×实现对账） | #102/#103、#112/#113、#114/#115 | 「仍待」清单收敛为迁移批次 + 分公司仪表盘 |
@@ -33,7 +33,11 @@
 
 ## 仍待（都需要 owner 决定，代码侧已无自走项）
 
-1. **迁移批次批准**：`cross_border_export_documents.status`（2·B）+ 结算单确认/付款列（3·B）+ 费用付款日期列 + `sales_*` 的 `status_changed_at`。
+> **2026-09-30 owner 决定「先不做」**：本节四项**全部暂停**（结算单确认、分公司仪表盘、Phase 2·B/3·B 与 `status_changed_at`、部署到 production）。方案与重做路径保留在 spec / 计划表；促销 PR #94 已关闭。
+
+> **2026-09-30 晚：owner 要求回退最近这批** —— 转化率报告与五列均已移除；上面交付表中这两行据此改写，其余保留范围内的交付未动。
+
+1. **迁移批次：批准后已落地、又按要求回退**（#128/#129 加五列 → **#132/#133 drop 并回退实体/快照**，真机核对列已不存在）。Phase 2·B / 3·B 与 `sales_*` 的 `status_changed_at` 因此回到「待批准」；重做路径 = 改实体 → `yarn db:generate` → 审 SQL → 应用。
 2. **Q-010**：结算单「导入自动 `reconciled`」与「人工确认」合一还是分开、谁有权确认。
 3. **合并促销 PR #94**（树 == `main`，五项门禁全绿；合并即触发 `deploy.yml`）或 force-with-lease 复位 `production`。
 4. **分公司仪表盘**：口径**已由 PRD C-3 给出**（分公司看本组织订单/库存镜像/结算只读、总部看汇总），所以只剩一问 —— **只做 C-3 三族，还是叠加财务数字**（勾哪几个）。
