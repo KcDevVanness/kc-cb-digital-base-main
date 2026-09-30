@@ -5,14 +5,14 @@ export const metadata = {
   // two do not match. A superadmin passes through `userHasAllFeatures`' isSuperAdmin bypass; a
   // non-superadmin role must be granted the plural id as well until this is reconciled.
   requireFeatures: ['sales.quote.view'],
-  pageTitle: 'Sales quotes',
+  pageTitle: 'Internal sales quotes',
   pageTitleKey: 'internal_sales.list.quote.title',
-  pageGroup: 'Export operations — Sales',
+  pageGroup: 'Export operations — Internal sales',
   pageGroupKey: 'cross_border.nav.group.sales',
   pageOrder: 300,
   icon: 'file-text',
   breadcrumb: [
-    { label: 'Sales quotes', labelKey: 'internal_sales.list.quote.title' },
+    { label: 'Internal sales quotes', labelKey: 'internal_sales.list.quote.title' },
   ],
 }
 
