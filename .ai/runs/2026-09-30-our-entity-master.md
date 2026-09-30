@@ -78,7 +78,7 @@ snapshots stay readable, nothing is migrated.
 | `node scripts/check-lessons.mjs` | ✓ |
 | `yarn ds:check` | 976 files passed |
 | `yarn test` | 62 suites / 525 passed（含新模块 7 例） |
-| `yarn build` | 见 PR（构建进行中） |
+| `yarn build` | ✓（Next 16.3.3） |
 | 浏览器实测（dev server 3002） | 列表页（公司名/城市/联系人由组织 payload 解析）→ 新建（选组织 + 地址/联系人 + 银行行默认勾选）→ 编辑 → 银行改名后 **DB 密文**（`F9j0KCPP…`）且详情接口解密回读 → 删除（软删，`deleted_at` 落库）；合同新建页选同一组织 → 名称/地址/联系人/银行回填；选未建档组织 → 只带名称 + 「该公司还没有档案」提示 |
 
 ## Progress
