@@ -19,6 +19,7 @@ app 自有**界面层**模块：为**对内（总部 → 分公司）与对外�
 | 读 | 官方 `GET /api/sales/{quotes,orders}`（抬头）与 `GET /api/sales/{quote,order}-lines?quoteId\|orderId=`（行，**snake_case** 列名，`pageSize` 上限 **100**） |
 | 新建写 | 官方 `POST /api/sales/{quotes,orders}`（抬头 + 行一次提交；命令 `sales.quotes\|orders.create`） |
 | 编辑写 | 抬头 `PUT /api/sales/{quotes,orders}`（**只写抬头标量字段**）+ 行 `PUT/DELETE /api/sales/{quote,order}-lines`（`PUT` → `…lines.upsert`，`DELETE` → `…lines.delete`） |
+| 报价转化（2026-09-30） | `/backend/internal-sales/quote-conversion` —— 统计期内创建的报价里有多少变成了订单。关联用的是**订单自己冻结的** `metadata.internalSales.sourceQuote = { id, number }`（`lib/documentValues.ts` 的 `buildDocumentMetadata`），所以**不需要新列、不依赖审计**；「已发出」按 `sent_at` 时间戳判断（不是状态词，Phase 1 之前的历史行不会被悄悄排除）。页面给出**两个分母的比率**（全部报价 / 已发出报价）与原始计数，并说明两者口径差异由业务决定 —— 本页不替你选考核口径。聚合逻辑在 `lib/quoteConversion.ts`（纯函数，`lib/__tests__/quoteConversion.test.ts` 覆盖），接口 `GET /api/internal_sales/quote-conversion?days=30|90|365` |
 | 权限 | 列表页声明读功能位 `sales.quote.view` / `sales.order.view`，新建/编辑页声明 `sales.quotes.manage` / `sales.orders.manage`（本模块不新造功能位：写入的门禁在官方 API 上）。**列表上的「新建」与行操作「编辑」按复数的 manage 功能位渲染**（`hasFeature(chrome payload)`，与 `products` 列表同一写法；chrome payload 未就绪时不隐藏），只读账号只看到只读列表 |
 | 事件 | **无**（本模块不声明 `events.ts`；单据的 `sales.*` 事件由官方命令发出） |
 | 实体/迁移 | **无**（不新增表；单据写在官方 `sales_*` 表里） |

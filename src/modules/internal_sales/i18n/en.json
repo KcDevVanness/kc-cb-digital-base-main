@@ -123,5 +123,19 @@
   "internal_sales.list.actions.statusNotApplied": "The status did not stick — reload the list and try again.",
   "internal_sales.form.quoteLoad.notOrderable": "This quote has not been sent yet, or was canceled — it cannot be ordered.",
   "internal_sales.form.sentQuoteHint": "This quote has been sent: saving returns it to draft and invalidates the link that went out. Send it again when ready.",
-  "internal_sales.form.statusDictionaryFailed": "Could not read this organization’s sales status dictionary. Retry; if it keeps failing, ask an administrator."
+  "internal_sales.form.statusDictionaryFailed": "Could not read this organization’s sales status dictionary. Retry; if it keeps failing, ask an administrator.",
+  "internal_sales.conversion.page.title": "Quote conversion",
+  "internal_sales.conversion.page.description": "Of the quotes created in the period, how many became orders. 已发出 is read from the sent timestamp, not a status word, so older data is not silently dropped.",
+  "internal_sales.conversion.period.label": "Period",
+  "internal_sales.conversion.period.days": "{days} days",
+  "internal_sales.conversion.fact.quotes": "Quotes",
+  "internal_sales.conversion.fact.sent": "Sent",
+  "internal_sales.conversion.fact.converted": "Converted",
+  "internal_sales.conversion.fact.rates": "Rate (all / sent)",
+  "internal_sales.conversion.rates.note": "The two denominators answer different questions, so both rates are shown: over every quote it is the overall quote-to-order yield; over the sent ones it is how much of what we sent we closed. Which one a target should use is a business call.",
+  "internal_sales.conversion.outsidePeriod": "{count} more order(s) name a quote outside this period and are not counted as conversions.",
+  "internal_sales.conversion.row.converted": "Converted — {count} order(s)",
+  "internal_sales.conversion.row.open": "Not converted",
+  "internal_sales.conversion.empty": "No quote was created in this period.",
+  "internal_sales.conversion.loadFailed": "Could not load the report. Try again shortly."
 }

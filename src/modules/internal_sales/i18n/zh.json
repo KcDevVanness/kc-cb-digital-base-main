@@ -123,5 +123,19 @@
   "internal_sales.list.actions.statusNotApplied": "状态没有生效（引擎未接受），请刷新列表后重试。",
   "internal_sales.form.quoteLoad.notOrderable": "这张报价还没有发出或已作废，不能下单。",
   "internal_sales.form.sentQuoteHint": "这是一张已发出的报价：保存会把状态退回草稿并作废已发链接，需要时请重新发出。",
-  "internal_sales.form.statusDictionaryFailed": "读取本组织的销售状态字典失败，请刷新重试；若持续失败请联系管理员。"
+  "internal_sales.form.statusDictionaryFailed": "读取本组织的销售状态字典失败，请刷新重试；若持续失败请联系管理员。",
+  "internal_sales.conversion.page.title": "报价转化",
+  "internal_sales.conversion.page.description": "统计期内创建的报价里，有多少已经变成订单。「已发出」按发送时间判断（不是状态词），历史数据不会被悄悄排除。",
+  "internal_sales.conversion.period.label": "统计区间",
+  "internal_sales.conversion.period.days": "{days} 天",
+  "internal_sales.conversion.fact.quotes": "报价数",
+  "internal_sales.conversion.fact.sent": "已发出",
+  "internal_sales.conversion.fact.converted": "已转化",
+  "internal_sales.conversion.fact.rates": "转化率（全部 / 已发出）",
+  "internal_sales.conversion.rates.note": "两个分母口径不同，所以给出两个比率：全部报价 = 报价→订单的整体产出；已发出报价 = 发出之后拿下多少。哪个作为考核口径由业务决定。",
+  "internal_sales.conversion.outsidePeriod": "另有 {count} 张订单的报价不在本区间内，未计入转化。",
+  "internal_sales.conversion.row.converted": "已转化 {count} 单",
+  "internal_sales.conversion.row.open": "未转化",
+  "internal_sales.conversion.empty": "本区间没有报价。",
+  "internal_sales.conversion.loadFailed": "载入失败，请稍后重试。"
 }
