@@ -350,7 +350,7 @@
 - **通知订阅（`scheduler` + `notifications`）**：机制现成（本仓已有提醒/调度事实页），缺的是**谁在什么阈值上
   收什么通知**的口径；与逾期清单同批定稿再订阅。
 
-#### Phase 4·B — 逾期提醒（口径草案，待确认；无 DDL）
+#### Phase 4·B — 逾期提醒（2026-09-30 实现完成；无 DDL）
 
 - **目标**：逾期清单已经存在，但**要人主动去看**。这一块把「出现逾期」变成一次主动告知：及时、不重复、可关闭。
 - **推荐默认（逐条可改，改哪条说哪条）**
@@ -368,9 +368,11 @@
   - **类型与偏好是平台的，不是我们的**：`notification_types` 注册类型、`notification_preferences` 是**每用户自己的开关**（渠道偏好也在这里）。所以「站内还是邮件」「谁想收」这类问题**平台已经有答案**，我们不需要再造一个订阅开关 —— 这也把 Q-011 收窄成「这个类型注册后默认开还是默认关」。
   - **收件人可解**：采购单上有 **`owner_user_id`**（`purchasing/data/entities.ts:184`，与 `owner_snapshot` 同一行），所以「订单的收款逾期」可以把通知直接投给单据负责人；柜侧没有自己的负责人字段，但柜的分摊订单（`cross_border_shipment_allocations`）各自的 `owner_user_id` 就是责任人 —— **两条都不需要加列**。
   - **调度**走 `scheduler`；**幂等**键 = 资源 + 逾期起始日，查既有 `notifications` 记录即可，不建表、不加列。
-- **开放问题（Q-011，核对契约后已收窄为两问）**：① 只发**单据负责人**，还是负责人 + **财务组**（后者需要按 `export_finance.*.view` 反查用户，属额外一步）；
-  ② 新注册的通知类型**默认开**还是**默认关**（渠道与否由每用户 `notification_preferences` 决定，不需要我们选）。
-  **这两问答复前不动代码**——提醒发错人是可见的骚扰，比不发更糟；机制本身已全部可用（见上）。
+- **口径来源（Q-011 已按 PRD 既有约定落地，不再等人答）**：PRD `docs/prd/cross-border-erp.md` 的 **Q6 早已答复**——
+  「提醒规则：… **已答**：`finance` 模块的 `due-reminders` 命令三条规则 + 三通知类型与订阅者」。因此本模块**照同一约定实现**：
+  命令评估（非定时器）、每个条件一个通知类型、`channels: ['in_app']`、收件人由平台 `createForFeature` 按**功能位**解析
+  （`export_finance.orders.view` / `cabinets.view` 的持有者，即财务团队），渠道与订阅由每用户 `notification_preferences` 决定。
+  若日后要改成「只投单据负责人」（采购单有 `owner_user_id`），那是**一处受件人解析的替换**，不是口径重做。
 - **不做**：短信 / 企业微信等外部渠道（未接入）；订阅名单管理 UI；把阈值做成配置项。
 
 ## Requirement Traceability
@@ -441,6 +443,7 @@
 | 2026-09-30 | **Phase 2·C 实现完成**（`feat/export-finance-status-coherence`）：收款/退税记录的**状态与事实**在写入时校验（`lib/statusCoherence.ts`，422 逐条回报；历史行不动）；两个档案页新增**派生**的逾期标记（柜「退税逾期」/ 订单「收款逾期」，阈值常量 45 天、边界不含、缺失日期不标），进列表列与 CSV。证据：单元两套 + 真机 API（三种非法组合 422、finance 口径回读 `collectionOverdue`、CSV 表头含「退税逾期」）。开放问题记入 Q-008（是否把「柜未收货不得登记收款」做成硬门禁——收款按采购单记，一单可跨多柜）。 |
 | 2026-09-30 | **Phase 4 转化率实现完成**（`feat/internal-sales-quote-conversion`）：`/backend/internal-sales/quote-conversion` 上线 —— 关联读订单冻结的 `metadata.internalSales.sourceQuote.id`（不加列、不依赖审计），「已发出」按 `sent_at` 事实判断，页面同时给出**两个分母的比率**（全部报价 / 已发出）与原始计数，把口径选择留给业务。纯聚合在 `lib/quoteConversion.ts`（单测 5 例：转化判定 / 状态词不算已发出 / 空分母返回 null 而非 NaN / 区间外订单不计入 / 百分比取整）。**真机**：夹具（给一张报价写 `sent_at` + 把一张订单的 `metadata` 指向它）→ `quotes=2 / sent=1 / converted=1 / 50% / 100%`，页面四个数字与两行明细正确；回滚夹具后 `converted=0 / sent=0 / 0% / —`（null 正确渲染）。 |
 | 2026-09-30 | **Phase 4「转化率」与「停留时长」拆开（仅文档）**：查证订单从报价创建时冻结了 `metadata.internalSales.sourceQuote = { id, number }`（`internal_sales/lib/documentValues.ts:28/142`），**转化率因此不需要新列、不依赖审计**，只剩「分母」一个口径待定（发出数 vs 全部报价）；**只有停留时长**需要迁移批次的 `status_changed_at`。迁移申请范围据此收窄。 |
+| 2026-09-30 | **Phase 4·B 实现完成**（`feat/export-finance-overdue-reminders`）：`mercato export_finance overdue-reminders --org --tenant [--dry-run] [--today]` 上线 —— 两个逾期条件**直接复用 `?overdue=true`**（与清单/档案列/CSV 同源），每条件一个通知类型（`notifications.ts`）与一个事件（`category: 'custom'`），收件人按平台约定由功能位 fan-out，**幂等键 = 资源 + 变成逾期的那一天**（`becameLateOn()`，纯函数、单测锁死：同一天重复跑与次日跑都刷新同一条）。真机：夹具（柜 60 天 + 订单 `received` 60 天）→ 命令报 2 条，`notifications` 落 2×2 行（两名功能位持有者）且 `group_key` 为 `…:2026-09-15`；**再跑一次仍是 2 条**（刷新不堆叠）；`--dry-run` 0 写；拆夹具后 dry-run 回到 0、通知行清零。 |
 | 2026-09-30 | **Phase 4·B 机制核对（仅文档）**：`notificationService`（`notifications/di.ts:8`）+ 队列 worker `notifications:create`（异步可重试）是投递入口；**类型注册与每用户 `notification_preferences` 由平台提供**，所以渠道/是否收是用户自己的开关，不是我们要造的东西；收件人**可解**——采购单有 `owner_user_id`（`purchasing/data/entities.ts:184`），柜的责任人取其分摊订单的 owner。Q-011 因此收窄为**两问**（只发负责人还是加财务组；新类型默认开还是关），其余机制就绪，等这两问即开工。 |
 | 2026-09-30 | **Phase 4·B 逾期提醒口径草案（仅文档，待确认）**：以「每日一次扫描 `overdue=true`、某行当天首次进入逾期才发、幂等键=资源+逾期起始日（查既有 `notifications` 记录，不建表）」为核心；收件人推荐「单据负责人 + 财务组（现有 view 持有者）」、阈值沿用 45 天不加配置、渠道站内 + 邮件且**默认关闭按组织开启**、邮件每日合并一封。开放问题 **Q-011**（收件人 / 阈值可调性 / 邮件默认开关）答复前不动代码。 |
 | 2026-09-30 | **Phase 4「转化率/停留时长」实测后改道（仅文档）**：查 dev 库 `action_logs`（1 417 行，2026-09-24 起）——时间线明文且已索引、`sales.quote`/`sales.order` 的状态写入确实落日志（`changed_fields = ['status','statusEntryId']`），**但取值列（`command_payload` / `changes_json` / `snapshot_after`）是 at-rest 加密的 `…:v1` 密文**，SQL 侧无法判定某行日志代表哪个状态。因此停留时长/转化率**不建在审计载荷上**，改为随迁移批次给单据加 `status_changed_at`（至少 `sales_quotes`/`sales_orders`），此后纯读侧聚合即可；该列并入「结算单确认/付款 + 费用付款日期 + 2·B 的 `export_documents.status`」同一批迁移，一次批准。 |
