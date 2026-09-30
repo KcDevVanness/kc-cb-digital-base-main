@@ -1,6 +1,7 @@
 # `currency_policy` — 币种与汇率主数据收敛
 
-app 自有模块，**无实体、无 UI、无迁移，但有一个只读路由**。主要工作是在 `customers`/`currencies` 各自的
+app 自有模块，**无实体、无 UI、无迁移，但有两条只读路由**（`GET /api/currency_policy/currencies`
+与 `GET /api/currency_policy/rates`）。主要工作是在 `customers`/`currencies` 各自的
 `seedDefaults` 之后，按公司政策把**币种字典**与**汇率主数据**收敛到同一个集合，避免两个种子互相覆盖；
 同时对外提供选币器数据源 `GET /api/currency_policy/currencies`。它也没有自己的功能位与事件：
 门禁直接用安装层 `currencies.view`，不声明 `acl.ts`/`events.ts`。
@@ -24,7 +25,7 @@ app 自有模块，**无实体、无 UI、无迁移，但有一个只读路由**
 | `i18n/{zh,en}.json` | 注入列的表头 key（zh 折合人民币 / en In CNY） |
 | `index.ts` | 模块元数据（`requires: currencies, dictionaries, customers`） |
 
-## 唯一的路由
+## 两条只读路由
 
 `GET /api/currency_policy/currencies`（`api/currencies/route.ts`）返回 `{ entries: [{ value, label }] }`，
 数据取自安装层 `dictionaries` 模块里的 `currency` 字典（该键不存在时回退到旧键 `currencies`），
@@ -35,10 +36,13 @@ app 自有模块，**无实体、无 UI、无迁移，但有一个只读路由**
 - 缺 `currencies.view` → **403**（功能位来自安装层 `currencies`，本模块不新造功能位）；
 - 读取失败 → **500**。
 
+`GET /api/currency_policy/rates`（`api/rates/route.ts` + `lib/rateLookup.ts`）是第二条只读路由：CNY 换算显示用的
+最新一条汇率（方向优先 `X→CNY`，缺失时倒数 `CNY→X`；无汇率即不返回），同样由安装层 `currencies.view` 门禁。
+
 它存在的理由：app 的选币器不该依赖 `customers` 托管的路由与 `customers.people.view`——`currency_policy` 拥有
-币种政策，就拥有选币器。目前 **7 个模块共 10 处选币器**读它（`products`、`purchasing` 的供应商与采购单、
-`trade_docs`、`sourcing` 的商品与报价面板、`platform_ops` 的渠道、`internal_sales` 的表单、`export_finance` 的收汇与退税），
-响应形状保持不变。
+币种政策，就拥有选币器。目前 **7 个模块共 14 处选币器**读它（`products` 的商品表单；`purchasing` 的供应商 /
+采购单 / 采购单编辑 / 供应商产品库；`trade_docs` 的合同 / 发票 / 单证；`sourcing` 的报价新建与报价审阅面板；
+`platform_ops` 的渠道；`internal_sales` 的销售表单；`export_finance` 的收汇与退税档案），响应形状保持不变。
 
 **客户端加载器也归本模块**：`lib/clientOptions.ts` 是唯一实现（`loadCurrencyOptions` / `useCurrencyOptions` /
 `withCurrentCurrency`），与路由放在一起——`sourcing`（`components/currencyOptions.ts` 转出）与 `export_finance`

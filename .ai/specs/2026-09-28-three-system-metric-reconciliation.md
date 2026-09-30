@@ -4,7 +4,7 @@
 **Status**: Draft（门禁已过 Q-001…Q-005；**supply 同步与驾驶舱部分的执行口径由 `.ai/specs/2026-09-28-finance-ledger-and-cockpit-data.md` 接管**——本文件保留 PRD 口径表/决策记录，实现以接管 spec 为准；Q-006…Q-010 仍开放）
 **Source docs**: `docs/ru-petkit/prd.md`（RU 功能 F-01…F-11）· `docs/ru-petkit/field-mapping.md`（中方锚点 + 6 域）· `docs/ru-petkit/integration-brief.md`（架构 + 模块 + 接口）· `docs/ru-petkit/evidence.md`（取证）
 
-> 用户决议（2026-09-28）：拆两个 spec（本 PRD + 技术文档另起）；老板面 = **本 ERP 新建只读驾驶舱**；账本 = **按域分**；第一阶段 = **supply 完整 7 端点**。
+> 用户决议（2026-09-28）：拆两个 spec（本 PRD + 技术文档另起）；老板面 = **本 ERP 新建只读驾驶舱**；账本 = **按域分**；第一阶段 = **supply 完整 8 端点（§1–§7 + §1.1；后按 `docs/ru-petkit/supply-sync-tech.md` §0 更正）**。
 
 ## TLDR
 
@@ -17,14 +17,14 @@
 ## Overview and Success Measures
 
 - **Primary outcome:** 老板驾驶舱 6 类数据全部有三方口径行（定义 / 算式 / 来源系统 / 频率 / 阈值），第一阶段 supply 5 数（缺口金额 / 在途金额 / 积压金额 / ДРР / 未识别在途）与 RU 页误差 ≤ 0.2 п.п. / ≤ 20 ₽。
-- **Leading indicators:** 7 端点联调通过；SKU 映射覆盖率（canonical 覆盖 supply 59 SKU）；游标连续 7 天无断点。
+- **Leading indicators:** 8 端点（§1–§7 + §1.1）联调通过；SKU 映射覆盖率（canonical 覆盖 supply 59 SKU）；游标连续 7 天无断点。
 - **Baseline:** unknown — 测量计划：以 `evidence.md` 页数字为基线（ДРР 7,5%、Сен маржа 21,6%、ROI 102,6%/77,2%、supply 32,0 млн ₽ / 565 130 $）。
 - **Market / product reference:** RU BI 自身即参考实现（11 路由 + 口径已验算）；采用其定义，拒绝其渲染方式（服务端直出 HTML + 无 key 内嵌 ROWS 不可复用，只取其接口契约）。
 
 ## Goals
 
 - **REQ-001** — 三方口径表：老板 6 类每指标一行（定义 / 算式 / 来源系统 / 频率 / 阈值 / 账本归属）。
-- **REQ-002** — supply 7 端点契约冻结（字段 / 自然键 / `updated_at` + `as_of` / 游标 / 幂等），SKU 规范（canonical + 后缀 + 大小写）冻结。
+- **REQ-002** — supply 8 端点契约冻结（§1–§7 + §1.1）（字段 / 自然键 / `updated_at` + `as_of` / 游标 / 幂等），SKU 规范（canonical + 后缀 + 大小写）冻结。
 - **REQ-003** — 只读老板驾驶舱：6 类数据一页可览，日级四数 + 周复盘 + 月 ОПИУ，只读 RU 同步 + CN 账本，无业务写路径。
 - **REQ-004** — 供应同步落地：plan 缺口 → PO 草稿（S 级）、在途 ETA → 收货计划、超储 → 刹车信号、未识别在途独立清单（不扣需求）。
 - **REQ-005** — 四预警可达老板：断货损失 / 超储冻结 / ДРР 破线 / 未识别在途（通知类型 + 阈值 + 频率）。
@@ -38,7 +38,7 @@
 
 ## Proposed Solution
 
-最小平台原生方案：RU 侧只开 **pull 快照 REST**（7 端点 + bearer + `updated_since` 游标 + 快照 `as_of`）；CN 侧用 `DataSyncAdapter` + queue workers + `ProgressJob` 做同步（cursor-after-success，失败页不推进），差异进对账队列；老板面用 installed `dashboards` 的 `DashboardWidgetModule` 做只读 widgets + 一个只读汇总页（`DataTable` 只读 + KPI 头），数据源 = RU 同步投影 + CN 账本投影。为什么不用爬虫 / CSV 主通道 / push：HTML 无 key 脆断、CSV 无游标、push 丢重难收敛（`integration-brief.md` §5 已论证）。
+最小平台原生方案：RU 侧只开 **pull 快照 REST**（8 端点（§1–§7 + §1.1）+ bearer + `updated_since` 游标 + 快照 `as_of`）；CN 侧用 `DataSyncAdapter` + queue workers + `ProgressJob` 做同步（cursor-after-success，失败页不推进），差异进对账队列；老板面用 installed `dashboards` 的 `DashboardWidgetModule` 做只读 widgets + 一个只读汇总页（`DataTable` 只读 + KPI 头），数据源 = RU 同步投影 + CN 账本投影。为什么不用爬虫 / CSV 主通道 / push：HTML 无 key 脆断、CSV 无游标、push 丢重难收敛（`integration-brief.md` §5 已论证）。
 
 ### Design Decisions and Alternatives
 
@@ -171,7 +171,7 @@ Credential（RU bearer）走 integrations credential service + encryption maps�
 | `POST` | `/api/supply-sync/plan/draft-pos`（暂名） | auth + `purchasing.orders.manage` | `sku[]`（已映射） | PO 草稿号 + `purchasing.purchase_order.created` | 400/403/409/422（未映射行） | REQ-004 |
 | worker | `supply_sync.pull` | tenant scope | endpoint + cursor | cursor 推进 + `supply_sync.pulled` | transient 重试 + 熔断；失败不推进 | REQ-002 |
 
-RU 7 端点契约（字段 / 自然键 / 游标 / 8 条规则）见 `docs/ru-petkit/integration-brief.md` §5 + `field-mapping.md` 域3（快照到手后逐字段打勾）。
+RU 8 端点（§1–§7 + §1.1）契约（字段 / 自然键 / 游标 / 8 条规则）见 `docs/ru-petkit/integration-brief.md` §5 + `field-mapping.md` 域3（快照到手后逐字段打勾）。
 
 ## Events, Jobs, Notifications, and Cross-Module Flows
 
@@ -193,7 +193,7 @@ RU 7 端点契约（字段 / 自然键 / 游标 / 8 条规则）见 `docs/ru-pet
 
 | Test ID | Level | Setup / fixture | Actions | Assertions | Requirement IDs |
 |---|---|---|---|---|---|
-| TEST-001 | integration | mock RU 7 端点（含未识别 + 未映射 SKU） | pull 全量 → 增量 | 投影行 + 自然键去重 + cursor 推进 | REQ-002 |
+| TEST-001 | integration | mock RU 8 端点（含未识别 + 未映射 SKU） | pull 全量 → 增量 | 投影行 + 自然键去重 + cursor 推进 | REQ-002 |
 | TEST-002 | integration | 断页 / 500 / 重放 | 重跑 pull | cursor 未推进；无重复行 | REQ-002 |
 | TEST-003 | integration | plan 缺口 fixture | 生成 PO 草稿 | draft 状态 + 行校验通过；未映射行 422 | REQ-004 |
 | TEST-004 | security | 第二 tenant / 无 feature | 读驾驶舱 / 调同步 | fail closed，无泄漏 | REQ-001/003 |
@@ -201,10 +201,10 @@ RU 7 端点契约（字段 / 自然键 / 游标 / 8 条规则）见 `docs/ru-pet
 
 ## Implementation Phases
 
-### Phase 1 — RU 7 端点联调 + 投影 + 游标（无 UI）
+### Phase 1 — RU 8 端点（§1–§7 + §1.1）联调 + 投影 + 游标（无 UI）
 
 - **Depends on:** RU 快照字段打勾（`field-mapping.md` 域3）+ token 到手
-- **Outcome:** 7 端点可拉、投影可查、cursor 连续 7 天
+- **Outcome:** 8 端点（§1–§7 + §1.1）可拉、投影可查、cursor 连续 7 天
 - **Why this order / value delivered:** 一切上层（驾驶舱/PO/预警）的前置；先证明数拿得到、对得上
 - **Deliverables:** `supply_sync` 模块骨架 + `DataSyncAdapter` + 投影表 + 游标 + mock contract server
 - **Independent slices / estimated commits:** 端点逐个并行（skus/stock/in-transit/unrecognized/plan/shipments/params）
@@ -242,7 +242,7 @@ RU 7 端点契约（字段 / 自然键 / 游标 / 8 条规则）见 `docs/ru-pet
 | Requirement | Journey / surface | Data/API/event contracts | Phase | Tests | Acceptance criterion |
 |---|---|---|---|---|---|
 | REQ-001 | J-001, `/backend/boss-cockpit` | 口径表 + `GET summary` | Phase 2 | TEST-004 | AC-001 |
-| REQ-002 | worker + 投影 | 7 端点 + cursor | Phase 1 | TEST-001/002 | AC-002 |
+| REQ-002 | worker + 投影 | 8 端点（§1–§7 + §1.1）+ cursor | Phase 1 | TEST-001/002 | AC-002 |
 | REQ-003 | J-001 + widgets | 只读聚合 | Phase 2 | TEST-005 | AC-001 |
 | REQ-004 | J-002, plan 页 | draft-pos + PO created | Phase 3 | TEST-003 | AC-003 |
 | REQ-005 | 通知 | 4 阈值事件 | Phase 2 | TEST-005 | AC-004 |
@@ -264,7 +264,7 @@ RU 7 端点契约（字段 / 自然键 / 游标 / 8 条规则）见 `docs/ru-pet
 ## Acceptance Criteria
 
 - [ ] **AC-001** — 老板 6 类数与 RU 页一致（误差 ≤ 0.2 п.п. / ≤ 20 ₽），stale > 24h 整页标出。
-- [ ] **AC-002** — 7 端点连续 7 天 cursor 无断；重放无重复行；失败页 cursor 不推进。
+- [ ] **AC-002** — 8 端点（§1–§7 + §1.1）连续 7 天 cursor 无断；重放无重复行；失败页 cursor 不推进。
 - [ ] **AC-003** — plan 缺口可生成 draft PO；未映射 SKU 禁生成并进异常清单；无自动 place。
 - [ ] **AC-004** — 四预警（断货 / 超储 / ДРР / 未识别在途）阈值触发可达，有去重与审计。
 - [ ] Every listed backend surface matches its recorded Open Mercato reference and uses the canonical shell/components, shared API helpers, semantic tokens, and complete loading, empty, error, conflict, keyboard, accessibility, responsive, light-mode, and dark-mode states.
@@ -290,9 +290,9 @@ Verdict: `Blocked — Q-005…Q-010 开放问题待决`.
 | Q-001 | 一个 spec 还是拆两个？ | 用户 | ~~yes~~ no | 2026-09-28 决议：拆两个（PRD + 技术另起） |
 | Q-002 | 老板面形态 | 用户 | ~~yes~~ no | 2026-09-28 决议：本 ERP 新建只读驾驶舱 |
 | Q-003 | 谁是账本 | 用户 | ~~yes~~ no | 2026-09-28 决议：按域分账本 |
-| Q-004 | supply 范围 | 用户 | ~~yes~~ no | 2026-09-28 决议：完整 7 端点 |
+| Q-004 | supply 范围 | 用户 | ~~yes~~ no | 2026-09-28 决议：完整 7 端点；后按 `docs/ru-petkit/supply-sync-tech.md` §0 更正为 8 端点（§1–§7 + §1.1） |
 | Q-005 | 新模块一分为二（`supply_sync` + `boss_cockpit`）还是合一？ | 用户 | ~~yes~~ no | 2026-09-28 决议：**拆**——`ru_sync`（数据面：provider/游标/worker/失败重跑）+ `boss_cockpit`（呈现面：只读聚合/权限/布局）；理由：生命周期与失败模式不同，可单独回滚（停 worker ≠ 下线页）。执行细节见 `.ai/specs/2026-09-28-finance-ledger-and-cockpit-data.md` |
-| Q-006 | 7 端点 `updated_since` 粒度与全量回填策略（RU 是否支持） | 俄方 | yes | pending（快照到手定） |
+| Q-006 | 8 端点 `updated_since` 粒度与全量回填策略（RU 是否支持） | 俄方 | yes | pending（快照到手定） |
 | Q-007 | 四预警阈值与接收人（ДРР 20% 外，其余三线定多少、发给谁、什么频率） | 老板 | yes | pending |
 | Q-008 | ФБО延迟容忍（stale 阈值 24h 是否合适） | 用户 | no | pending（默认 24h） |
 | Q-009 | 第二阶段三域（订单/结算/ОПИУ）是否沿用同一 8 条契约 | 用户 | no | pending（默认沿用） |

@@ -75,7 +75,7 @@
 | **Integration Marketplace**（推荐） | 有人值守、想按租户/组织分别配 | 后台 → 集成市场 → “S3 Object Storage” → 填 bucket / region / endpoint / forcePathStyle / access key。凭证加密存储，按 `(tenantId, organizationId)` 作用域解析 |
 | **环境变量预置** | 无人值守部署（Dokploy/Coolify/Kamal 等） | 设 `OM_INTEGRATION_STORAGE_S3_{ACCESS_KEY_ID,SECRET_ACCESS_KEY,REGION,BUCKET}`（可选 `SESSION_TOKEN`、`ENDPOINT`、`FORCE_PATH_STYLE`），然后 `yarn mercato storage_s3 configure-from-env --all-tenants`（幂等，可做 post-deploy hook；`--force` 覆盖已存凭证） |
 
-**部署契约（C-10）**：`OM_ENABLE_STORAGE_S3` 必须在**构建/生成期与运行期一致**——模块加载来自 `yarn generate` / `yarn build` 固化的注册表，而设置页读请求时的 `process.env`。生产镜像没有 `.env`，必须由部署环境注入。危险组合是「构建期 false + 运行期 true」（UI 提供 S3 但驱动未注册 → 静默回退本地驱动）；`storage_ops preflight` 会用「解析到的驱动 key == 分区配置的驱动」把这条挡住。
+**部署契约（C-10）**：`OM_ENABLE_STORAGE_S3` 必须在**构建/生成期与运行期一致**——模块加载来自 `yarn generate` / `yarn build` 固化的注册表，而设置页读请求时的 `process.env`。生产镜像没有 `.env`，必须由部署环境注入。危险组合是「构建期 false + 运行期 true」（UI 提供 S3 但驱动未注册 → 静默回退本地驱动）；`storage_ops migrate` 的 preflight 阶段会用「解析到的驱动 key == 分区配置的驱动」把这条挡住。
 
 ---
 

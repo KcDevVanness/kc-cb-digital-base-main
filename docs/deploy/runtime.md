@@ -27,7 +27,9 @@ runner 阶段的**层纪律**（改动前请先读这段，否则镜像会膨胀
 
 要点：
 
-- runner 以非 root 用户 `omuser`（uid `1001`）运行
+- runner 镜像**默认**以非 root 用户 `omuser`（uid `1001`）运行；但生产形态
+  （`docker-compose.deploy.yml` 的 app 服务）显式设 `user: "0"`——初始化脚本与附件存储
+  首次创建时要写入 root 拥有的绑定/卷路径，所以生产容器实际以 root 跑
 - **构建期参数**（改动需重新构建，不是运行时可变）：
   - `NEXT_PUBLIC_DOCUMENTS_COLLAB_URL` —— 烤进前端的协作文档 ws 地址，不设则文档退化为单人编辑
   - `INSTALL_CHROMIUM=1` —— 装上 Chromium 以支持 Documents 的 PDF 导出；**不装则 PDF 导出返回 503**
@@ -41,7 +43,7 @@ runner 阶段的**层纪律**（改动前请先读这段，否则镜像会膨胀
 |---|---|---|
 | 生产（通用） | `yarn start` → `yarn mercato server start` | 起 Next 生产服务 |
 | Railway（Web） | `sh ./scripts/railway-start.sh` | 设 `CACHE_STRATEGY=redis`、`QUEUE_STRATEGY=async` → 跑 `docker/scripts/init-or-migrate.sh` → `.mercato/generated` 缺失则 `yarn generate` → `yarn start` |
-| Railway（Worker） | `sh ./scripts/railway-worker.sh` | 同上，但 `AUTO_SPAWN_WORKERS=false`，最后 `yarn mercato queue worker --all` |
+| Railway（Worker） | `sh ./scripts/railway-worker.sh` | 设 `CACHE_STRATEGY=redis`、`QUEUE_STRATEGY=async` → `.mercato/generated` 缺失则 `yarn generate`（**不跑** `init-or-migrate.sh`）→ 两个自动拉起开关 `AUTO_SPAWN_WORKERS` / `OM_AUTO_SPAWN_WORKERS` 都置 `false` → `yarn mercato queue worker --all` |
 | Docker Compose（全栈） | `docker-compose.fullapp.yml` 的 app 服务 | `init-or-migrate.sh` → `yarn start` |
 | AWS（`production` 分支） | `docker-compose.deploy.yml` 的 app 服务 | 同上，但 `image:` 来自 GHCR，主机不构建 |
 
@@ -60,7 +62,7 @@ runner 镜像里没有 `.env`，缺配置的表现是启动失败或功能静默
 | 变量 | 作用 | 备注 |
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL 连接串 | 必需；镜像用 pgvector（`pgvector/pgvector:pg17-trixie`） |
-| `REDIS_URL` / `CACHE_REDIS_URL` | 缓存与队列后端 | Railway 脚本把 `REDIS_URL` 兜底成 `CACHE_REDIS_URL` |
+| `REDIS_URL` / `CACHE_REDIS_URL` | 缓存与队列后端 | Railway 脚本把 `CACHE_REDIS_URL` 兜底成 `REDIS_URL` |
 | `CACHE_STRATEGY` / `QUEUE_STRATEGY` | 缓存/队列实现 | Railway 脚本默认设为 `redis` / `async` |
 | `JWT_SECRET` | 会话签名 | **生产启动硬校验**，见下 |
 | `APP_URL` | 对外基址，用于邮件、onboarding 回跳 | 必须与实际访问地址一致 |

@@ -29,11 +29,11 @@
 
 | 方法 | 路径 | 权限 |
 |---|---|---|
-| GET/POST/PUT/DELETE | `/api/product-codes/rules` | `product_codes.rules.view` / `product_codes.rules.manage` |
-| POST | `/api/product-codes/generate` | `product_codes.codes.generate`（`dryRun: true` 只试算不占号） |
-| GET | `/api/product-codes/parse?code=` | `product_codes.rules.view` |
-| GET | `/api/product-codes/sequences?ruleId=` | `product_codes.rules.view` |
-| POST | `/api/product-codes/aliases` | `product_codes.rules.manage` |
+| GET/POST/PUT/DELETE | `/api/product_codes/rules` | `product_codes.rules.view` / `product_codes.rules.manage` |
+| POST | `/api/product_codes/generate` | `product_codes.codes.generate`（`dryRun: true` 只试算不占号） |
+| GET | `/api/product_codes/parse?code=` | `product_codes.rules.view` |
+| GET | `/api/product_codes/sequences?ruleId=` | `product_codes.rules.view` |
+| POST | `/api/product_codes/aliases` | `product_codes.rules.manage` |
 
 命令：`product_codes.rules.create|update|delete`（update/delete 带乐观锁与 undo）、
 `product_codes.codes.issue`、`product_codes.aliases.create`。
