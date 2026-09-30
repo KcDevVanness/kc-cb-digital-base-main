@@ -570,7 +570,7 @@ Phase 3 生成四个 invoices/line 追加列（带默认值/可空，历史行�
 | TEST-007 | unit + integration | 合同 + 合同行 + 已确认的普通发票 | 登记并确认 export 发票（绑合同行）→ 读合同 | 合同 `contract_total`/`finance_total`/`difference_total` **不变**；既有（非 export）行为不变的回归用例（`trade_docs/__tests__/contractRecalc*`） | REQ-007 |
 | TEST-008 | integration | 发运单 + 2 张销售订单 | 加销售分摊（跨 2 单）→ 改数量 → 删除一单 | 一柜多单可写；数量/单价快照持久化；整体替换语义；无 catalog 变体的商品被拒 | REQ-005 |
 | TEST-009 | UI（浏览器冒烟） | 3 个新/改页面 + 数据 | loading/empty/error/冲突/权限/成功六态；键盘与窄屏；暗色 | 观察到的渲染与交互符合契约（含冲突提示、禁用重复提交、Esc/Ctrl+Enter） | REQ-001, REQ-002, REQ-003, REQ-006, REQ-009 |
-| TEST-010 | unit | i18n 文案 | 跑 `language-purity` 与 key 集合一致性 | zh/en key 集合一致；无中英混排；组名/菜单项符合 N-1…N-4；新增 `incoterms` 字典种子 label 单语言、只写显示名 | REQ-008, REQ-010 |
+| TEST-010 | unit | i18n 文案 | 跑 `language-purity` 与 key 集合一致性 | zh/en key 集合一致；无中英混排；组名/菜单项符合 N-1…N-4；贸易术语字段为自由文本（无种子选项） | REQ-008, REQ-010 |
 | TEST-011 | integration | 已签发的 PI + 发运单 | PI→CI→税务发票 逐级复制 | 行与抬头一次性复制；来源链接可追；来源删除后降级为快照文本；复制后互不影响 | REQ-011 |
 
 ## Implementation Phases
@@ -696,7 +696,7 @@ Phase 3 生成四个 invoices/line 追加列（带默认值/可空，历史行�
 | REQ-005 | J-002, 发运单详情「销售分摊」 | `cross_border_shipment_sales_allocations`, `cross_border.shipments.*` | Phase 2 | TEST-008, TEST-004 | AC-002 |
 | REQ-006 | J-003, `/backend/trade-docs/invoices` | `invoice_kind`/`our_number`/`tax_total`/`gross_total`, line tax 列, `confirm` 发号 | Phase 3 | TEST-006, TEST-009 | AC-003 |
 | REQ-007 | J-003 | `lib/contractRecalc.ts` 票种排除 + 回归测试 | Phase 3 | TEST-007 | AC-004 |
-| REQ-008 | J-001, 合同/PI 表单 | `parties` 选项源 + `our_party_snapshot` + `incoterms` 字典种子 | Phase 1 | TEST-001, TEST-010 | AC-001 |
+| REQ-008 | J-001, 合同/PI 表单 | `parties` 选项源 + `our_party_snapshot` + `incoterms` 自由文本字段（2026-09-30 起无字典种子） | Phase 1 | TEST-001, TEST-010 | AC-001 |
 | REQ-009 | 全部页面/API | `trade_docs.documents.view\|manage`、page.meta、scope 过滤 | Phase 1（+Phase 0 入口） | TEST-001, TEST-002, TEST-009 | AC-005, AC-006 |
 | REQ-010 | Phase 0 全部界面 | i18n + page.meta（label 与 group key） | Phase 0 | TEST-010 | AC-006 |
 | REQ-011 | J-004 | `source_kind`/`source_id`/`source_snapshot` 复制语义 | Phase 4 | TEST-011 | AC-007 |
@@ -705,7 +705,7 @@ Phase 3 生成四个 invoices/line 追加列（带默认值/可空，历史行�
 
 - **迁移边界**：Phase 1（两张新表）、Phase 2（一张新表）、Phase 3（四列追加）各自 `yarn db:generate` → 人工审阅 SQL 与 `.snapshot-open-mercato.json`
   → **提交前问业主**再 `yarn db:migrate`；**绝不用迁移来验证**（验证跑门禁与集成测试）。
-- **Seed / 运维步骤**：~~`incoterms` 字典种子~~（2026-09-30 移除；付款方式/运输方式种子仍走 `trade_docs/setup.ts` 的 `seedDefaults`（幂等，insert-only；既有租户要跑一次 `seed:defaults` 或等效入口，
+- **Seed / 运维步骤**：~~`incoterms` 字典种子~~（2026-09-30 移除）；付款方式/运输方式种子仍走 `trade_docs/setup.ts` 的 `seedDefaults`（幂等，insert-only；既有租户要跑一次 `seed:defaults` 或等效入口，见 `.ai/lessons/module-seeded-dictionaries-need-seed-defaults.md`）；新功能位对既有角色跑 `yarn mercato auth sync-role-acls`。
   见 `.ai/lessons/module-seeded-dictionaries-need-seed-defaults.md`）；新功能位对既有角色跑 `yarn mercato auth sync-role-acls`。
 - **Feature flags**：不新增开关；Phase 0 的菜单改名与 Phase 1+ 的新页面天然可按页面 `navHidden` / 组织权限灰度。
 - **上线顺序**：Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4；每阶段独立可上线、可回滚。
@@ -815,4 +815,4 @@ Phase 3 生成四个 invoices/line 追加列（带默认值/可空，历史行�
 | 2026-09-29 | The PI/CI counterparty block is driven by the direction (the separate 对方类型 field is gone; `purchase ⇒ supplier`, `sales ⇒ customer`, derived in the command), the picker reads one namespace with source-prefixed labels, and the commercial-invoice sales-only guard now also runs on **update**. Also fixes the shared `.partial()` defect that made a notes-only PUT re-inject `direction`/`counterpartyKind`/`currencyCode` and wipe `lines`. Spec: [`.ai/specs/2026-09-29-counterparty-picker-and-master-data.md`](2026-09-29-counterparty-picker-and-master-data.md). |
 | 2026-09-29 | **PI/CI 的唛头（`marks`）删除**：单据不再携带 `marks` —— 实体、校验器、`/api/trade_docs/documents` 的 select/序列化、`trade_docs.documents.*` 的创建/更新/审计字段、`copy-from` 的抬头复制、DocumentsForm/DocumentDetail、单据 XLSX 模板与 i18n key（含「条款与唛头」→「条款」）一并移除；`trade_docs_documents.marks` 由 `Migration20260929084456_trade_docs.ts` 删除（同批删除 `trade_docs_contracts.marks`，见 2026-09-22 spec 的 Changelog）。Data Models 字段表与 Migration & BC 表同步更新。 |
 | 2026-09-30 | **发运分摊的订单来源放开到两个方向（owner 反馈，REQ-004 反向修订）**：本节各处写的「发运单 ↔ 内部销售订单」按 2026-09-29 的贸易类型口径原为「只列内部订单」，2026-09-30 起发运表单「销售分摊」选择器列**对内 + 对外**两个方向的销售订单（选项标签方向词前置），写入侧校验不变（只查重复/存在/目录桥接），所以 CI 汇总的销售分摊行也可能指向对外订单——单价/币种快照与「销售分摊 → 采购分摊 → 手工」的优先级都不变。归属与证据见 [`.ai/specs/2026-09-29-sales-trade-type-and-line-reuse.md`](2026-09-29-sales-trade-type-and-line-reuse.md) 的 REQ-004 与 Changelog 末行。 |
-| 2026-09-30 | **贸易术语去选项（owner 2026-09-30：解释后答复「不需要这些数据选项」）**：删除 `trade_docs/setup.ts` 的 `incoterms` 字典种子（字典记录 + 11 条 EXW…DDP 明细）与 `formOptions.loadIncotermOptions`/`INCOTERM_DICTIONARY_KEY` 管线；合同与 PI/CI 的 `incoterms` 字段由 dictionary-backed combobox 改为**普通文本输入**（`type: 'text'`，帮助文案改「按合同谈定的措辞填写」/ "Free text — type the term the contract was signed with."）。字段列、校验、打印模板、快照与既有行数据不变；付款方式与运输方式的种子不受影响。既有 dev 库已播种的 `incoterms` 字典行未删除（表单不再读取它；如需从字典维护页清掉需单独批准）。 |
+| 2026-09-30 | **贸易术语去选项（owner 2026-09-30：解释后答复「不需要这些数据选项」）**：删除 `trade_docs/setup.ts` 的 `incoterms` 字典种子（字典记录 + 10 条 EXW…DDP 明细）与 `formOptions.loadIncotermOptions`/`INCOTERM_DICTIONARY_KEY` 管线；合同与 PI/CI 的 `incoterms` 字段由 dictionary-backed combobox 改为**普通文本输入**（`type: 'text'`，帮助文案改「按合同谈定的措辞填写」/ "Free text — type the term the contract was signed with."）。字段列、校验、打印模板、快照与既有行数据不变；付款方式与运输方式的种子不受影响。既有 dev 库已播种的 `incoterms` 字典行未删除（表单不再读取它；如需从字典维护页清掉需单独批准）。 |
