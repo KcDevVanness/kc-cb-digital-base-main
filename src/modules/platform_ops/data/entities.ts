@@ -165,17 +165,6 @@ export class PlatformOpsSettlement {
   @Property({ type: 'text', default: 'imported' })
   status: string = 'imported'
 
-  /**
-   * 确认 / 付款时间点 (Phase 3·B). Both columns are nullable and independent of the `status` word: the
-   * importer sets `reconciled` automatically, while a human confirmation and the payment are facts
-   * with their own timestamps (Q-010 decides whether a separate status value is wanted on top).
-   */
-  @Property({ name: 'confirmed_at', type: Date, nullable: true })
-  confirmedAt?: Date | null
-
-  @Property({ name: 'paid_at', type: Date, nullable: true })
-  paidAt?: Date | null
-
   @Property({ name: 'received_at', type: Date, nullable: true })
   receivedAt?: Date | null
 

@@ -57,9 +57,6 @@ export class FinanceShipmentCost {
   @Property({ name: 'incurred_at', type: 'date', nullable: true })
   incurredAt?: Date | null
 
-  /** 付款日期 (Phase 3·B): the fact behind 已付/未付 — null means "not paid (yet)". */
-  @Property({ name: 'paid_at', type: 'date', nullable: true })
-  paidAt?: Date | null
 
   /** Scalar id into `parties` (forwarder / customs broker) plus its display snapshot. */
   @Property({ name: 'party_id', type: 'uuid', nullable: true })
@@ -120,9 +117,6 @@ export class FinanceExpense {
   @Property({ name: 'period_end', type: 'date' })
   periodEnd!: Date
 
-  /** 付款日期 (Phase 3·B): the fact behind 已付/未付 — null means "not paid (yet)". */
-  @Property({ name: 'paid_at', type: 'date', nullable: true })
-  paidAt?: Date | null
 
   @Property({ type: 'numeric', precision: 18, scale: 2 })
   amount!: string

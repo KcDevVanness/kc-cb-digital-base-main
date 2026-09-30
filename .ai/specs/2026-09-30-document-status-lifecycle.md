@@ -236,6 +236,8 @@
 
 `cross_border_export_documents` 增 `status`（`draft/issued/void`，对齐 `trade_docs` 的 PI/CI 词表）+ 签发/作废动作 + 门禁（未签发 PI 不能作为收款依据）。**需要一张加列的迁移**，落地前单独批准。
 
+> **2026-09-30 状态**：该列与 Phase 3·B 的确认/付款列、费用的 `paid_at` **曾按 owner 批准落地并应用到开发库**（PR #128），随后 owner 表示这批**暂时不要** ⇒ 已生成 drop 迁移并应用，**五列全部移除**（entity 字段、快照与库结构一并回退，见计划表六·补51）。本节的实现仍待批准后重做；列生成脚本与迁移模式已在本文件与 git 历史中留痕。
+
 #### Phase 2·C — 收款 / 退税状态：一致性门禁 + 逾期标记（本文件定稿，实现中）
 
 - **目标**：这两张表的**状态与事实**必须自洽（否则台账只能猜哪一半可信），并且「钱还没到」的单据能一眼筛出来。
@@ -448,6 +450,7 @@
 | 2026-09-30 | **Phase 4 转化率按要求移除**：页面 `/backend/internal-sales/quote-conversion`、只读接口 `GET /api/internal_sales/quote-conversion`、`lib/quoteConversion.ts` 与其单测、相关中英文案全部删除（owner：「暂时不需要」）；README 表面表改为「已移除」并写明恢复路径（无迁移、无数据依赖）。 |
 | 2026-09-30 | **Phase 4 转化率实现完成**（`feat/internal-sales-quote-conversion`）：`/backend/internal-sales/quote-conversion` 上线 —— 关联读订单冻结的 `metadata.internalSales.sourceQuote.id`（不加列、不依赖审计），「已发出」按 `sent_at` 事实判断，页面同时给出**两个分母的比率**（全部报价 / 已发出）与原始计数，把口径选择留给业务。纯聚合在 `lib/quoteConversion.ts`（单测 5 例：转化判定 / 状态词不算已发出 / 空分母返回 null 而非 NaN / 区间外订单不计入 / 百分比取整）。**真机**：夹具（给一张报价写 `sent_at` + 把一张订单的 `metadata` 指向它）→ `quotes=2 / sent=1 / converted=1 / 50% / 100%`，页面四个数字与两行明细正确；回滚夹具后 `converted=0 / sent=0 / 0% / —`（null 正确渲染）。 |
 | 2026-09-30 | **Phase 4「转化率」与「停留时长」拆开（仅文档）**：查证订单从报价创建时冻结了 `metadata.internalSales.sourceQuote = { id, number }`（`internal_sales/lib/documentValues.ts:28/142`），**转化率因此不需要新列、不依赖审计**，只剩「分母」一个口径待定（发出数 vs 全部报价）；**只有停留时长**需要迁移批次的 `status_changed_at`。迁移申请范围据此收窄。 |
+| 2026-09-30 | **迁移批次按 owner 要求回退**：五列（`cross_border_export_documents.status`、`platform_ops_settlements.confirmed_at`/`paid_at`、`finance_shipment_costs.paid_at`、`finance_expenses.paid_at`）先按批准落地并应用，随后按要求**drop 并移除实体字段与快照**（真机核对：五列已不存在）。Phase 2·B / 3·B 与 `status_changed_at` 回到「待批准/暂缓」状态。 |
 | 2026-09-30 | **Phase 4·B 可见性补做完成**（`feat/overdue-reminder-marker`）：清单行显示「已提醒 <日期>」——新增只读接口 `GET /api/export_finance/overdue-reminder-status`（按 `group_key` 反查本模块写出的 `notifications`，取每资源最近时间戳）+ 页面标记（中英各 1 键）+ 解析器单测 2 例；真机：夹具 → 命令 2 条 → 接口两键 → 页面两行「已提醒 2026-09-30」，拆夹具后消失。**Phase 4·B 至此全部落地**（含此前对账里标注未做的这一项）。 |
 | 2026-09-30 | **Phase 4·B 草稿与实现的对账（仅文档）**：把该节的「推荐默认」改写成逐条对账——**谁收**（改为功能位，与 `finance` 同款）、**阈值**、**时机与幂等**（实现比草稿更强：同一条条件永远只有一条通知）、**内容** 为 ✅；**渠道**（不造组织级开关，交平台每用户偏好）、**邮件摘要**、**清单「已提醒」标记**三处与草稿不同或未做，均已如实标注，其中「已提醒」写明最小实现路径并列为独立后续小项。 |
 | 2026-09-30 | **Phase 4·B 实现完成**（`feat/export-finance-overdue-reminders`）：`mercato export_finance overdue-reminders --org --tenant [--dry-run] [--today]` 上线 —— 两个逾期条件**直接复用 `?overdue=true`**（与清单/档案列/CSV 同源），每条件一个通知类型（`notifications.ts`）与一个事件（`category: 'custom'`），收件人按平台约定由功能位 fan-out，**幂等键 = 资源 + 变成逾期的那一天**（`becameLateOn()`，纯函数、单测锁死：同一天重复跑与次日跑都刷新同一条）。真机：夹具（柜 60 天 + 订单 `received` 60 天）→ 命令报 2 条，`notifications` 落 2×2 行（两名功能位持有者）且 `group_key` 为 `…:2026-09-15`；**再跑一次仍是 2 条**（刷新不堆叠）；`--dry-run` 0 写；拆夹具后 dry-run 回到 0、通知行清零。 |
