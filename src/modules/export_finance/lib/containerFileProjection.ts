@@ -276,6 +276,9 @@ export async function loadContainerFiles(
 
   const filtered = items.filter((item) => {
     if (params.filters.taxRefundStatus && item.taxRefundStatus !== params.filters.taxRefundStatus) return false
+    // 逾期 comes from the row's own flag: one rule, one threshold (`fileRules.ts`), and the count
+    // and the CSV can only ever agree with the list because all three read this same array.
+    if (params.filters.overdue && !item.refundOverdue) return false
     return true
   })
 

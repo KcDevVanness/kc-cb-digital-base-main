@@ -325,5 +325,15 @@
   "export_finance.orders.collection.needsAmountAndDate": "A received collection needs both the collected amount and the receipt date.",
   "export_finance.orders.collection.mustBeEmpty": "A not-received or unknown collection cannot carry an amount or a receipt date — clear both first.",
   "export_finance.cabinets.detail.refund.needsAmount": "A completed refund needs its refunded amount.",
-  "export_finance.cabinets.detail.refund.mustBeEmpty": "A not-started or unknown refund cannot carry an amount — clear it first."
+  "export_finance.cabinets.detail.refund.mustBeEmpty": "A not-started or unknown refund cannot carry an amount — clear it first.",
+  "export_finance.overdue.page.title": "Overdue worklist",
+  "export_finance.overdue.page.description": "Documents whose money has not arrived, and has been waited on for too long. The rule is the same one behind the overdue markers on the container and order files — this page only gathers them.",
+  "export_finance.overdue.section.refunds": "Refund overdue (containers)",
+  "export_finance.overdue.section.refunds.empty": "No container is late on its tax refund.",
+  "export_finance.overdue.section.collections": "Collection overdue (orders)",
+  "export_finance.overdue.section.collections.empty": "No order is late on its collection.",
+  "export_finance.overdue.age": "waiting",
+  "export_finance.overdue.days": "days",
+  "export_finance.overdue.capped": "Only the oldest are shown; the full list lives in the container file under the overdue column.",
+  "export_finance.overdue.loadFailed": "Could not load the worklist. Try again shortly."
 }
