@@ -87,18 +87,18 @@ feature.
 
 ### Phase 1: shared preview + trade-typed source kinds
 
-- [ ] 1.1 `SourcePreviewDrawer` + app i18n keys
-- [ ] 1.2 trade-typed kinds + head-fact readers + unit tests
-- [ ] 1.3 contract dialog wiring
+- [x] 1.1 `SourcePreviewDrawer` + app i18n keys — 5bdc52e
+- [x] 1.2 trade-typed kinds + head-fact readers + unit tests — 021edfc
+- [x] 1.3 contract dialog wiring — 021edfc
 
 ### Phase 2: the same pattern on the PI/CI copy dialogs
 
-- [ ] 2.1 head loaders + preview-row mapping
-- [ ] 2.2 PI/CI dialog previews
-- [ ] 2.3 order-lines page cap fix
+- [x] 2.1 head loaders + preview-row mapping — 1625e05
+- [x] 2.2 PI/CI dialog previews — 1625e05
+- [x] 2.3 order-lines page cap fix — 1625e05
 
 ### Phase 3: docs, gate, browser smoke
 
-- [ ] 3.1 spec / README / plan rows
+- [x] 3.1 spec / README / plan rows — bb0e976
 - [ ] 3.2 full gate
-- [ ] 3.3 browser smoke
+- [x] 3.3 browser smoke
