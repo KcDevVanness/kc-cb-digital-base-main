@@ -333,7 +333,7 @@
 - **逾期清单：今天就能做（无 DDL）**。两个逾期派生已在 Phase 2·C 落地（`export_finance/lib/fileRules.ts`：
   柜「退税逾期」/ 订单「收款逾期」，阈值 45 天、边界不含、日期缺失不标），阶段 2·A 的 `closed` 也已进状态词表；
   套用同一套派生出「跨板块逾期清单」不需要任何新列，也**不发明新阈值**。
-- **报价→订单转化率：现有数据就能算，只缺「分母怎么定」（2026-09-30 查证）**。订单从报价创建时，
+- **报价→订单转化率：已实现（2026-09-30，`internal_sales`）**。订单从报价创建时，
   `metadata.internalSales.sourceQuote = { id, number }` 被冻结在订单上（`internal_sales/lib/documentValues.ts:28/142`），
   **报价→订单的关联在现库就有**，不需要新列、不需要审计；报价侧状态（draft/sent/confirmed/canceled）Phase 1 起也在写。
   所以转化率是一个纯读侧聚合：**分子 = 有订单引用的报价数**；**分母待你定**（「统计期内发出的报价」还是「全部报价」——
@@ -434,6 +434,7 @@
 | 2026-09-30 | **Phase 1 定稿并进入实现**（owner「按照这个流程先实作」）：Q-001…Q-007 按推荐默认落定；补齐 Domain Vocabulary / Journeys / UI / API / Tests / Traceability / Acceptance；Phase 2–4 仍为草案 |
 | 2026-09-30 | **Phase 1 实现完成**（`feat/sales-status-lifecycle`）：新建写 `draft`（字典条目 id）、报价发出（`quotes/send` + 有效期 + 买方邮箱字段与 parties 预填）/作废、订单确认/作废、列表状态徽章 + 「有效至」+ 过期高亮、下单门禁、发运分摊只列 confirmed（历史 NULL 标注）、对外订单补「（PO）」、行数列改名「明细行数」；单测 3 套新增/更新，真机 5 条链路验证，AC-001…AC-008 全部通过 |
 | 2026-09-30 | **Phase 2·C 实现完成**（`feat/export-finance-status-coherence`）：收款/退税记录的**状态与事实**在写入时校验（`lib/statusCoherence.ts`，422 逐条回报；历史行不动）；两个档案页新增**派生**的逾期标记（柜「退税逾期」/ 订单「收款逾期」，阈值常量 45 天、边界不含、缺失日期不标），进列表列与 CSV。证据：单元两套 + 真机 API（三种非法组合 422、finance 口径回读 `collectionOverdue`、CSV 表头含「退税逾期」）。开放问题记入 Q-008（是否把「柜未收货不得登记收款」做成硬门禁——收款按采购单记，一单可跨多柜）。 |
+| 2026-09-30 | **Phase 4 转化率实现完成**（`feat/internal-sales-quote-conversion`）：`/backend/internal-sales/quote-conversion` 上线 —— 关联读订单冻结的 `metadata.internalSales.sourceQuote.id`（不加列、不依赖审计），「已发出」按 `sent_at` 事实判断，页面同时给出**两个分母的比率**（全部报价 / 已发出）与原始计数，把口径选择留给业务。纯聚合在 `lib/quoteConversion.ts`（单测 5 例：转化判定 / 状态词不算已发出 / 空分母返回 null 而非 NaN / 区间外订单不计入 / 百分比取整）。**真机**：夹具（给一张报价写 `sent_at` + 把一张订单的 `metadata` 指向它）→ `quotes=2 / sent=1 / converted=1 / 50% / 100%`，页面四个数字与两行明细正确；回滚夹具后 `converted=0 / sent=0 / 0% / —`（null 正确渲染）。 |
 | 2026-09-30 | **Phase 4「转化率」与「停留时长」拆开（仅文档）**：查证订单从报价创建时冻结了 `metadata.internalSales.sourceQuote = { id, number }`（`internal_sales/lib/documentValues.ts:28/142`），**转化率因此不需要新列、不依赖审计**，只剩「分母」一个口径待定（发出数 vs 全部报价）；**只有停留时长**需要迁移批次的 `status_changed_at`。迁移申请范围据此收窄。 |
 | 2026-09-30 | **Phase 4·B 逾期提醒口径草案（仅文档，待确认）**：以「每日一次扫描 `overdue=true`、某行当天首次进入逾期才发、幂等键=资源+逾期起始日（查既有 `notifications` 记录，不建表）」为核心；收件人推荐「单据负责人 + 财务组（现有 view 持有者）」、阈值沿用 45 天不加配置、渠道站内 + 邮件且**默认关闭按组织开启**、邮件每日合并一封。开放问题 **Q-011**（收件人 / 阈值可调性 / 邮件默认开关）答复前不动代码。 |
 | 2026-09-30 | **Phase 4「转化率/停留时长」实测后改道（仅文档）**：查 dev 库 `action_logs`（1 417 行，2026-09-24 起）——时间线明文且已索引、`sales.quote`/`sales.order` 的状态写入确实落日志（`changed_fields = ['status','statusEntryId']`），**但取值列（`command_payload` / `changes_json` / `snapshot_after`）是 at-rest 加密的 `…:v1` 密文**，SQL 侧无法判定某行日志代表哪个状态。因此停留时长/转化率**不建在审计载荷上**，改为随迁移批次给单据加 `status_changed_at`（至少 `sales_quotes`/`sales_orders`），此后纯读侧聚合即可；该列并入「结算单确认/付款 + 费用付款日期 + 2·B 的 `export_documents.status`」同一批迁移，一次批准。 |
