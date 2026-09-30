@@ -29,6 +29,7 @@ import { getTokenContext, readJsonSafe } from '@open-mercato/core/helpers/integr
 type IdPayload = { id?: string; item?: { id?: string } }
 type ListPayload<T> = { items?: T[]; total?: number }
 type ShipmentItem = { id: string; status: string; number?: string | null }
+type DocumentItem = { id: string; shipmentId: string; docType: string }
 
 const STAFF_PASSWORD = 'ShipmentClose!2026'
 
@@ -75,6 +76,24 @@ async function loadShipmentStatus(
   return body.items?.[0]?.status ?? null
 }
 
+/** The document section of one shipment, as the detail page reads it. */
+async function loadDocuments(
+  api: APIRequestContext,
+  token: string,
+  orgId: string,
+  shipmentId: string,
+): Promise<DocumentItem[]> {
+  const response = await get(
+    api,
+    `/api/cross_border/shipments/documents?shipmentId=${encodeURIComponent(shipmentId)}&pageSize=50`,
+    token,
+    orgId,
+  )
+  expect(response.status(), 'GET /api/cross_border/shipments/documents should return 200').toBe(200)
+  const body = await readBody<ListPayload<DocumentItem>>(response)
+  return body.items ?? []
+}
+
 test.describe.serial('cross_border — shipment archival closure', () => {
   const stamp = Date.now().toString(36)
   let api: APIRequestContext
@@ -94,6 +113,9 @@ test.describe.serial('cross_border — shipment archival closure', () => {
   // Shipments this spec created that the API cannot delete (a `received`/`closed` one) are kept
   // for reporting; the rest belong to the shared phase-2 list.
   let closedShipmentId = ''
+  // A document registered while the archival shipment was still `received`, so the sealing
+  // assertions in TEST-204 have an existing paper to try to edit and delete.
+  let closedShipmentDocumentId = ''
 
   const shipmentIds: string[] = []
 
@@ -125,11 +147,22 @@ test.describe.serial('cross_border — shipment archival closure', () => {
     await expectOk<{ status?: string }>(response)
   }
 
-  const close = async (shipmentId: string) => {
+  const close = async (shipmentId: string): Promise<string | null> => {
     const response = await post(api, '/api/cross_border/shipments/close', staffToken, organizationId, {
       id: shipmentId,
     })
-    await expectOk<{ status?: string }>(response)
+    const body = await expectOk<{ status?: string }>(response)
+    return body.status ?? null
+  }
+
+  /** One export paper on a shipment, through the documents surface the detail page uses. */
+  const createDocument = async (shipmentId: string, docType: string) => {
+    const response = await post(api, '/api/cross_border/shipments/documents', staffToken, organizationId, {
+      shipmentId,
+      docType,
+    })
+    expect(response.status(), 'POST /api/cross_border/shipments/documents should return 201').toBe(201)
+    return String((await readJsonSafe<IdPayload>(response))?.id ?? '')
   }
 
   test.beforeAll(async () => {
@@ -149,6 +182,7 @@ test.describe.serial('cross_border — shipment archival closure', () => {
         'cross_border.shipments.manage',
         'cross_border.shipments.depart',
         'cross_border.shipments.receive',
+        'cross_border.documents.manage',
         'purchasing.suppliers.view',
         'purchasing.suppliers.manage',
         'purchasing.orders.view',
@@ -262,6 +296,16 @@ test.describe.serial('cross_border — shipment archival closure', () => {
         selectedOrgId: organizationId,
       }).catch(() => undefined)
     }
+    // The closed shipment's own paper is refused the same way (the sealing answers 422), so this
+    // delete is expected to fail harmlessly alongside the shipment row.
+    if (closedShipmentDocumentId) {
+      await apiRequestWithSelectedOrg(
+        api,
+        'DELETE',
+        `/api/cross_border/shipments/documents?id=${encodeURIComponent(closedShipmentDocumentId)}`,
+        { token: staffToken, selectedOrgId: organizationId },
+      ).catch(() => undefined)
+    }
     if (purchaseOrderId) {
       await apiRequestWithSelectedOrg(
         api,
@@ -313,11 +357,13 @@ test.describe.serial('cross_border — shipment archival closure', () => {
     await receive(shipmentId)
     expect(await loadShipmentStatus(api, staffToken, organizationId, shipmentId)).toBe('received')
 
-    const closed = await post(api, '/api/cross_border/shipments/close', staffToken, organizationId, {
-      id: shipmentId,
-    })
-    const body = await expectOk<{ status?: string }>(closed)
-    expect(body.status, 'the close command reports the archival status').toBe('closed')
+    // The paperwork is registered while the shipment is still open, so TEST-204 can prove that
+    // closing sealed an existing document rather than only refusing new ones.
+    closedShipmentDocumentId = await createDocument(shipmentId, 'packing_list')
+    expect(closedShipmentDocumentId).toBeTruthy()
+    expect(await loadDocuments(api, staffToken, organizationId, shipmentId)).toHaveLength(1)
+
+    expect(await close(shipmentId), 'the close command reports the archival status').toBe('closed')
 
     expect(await loadShipmentStatus(api, staffToken, organizationId, shipmentId)).toBe('closed')
     closedShipmentId = shipmentId
@@ -364,6 +410,50 @@ test.describe.serial('cross_border — shipment archival closure', () => {
     expect(
       await loadShipmentStatus(api, staffToken, organizationId, closedShipmentId),
       'the refused cancellation left the archival status untouched',
+    ).toBe('closed')
+  })
+
+  test('TEST-204: a closed shipment is sealed for its paperwork too', async () => {
+    expect(closedShipmentId, 'TEST-201 closed the archival fixture first').toBeTruthy()
+    expect(closedShipmentDocumentId, 'TEST-201 registered a paper before closing').toBeTruthy()
+
+    const refusedCreate = await post(
+      api,
+      '/api/cross_border/shipments/documents',
+      staffToken,
+      organizationId,
+      { shipmentId: closedShipmentId, docType: 'packing_list' },
+    )
+    expect(refusedCreate.status(), 'a document cannot be added to a closed shipment').toBe(422)
+    expect(await loadDocuments(api, staffToken, organizationId, closedShipmentId)).toHaveLength(1)
+
+    const refusedUpdate = await apiRequestWithSelectedOrg(
+      api,
+      'PUT',
+      '/api/cross_border/shipments/documents',
+      {
+        token: staffToken,
+        selectedOrgId: organizationId,
+        data: { id: closedShipmentDocumentId, note: 'edited after the cabinet was filed' },
+      },
+    )
+    expect(refusedUpdate.status(), 'an existing document cannot be edited on a closed shipment').toBe(422)
+
+    const refusedDelete = await apiRequestWithSelectedOrg(
+      api,
+      'DELETE',
+      `/api/cross_border/shipments/documents?id=${encodeURIComponent(closedShipmentDocumentId)}`,
+      { token: staffToken, selectedOrgId: organizationId },
+    )
+    expect(refusedDelete.status(), 'an existing document cannot be deleted from a closed shipment').toBe(422)
+
+    // Each refusal left the paper in place, and the refusals never moved the shipment out of the
+    // archival status the sealing is derived from.
+    const documents = await loadDocuments(api, staffToken, organizationId, closedShipmentId)
+    expect(documents.map((document) => document.id)).toEqual([closedShipmentDocumentId])
+    expect(
+      await loadShipmentStatus(api, staffToken, organizationId, closedShipmentId),
+      'the refused document writes left the archival status untouched',
     ).toBe('closed')
   })
 })
