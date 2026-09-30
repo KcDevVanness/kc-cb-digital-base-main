@@ -80,19 +80,40 @@ describe('buyer snapshot', () => {
     expect(readBuyerSnapshot(organization)).toEqual({
       ref: `org:${BRANCH_ID}`,
       name: '俄罗斯 AB 有限公司',
+      email: '',
     })
     const party = buildBuyerSnapshot({ name: 'ABC GmbH', ref: `party:${PARTY_ID}` })
-    expect(readBuyerSnapshot(party)).toEqual({ ref: `party:${PARTY_ID}`, name: 'ABC GmbH' })
+    expect(readBuyerSnapshot(party)).toEqual({ ref: `party:${PARTY_ID}`, name: 'ABC GmbH', email: '' })
+  })
+
+  it('carries the buyer email the quote send route reads, from either snapshot key', () => {
+    const withContact = buildBuyerSnapshot({
+      name: 'ABC GmbH',
+      ref: `party:${PARTY_ID}`,
+      email: ' buyer@abc.example ',
+    })
+    expect(withContact).toEqual({
+      name: 'ABC GmbH',
+      customer: { displayName: 'ABC GmbH' },
+      contact: { email: 'buyer@abc.example' },
+      internalSales: { partyId: PARTY_ID },
+    })
+    expect(readBuyerSnapshot(withContact).email).toBe('buyer@abc.example')
+    // The installed surfaces freeze the address under `customer.primaryEmail`; read both.
+    expect(readBuyerSnapshot({ name: 'X', customer: { primaryEmail: 'x@example.com' } }).email).toBe('x@example.com')
+    // No email anywhere: `''`, never `undefined` — the form field is a controlled input.
+    expect(readBuyerSnapshot({ name: 'No email' }).email).toBe('')
   })
 
   it('reads a legacy name-only snapshot without inventing a link', () => {
-    expect(readBuyerSnapshot({ name: 'Legacy buyer' })).toEqual({ ref: '', name: 'Legacy buyer' })
+    expect(readBuyerSnapshot({ name: 'Legacy buyer' })).toEqual({ ref: '', name: 'Legacy buyer', email: '' })
   })
 
   it('falls back to the installed display key when this module own key is absent', () => {
     expect(readBuyerSnapshot({ customer: { displayName: 'From installed surface' } })).toEqual({
       ref: '',
       name: 'From installed surface',
+      email: '',
     })
   })
 
@@ -100,9 +121,10 @@ describe('buyer snapshot', () => {
     expect(readBuyerSnapshot({ name: 'Corrupt', internalSales: { organizationId: 'nope' } })).toEqual({
       ref: '',
       name: 'Corrupt',
+      email: '',
     })
-    expect(readBuyerSnapshot(null)).toEqual({ ref: '', name: '' })
-    expect(readBuyerSnapshot('text')).toEqual({ ref: '', name: '' })
+    expect(readBuyerSnapshot(null)).toEqual({ ref: '', name: '', email: '' })
+    expect(readBuyerSnapshot('text')).toEqual({ ref: '', name: '', email: '' })
   })
 })
 

@@ -73,12 +73,19 @@ export function decodeBuyerRef(value: string): BuyerRef {
 /**
  * The snapshot frozen onto the document. `null` means "no buyer at all" — the caller decides
  * whether that clears the stored value (update) or omits the key (create).
+ *
+ * `email` is the buyer's address the installed `POST /api/sales/quotes/send` reads first
+ * (`resolveQuoteEmail`: `snapshot.contact.email` → `snapshot.customer.primaryEmail` →
+ * `metadata.customerEmail`). It lives in the snapshot because the snapshot is rebuilt in full on
+ * every save — no merge, and no risk of clobbering the document's `metadata`.
  */
 export function buildBuyerSnapshot(input: {
   name: string
   ref: string
+  email?: string
 }): Record<string, unknown> | null {
   const name = typeof input.name === 'string' ? input.name.trim() : ''
+  const email = typeof input.email === 'string' ? input.email.trim() : ''
   const ref = decodeBuyerRef(input.ref)
   if (!name && ref.kind === 'none') return null
   const snapshot: Record<string, unknown> = {}
@@ -90,6 +97,9 @@ export function buildBuyerSnapshot(input: {
     // a document created here shows its buyer on the platform's own surfaces.
     snapshot.customer = { displayName: name }
   }
+  if (email) {
+    snapshot.contact = { email }
+  }
   if (ref.kind === 'organization') {
     snapshot.internalSales = { organizationId: ref.id }
   } else if (ref.kind === 'party') {
@@ -99,19 +109,35 @@ export function buildBuyerSnapshot(input: {
 }
 
 /** Read the buyer back for the edit form; tolerates snapshots written by the installed surfaces. */
-export function readBuyerSnapshot(snapshot: unknown): { ref: string; name: string } {
+export function readBuyerSnapshot(snapshot: unknown): { ref: string; name: string; email: string } {
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
-    return { ref: '', name: '' }
+    return { ref: '', name: '', email: '' }
   }
   const record = snapshot as Record<string, unknown>
   const ownName = typeof record.name === 'string' ? record.name.trim() : ''
   const name = ownName || readCustomerDisplayName(record.customer)
+  const email = readBuyerEmail(record)
   const link = record.internalSales
   const organizationId = readLinkId(link, 'organizationId')
-  if (organizationId) return { ref: encodeBuyerRef({ kind: 'organization', id: organizationId }), name }
+  if (organizationId) return { ref: encodeBuyerRef({ kind: 'organization', id: organizationId }), name, email }
   const partyId = readLinkId(link, 'partyId')
-  if (partyId) return { ref: encodeBuyerRef({ kind: 'party', id: partyId }), name }
-  return { ref: '', name }
+  if (partyId) return { ref: encodeBuyerRef({ kind: 'party', id: partyId }), name, email }
+  return { ref: '', name, email }
+}
+
+/** The buyer's address to send a quote to: the picker's `contact.email`, else `customer.primaryEmail`. */
+function readBuyerEmail(record: Record<string, unknown>): string {
+  const contact = record.contact
+  if (contact && typeof contact === 'object' && !Array.isArray(contact)) {
+    const email = (contact as Record<string, unknown>).email
+    if (typeof email === 'string' && email.trim()) return email.trim()
+  }
+  const customer = record.customer
+  if (customer && typeof customer === 'object' && !Array.isArray(customer)) {
+    const email = (customer as Record<string, unknown>).primaryEmail
+    if (typeof email === 'string' && email.trim()) return email.trim()
+  }
+  return ''
 }
 
 function readCustomerDisplayName(customer: unknown): string {

@@ -17,6 +17,7 @@
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import type { ComboboxOption } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { readBuyerSnapshot } from './buyer'
+import { salesStatusActions } from './salesStatus'
 import {
   EMPTY_LINE,
   readText,
@@ -45,7 +46,13 @@ export function quoteOptionFromRecord(item: Record<string, unknown>): ComboboxOp
   return { value, label: buyer ? `${number} — ${buyer}` : number }
 }
 
-/** Options for the picker, newest first; the search term is applied server-side (quote number). */
+/**
+ * Options for the picker, newest first; the search term is applied server-side (quote number).
+ *
+ * Only quotes this order may legally be built from are offered: the same
+ * `salesStatusActions('quote', …).canOrderFrom` rule the list's row actions use, so a draft or
+ * canceled quote cannot be turned into an order through the loader either.
+ */
 export async function loadQuoteOptions(query?: string, channelId?: string | null): Promise<ComboboxOption[]> {
   const term = query?.trim()
   const payload = await fetchCrudList<Record<string, unknown>>(QUOTES_API_PATH, {
@@ -60,8 +67,15 @@ export async function loadQuoteOptions(query?: string, channelId?: string | null
     ...(channelId ? { channelId } : {}),
   })
   return (payload.items ?? [])
+    .filter((item) => salesStatusActions('quote', readQuoteStatus(item)).canOrderFrom)
     .map(quoteOptionFromRecord)
     .filter((option): option is ComboboxOption => option !== null)
+}
+
+/** The quote's status as the list projects it: a dictionary value, or `null` when never stamped. */
+function readQuoteStatus(item: Record<string, unknown>): string | null {
+  const raw = item.status
+  return typeof raw === 'string' && raw.length > 0 ? raw : null
 }
 
 /**
@@ -202,19 +216,28 @@ export async function loadQuoteDraft(quoteId: string): Promise<QuoteDraft> {
 }
 
 /**
- * Applies a quote to the form through the form's own `setValue`, one field per call.
+ * Applies an already-loaded quote through the form's own `setValue`, one field per call.
  *
- * Returns what the caller needs for its message; an empty quote still fills the head and leaves the
- * starter line, so the operator sees the load happened and can add the lines. The trade type is not
- * among the fields: the entry owns it, and the picker already offers this entry's own type only.
+ * The fetch lives in `loadQuoteDraft` so the caller can apply the order gate
+ * (`quoteDraftOrderable`) *before* anything is written into the form. Returns what the caller needs
+ * for its message; an empty quote still fills the head and leaves the starter line. The trade type
+ * is not among the fields: the entry owns it, and the picker already offers this entry's own type.
  */
-export async function applyQuoteDraftToForm(
-  quoteId: string,
+/**
+ * The gate + the write half, split from the fetch so the panel can say *why* a quote was refused
+ * (a localized message) instead of only reporting a failure.
+ */
+export function quoteDraftOrderable(draft: QuoteDraft): boolean {
+  return salesStatusActions('quote', draft.values.status ?? null).canOrderFrom
+}
+
+export function applyQuoteDraft(
+  draft: QuoteDraft,
   setValue: (field: string, value: unknown) => void,
-): Promise<{ number: string; lineCount: number }> {
-  const draft = await loadQuoteDraft(quoteId)
+): { number: string; lineCount: number } {
   setValue('buyerRef', draft.values.buyerRef)
   setValue('customerName', draft.values.customerName)
+  setValue('buyerEmail', draft.values.buyerEmail)
   setValue('currencyCode', draft.values.currencyCode)
   setValue('customerReference', draft.values.customerReference)
   setValue('comments', draft.values.comments)

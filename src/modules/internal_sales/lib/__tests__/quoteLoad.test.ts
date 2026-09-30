@@ -22,7 +22,7 @@ import {
  * What is pinned here is the mapping that turns a *quotation* (head + snake_case line rows) into
  * *order* form values — the part where a mistake silently produces a wrong order — plus the source
  * quote that is written onto the new order's `metadata`. The network half (`loadQuoteDraft`,
- * `applyQuoteDraftToForm`) is exercised in the browser smoke, not here.
+ * `loadQuoteDraft` + `applyQuoteDraft`) is exercised in the browser smoke, not here.
  */
 
 const QUOTE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -35,6 +35,7 @@ function formValues(patch: Partial<InternalSalesFormValues> = {}): InternalSales
     tradeType: 'internal',
     buyerRef: '',
     customerName: '',
+    buyerEmail: '',
     currencyCode: '',
     customerReference: '',
     comments: '',

@@ -47,6 +47,8 @@ import {
   isUuid,
 } from '../lib/buyer'
 import { useTradeTypeChannels, type TradeTypeChannelMap } from '../lib/tradeTypeChannels'
+import { SALES_STATUS_DRAFT, SALES_STATUS_SENT } from '../lib/salesStatus'
+import { useSalesStatusEntries } from '../lib/salesStatusEntries'
 import {
   channelIdForTradeType,
   isSalesTradeType,
@@ -226,7 +228,11 @@ function toHeadPayload(
     channelIds?: Partial<Record<SalesTradeType, string | null | undefined>>
   },
 ): Record<string, unknown> {
-  const snapshot = buildBuyerSnapshot({ name: values.customerName, ref: values.buyerRef })
+  const snapshot = buildBuyerSnapshot({
+    name: values.customerName,
+    ref: values.buyerRef,
+    email: values.buyerEmail,
+  })
   const channelId = channelIdForTradeType(values.tradeType, options?.channelIds ?? {})
   return {
     // The trade type travels on the engine's channel; callers resolve the map and block the save
@@ -245,14 +251,20 @@ function toHeadPayload(
  * The create command takes the head **and** the lines in one call. `currencyCode` is required per
  * line as well as per document, and the totals block is deliberately omitted: the installed sales
  * engine computes it from the lines, so sending our own would only give it a second opinion.
+ *
+ * `statusEntryId` is the tenant dictionary entry for `draft`: a document is born as a draft, and
+ * only an explicit action (`quotes/send`, `确认订单`) moves it on. The engine resolves the value
+ * from the entry, so the tenant keeps owning its status vocabulary.
  */
 export function buildInternalSalesPayload(
   kind: InternalSalesKind,
   values: InternalSalesFormValues,
   channelIds: Partial<Record<SalesTradeType, string | null | undefined>> = {},
+  statusEntryId?: string | null,
 ): Record<string, unknown> {
   return {
     ...toHeadPayload(values, { channelIds }),
+    ...(statusEntryId ? { statusEntryId } : {}),
     // Provenance only, and only on create: the engine's update path leaves `metadata` untouched
     // when the payload omits it, so the edit form never rewrites the stored value.
     ...(values.sourceQuote ? { metadata: buildDocumentMetadata(values.sourceQuote) } : {}),
@@ -360,16 +372,20 @@ function useRelatedOrganizations(): {
  * read the module's other surfaces use as well. `null` on failure — the caller degrades instead of
  * inventing a name.
  */
-async function fetchPartyDetail(partyId: string): Promise<{ code: string; name: string } | null> {
+async function fetchPartyDetail(partyId: string): Promise<{ code: string; name: string; email: string } | null> {
   try {
-    const call = await apiCall<{ item?: { code?: string; name?: string } }>(
+    const call = await apiCall<{ item?: { code?: string; name?: string; email?: string | null } }>(
       `/api/parties/${encodeURIComponent(partyId)}`,
     )
     if (!call.ok) return null
     const item = call.result?.item
     const name = typeof item?.name === 'string' ? item.name.trim() : ''
     if (!name) return null
-    return { code: typeof item?.code === 'string' ? item.code.trim() : '', name }
+    return {
+      code: typeof item?.code === 'string' ? item.code.trim() : '',
+      name,
+      email: typeof item?.email === 'string' ? item.email.trim() : '',
+    }
   } catch {
     return null
   }
@@ -405,6 +421,12 @@ function BuyerPickerField({
    */
   const rawTradeType = values?.tradeType
   const tradeType: SalesTradeType = isSalesTradeType(rawTradeType) ? rawTradeType : 'internal'
+  /** The sibling email field, so the party prefill never overwrites what the operator typed. */
+  const currentEmail = typeof values?.buyerEmail === 'string' ? values.buyerEmail : ''
+  // The prefill resolves asynchronously; a ref carries the *latest* typed address into that callback
+  // so an address entered while the party read was in flight is not overwritten.
+  const latestEmailRef = React.useRef(currentEmail)
+  latestEmailRef.current = currentEmail
   /**
    * A buyer from the other namespace cannot survive a trade-type switch (an organization id is not
    * a customer). The check is on the *picked value's* kind rather than on a previous-render ref: an
@@ -539,9 +561,12 @@ function BuyerPickerField({
       }
       if (ref.kind === 'party') {
         // The label carries a code prefix, so the printed name comes from the party read; a failed
-        // read leaves whatever the operator has in the name field untouched.
+        // read leaves whatever the operator has in the name field untouched. The party's email is
+        // only a prefill — an address already typed here is never overwritten.
         void fetchPartyDetail(ref.id).then((detail) => {
-          if (detail) setFormValue?.('customerName', detail.name)
+          if (!detail) return
+          setFormValue?.('customerName', detail.name)
+          if (detail.email && !latestEmailRef.current.trim()) setFormValue?.('buyerEmail', detail.email)
         })
       }
     },
@@ -817,6 +842,16 @@ function useFields(t: TranslateFn, entryTradeType: SalesTradeType): CrudField[] 
     },
     { id: 'customerName', label: t('internal_sales.form.field.customerName'), type: 'text', layout: 'half' },
     {
+      id: 'buyerEmail',
+      label: t('internal_sales.form.field.buyerEmail', 'Buyer email'),
+      type: 'text',
+      layout: 'half',
+      description: t(
+        'internal_sales.form.field.buyerEmailHelp',
+        'Used when a quote is sent to the buyer (acceptance link and email).',
+      ),
+    },
+    {
       id: 'currencyCode',
       label: t('internal_sales.form.field.currency'),
       type: 'select',
@@ -834,6 +869,26 @@ function useFields(t: TranslateFn, entryTradeType: SalesTradeType): CrudField[] 
  * there is nothing upstream of a quote to load from, and the panel's read-only half only makes
  * sense where a document can carry a source quote.
  */
+/**
+ * The "this quote has been sent" banner on the edit page.
+ *
+ * The engine returns a sent quote to `draft` and kills its acceptance link on **any** update
+ * (`sales/commands/documents.js`), so saving silently un-sends the quote. The operator is told
+ * before/after the save instead of discovering it from a changed badge.
+ */
+function SentQuoteNotice({ values, t }: { values?: Record<string, unknown>; t: TranslateFn }) {
+  const status = typeof values?.status === 'string' ? values.status : null
+  if (status !== SALES_STATUS_SENT) return null
+  return (
+    <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+      {t(
+        'internal_sales.form.sentQuoteHint',
+        'This quote has been sent: saving returns it to draft and invalidates the link that went out. Send it again when ready.',
+      )}
+    </p>
+  )
+}
+
 function useGroups(
   t: TranslateFn,
   { withQuoteLoad = false, mode = 'create' as 'create' | 'edit', autoLoadFrom = null, tradeType = 'internal' as SalesTradeType, channelIds = {} }: {
@@ -864,7 +919,17 @@ function useGroups(
           ),
         }]
       : []),
-    { id: 'header', column: 1, fields: ['tradeType', 'buyerRef', 'customerName', 'currencyCode', 'customerReference', 'comments'] },
+    ...(mode === 'edit' && withQuoteLoad === false
+      ? [{
+          id: 'sent-notice',
+          column: 1 as const,
+          bare: true,
+          component: (context: CrudFormGroupComponentProps) => (
+            <SentQuoteNotice values={context.values} t={t} />
+          ),
+        }]
+      : []),
+    { id: 'header', column: 1, fields: ['tradeType', 'buyerRef', 'customerName', 'buyerEmail', 'currencyCode', 'customerReference', 'comments'] },
     {
       id: 'lines',
       column: 1,
@@ -890,6 +955,10 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
   const entryTradeType = useEntryTradeType()
   const fields = useFields(t, entryTradeType)
   const { channels, hasAll: hasAllChannels, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
+  // A new document is born as a draft; the draft entry comes from the tenant's own dictionary, so
+  // the vocabulary stays theirs (a disabled `draft` blocks the save with a clear message instead of
+  // writing a status the tenant cannot see).
+  const { entryIdFor, isLoading: statusLoading, failed: statusFailed } = useSalesStatusEntries()
   // The quote list's row action arrives here; the panel loads that quote once on mount.
   const fromQuote = useSearchParams().get('fromQuote')
   const entryHref = listHrefForTradeType(kind, entryTradeType)
@@ -906,7 +975,22 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       flash(missingChannelMessage, 'error')
       throw new Error(missingChannelMessage)
     }
-    const payload = buildInternalSalesPayload(kind, values, channels)
+    const draftEntryId = entryIdFor(SALES_STATUS_DRAFT)
+    if (!draftEntryId && !statusLoading) {
+      // A failed read and a dictionary without `draft` both leave no entry id; say which it is.
+      const message = statusFailed
+        ? t(
+            'internal_sales.form.statusDictionaryFailed',
+            'Could not read this organization’s sales status dictionary. Retry; if it keeps failing, ask an administrator.',
+          )
+        : t(
+            'internal_sales.form.statusMissing',
+            'This organization has no "draft" status in its sales status dictionary. Ask an administrator to add it.',
+          )
+      flash(message, 'error')
+      throw new Error(message)
+    }
+    const payload = buildInternalSalesPayload(kind, values, channels, draftEntryId)
     const lines = payload.lines as unknown[]
     if (lines.length === 0) {
       flash(t('internal_sales.form.linesRequired'), 'error')
@@ -941,7 +1025,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       flash(t('internal_sales.form.saveFailed'), 'error')
       throw error
     }
-  }, [channels, entryHref, hasAllChannels, kind, missingChannelMessage, router, t])
+  }, [channels, entryHref, entryIdFor, hasAllChannels, kind, missingChannelMessage, router, statusFailed, statusLoading, t])
 
   return (
     <CrudForm<InternalSalesFormValues>
