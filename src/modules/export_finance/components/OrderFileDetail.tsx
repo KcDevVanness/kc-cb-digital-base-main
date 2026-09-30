@@ -672,6 +672,26 @@ function OrderCollectionSection({
     void loadDocuments(collectionId)
   }, [collectionId, loadDocuments])
 
+  /**
+   * The same coherence rule the command enforces, said in the operator's language before the round
+   * trip: a `received` record needs its amount and its date, a `not_received` one must not carry
+   * them. `null` means "nothing to warn about".
+   */
+  const collectionCoherenceHint = React.useMemo(() => {
+    const hasAmount = collectedAmountValue.trim().length > 0
+    const hasDate = collectedDateValue.trim().length > 0
+    if (statusValue === 'received') {
+      if (!hasAmount && !hasDate) return t('export_finance.orders.collection.needsAmountAndDate')
+      if (!hasAmount) return t('export_finance.orders.collection.needsAmount')
+      if (!hasDate) return t('export_finance.orders.collection.needsDate')
+      return null
+    }
+    if (statusValue === 'not_received' || statusValue === 'unknown') {
+      if (hasAmount || hasDate) return t('export_finance.orders.collection.mustBeEmpty')
+    }
+    return null
+  }, [collectedAmountValue, collectedDateValue, statusValue, t])
+
   const handleSave = React.useCallback(async () => {
     setIsSaving(true)
     setSaveError(null)
@@ -954,10 +974,19 @@ function OrderCollectionSection({
                 />
               </div>
               {canManage ? (
-                <Button type="button" disabled={isSaving} onClick={() => { void handleSave() }}>
+                <>
+                  {collectionCoherenceHint ? (
+                    <p className="text-sm text-muted-foreground" role="status">{collectionCoherenceHint}</p>
+                  ) : null}
+                  <Button
+                    type="button"
+                    disabled={isSaving || collectionCoherenceHint !== null}
+                    onClick={() => { void handleSave() }}
+                  >
                   {isSaving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
-                  {t('export_finance.orders.collection.save')}
-                </Button>
+                    {t('export_finance.orders.collection.save')}
+                  </Button>
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground" role="status">
                   {t('export_finance.orders.collection.readOnly')}

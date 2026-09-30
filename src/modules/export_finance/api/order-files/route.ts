@@ -142,6 +142,7 @@ function financeColumns(translate: Translate): CrudExportColumn[] {
     { field: 'kcPriceAmount', header: translate('export_finance.orders.csv.kcPrice', 'KC order price') },
     { field: 'subsidiaryInvoiceAmount', header: translate('export_finance.orders.csv.subsidiaryInvoice', 'Subsidiary invoice (USD)') },
     { field: 'collectionStatus', header: translate('export_finance.orders.csv.collectionStatus', 'Collection status') },
+    { field: 'collectionOverdue', header: translate('export_finance.orders.csv.collectionOverdue', 'Collection overdue') },
     { field: 'refundStatus', header: translate('export_finance.orders.csv.refundStatus', 'Tax refund status') },
     { field: 'allocatedRefundAmount', header: translate('export_finance.orders.csv.allocatedRefund', 'Allocated refund') },
     { field: 'containers', header: translate('export_finance.orders.csv.containers', 'Containers') },
@@ -175,6 +176,7 @@ function toCsvRow(row: OrderFileRow, view: OrderFileView, translate: Translate):
         ? ''
         : `${row.finance.subsidiaryInvoiceAmount} ${row.finance.subsidiaryInvoiceCurrency ?? ''}`.trim(),
       collectionStatus: translate(`export_finance.collection.status.${row.collectionStatus}`, row.collectionStatus),
+      collectionOverdue: row.collectionOverdue ? translate('export_finance.orders.overdue', 'Overdue') : '',
       refundStatus: translate(`export_finance.refund.status.${row.refundStatus}`, row.refundStatus),
       allocatedRefundAmount: row.allocatedRefundAmount ?? '',
     }

@@ -3,7 +3,7 @@ import { parseExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exa
 import type { CommandHandler } from '@open-mercato/shared/lib/commands'
 import { registerCommand } from '@open-mercato/shared/lib/commands'
 import { emitCrudSideEffects } from '@open-mercato/shared/lib/commands/helpers'
-import { conflict, notFound } from '@open-mercato/shared/lib/crud/errors'
+import { conflict, CrudHttpError, notFound } from '@open-mercato/shared/lib/crud/errors'
 import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/optimistic-lock-command'
 import type { CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
@@ -12,6 +12,7 @@ import { ExportFinanceRefund } from '../data/entities'
 import { refundSaveSchema } from '../data/validators'
 import { loadShipmentRef } from '../lib/peerReads'
 import { ensureScope, type Scope } from '../lib/scope'
+import { taxRefundStatusIssues } from '../lib/statusCoherence'
 
 const REFUND_ENTITY_ID = 'export_finance:export_finance_refund' as const
 const REFUND_RESOURCE_KIND = 'export_finance.refund' as const
@@ -101,6 +102,15 @@ const saveRefundCommand: CommandHandler<Record<string, unknown>, ExportFinanceRe
       taxRefundStatus: parsed.taxRefundStatus,
       taxRefundAmount: toStoredAmount(parsed.taxRefundAmount),
       taxRefundNote: parsed.taxRefundNote ?? null,
+    }
+
+    // Same rule as the collection record: the status and the amount it claims must agree.
+    const refundIssues = taxRefundStatusIssues({
+      taxRefundStatus: fields.taxRefundStatus,
+      taxRefundAmount: fields.taxRefundAmount,
+    })
+    if (refundIssues.length > 0) {
+      throw new CrudHttpError(422, { error: refundIssues.join('; ') })
     }
 
     const record = existing
