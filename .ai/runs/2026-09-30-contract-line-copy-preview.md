@@ -77,7 +77,7 @@ feature.
 | `node scripts/check-lessons.mjs` | ✓ |
 | `yarn ds:check` | 958 files passed |
 | `yarn test` | 61 suites / 524 passed |
-| `yarn build` | 见 PR |
+| `yarn build` | ✓（Next 16.3.3，编译 + TS + 静态页生成全过） |
 | 浏览器（dev server 3002，中文字典） | 合同（销售 + 分公司）：来源类型「对内销售订单/对内销售报价单」+ 说明；选 ORDER-20260929-00007 → 预览抽屉（单号/对方/贸易类型 对内销售/币种 CNY/金额 ¥22,500.00/日期 + 2 行）→ 复制行 → 2 行追加 + 锚点「来源: ORDER-20260929-00007」；报价来源同样预览正常；无对方时四个类型 + 提示；采购方向「采购订单」+ PO 预览（供应商/¥2,000.00/1 行）。PI：「从订单复制行」预览 + 复制 2 行；「从合同引用商品行」预览（SC-2026-0002/¥100.00/1 行）+ 引用成功 |
 | 截图 | 合同来源预览抽屉（见 PR） |
 
@@ -100,5 +100,5 @@ feature.
 ### Phase 3: docs, gate, browser smoke
 
 - [x] 3.1 spec / README / plan rows — bb0e976
-- [ ] 3.2 full gate
+- [x] 3.2 full gate（generate/typecheck/lint/lessons/ds:check/test/build 全过）
 - [x] 3.3 browser smoke
