@@ -83,6 +83,8 @@ feature.
 
 ## Progress
 
+PR: #69
+
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
 ### Phase 1: shared preview + trade-typed source kinds
