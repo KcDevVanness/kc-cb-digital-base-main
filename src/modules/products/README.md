@@ -64,8 +64,9 @@ app 自有模块。业务商品主数据的**唯一来源**：产品线 → 产�
   所以选定具体组织时列表只显示本组织、可保存的行；顶栏选「所有组织」时改为**只读总览**——每行用「组织」列标注所属组织
   （`products.taxonomy.scope.allOrganizationsReadOnly` 说明为什么不能编辑），不再出现"看起来重复、点开却保存不了"的行。
   列表项因此新增 `organizationId` 字段（additive，`products/{types,categories}` 的 GET 响应）。
-- **create/edit 页全部 `navHidden`**（`items`/`types`/`categories` 的 create 与 edit）：框架按 href 前缀把列表下的子路由挂进侧栏，
+- **create 页与 `types`/`categories` 的 edit 页 `navHidden`**（`items`/`types`/`categories` 的 create，以及 `types`/`categories` 的 `[id]/edit`）：框架按 href 前缀把列表下的子路由挂进侧栏，
   漏掉 `navHidden` 就会多出「新建…」侧栏项，见 [`create-page-under-list-becomes-sidebar-child.md`](../../../.ai/lessons/create-page-under-list-becomes-sidebar-child.md)。
+  `items/[id]/edit` **不**声明 `navHidden`（`page.meta.ts` 里没有这个键）：`buildAdminNav` 会跳过 href 里带 `[` 的路由，它不会成为列表的侧栏子项，因而也不需要这个标记。
 - **未动契约面**：表名 / `code` / API 路径 / 命令 id / feature id / 事件 id / create-edit 路径全部不变；数据模型不变（产品线保持平铺）。
   设计依据见 [`.ai/specs/2026-09-23-product-taxonomy-consolidation.md`](../../../.ai/specs/2026-09-23-product-taxonomy-consolidation.md)。
 

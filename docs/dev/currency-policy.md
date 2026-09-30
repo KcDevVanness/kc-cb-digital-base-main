@@ -13,7 +13,7 @@
 
 | 存储 | 表 | 谁读它 | 谁写它 |
 |---|---|---|---|
-| 币种字典 | `dictionaries`（`key = 'currency'`）+ `dictionary_entries` | **本仓自建表单的币种下拉（6 处）读的是 `currency_policy` 托管的路由 `GET /api/currency_policy/currencies`**（各模块的 `CURRENCY_DICTIONARY_URL` 常量，门禁 `currencies.view`）；官方 `customers`/`sales` 表单仍走 `useCurrencyDictionary()` → `GET /api/customers/dictionaries/currency`（含 `AnnualRevenueField`） | `customers` 模块的 `seedDefaults`（`seedCurrencyDictionary`，把 `Intl.supportedValuesOf('currency')` 的**全部** ISO 代码写进去） |
+| 币种字典 | `dictionaries`（`key = 'currency'`）+ `dictionary_entries` | **本仓自建表单的币种下拉（7 个模块共 14 处）读的是 `currency_policy` 托管的路由 `GET /api/currency_policy/currencies`**（`products` 1、`purchasing` 4（供应商、采购单新建/编辑、供应商产品库）、`trade_docs` 3（合同/发票/单证）、`sourcing` 2（报价面板）、`platform_ops` 1（渠道）、`internal_sales` 1、`export_finance` 2（订单/柜档案）；多数模块仍是各自的 `CURRENCY_DICTIONARY_URL` 常量，`sourcing`/`export_finance` 已走 `lib/clientOptions.ts`，门禁 `currencies.view`）；官方 `customers`/`sales` 表单仍走 `useCurrencyDictionary()` → `GET /api/customers/dictionaries/currency`（含 `AnnualRevenueField`） | `customers` 模块的 `seedDefaults`（`seedCurrencyDictionary`，把 `Intl.supportedValuesOf('currency')` 的**全部** ISO 代码写进去） |
 | 汇率主数据 | `currencies` | 汇率换算、本位币报表、`/api/currencies/currencies/options`（如 staff 模块） | `currencies` 模块的 `seedDefaults`（USD/EUR/JPY/GBP/CHF/CAD/AUD/CNY/CNH/PLN，USD 为本位币） |
 
 两者都只在 `mercato init` / `mercato seed:defaults` 时播种，**建租户/组织时不会自动播种**。
@@ -36,7 +36,9 @@ seed），所以库里一开始两份都是空的 —— 这就是商机表单�
 
 - 本位币（默认金额单位）：`BASE_CURRENCY_CODE = 'USD'`，每个组织恰好一个 `is_base` 行（平台
   要求）。商机 KPI/看板聚合、汇率换算、销售单据的兜底币种都按它走；某个组织要改（例如
-  俄罗斯主体用卢布记账），在 `/backend/currencies` 改一行即可，本模块不会再掰回来。
+  俄罗斯主体用卢布记账）不能只在 `/backend/currencies` 改一行——`apply` / `seed:defaults` 每次都会按
+  清单把 `BASE_CURRENCY_CODE`（`lib/policy.ts`，当前 `USD`）重新写成该组织唯一的 `is_base` 行，改完下次收敛又被掰回 USD；
+  要换本位币得改清单里的这个常量。
 - 字典条目的 `label` 只写**中文名**（`人民币`、`卢布`…）：商机表单会把 `CODE – ` 前缀拼在
   label 前面（`CNY – 人民币`），销售单据表单直接用 label，所以 label 里不能再带代码。
 - 字典条目的 `is_default` 给本位币，`dictionaries` 的唯一索引只允许一条。

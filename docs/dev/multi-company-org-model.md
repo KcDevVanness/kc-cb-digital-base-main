@@ -65,7 +65,7 @@ tenant: 广州凯翠国际贸易有限公司        ← 隔离边界，全集团
 ## 角色矩阵（照此配置）
 
 勾选位置：`/backend/roles/{id}/edit` → ACL 面板先勾功能位、再设 Organizations scope。角色名在租户内唯一，分公司角色加前缀。
-功能位 id 的权威清单是各模块的 `src/modules/<id>/acl.ts`（`yarn generate` 后进 ACL 面板），下表只列每个角色**至少**要有的组；
+功能位 id 的权威清单是各模块的 `acl.ts`——**已装模块在包内** `node_modules/@open-mercato/core/src/modules/<id>/acl.ts`，**app 自有模块**在 `src/modules/<id>/acl.ts`（`yarn generate` 后进 ACL 面板），下表只列每个角色**至少**要有的组；
 业务面已由自建模块接管（`products`/`purchasing`/`sourcing`/`trade_docs`/`cross_border`/`export_finance`/`parties`/`platform_ops`/`internal_sales`），
 官方 `catalog`/`sales`/`wms` 的功能位只在对应官方页面/引擎仍被使用时才需要。
 
@@ -99,7 +99,7 @@ tenant: 广州凯翠国际贸易有限公司        ← 隔离边界，全集团
 
 跨组织写入加固（创建用户的目标组织、ACL 归属）见 `.ai/specs/2026-09-21-auth-scope-guard-hardening.md`；该 spec 落地后，上表"分公司管理员"的能力边界由框架强制。
 
-**已实测（2026-09-28，本部署两个分公司）**：6 个账号均可登录；每个角色的功能位按上表生效（`POST /api/auth/feature-check` 逐项核对，越权功能一律 false）；分公司业务员的切换器里总部为 `selectable:false`、同级分公司不出现；分公司管理员把角色 scope 设为「全部组织」→ **403** `Cannot grant unrestricted organization access`、设为 HQ 组织 → **403**、把用户建到 HQ 组织 → **403** `user_destination_outside_scope`；分公司业务员在 HQ 上下文读商品/单据 → **422**、读对手方 → **空列表**（无跨组织泄漏）；分公司业务员的报价单页币种下拉 16 项、买方下拉零选项（不能向上/同级）。
+**已实测（2026-09-28，本部署两个分公司）**：6 个账号均可登录；每个角色的功能位按上表生效（`POST /api/auth/feature-check` 逐项核对，越权功能一律 false）；分公司业务员的切换器里总部为 `selectable:false`、同级分公司不出现；分公司管理员把角色 scope 设为「全部组织」→ **403** `Cannot grant unrestricted organization access`、设为 HQ 组织 → **403**、把用户建到 HQ 组织 → **403** `scope_guards.user_destination_outside_scope`；分公司业务员在 HQ 上下文读商品/单据 → **422**、读对手方 → **空列表**（无跨组织泄漏）；分公司业务员的报价单页币种下拉 16 项、买方下拉零选项（不能向上/同级）。
 
 **分公司对外销售已实测（2026-09-28）**：商品分发后，俄罗斯/东南亚业务员各自的行选品器都能搜到本公司副本（`P570 — Fresh Element SOLO Smart Pet Feeder`）、币种下拉含东南亚本币集；俄罗斯业务员在 UI 里用副本商品建报价单成功（`POST /api/sales/quotes` **201**、单号 `QUOTE-20260928-00002`、合计 37.00、行的 `productId` = 副本 id、`catalogSnapshot` 冻结 sku/name/spec，探针单已删）。买方手工填名时快照 `{name, customer.displayName}`；有客户档案/分公司对手方后改选即带链接。
 
