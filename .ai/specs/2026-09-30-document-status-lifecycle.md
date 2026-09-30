@@ -333,7 +333,7 @@
 - **逾期清单：今天就能做（无 DDL）**。两个逾期派生已在 Phase 2·C 落地（`export_finance/lib/fileRules.ts`：
   柜「退税逾期」/ 订单「收款逾期」，阈值 45 天、边界不含、日期缺失不标），阶段 2·A 的 `closed` 也已进状态词表；
   套用同一套派生出「跨板块逾期清单」不需要任何新列，也**不发明新阈值**。
-- **报价→订单转化率：已实现（2026-09-30，`internal_sales`）**。订单从报价创建时，
+- **报价→订单转化率：2026-09-30 实现后即按要求移除**。当时的实现（页面 + 只读接口 + 纯聚合 + 单测）读订单冻结的 `metadata.internalSales.sourceQuote` 做纯读侧聚合，**无迁移、无数据依赖**；owner 于同日表示「暂时不需要」，因此整块删除，恢复成本 = 按原描述重建（证据见计划表六·补50）。订单从报价创建时，
   `metadata.internalSales.sourceQuote = { id, number }` 被冻结在订单上（`internal_sales/lib/documentValues.ts:28/142`），
   **报价→订单的关联在现库就有**，不需要新列、不需要审计；报价侧状态（draft/sent/confirmed/canceled）Phase 1 起也在写。
   所以转化率是一个纯读侧聚合：**分子 = 有订单引用的报价数**；**分母待你定**（「统计期内发出的报价」还是「全部报价」——
@@ -445,6 +445,7 @@
 | 2026-09-30 | **Phase 1 定稿并进入实现**（owner「按照这个流程先实作」）：Q-001…Q-007 按推荐默认落定；补齐 Domain Vocabulary / Journeys / UI / API / Tests / Traceability / Acceptance；Phase 2–4 仍为草案 |
 | 2026-09-30 | **Phase 1 实现完成**（`feat/sales-status-lifecycle`）：新建写 `draft`（字典条目 id）、报价发出（`quotes/send` + 有效期 + 买方邮箱字段与 parties 预填）/作废、订单确认/作废、列表状态徽章 + 「有效至」+ 过期高亮、下单门禁、发运分摊只列 confirmed（历史 NULL 标注）、对外订单补「（PO）」、行数列改名「明细行数」；单测 3 套新增/更新，真机 5 条链路验证，AC-001…AC-008 全部通过 |
 | 2026-09-30 | **Phase 2·C 实现完成**（`feat/export-finance-status-coherence`）：收款/退税记录的**状态与事实**在写入时校验（`lib/statusCoherence.ts`，422 逐条回报；历史行不动）；两个档案页新增**派生**的逾期标记（柜「退税逾期」/ 订单「收款逾期」，阈值常量 45 天、边界不含、缺失日期不标），进列表列与 CSV。证据：单元两套 + 真机 API（三种非法组合 422、finance 口径回读 `collectionOverdue`、CSV 表头含「退税逾期」）。开放问题记入 Q-008（是否把「柜未收货不得登记收款」做成硬门禁——收款按采购单记，一单可跨多柜）。 |
+| 2026-09-30 | **Phase 4 转化率按要求移除**：页面 `/backend/internal-sales/quote-conversion`、只读接口 `GET /api/internal_sales/quote-conversion`、`lib/quoteConversion.ts` 与其单测、相关中英文案全部删除（owner：「暂时不需要」）；README 表面表改为「已移除」并写明恢复路径（无迁移、无数据依赖）。 |
 | 2026-09-30 | **Phase 4 转化率实现完成**（`feat/internal-sales-quote-conversion`）：`/backend/internal-sales/quote-conversion` 上线 —— 关联读订单冻结的 `metadata.internalSales.sourceQuote.id`（不加列、不依赖审计），「已发出」按 `sent_at` 事实判断，页面同时给出**两个分母的比率**（全部报价 / 已发出）与原始计数，把口径选择留给业务。纯聚合在 `lib/quoteConversion.ts`（单测 5 例：转化判定 / 状态词不算已发出 / 空分母返回 null 而非 NaN / 区间外订单不计入 / 百分比取整）。**真机**：夹具（给一张报价写 `sent_at` + 把一张订单的 `metadata` 指向它）→ `quotes=2 / sent=1 / converted=1 / 50% / 100%`，页面四个数字与两行明细正确；回滚夹具后 `converted=0 / sent=0 / 0% / —`（null 正确渲染）。 |
 | 2026-09-30 | **Phase 4「转化率」与「停留时长」拆开（仅文档）**：查证订单从报价创建时冻结了 `metadata.internalSales.sourceQuote = { id, number }`（`internal_sales/lib/documentValues.ts:28/142`），**转化率因此不需要新列、不依赖审计**，只剩「分母」一个口径待定（发出数 vs 全部报价）；**只有停留时长**需要迁移批次的 `status_changed_at`。迁移申请范围据此收窄。 |
 | 2026-09-30 | **Phase 4·B 可见性补做完成**（`feat/overdue-reminder-marker`）：清单行显示「已提醒 <日期>」——新增只读接口 `GET /api/export_finance/overdue-reminder-status`（按 `group_key` 反查本模块写出的 `notifications`，取每资源最近时间戳）+ 页面标记（中英各 1 键）+ 解析器单测 2 例；真机：夹具 → 命令 2 条 → 接口两键 → 页面两行「已提醒 2026-09-30」，拆夹具后消失。**Phase 4·B 至此全部落地**（含此前对账里标注未做的这一项）。 |
