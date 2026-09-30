@@ -18,7 +18,7 @@
 - **外贸侧没有金额**。`cross_border_shipments` 零金额列（无运费/关税/货值）；该模块唯一的钱是 `cross_border_shipment_sales_allocations.unit_price + currency_code`（内部销售价快照）。收货只动数量：`src/modules/cross_border/commands/shipments.ts:703-726` → `wms.inventory.receive` + `purchasing.purchase-orders.apply-receipt`，**不传任何成本**；`wms` 无成本层 ⇒ 库存资金占用今天算不出来。运费/关税只有两个单证类型枚举 `domestic_freight_receipt`/`booking_charges_receipt`（`src/modules/cross_border/data/validators.ts:15-26`），**金额化**的柜费用不存在。
 - **收汇只有状态没有金额**。`export_finance_collections`（`src/modules/export_finance/data/entities.ts:44-45` 起）只有 `collection_status`；`export_finance_refunds` 有 `tax_refund_amount`。应收台账无来源。
 - **没有损益**。全仓无任何 P&L / SKU 毛利代码；无期间费用（广告/平台费/物流/管理）实体。
-- **RU 17 端点未接**。`docs/ru-petkit/supply-sync-tech.md` 契约已冻结（§1–§7 supply、§10–§18 ads），但 `A.4 四项敏感确认`全部未勾选；SKU 大小写与 `склад`/`фабрика` 后缀的映射没有落点。既有 spec `.ai/specs/2026-09-28-three-system-metric-reconciliation.md` 是 Draft、`Blocked`（Q-005…Q-010），只覆盖 supply 同步 + 只读驾驶舱，不含财务模块。
+- **RU 17 端点未接**。`docs/ru-petkit/supply-sync-tech.md` 契约已冻结（§1–§7 supply、§10–§18 ads），但 `A.4` 的 ФБО `data_updated_at` 与 `updated_since` 粒度两项仍待俄方（成本毛利、发运单金额币种已确认放开）；SKU 大小写与 `склад`/`фабрика` 后缀的映射没有落点。既有 spec `.ai/specs/2026-09-28-three-system-metric-reconciliation.md` 是 Draft、`Blocked`（Q-005…Q-010），只覆盖 supply 同步 + 只读驾驶舱，不含财务模块。
 - **驾驶舱不存在**。全仓无 cockpit 代码；链路未端到端验收、到期提醒未做（`docs/prd/cross-border-erp.md` 验收清单 + PRD Q6）。
 
 为什么现有行为不足：老板六类数据（赚多少 / 货转不转 / 卖得好不好 / 花钱值不值 / 钱回不回来 / SKU 对齐）没有任何单一可验收定义；采购价与到岸成本两个口径各自缺一半；D-资料（收汇/退税）有锚点无金额；RU 侧数字与 CN 账本各说各话。
@@ -57,7 +57,7 @@
 - 不写任何 peer 模块的表：`finance`/`ru_sync`/`boss_cockpit` 全部只读 peer 数据（唯一例外：Phase 5 的 PO 草稿走 `purchasing` 既有命令）。
 - 不复制 RU 已有能力：广告归因、漏斗、品牌分析只存档引用。
 - 不把 RU 广告费/平台费复制成 `finance_expenses` 行（同一事实两处口径；RU 数据永远以快照形式进损益聚合）。
-- 不做 RU 成本回写（`A.4` 未勾选前不动俄方数据）。
+- 不做 RU 成本回写（对俄方数据始终只读；`A.4` 的待确认项不改变这一点）。
 - 不引入图表库；趋势用 `@open-mercato/ui` 的一方 SVG 组件，确需新依赖先问。
 - 不做俄文全文翻译；不猜 `/api/v1` key（未知一律 `待快照确认`）。
 
@@ -475,7 +475,7 @@ boss_cockpit/lib/summary.ts（只读聚合：RU 快照 + CN 派生）
 | Risk / tradeoff | Impact | Mitigation / detection | Residual risk |
 |---|---|---|---|
 | RU 快照迟到 / 字段漂移 | 全线 block / 口径错 | Phase 3 用 mock 夹具先行；schema 做加法兼容并记差异；不改已定表结构；drift 检测告警 | 首周需人工逐字段打勾 |
-| A.4 成本毛利未勾选 | 损益 `cost` 行缺 RU 侧输入 | `cost` 行改由 CN 到岸成本单边提供并标 `source: cn_ledger`，其余行不受影响 | 毛利与 RU 页可能对不齐（明示来源） |
+| ~~A.4 成本毛利未勾选~~（**已解除**：2026-09-28 确认放开；剩余待确认项为 ФБО `data_updated_at` 与 `updated_since`） | 损益 `cost` 行缺 RU 侧输入 | `cost` 行改由 CN 到岸成本单边提供并标 `source: cn_ledger`，其余行不受影响 | 毛利与 RU 页可能对不齐（明示来源） |
 | `wms` 无可读余额表 | 库存资金占用不可算 | 退回「SKU 最新到岸单价 × 已收货数量」并标注口径来源；不建第二份库存账 | 与 wms 实际余额可能有差 |
 | 汇率缺失 | CNY 合计不完整 | 行标 `unconvertible`/`rateMissing`，不进合计、页面标红；**永不按 1 摊、永不填 0** | 需要人工补汇率 |
 | SKU 映射覆盖不满 | PO 草稿漏行 / 毛利缺 SKU | 未映射禁生成 + 派生异常清单 + 页上可见覆盖率 | 需人工补映射 |
