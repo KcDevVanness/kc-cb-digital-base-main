@@ -8,6 +8,7 @@ import {
   snapshotName,
   toIsoTimestamp,
   toTime,
+  isRefundOverdue,
   type AllocationOrder,
   type ContainerFileListParams,
   type ContainerFileRow,
@@ -209,6 +210,8 @@ export async function loadContainerFiles(
         .execute()) as Array<{ refund_id: string; doc_type: string; attachment_id: string | null }>)
     : []
 
+  // One clock for the whole page, so two rows that arrived the same day cannot disagree.
+  const now = new Date()
   const items: ContainerFileRow[] = shipments.map((shipment) => {
     const shipmentId = String(shipment.id)
     const containerOrders = orders.filter((row) => String(row.shipment_id) === shipmentId)
@@ -261,6 +264,11 @@ export async function loadContainerFiles(
       taxRefundStatus: refund ? String(refund.tax_refund_status ?? 'unknown') : 'unknown',
       taxRefundAmount: refund?.tax_refund_amount ?? null,
       taxRefundNote: refund?.tax_refund_note ?? null,
+      refundOverdue: isRefundOverdue({
+        shipmentStatus: String(shipment.status ?? 'draft'),
+        receivedAt: toIsoTimestamp(shipment.received_at),
+        taxRefundStatus: refund ? String(refund.tax_refund_status ?? 'unknown') : 'unknown',
+      }, now),
       checklist,
       checklistMissing,
     }

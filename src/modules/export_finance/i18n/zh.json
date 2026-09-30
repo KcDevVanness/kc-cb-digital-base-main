@@ -313,5 +313,11 @@
   "export_finance.cabinets.csv.refundStatus": "退税状态",
   "export_finance.cabinets.csv.refundAmount": "退税金额",
   "export_finance.cabinets.csv.exportChecklist": "出口类单证",
-  "export_finance.cabinets.csv.refundChecklist": "退税资料"
+  "export_finance.cabinets.csv.refundChecklist": "退税资料",
+  "export_finance.cabinets.columns.refundOverdue": "退税逾期",
+  "export_finance.cabinets.overdue": "逾期",
+  "export_finance.cabinets.csv.refundOverdue": "退税逾期",
+  "export_finance.orders.columns.collectionOverdue": "收款逾期",
+  "export_finance.orders.overdue": "逾期",
+  "export_finance.orders.csv.collectionOverdue": "收款逾期"
 }

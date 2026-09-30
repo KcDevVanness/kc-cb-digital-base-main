@@ -89,6 +89,19 @@ record's own code into the list, so opening a 收汇/退税 shows the currency i
 silent `CNY` fallback. The API still accepts any ISO-shaped code (`data/validators.ts`), so an older
 record whose currency left the policy list keeps working.
 
+## Money status rules (2026-09-30)
+
+- **状态与事实必须自洽，否则写入被拒（422）**：收款记录 `received` 必须同时给出
+  `collectedAmount` 与 `collectedAt`；`not_received` 不得带金额或收款日期；`unknown` 两者都不带。
+  退税记录 `completed` 必须给出 `taxRefundAmount`；`not_started`/`unknown` 不得带金额；`applied` 允许带
+  （已申报但未到账时常已知金额）。规则是纯函数（`lib/statusCoherence.ts`），命令在写库前跑一次并逐条回报问题；
+  **只在写入路径生效**——历史行不迁移、不校验（列本身可空，「没答案」是合法状态）。
+- **逾期标记（派生，无新列）**：柜已 `received`/`closed` 且收货超过 `REFUND_OVERDUE_DAYS`（默认 45 天，常量在
+  `lib/fileRules.ts`，业务方可调）而退税仍未 `completed` ⇒ 柜档案标「退税逾期」；订单已 `received`/`closed`
+  且超过 `COLLECTION_OVERDUE_DAYS` 而收款仍非 `received` ⇒ 订单档案（财务口径）标「收款逾期」。
+  边界为**不含**：正好 N 天不算逾期；日期缺失或无法解析一律**不标**（宁可漏报不误报）；一次加载只取一个
+  `now`，同页各行口径一致。两个标记同时进列表列与 CSV（`refundOverdue` / `collectionOverdue`）。
+
 ## Verification
 
 ```bash

@@ -393,6 +393,18 @@ function buildFinanceColumns(t: TranslateFn, locale: string): ColumnDef<OrderFil
       cell: ({ row }) => <CollectionStatusBadge status={row.original.collectionStatus} />,
     },
     {
+      accessorKey: 'collectionOverdue',
+      header: t('export_finance.orders.columns.collectionOverdue'),
+      enableSorting: false,
+      cell: ({ row }) => (row.original.collectionOverdue
+        ? (
+            <span className="inline-flex items-center rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive">
+              {t('export_finance.orders.overdue')}
+            </span>
+          )
+        : <span className="text-xs text-muted-foreground">—</span>),
+    },
+    {
       accessorKey: 'refundStatus',
       header: t('export_finance.orders.columns.refundStatus'),
       enableSorting: false,

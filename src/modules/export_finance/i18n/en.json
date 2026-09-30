@@ -313,5 +313,11 @@
   "export_finance.cabinets.csv.refundStatus": "Tax refund status",
   "export_finance.cabinets.csv.refundAmount": "Tax refund amount",
   "export_finance.cabinets.csv.exportChecklist": "Export documents",
-  "export_finance.cabinets.csv.refundChecklist": "Refund documents"
+  "export_finance.cabinets.csv.refundChecklist": "Refund documents",
+  "export_finance.cabinets.columns.refundOverdue": "Tax refund overdue",
+  "export_finance.cabinets.overdue": "Overdue",
+  "export_finance.cabinets.csv.refundOverdue": "Tax refund overdue",
+  "export_finance.orders.columns.collectionOverdue": "Collection overdue",
+  "export_finance.orders.overdue": "Overdue",
+  "export_finance.orders.csv.collectionOverdue": "Collection overdue"
 }
