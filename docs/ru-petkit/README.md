@@ -10,7 +10,7 @@
 
 | 文档 | 说明 |
 | [prd.md](./prd.md) | 系统功能 PRD（中文为准，11 页 F-01…F-11 + 口径 + 分级 + 验收 + 开放问题） |
-| [supply-sync-tech.md](./supply-sync-tech.md) | 给俄方技术团队的总包 v2：5 问直答 + 我方业务一页纸 + §B 术语对照 + 16 端点技术规范（§1–§8 supply / §10–§22 ads·映射·验收）+ §A.7 勾选 |
+| [supply-sync-tech.md](./supply-sync-tech.md) | 给俄方技术团队的总包 v2：4 问直答 + 我方业务一页纸 + §B 术语对照 + 17 个逻辑端点技术规范（§1–§8 supply / §10–§22 ads·映射·验收）+ §A.1–§A.4 勾选 |
 | [system-analysis.md](./system-analysis.md) | 功能分析长文（逐页功能、决策 × 频率、价值分级） |
 | [field-mapping.md](./field-mapping.md) | 字段与维度需求清单（6 域表）+ 中方 7 模块映射锚点 |
 | [integration-brief.md](./integration-brief.md) | 发俄方：本系统架构 + 模块清单 + HTTP 接口规范 + 分工待办 |

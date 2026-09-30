@@ -11,7 +11,7 @@
 - 金额十进制字符串（金额 `numeric(18,2)`、单价 `numeric(18,4)`）, 数量 `numeric(18,4)`; 幂等靠 DB 唯一键 + 命令端 compare-then-skip.
 - 错误码按既有命令行为 (422 业务拒绝如分摊无目录链接/批次重 id, 409 版本冲突, 404 作用域内无行).
 
-## 2 模块清单 (7 模块; 幂等键照抄源码)
+## 2 模块清单 (10 模块; 幂等键照抄源码)
 
 | 模块 | 表前缀 | 对外路由 `/api/<module>/…` | 幂等键 |
 |---|---|---|---|
@@ -22,10 +22,13 @@
 | `sourcing` | `sourcing_*` | `/quotes` (+`/parse`, `/remap`, `/approve`, `/promote`, `/archive`, `/ai-mapping`), `/quote-lines`, `/quote-changes` (+`/versions`), `/item-timeline`, `/template` | 报价行键 = 归一化派生 SKU; 已提升行冻结 |
 | `products` | `products_*` | `/items` (CRUD, 含变体) + `/items/{id}`; `/types`, `/categories`; `/prices` (GET/PUT/POST 整组替换); `/variants/options` | `(tenant, org, sku)`; `(tenant, org, product, tier, currency, minQty)` |
 | `trade_docs` | `trade_docs_*` | `/contracts` (+`/lines` GET, `/transitions`, `/attach`, `[id]/document`), `/invoices` (同构), `/documents` (新 proforma 链路) | `(tenant, org, number)`; 双口径同事务派生 |
+| `ru_sync` | `ru_sync_*` | `/health` (GET); `/sku-map` (GET/PUT); `/plan/draft-pos` (POST) | `(tenant, org, endpoint, natural_key, as_of)`; `(tenant, org, ru_sku)` |
+| `finance` | `finance_*` | `/profit-loss`、`/sku-margin`、`/landed-costs`、`/inventory-value`、`/payables`、`/receivables` (GET); `/shipment-costs`、`/expenses` (CRUD) | 读 `ru_sync_snapshots`(`ads_summary`) 派生, 无独立幂等键 |
+| `boss_cockpit` | 无表 (派生于快照) | `/summary` (GET, 只读) | 读 `ru_sync_snapshots` 与各模块, 无持久化 |
 
 ## 3 对接接口规范 (HTTP JSON)
 
-- 传输: HTTPS + bearer token (token 由俄方签发, 中方只存服务端环境变量, 不进代码/文档).
+- 传输: HTTPS + bearer token (token 由俄方签发, 中方以 integrations provider 的加密凭证保存——按组织落库, 见 `src/modules/ru_sync/integration.ts`, 不进代码/文档/日志).
 - 编码: JSON; 金额十进制字符串 (`"57658.0000"`); 日期 ISO (`2026-09-27`, datetime 带时区); 百分比为数字 (ДРР `7.5` 即 7,5%).
 - 幂等: 调用方重发同一 `external_*_id` 安全; 中方返回 `created/updated/unchanged` (订单) 或 `lines/raised/linked` (结算).
 - 分页: `page/pageSize` (不确定时默认 50, 上限见第 2 节各路由 validators).

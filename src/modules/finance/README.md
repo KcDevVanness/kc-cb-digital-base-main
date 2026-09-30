@@ -84,13 +84,15 @@ than no reminder.
 
 ## Status
 
-Phases 1–2 are **delivered and verified**: migrations
-`src/modules/finance/migrations/Migration20260928064025_finance.ts` (costs) and
-`Migration20260928071448_finance.ts` (expenses) applied, plus the additive
-`export_finance` migration adding `amount`/`received_at` to `export_finance_collections`; allocation
-rules under unit test; every surface exercised against the running app (API + browser, light and
-dark, narrow width) and the smoke data cleaned up afterwards. Phase 6 (profit and loss) is not
-implemented yet.
+Phases 1–8 are **delivered**: migrations
+`src/modules/finance/migrations/Migration20260928064025_finance.ts` (costs),
+`Migration20260928071448_finance.ts` (expenses) and
+`Migration20260928073630_finance.ts` (amount columns narrowed to `numeric(18,2)`) applied, plus the
+additive `export_finance` migration adding `amount`/`received_at` to `export_finance_collections`;
+allocation rules under unit test. Phases 1–5 were exercised on dev (API + browser, light and dark,
+narrow width) with the smoke data cleaned up afterwards, and the FLOW-G1 chain is green on a fresh
+throwaway DB; the Phase 3 ads real-pull and the Phase 4/6/7 page smoke are recorded as verified in
+the spec's Changelog.
 
 ## Verification
 
@@ -99,7 +101,8 @@ implemented yet.
   missing-rate behaviour).
 - Smoke: create a container cost in USD with an explicit rate, then
   `GET /api/finance/landed-costs?shipmentId=…` and assert Σ allocated == fee × rate.
-- `finance.costs.view` / `finance.costs.manage` gate the surfaces; `finance.ledger.view` additionally
+- `finance.costs.view` / `finance.costs.manage` gate the cost surfaces, `finance.expenses.view` /
+  `finance.expenses.manage` the period-expense surfaces; `finance.ledger.view` additionally
   gates the inventory value; `finance.profit.view` gates 月损益 / SKU 毛利.
 - **FLOW-G1 (the whole chain, fresh DB)**:
   `JWT_SECRET=$(openssl rand -hex 32) yarn mercato test:integration finance-flow` —

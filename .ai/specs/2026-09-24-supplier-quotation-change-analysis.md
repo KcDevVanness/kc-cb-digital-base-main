@@ -1,7 +1,7 @@
 # 供应商报价变更分析（版本对比 + 货号价格时间线）
 
 **Date**: 2026-09-24
-**Status**: Implemented and verified (Phases 1–3, 2026-09-24) — Phase 4 (docs close-out) in flight
+**Status**: Implemented and verified (Phases 1–4, 2026-09-24) — Phase 4（docs close-out）已完成：计划 [`docs/plans/cross-border-erp.md`](../../docs/plans/cross-border-erp.md) 六·补17 行、[`docs/plans/README.md`](../../docs/plans/README.md) 规格状态板行、模块 `src/modules/sourcing/README.md` 与本文件 Changelog 均已就位
 
 > **交付证据（2026-09-24）**：单元 `lib/__tests__/quoteChanges.test.ts`（规则层：键归一/精确金额/四分类/币种不同/链折叠/时间线）；集成 `__integration__/quote-changes.spec.ts`（三条接口走真实 HTTP：导入两版 CSV → 摘要 `added=1 removed=1 up=1 down=1 same=1`、首版 `base: null`、版本链、时间线涨跌与"最新版未报价"、跨组织 404 / 无权限 403；`yarn mercato test:integration quote-changes` → **3 passed**，全新库构建 + 真实 HTTP）；浏览器实测（详情页「与上一版对比」面板四类计数与 `旧→新` 数值、第一版空态、「变更」标签的版本表与差异表、差异行「时间线」弹窗）；顺带修掉 `source_file_name` 的 `workbook` 占位符缺陷（v3 导入实测记录 `quotation-v3.csv`）。门禁：`yarn generate` / `yarn typecheck` / `yarn lint`（0 error）/ `yarn ds:check`（709 files）/ `yarn test src/modules/sourcing`（10 suites / 60 tests）全绿，`yarn db:generate` 无迁移（本切片不建表）。
 

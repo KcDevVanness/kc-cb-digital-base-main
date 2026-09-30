@@ -160,6 +160,8 @@ C：funnel、brand（存档备查）。
 5. 文档闭环：本 PRD 含 11 页 + 口径引用；`field-mapping.md` 6 域表每格非空（未知填 `待快照确认`）；`integration-brief.md` 含架构 / 模块 / 接口三节；四文档互相引用无断链。
 6. 零代码污染：本次只新增 `docs/ru-petkit/` 文件，无 `src/` 改动、无迁移、无依赖安装。
 
+> 截至 2026-09-28 的调研结论；实现落地见 `src/modules/ru_sync/**`（同步 provider + `ru_sync_snapshots`/`ru_sync_sku_map`/`ru_sync_cursors` 三表迁移）与 `src/modules/finance`、`src/modules/boss_cockpit`。
+
 ## 开放问题
 
 | 编号 | 问题 | 谁定 | 何时必须定 |

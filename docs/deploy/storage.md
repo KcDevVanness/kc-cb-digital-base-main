@@ -4,7 +4,7 @@
 **不放**：本地开发环境搭建（→ [`../dev/setup.md`](../dev/setup.md)）、部署形态与镜像构建（→ [`runtime.md`](./runtime.md)）。
 
 > 规格（执行口径、阶段与验收）：[`.ai/specs/2026-09-23-local-to-s3-storage-migration.md`](../../.ai/specs/2026-09-23-local-to-s3-storage-migration.md)。
-> 本文是运维口径：**当前状态 = 本地上传 + S3 provider 已装好待切换**（Phase 0 已交付，2026-09-23）。
+> 本文是运维口径：**当前状态 = 本地上传 + S3 provider 已装好待切换**（Phase 0 与 Phase 1 已交付，2026-09-23；Phase 2 生产切换待对象存储服务就绪）。
 
 ## 1. 现在文件存在哪
 
@@ -18,7 +18,7 @@
 | 缩略图缓存 | `storage/.cache/thumbnails/<partition>/<attachmentId>/<key>`，与存储后端无关，切换驱动无需清理 |
 | 前端引用 | `/api/attachments/file/<id>`、`/api/attachments/image/<id>` —— 字节始终经应用层读出，**不需要公开桶** |
 
-**容器部署注意**：`storage/` 必须挂持久卷。仓库的 `docker-compose.fullapp.yml` / `docker-compose.fullapp.dev.yml` 已经这样做（`attachments_storage:/app/storage`）。本地 `docker-compose.yml` 走宿主机目录。
+**容器部署注意**：`storage/` 必须挂持久卷。仓库的 `docker-compose.fullapp.yml` / `docker-compose.fullapp.dev.yml` 已经这样做（`attachments_storage:/app/storage`）。本地 `docker-compose.yml` **没有 app 服务**（本地开发直接在宿主机上跑 `yarn dev`），`storage/` 就是宿主机目录。
 
 ## 2. 前置约束 C-1…C-10（切换成本全在这里）
 
@@ -35,9 +35,9 @@
 | C-9 | 触碰 S3 的工具必须走 `resolveForPartition(partitionCode, scope)`，**不得**手搓驱动配置 | 2026-09-23 探针实测：驱动的租户作用域断言只在配置带 `organizationId`/`tenantId` 时生效，手搓配置会静默放过无 `org_*`/`tenant_*` 段的 key |
 | C-10 | `OM_ENABLE_STORAGE_S3` 在**构建期与运行期**必须一致 | 模块加载由生成注册表（`yarn generate` / `yarn build`）决定，而设置页读请求时的 `process.env`；见 §3「部署契约」 |
 
-C-1…C-3 由 `storage_ops audit`/`preflight` 断言；C-4…C-8 是运维约定；C-9/C-10 是 2026-09-23 探针与生产构建实测新增的两条。
+C-1…C-3 由 `storage_ops audit` 以及 `migrate` 的 preflight 阶段断言；C-4…C-8 是运维约定；C-9/C-10 是 2026-09-23 探针与生产构建实测新增的两条。
 
-## 3. 当前接线状态（Phase 0，2026-09-23 已交付）
+## 3. 当前接线状态（Phase 0 与 Phase 1，2026-09-23 已交付）
 
 - 依赖：`@open-mercato/storage-s3@0.8.0`（`package.json` 精确版本 + `yarn.lock`）。
 - 注册：`src/modules.ts` 里按 `OM_ENABLE_STORAGE_S3` 条件注册 `storage_s3`；模板文件 `.env.example` 已置 `OM_ENABLE_STORAGE_S3=true`（`.env` 是本地未跟踪文件，生产镜像里没有它 —— 部署环境必须自行注入该变量，见下面的「部署契约」）。
@@ -67,14 +67,14 @@ yarn mercato storage_s3 configure-from-env --all-tenants     # 幂等，可做 p
 | true | false | 驱动已注册、UI 不提供 S3 —— 安全（2026-09-23 实测：不带该变量启动的生产构建，`s3Enabled=false`，而 `/api/storage-providers/s3/list` 已返回 401 即路由已注册） |
 | false | true | **危险**：UI 提供 S3 但 `s3` 驱动未注册 → 工厂静默回退 local 驱动（见 §1 与 C-9） |
 
-- 因此部署流水线（构建）与运行时环境**都要**给到这个变量；`storage_ops preflight` 会用「解析到的驱动 key == 分区配置的驱动」把危险方向挡在迁移之前。
+- 因此部署流水线（构建）与运行时环境**都要**给到这个变量；`storage_ops migrate` 的 preflight 阶段会用「解析到的驱动 key == 分区配置的驱动」把危险方向挡在迁移之前。
 
 ## 4. 本机彩排环境（MinIO）
 
 ```bash
 docker compose --profile storage-s3 up -d minio
-# S3 API  http://localhost:4666   （MINIO_PORT，见 .env 端口分配块）
-# 控制台   http://localhost:4667   （MINIO_CONSOLE_PORT，minioadmin / minioadmin）
+# S3 API  http://localhost:4666   （宿主端口，compose 默认 ${MINIO_PORT:-4666}；该变量不在 .env.example 里）
+# 控制台   http://localhost:4667   （MINIO_CONSOLE_PORT，compose 默认 ${MINIO_CONSOLE_PORT:-4667}，minioadmin / minioadmin）
 # 容器内用的是 MinIO 默认地址（9000 / 9001），宿主端口由 MINIO_PORT / MINIO_CONSOLE_PORT 决定；
 # 健康检查用镜像自带的 `mc ready local`（该别名指向容器内 9000）。
 ```

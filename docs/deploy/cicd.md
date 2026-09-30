@@ -9,9 +9,10 @@
 
 | 分支 | 作用 | 触发什么 |
 |---|---|---|
-| `main` | 集成分支 | `validate.yml`（`scope` → `checks` ∥ `build` → 汇总 `validate`，命令仍是 generate/typecheck/lint/ds:check/test/build） |
+| `main` | 集成分支 | `validate.yml`（`scope` → `checks` ∥ `build` → 汇总 `validate`，命令仍是 generate/typecheck/lint/lessons/ds:check/test/build） |
 | `feat/*` | 特性分支 | 开 PR 时跑 `validate.yml` |
 | `production` | **发布分支，唯一会部署的分支** | `deploy.yml`（构建镜像 → 部署到 AWS） |
+| 任意 PR 目标 | 所有分支 | `guard-tree.yml`（`scripts/guards/guard-tree.mjs`，拒收丢失仓库的树） |
 
 部署不是「合并到 main 的副作用」：把某个提交提升到生产是一次显式的动作——日常走**从 `production`
 切出的同步分支 → PR（base `production`）→ squash 合并**（PR #19/#22 的形状），合并即触发部署；
@@ -24,11 +25,10 @@
 ```
 push production ─┬─ build  ── docker build --target runner ──▶ ghcr.io/kcdevvanness/kc-cb-digital-base-main:<sha>
                  │                                            ghcr.io/kcdevvanness/kc-cb-digital-base-main:production
-                 └─ deploy ── ssh ──▶ docker login ghcr.io（GITHUB_TOKEN，走 stdin）
-                                      ssh ──▶ 主机 git fetch + checkout <sha>
-                                              docker compose -f docker-compose.deploy.yml pull app
-                                              docker compose -f docker-compose.deploy.yml up -d
-                                              curl 127.0.0.1:$APP_PORT/api/healthz 等到 200
+                 └─ deploy ── ssh ──▶ 主机 git fetch + checkout <sha>（无需 docker login：包可公开拉取）
+                                      docker compose -f docker-compose.deploy.yml pull app
+                                      docker compose -f docker-compose.deploy.yml up -d
+                                      curl 127.0.0.1:$APP_PORT/api/healthz 等到 200
 ```
 
 **构建为什么在 CI 而不在主机上**：`yarn build` 用 `--max-old-space-size=8192`，
@@ -36,17 +36,17 @@ push production ─┬─ build  ── docker build --target runner ──▶ g
 所以主机只做三件事——
 拉代码、拉镜像、起容器。
 
-**GHCR 鉴权**：GHCR 的 package 默认私有，主机 `pull` 需要凭据。用当次运行自带的
-`GITHUB_TOKEN` 登录，经 `ssh ... --password-stdin` 灌入，不落 argv、不落文件、不进
-主机 shell history。登录失败只记 warning——真正的闸门是随后的 `compose pull`，
-缺凭据会在那里明确报错。
+**GHCR 鉴权**：该 package 目前**公开可拉取**，主机 `pull` 不需要凭据，部署脚本里没有
+`docker login`（早期曾用当次运行的 `GITHUB_TOKEN` 登录，token 随运行过期后反而让后续
+pull 报 `denied`，故已移除）。若将来把 package 改为私有，主机需要一份**长期凭据**，
+而不是这个 job 的 token。
 
 - 镜像标签用 **commit SHA**（不可变），`deploy` 阶段传的就是这个 tag，不是 `latest`
 - `concurrency: deploy-production` 且 `cancel-in-progress: false`：正在跑的部署必须跑完，
   否则会停在 `up -d` 中间
 - 构建缓存走 GitHub Actions cache（`type=gha`），首次构建后重复构建显著变快
 - **只改部署侧文件时跳过构建**：`build` 阶段先 `git diff` 本次推送范围，若改动全部落在
-  `.github/`、`docs/`、`*.md`、`docker-compose.deploy.yml`、`docker/caddy/`、`scripts/deploy/`
+  `.github/`、`docs/`、`*.md`、`.gitignore`、`docker-compose.deploy.yml`、`docker/caddy/`、`scripts/deploy/`
   之内，就复用已有的 `:production` 镜像，省掉约 11 分钟。判定是**白名单**（不在名单里就重建），
   所以新增源码目录只会多花时间，不会上线过期镜像。跳过构建时 `deploy` 仍会跑，
   因为 compose 与 Caddyfile 的改动需要被应用
@@ -119,7 +119,7 @@ runner 镜像的 `NODE_ENV=production` 烤死在 `Dockerfile` 里，没有 env �
 换公网域名：
 
 ```bash
-ssh -i <key> ubuntu@<host> 'bash -s' < set-domain.sh app.example.com
+ssh -i <key> ubuntu@<host> 'bash -s' < scripts/deploy/set-domain.sh app.example.com
 # 然后推 production 让容器按新域名重建
 ```
 
@@ -155,8 +155,10 @@ ssh -i <key> ubuntu@<host> 'bash -s' < set-domain.sh app.example.com
 ## 用另一个环境的数据替换线上库（review 用）
 
 **前提：线上部署的必须是数据来源的那条分支。** dump 里带着源应用所有模块的表，部署一个更小的
-应用，那些数据就没有界面可达——实测 `main` 只有 48 张框架表 / 9 个模块，
-`feat/cross-border-erp` 有 195 张表 / 27 个模块。
+应用，那些数据就没有界面可达——实测（2026-09-24）`main` 是 48 张框架表 / 9 个模块，
+`feat/cross-border-erp` 是 195 张表 / 27 个模块。此后 `main` 的启用模块已增至 **39 个**
+（`.mercato/generated/enabled-module-ids.generated.ts`），框架表数也随模块增长，这两个数字
+只是那次实测的快照。
 
 **必须对齐加密密钥。** 加密列与带 pepper 的查找哈希只有在
 `TENANT_DATA_ENCRYPTION_FALLBACK_KEY` / `LOOKUP_HASH_PEPPER` 与源环境一致时才读得出来。
@@ -217,8 +219,9 @@ docker compose exec -T app node -e \
 docker compose exec -T postgres psql -U postgres -d open-mercato -tAc "select email_hash from users"
 ```
 
-密码策略要求**同时含大写字母、数字与特殊字符**（长度取 `OM_PASSWORD_MIN_LENGTH`），
-纯字母数字会被拒绝。
+密码策略**默认只要求至少一个数字**（长度取 `OM_PASSWORD_MIN_LENGTH`，默认 8）；
+大写字母与特殊字符分别由 `OM_PASSWORD_REQUIRE_UPPERCASE` / `OM_PASSWORD_REQUIRE_SPECIAL`
+控制，本仓库（`.env.example`）两者均为 `false`。
 
 **恢复后索引要重建**：Meilisearch 的索引在它自己的卷里，不随数据库一起搬，
 不重建则搜索为空（Postgres 侧的 query index 是随库恢复的，列表页正常）。
