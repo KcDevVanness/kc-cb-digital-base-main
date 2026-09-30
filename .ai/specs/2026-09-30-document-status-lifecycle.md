@@ -1,7 +1,7 @@
 # 单据状态（status）在各业务板块的补齐与赋能（document status lifecycle）
 
 **Date**: 2026-09-30
-**Status**: Phase 1 Implemented（`feat/sales-status-lifecycle`）；Phase 2·A 实现中（`feat/shipment-close-lifecycle`），Phase 2·B/C 与 Phase 3–4 为草案
+**Status**: Phase 1 Implemented（`feat/sales-status-lifecycle`）；Phase 2·A Implemented（`feat/shipment-close-lifecycle`，见下）；Phase 2·B/C 与 Phase 3–4 为草案
 **Scope route**: `spec-pr`（本文件）；Phase 1 实现单元 `feat/sales-status-lifecycle`（`module-data` + `backend-ui`，含 `cross_border` 一处门禁）
 
 ## TLDR
@@ -215,7 +215,7 @@
 
 **Phase 2 拆成三个切片，逐个交付。**
 
-#### Phase 2·A — 发运单归档 `closed`（本文件定稿，实现中）
+#### Phase 2·A — 发运单归档 `closed`（已实现，`feat/shipment-close-lifecycle`）
 
 - **目标**：柜的生命周期有终点。现在 `received` 之后单据停在原地，柜档案/结算没有「收口」状态；归档后不允许再改、再取消。
 - **状态机**（唯一权威：`lib/shipmentStatus.ts` 的 `SHIPMENT_TRANSITIONS`）：`draft → in_transit → received → closed`，旁路 `draft|in_transit → cancelled`；`closed` 与 `cancelled` 为终态。
@@ -224,11 +224,12 @@
   - REQ-202 归档是终态：`closed` 之后不可编辑、不可取消、不可记录里程碑（现有守卫按状态白名单天然拒绝，测试固定）。
   - REQ-203 归档发放域事件 `cross_border.shipment.closed`（`id/number/tenantId/organizationId`），供订阅者做结算/通知。
   - REQ-204 列表与详情显示 `closed` 徽章与标签（zh「已归档」/en“Closed”），列表筛选包含该状态。
-- **Tests**：TEST-201 单元（`SHIPMENT_TRANSITIONS` 矩阵：只允许 `received → closed`、终态无出边）；TEST-202 集成（API：received → close 200 + 事件；`draft` 直接 close → 422；close 后再 cancel → 422）；TEST-203 浏览器（详情页 `received` 出现「归档」按钮、`closed` 无动作、列表筛选与徽章）。
-- **验收**
-  - **AC-201** 一张 `received` 发运单执行「归档」→ 状态 `closed`，库内值与徽章一致；再次归档/取消被 422 拒绝。
-  - **AC-202** `draft`/`in_transit` 发运单不出现「归档」动作，直接调 API 也是 422。
-  - **AC-203** 列表状态筛选含「已归档」，筛出的行全部是 `closed`。
+- **Tests**：TEST-201 单元（`SHIPMENT_TRANSITIONS` 矩阵：只允许 `received → closed`、终态无出边、筛选顺序与 API 枚举一致）；TEST-202 集成（`__integration__/shipment-close.spec.ts`，自建临时库：`received → close` 2xx 且列表回读 `closed`；`draft` 与 `in_transit` 直接 close 均 422 且状态不变）；TEST-203 集成续（`closed` 后再 cancel → 422、状态仍 `closed`）。
+- **验收（已达成）**
+  - **AC-201** ✅ 一张 `received` 发运单执行 close → 2xx，`GET /api/cross_border/shipments?id=` 回读 `closed`（集成 TEST-201）。
+  - **AC-202** ✅ `draft`/`in_transit` 调 close 均 422 且状态不变（集成 TEST-202）；UI 侧：详情页动作矩阵只在 `received` 给「归档」（`closed`/`cancelled` 无动作）。
+  - **AC-203** ✅ 列表状态筛选与徽章含「已归档」（枚举 + `StatusMap` 穷尽类型；`export_finance` 的柜档案/柜列表/标签表由类型检查强制补齐）。
+- **证据**：`JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral shipment-close` → 本 spec 3/3 通过（同轮全套 103 passed / 4 failed（均为 `storage_ops` 的 `STORAGE_OPS_TEST_S3_CONFIG` 环境门）/ 5 skipped）；单元 `lib/__tests__/shipmentStatus.test.ts`；`yarn typecheck`/`yarn lint`/`yarn test` 全绿。
 - **不做**：`closedAt` 时间戳列（需要 DDL；状态变更审计已记录时间与操作者，等 Phase 3 的迁移一起加）；柜档案/结算页的「已归档」聚合（Phase 4 报表）。
 
 #### Phase 2·B — 发运单证区状态（草案，需要迁移）

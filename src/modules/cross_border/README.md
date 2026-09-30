@@ -46,6 +46,16 @@ app 自有模块。把多张采购单**拼柜**成一张发运单，跟踪在途
 
 ## 验证
 
+发运单归档（Phase 2·A，2026-09-30）：
+
+```bash
+JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral shipment-close
+#  __integration__/shipment-close.spec.ts：received → close 回读 closed；draft / in_transit 直接 close → 422 且状态不变；
+#  closed 后再 cancel → 422、状态仍 closed（自建临时库，afterAll 清理；received/closed 的单据按命令规则无法经 API 删除，
+#  留在一次性库里随库销毁）。
+npx jest src/modules/cross_border/lib/__tests__/shipmentStatus.test.ts   # 迁移矩阵 / 终态 / 筛选顺序
+```
+
 ```bash
 yarn generate && yarn typecheck
 yarn test src/modules/cross_border
