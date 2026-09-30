@@ -152,8 +152,16 @@ function profileFilter(scope: { tenantId: string }, id: string): FilterQuery<Our
   return { id, tenantId: scope.tenantId, deletedAt: null } as FilterQuery<OurPartyProfile>
 }
 
-async function loadProfile(em: EntityManager, id: string): Promise<OurPartyProfile | null> {
-  return em.fork().findOne(OurPartyProfile, { id, deletedAt: null } as FilterQuery<OurPartyProfile>)
+async function loadProfile(
+  em: EntityManager,
+  tenantId: string,
+  id: string,
+): Promise<OurPartyProfile | null> {
+  return em.fork().findOne(OurPartyProfile, {
+    id,
+    tenantId,
+    deletedAt: null,
+  } as FilterQuery<OurPartyProfile>)
 }
 
 async function loadBankAccounts(
@@ -255,6 +263,16 @@ async function replaceBankAccounts(
       soft: false,
     })
   }
+  // The partial unique index allows one default per profile, and rows are applied in submitted
+  // order — a newly ticked row that sits before the old default would collide. Clear the old flag
+  // first, then let the payload decide.
+  await de.updateOrmEntity({
+    entity: OurPartyBankAccount,
+    where: { profile: profileId, tenantId, isDefault: true } as FilterQuery<OurPartyBankAccount>,
+    apply: (entity) => {
+      entity.isDefault = false
+    },
+  })
   const present = new Map(existing.map((row) => [String(row.id), row]))
   const profile = em.getReference(OurPartyProfile, profileId)
   for (let index = 0; index < bankAccounts.length; index += 1) {
@@ -423,7 +441,13 @@ const createProfileCommand: CommandHandler<Record<string, unknown>, OurPartyProf
       dataEngine: de,
       action: 'deleted',
       entity: removed,
-      identifiers: { id, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      identifiers: {
+        id,
+        tenantId: scope.tenantId,
+        // The row's own company, not the acting organization: a group operator undoing a
+        // subsidiary's creation must key the index/cache effects the way the source row is scoped.
+        organizationId: String(removed?.organizationId ?? scope.organizationId),
+      },
       syncOrigin: ctx.syncOrigin,
       events: ourPartyCrudEvents,
       indexer: ourPartyCrudIndexer,
@@ -438,7 +462,7 @@ const updateProfileCommand: CommandHandler<Record<string, unknown>, OurPartyProf
     const parsed = ourPartyProfileUpdateSchema.parse(rawInput)
     const scope = ensureScope(ctx)
     const em = ctx.container.resolve('em') as EntityManager
-    const current = await loadProfile(em, parsed.id)
+    const current = await loadProfile(em, scope.tenantId, parsed.id)
     if (!current) return {}
     const bankAccounts = await loadBankAccounts(em, scope.tenantId, parsed.id)
     return { before: serializeProfile(current, bankAccounts) }
@@ -449,8 +473,12 @@ const updateProfileCommand: CommandHandler<Record<string, unknown>, OurPartyProf
     const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
-    const current = await loadProfile(em, parsed.id)
+    const current = await loadProfile(em, scope.tenantId, parsed.id)
     if (!current) throw notFound('Profile not found')
+    // The row exists in this tenant; the caller still has to be allowed to address the company it
+    // describes (an ACL-restricted manager must not edit a profile for an organization outside their
+    // scope just because they hold the profile id).
+    await assertOrganizationAddressable(ctx, scope, String(current.organizationId))
 
     enforceCommandOptimisticLock({
       resourceKind: RESOURCE_KIND,
@@ -508,7 +536,7 @@ const updateProfileCommand: CommandHandler<Record<string, unknown>, OurPartyProf
       { transaction: true, label: 'our_parties.profiles.update' },
     )
 
-    const updated = await loadProfile(em, parsed.id)
+    const updated = await loadProfile(em, scope.tenantId, parsed.id)
     if (!updated) throw notFound('Profile not found')
 
     await emitCrudSideEffects({
@@ -555,6 +583,7 @@ const updateProfileCommand: CommandHandler<Record<string, unknown>, OurPartyProf
     const scope = ensureScope(ctx)
     const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
+    await assertOrganizationAddressable(ctx, scope, before.organizationId)
 
     await withAtomicFlush(
       em,
@@ -600,10 +629,11 @@ const deleteProfileCommand: CommandHandler<
   isUndoable: true,
   async prepare(input, ctx) {
     const id = requireId(input, 'Profile')
+    const scope = ensureScope(ctx)
     const em = ctx.container.resolve('em') as EntityManager
-    const current = await loadProfile(em, id)
+    const current = await loadProfile(em, scope.tenantId, id)
     if (!current) return {}
-    const bankAccounts = await loadBankAccounts(em, ctx.auth?.tenantId ?? '', id)
+    const bankAccounts = await loadBankAccounts(em, scope.tenantId, id)
     return { before: serializeProfile(current, bankAccounts) }
   },
   async execute(input, ctx) {
@@ -611,8 +641,9 @@ const deleteProfileCommand: CommandHandler<
     const scope = ensureScope(ctx)
     const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
-    const current = await loadProfile(em, id)
+    const current = await loadProfile(em, scope.tenantId, id)
     if (!current) throw notFound('Profile not found')
+    await assertOrganizationAddressable(ctx, scope, String(current.organizationId))
 
     enforceCommandOptimisticLock({
       resourceKind: RESOURCE_KIND,
@@ -662,6 +693,7 @@ const deleteProfileCommand: CommandHandler<
     const scope = ensureScope(ctx)
     const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
+    await assertOrganizationAddressable(ctx, scope, before.organizationId)
 
     const restored = await de.updateOrmEntity({
       entity: OurPartyProfile,

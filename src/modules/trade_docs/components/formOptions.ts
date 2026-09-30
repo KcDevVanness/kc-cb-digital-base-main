@@ -375,54 +375,6 @@ export async function loadDocumentOptions(
 }
 
 /**
- * The parties master's own option source (`/api/parties/options`).
- *
- * Used by the contract/PI "our party" picker so the printed seller head comes from master data;
- * search is by party code, matching the route's own filter, and an unreadable list rejects with the
- * caller's message so the form can show it instead of silently offering nothing.
- */
-export async function loadPartyOptions(
-  errorMessage: string,
-  query?: string,
-): Promise<CrudFieldOption[]> {
-  const term = query?.trim()
-  const url = term ? `${PARTIES_OPTIONS_URL}?search=${encodeURIComponent(term)}` : PARTIES_OPTIONS_URL
-  const payload = await readApiResultOrThrow<{ items?: Array<{ value?: string; label?: string }> }>(
-    url,
-    undefined,
-    { errorMessage },
-  )
-  return (payload.items ?? [])
-    .map((item) => ({ value: String(item.value ?? ''), label: String(item.label ?? '') }))
-    .filter((option) => option.value.length > 0)
-}
-
-/**
- * Bank accounts of one party, as `GET /api/parties/{id}` projects them, so a contract/PI can print
- * the beneficiary account the master data holds. An account with no number still lists by bank name
- * so the picker is never empty for a party that has one.
- */
-export async function loadPartyBankAccountOptions(
-  errorMessage: string,
-  partyId: string,
-): Promise<CrudFieldOption[]> {
-  const scopedPartyId = partyId.trim()
-  if (!scopedPartyId) return []
-  const payload = await readApiResultOrThrow<{
-    item?: { bankAccounts?: Array<Record<string, unknown>> }
-  }>(`/api/parties/${encodeURIComponent(scopedPartyId)}`, undefined, { errorMessage })
-  return (payload.item?.bankAccounts ?? [])
-    .map((account) => {
-      const value = String(account.id ?? '')
-      const bank = readText(account, 'beneficiaryBank', 'beneficiary_bank')
-      const number = readText(account, 'accountNumber', 'account_number')
-      const label = [bank, number].filter((part) => part.length > 0).join(' — ') || value.slice(0, 8)
-      return { value, label: account.isDefault === true ? `${label} ★` : label }
-    })
-    .filter((option) => option.value.length > 0)
-}
-
-/**
  * The printed counterparty block plus its bank accounts, for either namespace: a sale reads the
  * app-owned `parties` master, a purchase reads `purchasing` suppliers. Both detail routes decrypt
  * their own sensitive columns; this loader only shapes the two responses the same way.

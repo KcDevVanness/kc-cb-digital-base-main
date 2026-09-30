@@ -59,13 +59,17 @@ export function relatedOrganizationEntries(
  */
 export function organizationChainEntries(
   nodes: readonly RelatedOrganizationNode[],
+  options: { selectableOnly?: boolean } = {},
 ): Array<{ id: string; name: string }> {
   const entries: Array<{ id: string; name: string }> = []
   const walk = (list: readonly RelatedOrganizationNode[]) => {
     for (const node of list) {
       if (!node || typeof node.id !== 'string' || node.id.length === 0) continue
       const name = typeof node.name === 'string' && node.name.trim().length > 0 ? node.name : node.id
-      entries.push({ id: node.id, name })
+      // `selectableOnly` is for forms that *write against* an organization (the picker behind it
+      // refuses a node the caller cannot act in); the document picker keeps the ancestors because a
+      // branch may print the group company even though it cannot administer it.
+      if (!options.selectableOnly || node.selectable !== false) entries.push({ id: node.id, name })
       if (Array.isArray(node.children) && node.children.length > 0) walk(node.children)
     }
   }

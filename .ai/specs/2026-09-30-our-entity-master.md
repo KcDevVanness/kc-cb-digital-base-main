@@ -129,6 +129,7 @@ trade_docs（合同/PI/CI/发票）
 
 | Date | Change |
 |---|---|
+| 2026-09-30 | **评审修复（四 major + 五 minor + 一 nit）**：①update/delete（及其 undo）补**主体组织授权**，`loadProfile` 带 tenant 谓词（拿到 `manage` 但组织范围收窄的账号不能按 id 改别家公司档案；跨租户 id 一律 404）；②`(tenant, organization)` 唯一索引改为**部分唯一**（`where deleted_at is null`）——删档后该公司可再建档、undo 后可重做，dev 库索引已同步重建；③银行默认账户先清旧标记再按载荷落位（否则「新默认行排在旧默认行之前」会撞部分唯一索引 500）；④编辑既有单据时银行下拉按组织**懒加载**账户；⑤旧快照的 `partyId` 键在表单值里透传、未选组织时原样回写（兑现「旧键不改写」）；⑥create-undo 的副作用改用被删行自己的组织作用域（否则 query-index 作用域校验报错）；⑦新增 `events.ts` 声明三条 crud 事件（含 `clientBroadcast`）；⑧维护表单只列**可操作**组织（与写入守卫一致）；⑨删除 trade_docs 中已无引用的两个 loader 与未用的 openApi 导出。 |
 | 2026-09-30 | 实现并验证：`our_parties` 模块（`our_parties_profiles` + `our_parties_bank_accounts`，迁移 `Migration20260930040746_our_parties.ts`，银行四列加密）、三条命令（create/update/delete，子行整组替换 + 默认唯一 + 乐观锁 + undo + 事件）、CRUD + 聚合详情两条路由、维护页（列表/新建/编辑，银行块复用 `parties` 的编辑器）、`trade_docs` 我方主体选择器改读组织链 + 档案回填（合同/PI/CI/发票共用）。实现期发现并修掉两处：①实体 `entityId` 必须遵引擎的 `<module>:<module>_<entity>` 约定（`our_parties:our_party_profile`），否则查询引擎把表名猜成 `profiles` → 列表 500；②只改银行子行时父行不落写、乐观锁版本不前进 → 更新命令每次显式推进 `updatedAt`。验证：门禁全绿 + 浏览器实测（列表/新建/编辑/删除、银行密文落库与解密回读、合同表单选中组织回填名称/地址/联系人/银行、未建档组织提示）。既有 dev 库需跑一次 `yarn mercato entities seed-encryption --tenant <id>` 物化银行加密映射（本机已跑）。 |
 
 ## Resolved assumptions (autonomous defaults)

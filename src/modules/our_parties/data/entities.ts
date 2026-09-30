@@ -1,5 +1,5 @@
 import { OptionalProps } from '@mikro-orm/core'
-import { Entity, Index, ManyToOne, PrimaryKey, Property, Unique } from '@mikro-orm/decorators/legacy'
+import { Entity, Index, ManyToOne, PrimaryKey, Property } from '@mikro-orm/decorators/legacy'
 
 /**
  * 我方主体档案 — the print profile of one of our own companies.
@@ -16,7 +16,14 @@ import { Entity, Index, ManyToOne, PrimaryKey, Property, Unique } from '@mikro-o
  * may only maintain its own row; the group operator maintains every row below itself.
  */
 @Entity({ tableName: 'our_parties_profiles' })
-@Unique({ name: 'our_parties_profiles_scope_org_uniq', properties: ['tenantId', 'organizationId'] })
+@Index({
+  name: 'our_parties_profiles_scope_org_uniq',
+  // One **live** profile per company: the predicate excludes soft-deleted rows, so a company whose
+  // profile was deleted can be profiled again (a plain unique would make that a permanent 409) and
+  // an undone create can be redone.
+  expression:
+    'create unique index "our_parties_profiles_scope_org_uniq" on "our_parties_profiles" ("tenant_id", "organization_id") where "deleted_at" is null',
+})
 @Index({ name: 'our_parties_profiles_scope_idx', properties: ['organizationId', 'tenantId'] })
 export class OurPartyProfile {
   [OptionalProps]?: 'createdAt' | 'updatedAt'

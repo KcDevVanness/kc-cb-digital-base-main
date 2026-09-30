@@ -19,19 +19,10 @@ export const ourPartiesCreatedSchema = z.object({
   id: z.string().uuid(),
 })
 
-const buildOurPartiesCrudOpenApi = createCrudOpenApiFactory({
-  defaultTag: ourPartiesTag,
-  defaultCreateResponseSchema: ourPartiesCreatedSchema,
-  defaultOkResponseSchema: ourPartiesOkSchema,
-  makeListDescription: ({ pluralLower }) =>
-    `Returns a paginated collection of ${pluralLower}; a row is visible only within its own company's organization scope.`,
-})
-
-export function createOurPartiesCrudOpenApi(options: CrudOpenApiOptions): OpenApiRouteDoc {
-  return buildOurPartiesCrudOpenApi(options)
-}
-
-/** One profile with its bank block, as the detail route projects it. */
+/**
+ * One profile with its decrypted bank block, as the aggregate detail route projects it. Declared
+ * here so the route and its OpenAPI document cannot drift.
+ */
 export const ourPartyProfileDetailSchema = z.object({
   id: z.string().uuid(),
   organizationId: z.string().uuid(),
@@ -60,22 +51,15 @@ export const ourPartyProfileDetailResponseSchema = z.object({
   item: ourPartyProfileDetailSchema,
 })
 
-export const ourPartyProfileDetailOpenApi: OpenApiRouteDoc = {
-  tag: ourPartiesTag,
-  summary: 'Our-entity profile',
-  methods: {
-    GET: {
-      summary: 'One our-entity profile with its bank block',
-      description:
-        'The aggregate read the edit form and the trade-docs pickers use: the profile of the company that owns the row, with its bank accounts decrypted. Answers 404 for an organization outside the caller’s scope.',
-      tags: [ourPartiesTag],
-      responses: [
-        { status: 200, description: 'The profile.', schema: ourPartyProfileDetailResponseSchema },
-      ],
-      errors: [
-        { status: 403, description: 'Missing our_parties.view', schema: ourPartiesErrorSchema },
-        { status: 404, description: 'Unknown profile or organization outside the caller’s scope.', schema: ourPartiesErrorSchema },
-      ],
-    },
-  },
+const buildOurPartiesCrudOpenApi = createCrudOpenApiFactory({
+  defaultTag: ourPartiesTag,
+  defaultCreateResponseSchema: ourPartiesCreatedSchema,
+  defaultOkResponseSchema: ourPartiesOkSchema,
+  makeListDescription: ({ pluralLower }) =>
+    `Returns a paginated collection of ${pluralLower}; a row is visible only within its own company's organization scope.`,
+})
+
+export function createOurPartiesCrudOpenApi(options: CrudOpenApiOptions): OpenApiRouteDoc {
+  return buildOurPartiesCrudOpenApi(options)
 }
+

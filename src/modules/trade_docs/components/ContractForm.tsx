@@ -86,6 +86,11 @@ export type ContractFormValues = {
   counterpartyBank: string
   /** `parties` id of our own side, when the head was picked from master data (F-004). */
   ourPartyId: string
+  /**
+   * A `partyId` the snapshot carried before our own side became an organization (an old document).
+   * Kept in the form values only so re-saving that document does not erase the legacy link.
+   */
+  ourPartyLegacyPartyId: string
   /** `PartyBankAccount` id the bank text was filled from; carried into the snapshot. */
   ourPartyBankAccountId: string
   ourPartyName: string
@@ -137,6 +142,7 @@ const EMPTY_CONTRACT_VALUES: ContractFormValues = {
   counterpartyContact: '',
   counterpartyBank: '',
   ourPartyId: '',
+  ourPartyLegacyPartyId: '',
   ourPartyBankAccountId: '',
   ourPartyName: '',
   ourPartyAddress: '',
@@ -182,6 +188,7 @@ export function toContractFormValues(
     counterpartyContact: snapshotText(counterpartySnapshot, 'contact'),
     counterpartyBank: snapshotText(counterpartySnapshot, 'bank'),
     ourPartyId: snapshotText(ourPartySnapshot, 'organizationId'),
+    ourPartyLegacyPartyId: snapshotText(ourPartySnapshot, 'partyId'),
     ourPartyBankAccountId: snapshotText(ourPartySnapshot, 'bankAccountId'),
     ourPartyName: snapshotText(ourPartySnapshot, 'name'),
     ourPartyAddress: snapshotText(ourPartySnapshot, 'address'),
@@ -271,6 +278,9 @@ export function buildContractPayload(values: ContractFormValues): Record<string,
   // The master-data ids ride inside the free-form snapshot; the validator accepts any object, so the
   // printed head stays traceable to `parties` without a command change.
   if (values.ourPartyId.trim()) ourParty.organizationId = values.ourPartyId.trim()
+  // A document that predates the organization-keyed picker keeps its legacy link when it is saved
+  // without choosing a company again; choosing one replaces it with the organization id.
+  else if (values.ourPartyLegacyPartyId.trim()) ourParty.partyId = values.ourPartyLegacyPartyId.trim()
   if (values.ourPartyBankAccountId.trim()) ourParty.bankAccountId = values.ourPartyBankAccountId.trim()
 
   const counterparty = partySnapshot({
@@ -667,11 +677,13 @@ export function OurPartyPicker({
       setValue('ourPartyId', nextOrganizationId)
       if (!nextOrganizationId) return
       const label = organizations.entries.find((entry) => entry.id === nextOrganizationId)?.name ?? ''
+      // The name comes from the organization itself, so it is filled whether or not the profile read
+      // succeeds — an unreadable profile must not leave the printed head empty.
+      setValue('ourPartyName', label)
       void loadOurPartyProfile(t('trade_docs.contracts.form.partyLoadFailed'), nextOrganizationId)
         .then((profile) => {
           accountsRef.current = profile?.bankAccounts ?? []
           setResolved({ organizationId: nextOrganizationId, profileId: profile?.id ?? null })
-          setValue('ourPartyName', label)
           setValue('ourPartyAddress', profile?.address ?? '')
           setValue('ourPartyContact', profile?.contact ?? '')
           setValue('ourPartyBankAccountId', '')
@@ -679,7 +691,11 @@ export function OurPartyPicker({
           if (preferred) applyBankAccount(preferred)
           else setValue('ourPartyBank', '')
         })
-        .catch(() => undefined)
+        .catch(() => {
+          // Degrade exactly like "no profile": name only, nothing silently prefixed.
+          accountsRef.current = []
+          setResolved({ organizationId: nextOrganizationId, profileId: null })
+        })
     },
     [applyBankAccount, organizations.entries, setValue, t],
   )
@@ -754,6 +770,15 @@ export function OurPartyPicker({
           disabled={!organizationId}
           seedOptions={bankAccountId ? [{ value: bankAccountId, label: bankText || bankAccountId }] : undefined}
           loadSuggestions={async (query) => {
+            // On an edit page the form opens with a company already picked and the ref empty, so the
+            // dropdown hydrates from the profile once instead of offering only the seeded account.
+            if (organizationId && accountsRef.current.length === 0) {
+              const profile = await loadOurPartyProfile(
+                t('trade_docs.contracts.form.partyLoadFailed'),
+                organizationId,
+              ).catch(() => null)
+              accountsRef.current = profile?.bankAccounts ?? []
+            }
             const term = query?.trim().toLowerCase() ?? ''
             return accountsRef.current
               .filter((account) => (term.length > 0 ? labelBankAccount(account).toLowerCase().includes(term) : true))

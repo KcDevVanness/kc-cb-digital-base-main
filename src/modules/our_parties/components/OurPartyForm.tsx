@@ -136,7 +136,11 @@ function useOrganizationChain(): { entries: Array<{ id: string; name: string }>;
     queryFn: async () => {
       const call = await apiCall<Record<string, unknown>>(ORGANIZATION_SWITCHER_URL)
       if (!call.ok) return []
-      return organizationChainEntries(parseOrganizationSwitcherScope(call.result).organizations)
+      // The server refuses a subject organization outside the caller's scope, so the write form
+      // offers only the nodes the caller may act in (the document picker keeps the full chain).
+      return organizationChainEntries(parseOrganizationSwitcherScope(call.result).organizations, {
+        selectableOnly: true,
+      })
     },
   })
   return { entries: query.data ?? [], loading: query.isLoading }
