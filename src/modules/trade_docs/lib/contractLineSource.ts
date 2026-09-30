@@ -142,13 +142,12 @@ const SALES_HEAD_PAGE_SIZE = 100
 /**
  * The list query a sales-source picker sends.
  *
- * A resolved trade type becomes a hard `channelId` filter: a missing channel id yields `null` — no
- * request, no sources — rather than a widened list that would offer the other type's documents. An
- * unresolved counterparty lists both channels and lets the caller label each option with its own
- * trade type, so the operator can tell the two apart without a filter standing behind the list.
+ * The kind the operator picked carries its own trade type, which becomes a hard `channelId` filter:
+ * a missing channel id yields `null` — no request, no sources — rather than a widened list that
+ * would offer the other type's documents.
  */
 export function buildSalesSourceListParams(
-  type: SalesTradeType | null,
+  type: SalesTradeType,
   channelIds: TradeTypeChannelMap,
   term: string,
 ): Record<string, string | number> | null {
@@ -159,16 +158,8 @@ export function buildSalesSourceListParams(
     sortDir: 'desc',
     ...(search ? { search } : {}),
   } satisfies Record<string, string | number>
-  if (type) {
-    const channelId = channelIds[type]
-    return channelId ? { channelId, ...base } : null
-  }
-  const both = [channelIds.internal, channelIds.external].filter(
-    (id): id is string => typeof id === 'string' && id.length > 0,
-  )
-  // No trade-type channel exists at all: every option would be unlabelable, so offer nothing.
-  if (both.length === 0) return null
-  return { channelIds: both.join(','), ...base }
+  const channelId = channelIds[type]
+  return channelId ? { channelId, ...base } : null
 }
 
 /** One source line mapped onto the contract line's own field names. */

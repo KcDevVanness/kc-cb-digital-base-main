@@ -110,20 +110,6 @@ describe('buildSalesSourceListParams', () => {
     expect(buildSalesSourceListParams('internal', { internal: null, external: 'channel-external' }, '')).toBeNull()
     expect(buildSalesSourceListParams('external', {}, 'x')).toBeNull()
   })
-
-  it('lists both channels when the counterparty has no master link', () => {
-    expect(buildSalesSourceListParams(null, channels, '')).toEqual({
-      channelIds: 'channel-internal,channel-external',
-      pageSize: 100,
-      sortField: 'created_at',
-      sortDir: 'desc',
-    })
-  })
-
-  it('offers nothing when no trade-type channel exists at all', () => {
-    expect(buildSalesSourceListParams(null, {}, '')).toBeNull()
-    expect(buildSalesSourceListParams(null, { internal: null, external: null }, '')).toBeNull()
-  })
 })
 
 describe('readOrderSourceHeadFacts', () => {

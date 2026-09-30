@@ -47,7 +47,7 @@ feature.
 
 - 2.1 Head loaders + preview-row mapping (`formOptions`, `sourcePreview`).
 - 2.2 从订单复制行 and 从合同引用商品行: preview buttons + shared drawer; copy reuses the read lines.
-- 2.3 Fix the order-lines read to the installed page cap (500 → 400 on `sales/*-lines`).
+- 2.3 Fix the order-lines read back to the installed collections' page cap (100 on `sales/*-lines`: asking for 500 answers 400; the module's own contract lines stay at 500).
 
 ### Phase 3: docs, gate, browser smoke
 

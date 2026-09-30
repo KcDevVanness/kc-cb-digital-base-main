@@ -533,6 +533,8 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
   const [previewSubtitle, setPreviewSubtitle] = React.useState('')
   const [previewFields, setPreviewFields] = React.useState<SourcePreviewField[]>([])
   const [previewLines, setPreviewLines] = React.useState<SourcePreviewLine[]>([])
+  /** Guards the preview state against a read that a newer click has superseded. */
+  const previewRequest = React.useRef(0)
   /** Lines already read per source, so preview → copy never fetches the same document twice. */
   const sourceLinesCache = React.useRef(new Map<string, Record<string, unknown>[]>())
   const formContractId = typeof values.contractId === 'string' ? values.contractId.trim() : ''
@@ -663,6 +665,8 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
       flash(t('trade_docs.documents.form.lines.copyOrderRequired', '请先选择一张订单'), 'error')
       return
     }
+    const request = previewRequest.current + 1
+    previewRequest.current = request
     setPreviewTitle(t('trade_docs.documents.form.lines.preview.orderTitle', 'Order preview'))
     setPreviewOpen(true)
     setPreviewBusy(true)
@@ -672,6 +676,7 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
     setPreviewSubtitle(id.slice(0, 8))
     try {
       const [facts, items] = await Promise.all([loadOrderSourceHeadFacts(copyKind, id), readOrderItems(copyKind, id)])
+      if (previewRequest.current !== request) return
       setPreviewSubtitle(
         facts ? [facts.number, facts.counterparty].filter((part) => part.length > 0).join(' — ') : id.slice(0, 8),
       )
@@ -685,13 +690,14 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
         ),
       )
     } catch (error) {
+      if (previewRequest.current !== request) return
       setPreviewError(
         error instanceof Error && error.message
           ? error.message
           : t('ui.sourcePreview.previewFailed', 'Could not load the source document preview'),
       )
     } finally {
-      setPreviewBusy(false)
+      if (previewRequest.current === request) setPreviewBusy(false)
     }
   }, [copyKind, copyOrderId, readOrderItems, t])
 
@@ -701,6 +707,8 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
       flash(t('trade_docs.documents.form.lines.contractRefRequired', '请先选择一张合同'), 'error')
       return
     }
+    const request = previewRequest.current + 1
+    previewRequest.current = request
     setPreviewTitle(t('trade_docs.documents.form.lines.preview.contractTitle', 'Contract preview'))
     setPreviewOpen(true)
     setPreviewBusy(true)
@@ -710,6 +718,7 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
     setPreviewSubtitle(id.slice(0, 8))
     try {
       const [facts, items] = await Promise.all([loadContractSourceHeadFacts(id), readContractItems(id)])
+      if (previewRequest.current !== request) return
       setPreviewSubtitle(
         facts ? [facts.number, facts.counterparty].filter((part) => part.length > 0).join(' — ') : id.slice(0, 8),
       )
@@ -718,13 +727,14 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
         contractPreviewLines(items, facts?.currencyCode ?? '', t('ui.sourcePreview.unnamedLine', '(Unnamed line)')),
       )
     } catch (error) {
+      if (previewRequest.current !== request) return
       setPreviewError(
         error instanceof Error && error.message
           ? error.message
           : t('ui.sourcePreview.previewFailed', 'Could not load the source document preview'),
       )
     } finally {
-      setPreviewBusy(false)
+      if (previewRequest.current === request) setPreviewBusy(false)
     }
   }, [readContractItems, refContractId, t])
 

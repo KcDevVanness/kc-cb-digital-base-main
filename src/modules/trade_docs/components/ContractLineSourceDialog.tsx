@@ -130,11 +130,15 @@ export function ContractLineSourceDialog({
   const [previewBusy, setPreviewBusy] = React.useState(false)
   const [previewError, setPreviewError] = React.useState<string | null>(null)
   const [previewItems, setPreviewItems] = React.useState<Record<string, unknown>[] | null>(null)
+  /** Guards the preview state against a read that a newer click has superseded. */
+  const previewRequest = React.useRef(0)
 
   const route = CONTRACT_LINE_SOURCE_ROUTES[kind]
   const kindTradeType = route.tradeType
   const salesSourcesBlocked =
-    route.family === 'sales' && channelsLoaded && buildSalesSourceListParams(kindTradeType, channels, '') === null
+    route.family === 'sales' &&
+    channelsLoaded &&
+    (kindTradeType === null || buildSalesSourceListParams(kindTradeType, channels, '') === null)
 
   // Each opening starts clean, and a kind the resolved trade type no longer offers (the counterparty
   // read returned after the picker was shown) is replaced by the first one that is allowed.
@@ -197,27 +201,33 @@ export function ContractLineSourceDialog({
     async (query?: string): Promise<ComboboxOption[]> => {
       const activeRoute = CONTRACT_LINE_SOURCE_ROUTES[kind]
       const term = query?.trim() ?? ''
-      const params = activeRoute.family === 'purchase_order'
-        ? {
-            pageSize: 100,
-            sortField: 'created_at',
-            sortDir: 'desc',
-            ...(term ? { search: term } : {}),
-          }
-        : buildSalesSourceListParams(activeRoute.tradeType, channels, term)
-      // A trade type with no channel id, or an organization with no trade-type channels at all,
-      // offers nothing — never a silently widened list of every sales document.
-      if (!params || (activeRoute.family === 'sales' && !channelsLoaded)) return []
-      const payload = await fetchCrudList<Record<string, unknown>>(activeRoute.headApiPath, params)
-      return (payload.items ?? [])
-        .map((item) => {
-          const facts = readOrderSourceHeadFacts(item, activeRoute.family, activeRoute.headNumberKey)
-          headCache.current.set(String(item.id ?? ''), facts)
-          return { value: String(item.id ?? ''), label: headLabel(facts) }
+      const toOptions = (items: Record<string, unknown>[]): ComboboxOption[] =>
+        items
+          .map((item) => {
+            const facts = readOrderSourceHeadFacts(item, activeRoute.family, activeRoute.headNumberKey)
+            headCache.current.set(String(item.id ?? ''), facts)
+            return { value: String(item.id ?? ''), label: headLabel(facts) }
+          })
+          .filter((option) => option.value.length > 0)
+      if (activeRoute.family === 'purchase_order') {
+        const payload = await fetchCrudList<Record<string, unknown>>(activeRoute.headApiPath, {
+          pageSize: 100,
+          sortField: 'created_at',
+          sortDir: 'desc',
+          ...(term ? { search: term } : {}),
         })
-        .filter((option) => option.value.length > 0)
+        return toOptions(payload.items ?? [])
+      }
+      // The kind carries its own trade type; a type with no channel id, or an organization with no
+      // trade-type channels at all, offers nothing — never a silently widened list of every sales
+      // document.
+      if (!kindTradeType || !channelsLoaded) return []
+      const params = buildSalesSourceListParams(kindTradeType, channels, term)
+      if (!params) return []
+      const payload = await fetchCrudList<Record<string, unknown>>(activeRoute.headApiPath, params)
+      return toOptions(payload.items ?? [])
     },
-    [channels, channelsLoaded, kind],
+    [channels, channelsLoaded, kind, kindTradeType],
   )
 
   /** The source's lines, read once per document and reused by both the preview and the copy. */
@@ -244,20 +254,25 @@ export function ContractLineSourceDialog({
       flash(t('trade_docs.contracts.form.lines.copy.sourceRequired'), 'error')
       return
     }
+    const request = previewRequest.current + 1
+    previewRequest.current = request
     setPreviewOpen(true)
     setPreviewError(null)
     setPreviewItems(null)
     setPreviewBusy(true)
     try {
-      setPreviewItems(await readSourceItems(kind, id))
+      const items = await readSourceItems(kind, id)
+      if (previewRequest.current !== request) return
+      setPreviewItems(items)
     } catch (error) {
+      if (previewRequest.current !== request) return
       setPreviewError(
         error instanceof Error && error.message
           ? error.message
           : t('ui.sourcePreview.previewFailed', 'Could not load the source document preview'),
       )
     } finally {
-      setPreviewBusy(false)
+      if (previewRequest.current === request) setPreviewBusy(false)
     }
   }, [kind, readSourceItems, sourceId, t])
 
