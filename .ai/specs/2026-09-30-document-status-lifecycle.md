@@ -301,7 +301,7 @@
 
 ### Phase 4 — 报表与提醒（2026-09-30 盘点后收窄）
 
-#### Phase 4·A — 逾期清单（定稿待实现；无 DDL、无新阈值）
+#### Phase 4·A — 逾期清单（2026-09-30 实现完成；无 DDL、无新阈值）
 
 - **目标**：一个地方列出「钱卡住了」的单据 —— 柜的**退税逾期**与订单的**收款逾期**，让运营每天有一张可执行的清单，
   而不是在两个档案页里靠眼睛找。「逾期」的定义**完全复用** Phase 2·C 的派生（`export_finance/lib/fileRules.ts`，
@@ -402,6 +402,7 @@
 | 2026-09-30 | **Phase 1 定稿并进入实现**（owner「按照这个流程先实作」）：Q-001…Q-007 按推荐默认落定；补齐 Domain Vocabulary / Journeys / UI / API / Tests / Traceability / Acceptance；Phase 2–4 仍为草案 |
 | 2026-09-30 | **Phase 1 实现完成**（`feat/sales-status-lifecycle`）：新建写 `draft`（字典条目 id）、报价发出（`quotes/send` + 有效期 + 买方邮箱字段与 parties 预填）/作废、订单确认/作废、列表状态徽章 + 「有效至」+ 过期高亮、下单门禁、发运分摊只列 confirmed（历史 NULL 标注）、对外订单补「（PO）」、行数列改名「明细行数」；单测 3 套新增/更新，真机 5 条链路验证，AC-001…AC-008 全部通过 |
 | 2026-09-30 | **Phase 2·C 实现完成**（`feat/export-finance-status-coherence`）：收款/退税记录的**状态与事实**在写入时校验（`lib/statusCoherence.ts`，422 逐条回报；历史行不动）；两个档案页新增**派生**的逾期标记（柜「退税逾期」/ 订单「收款逾期」，阈值常量 45 天、边界不含、缺失日期不标），进列表列与 CSV。证据：单元两套 + 真机 API（三种非法组合 422、finance 口径回读 `collectionOverdue`、CSV 表头含「退税逾期」）。开放问题记入 Q-008（是否把「柜未收货不得登记收款」做成硬门禁——收款按采购单记，一单可跨多柜）。 |
+| 2026-09-30 | **Phase 4·A 实现完成**（`feat/export-finance-overdue-worklist`）：`/backend/export-finance/overdue` 上线 —— 两段清单（柜退税逾期 / 订单收款逾期）各读 `?overdue=true`，**谓词直接落在行自己派生的 `refundOverdue`/`collectionOverdue` 上**（`containerFileProjection.ts` / `orderFileProjection.ts` 的 filtered 段），因此列表、`total`、CSV 必然同口径；参数用 `parseBooleanToken`（`"false"` 不会变真），任何非真值=不过滤。**真机证据**：夹具柜（收货 60 天前）进清单、控制柜（10 天前）不进（`all=2 / overdue=1 / CSV 1 行`）；夹具订单（`received` + 收货 60 天前）使订单段 `overdue=1`（订单总数 10）；页面两段各 1 行（`已等待 60 天`，状态取自 `export_finance.refund.status.*` / `collection.status.*` 字典）；删夹具后两段空态正确。**落地时修正定稿里的一处误判**：过滤不在 SQL 层——两个投影本来就把全部行装配完、再按 TS 谓词过滤、最后分页（`total = filtered.length`），所以复用行上的派生标记就是同口径实现，不需要重复 SQL 谓词。 |
 | 2026-09-30 | **Phase 4·A 逾期清单定稿（仅文档，待实现）**：把「逾期清单」从一行愿望写成可实现的单元——表面 `/backend/export-finance/overdue`、服务端 `overdue=true` 过滤（跨表谓词，禁止对已分页结果做事后过滤）、SQL/计数/CSV 三处同口径且阈值只从 `fileRules.ts` 取、边界由 TEST-401 锁死；明确**不引入第二阈值、不做可配置**。 |
 | 2026-09-30 | **Phase 3 剩余块与 Phase 4 盘点定稿（仅文档）**：平台结算单收口查清「缺的是人工确认动作 + 确认/付款时间戳列（实体没有任何付款日期列）」，`reconciled` 的自动语义与「确认」的关系记为 **Q-010**，未定稿前不动代码；费用 `pending/paid`、结算单确认/付款列与 Phase 2·B 的 `status` 列**合并为同一批迁移**。Phase 4 收窄为「逾期清单今天可做（复用 Phase 2·C 派生、不发明新阈值）／转化率与停留时长需要状态时间戳（报表立项）／通知订阅随口径同批」。 |
 | 2026-09-30 | **Phase 3·A 实现完成**（`feat/supplier-product-status-toggle`）：供应商产品库列表新增「停用 / 启用」行操作（走既有 update 命令 + 乐观锁 + 事件，载荷只带必填字段 + `status`，什么都不删），停用即离开默认 `active` 视图、可在「停用」筛选里恢复。同时**核对并记录了现网已有物**：采购单收货/付款门禁与五个生命周期事件（`commands/orders.ts:803/929/961`、`events.ts:16-20`）已在库里，Phase 3 起草时列的「补门禁/事件」不再需要；平台结算单状态收口与费用 `pending/paid`（需迁移）留待定稿。 |

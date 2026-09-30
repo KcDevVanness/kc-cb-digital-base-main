@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { parseBooleanToken } from '@open-mercato/shared/lib/boolean'
 import { SHIPMENT_STATUSES } from '../../cross_border/data/validators'
 // The money engine owns the system-wide caliber: an amount is 2 decimals and positivity is decided
 // on scaled integers, never on a float.
@@ -161,12 +162,28 @@ export const refundDocumentListSchema = z.object({
 })
 
 /** 订单档案 list query. `view` switches the CSV column set, not the row set. */
+/**
+ * A list filter that arrives as a query string: `true`/`1`/`yes` keep the rows, anything else — and
+ * every absent value — leaves the list unfiltered. `z.coerce.boolean()` is deliberately avoided
+ * because it turns the string `"false"` into `true`.
+ */
+const overdueFilterSchema = z
+  .union([z.boolean(), z.string()])
+  .optional()
+  .transform((value) => {
+    if (value === undefined) return undefined
+    if (typeof value === 'boolean') return value
+    return parseBooleanToken(value) ?? undefined
+  })
+
 export const orderFileListSchema = z.object({
   purchaseOrderId: uuid().optional(),
   view: z.enum(ORDER_FILE_VIEWS).default('business'),
   status: z.enum(ORDER_FILE_STATUSES).optional(),
   collectionStatus: z.enum(EXPORT_FINANCE_COLLECTION_STATUSES).optional(),
   taxRefundStatus: z.enum(EXPORT_FINANCE_TAX_REFUND_STATUSES).optional(),
+  /** 逾期 only: see `overdueFilterSchema`. */
+  overdue: overdueFilterSchema,
   search: z.string().max(200).optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(100).default(50),
@@ -180,6 +197,8 @@ export const containerFileListSchema = z.object({
   shipmentId: uuid().optional(),
   status: z.enum(SHIPMENT_STATUSES).optional(),
   taxRefundStatus: z.enum(EXPORT_FINANCE_TAX_REFUND_STATUSES).optional(),
+  /** 逾期 only: the 逾期清单's two sections read the same lists through this. */
+  overdue: overdueFilterSchema,
   search: z.string().max(200).optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(100).default(50),

@@ -603,6 +603,8 @@ export async function loadOrderFiles(
     if (params.filters.status && item.businessStatus !== params.filters.status) return false
     if (params.filters.collectionStatus && item.collectionStatus !== params.filters.collectionStatus) return false
     if (params.filters.taxRefundStatus && item.refundStatus !== params.filters.taxRefundStatus) return false
+    // 逾期 comes from the row's own flag — see the container projection's note.
+    if (params.filters.overdue && !item.collectionOverdue) return false
     return true
   })
 
