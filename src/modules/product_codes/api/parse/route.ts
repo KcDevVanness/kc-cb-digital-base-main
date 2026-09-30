@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
+import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
 import { createLogger } from '@open-mercato/shared/lib/logger'
@@ -7,6 +9,7 @@ import { productCodeParseSchema } from '../../data/validators'
 import { loadCodeDictionaries } from '../../lib/dictionaryValues'
 import { parseCode, type ParseRule } from '../../lib/parse'
 import { resolveRequestScope } from '../../lib/requestScope'
+import { productCodesTag } from '../openapi'
 
 const logger = createLogger('product_codes')
 
@@ -81,4 +84,41 @@ export async function GET(request: Request) {
     logger.error('Failed to parse a product code', { err })
     return NextResponse.json({ error: 'Could not read the code' }, { status: 500 })
   }
+}
+
+const codePartSchema = z.object({
+  key: z.string(),
+  kind: z.string(),
+  value: z.string(),
+  label: z.string().nullable(),
+  known: z.boolean(),
+})
+
+const parseResultSchema = z.object({
+  code: z.string(),
+  status: z.enum(['issued', 'full', 'partial', 'none']),
+  source: z.enum(['generated', 'unissued']),
+  ruleId: z.string().nullable(),
+  ruleName: z.string().nullable(),
+  parts: z.array(codePartSchema),
+})
+
+export const openApi: OpenApiRouteDoc = {
+  tag: productCodesTag,
+  summary: 'Explain a product code',
+  methods: {
+    GET: {
+      summary: 'Reverse-parse one code',
+      description:
+        'Read-only. The ledger is consulted first (only it can say whether the system issued the code, and its row carries the values the code was built from); otherwise the configured rules are matched. A legacy code that matches nothing comes back as `status: "none"` / `source: "unissued"` — a normal answer, not an error. `parts` carries every token with its dictionary label when one exists (`known: false` when the value is not in its dictionary).',
+      tags: [productCodesTag],
+      responses: [
+        { status: 200, description: 'The parse result', schema: parseResultSchema },
+        { status: 400, description: 'Missing or over-long `code`', schema: z.object({ error: z.string() }).passthrough() },
+        { status: 401, description: 'Not authenticated', schema: z.object({ error: z.string() }).passthrough() },
+        { status: 403, description: 'Missing product_codes.rules.view', schema: z.object({ error: z.string() }).passthrough() },
+        { status: 500, description: 'The read failed', schema: z.object({ error: z.string() }).passthrough() },
+      ],
+    },
+  },
 }
