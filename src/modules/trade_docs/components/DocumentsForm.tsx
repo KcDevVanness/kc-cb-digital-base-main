@@ -50,7 +50,6 @@ import {
 import {
   loadContractOptions,
   loadCurrencyOptions,
-  loadIncotermOptions,
   loadPaymentTermOptions,
   loadProductOption,
   loadProductOptions,
@@ -1086,12 +1085,10 @@ function useDocumentFields(t: TranslateFn, kind: DocumentKind): CrudField[] {
       {
         id: 'incoterms',
         label: t('trade_docs.documents.form.field.incoterms', '贸易术语'),
-        type: 'combobox',
+        // Free text, like the contract's own field: the term is whatever the deal was signed with.
+        type: 'text',
         layout: 'half',
-        description: t('trade_docs.documents.form.field.incotermsHelp', '选项来自贸易术语字典；也可直接输入谈定的术语。'),
-        allowCustomValues: true,
-        resolveLabel: (value) => value,
-        loadOptions: (query) => loadIncotermOptions(query),
+        description: t('trade_docs.documents.form.field.incotermsHelp', 'Free text — type the term the contract was signed with.'),
       },
       {
         id: 'validUntil',

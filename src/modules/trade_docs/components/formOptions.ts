@@ -26,7 +26,6 @@ export { loadPortOptions } from '../../cross_border/components/shipmentFormOptio
 
 export const PAYMENT_TERM_DICTIONARY_KEY = 'payment_terms'
 export const SHIPPING_METHOD_DICTIONARY_KEY = 'shipping_method'
-export const INCOTERM_DICTIONARY_KEY = 'incoterms'
 
 /**
  * Suggestions from one of this module's own dictionaries (payment terms, shipping methods). These
@@ -47,16 +46,6 @@ export function loadPaymentTermOptions(query?: string): Promise<CrudFieldOption[
 
 export function loadShippingMethodOptions(query?: string): Promise<CrudFieldOption[]> {
   return loadDictionaryOptions(SHIPPING_METHOD_DICTIONARY_KEY, query)
-}
-
-/**
- * Trade terms (贸易术语) printed on a PI/CI: `EXW`, `FOB`, `CIF`, … — the same `incoterms`
- * dictionary the setup seeds. `loadDictionaryOptions` returns an empty list when the dictionary is
- * missing, so a deployment that has not seeded it simply offers no suggestions instead of throwing;
- * the field keeps `allowCustomValues`, so a negotiated term is still typeable.
- */
-export function loadIncotermOptions(query?: string): Promise<CrudFieldOption[]> {
-  return loadDictionaryOptions(INCOTERM_DICTIONARY_KEY, query)
 }
 
 /**
