@@ -263,11 +263,20 @@
   本 Phase 只在 Phase 4 的报表/提醒里**消费**这些事件。
 - **供应商产品库 `archived`：本轮以「停用 / 启用」落地（Phase 3·A，见下）** —— 库里的词表是 `active`/`inactive`，
   英文草稿写作 `archived`，语义相同。
-- **品台运营状态收口（仍待定稿）**：镜像的 `status` 是渠道原样存档（**不是**本系统的生命周期，不该改）；结算单
-  `open/imported/reconciled` 与对账项 `open/resolved/ignored` 都已有转换命令，缺的是「对账完成 → 结算确认 → 已付款」
-  这段动作与页面收口。
+- **平台运营状态收口（2026-09-30 盘点后定稿，需要迁移 + 一个业务口径）**：
+  - 现有：`platform_ops_settlements.status` ∈ {`open`,`imported`,`reconciled`}，由**导入**写死
+    （`commands/settlements.ts:95` 建行 `open`、`:237` 有对账问题时 `imported` 否则 `reconciled`）；对账项
+    `platform_ops_reconciliation_items.status` ∈ {`open`,`resolved`,`ignored`}，已有 `resolve`/`ignore` 命令
+    （同文件 `:270-303`，重复处理返回 422）。镜像的 `status` 是**渠道原样存档**（`entities.ts:85`，
+    `commands/orders.ts:129` 原样落库），不是本系统的生命周期，**不改**。
+  - 缺的：① **人工确认步骤** —— 现在是导入自动判定，没有「人看过并确认这张结算单」这个动作与它的操作者留痕；
+    ② **已付款** —— 结算单实体**没有任何付款/确认日期列**（`PlatformOpsSettlement` 只有 `periodStart/periodEnd/…`），
+    所以 `confirmed/paid` 两个状态**无处落时间戳**，需要与 Phase 2·B、费用 `pending/paid` 一起迁移。
+  - **开放问题（Q-010）**：`reconciled` 是「导入时无未决对账项」的自动结论，而「确认」是人的动作 —— 两者是否
+    合成一个状态（对账项全部结清即 `reconciled`，人只需确认金额）还是各占一个状态？谁有权确认（新的
+    `platform_ops.settlements.confirm` 特性，还是复用现有 manage）？**未定稿前不动代码**。
 - **费用 `pending/paid`（需要迁移）**：`finance_shipment_costs` / `finance_expenses` 没有付款日期列，
-  「已付/未付」无处可写；与 Phase 2·B 的 `status` 列同一批迁移一起加。
+  「已付/未付」无处可写；与 Phase 2·B 的 `status` 列、上面的结算单确认/付款列**同一批迁移**一起加。
 
 #### Phase 3·A — 供应商产品库「停用 / 启用」（本文件定稿，实现中）
 
@@ -290,9 +299,18 @@
 - **不做**：采购行选品器的可见性审计（选品器读列表默认 `active`，行为未变）；批量停用；停用行在历史单据里的展示变化
   （行快照本来就冻结）。
 
-### Phase 4 — 报表与提醒（草案）
+### Phase 4 — 报表与提醒（2026-09-30 盘点后收窄）
 
-报价→订单转化率、状态停留时长、逾期清单、通知订阅（`scheduler` + `notifications`）。
+起草时的四件里，**两件已有基础、两件依赖新列**，所以本轮只把可以立刻做的那件留下：
+
+- **逾期清单：今天就能做（无 DDL）**。两个逾期派生已在 Phase 2·C 落地（`export_finance/lib/fileRules.ts`：
+  柜「退税逾期」/ 订单「收款逾期」，阈值 45 天、边界不含、日期缺失不标），阶段 2·A 的 `closed` 也已进状态词表；
+  套用同一套派生出「跨板块逾期清单」不需要任何新列，也**不发明新阈值**。
+- **报价→订单转化率 / 状态停留时长：需要「状态变更时间」**。平台把状态变更写进审计与 `status_entry_id`
+  （Phase 1 已接通），但**单据表上没有状态时间戳列**（`closedAt`/`confirmedAt` 之类，Phase 2·A 已记为不做），
+  所以「停留时长」只能从审计读——统计口径与保留期都要先定，属**报表立项**而非顺手加列。
+- **通知订阅（`scheduler` + `notifications`）**：机制现成（本仓已有提醒/调度事实页），缺的是**谁在什么阈值上
+  收什么通知**的口径；与逾期清单同批定稿再订阅。
 
 ## Requirement Traceability
 
@@ -360,6 +378,7 @@
 | 2026-09-30 | **Phase 1 定稿并进入实现**（owner「按照这个流程先实作」）：Q-001…Q-007 按推荐默认落定；补齐 Domain Vocabulary / Journeys / UI / API / Tests / Traceability / Acceptance；Phase 2–4 仍为草案 |
 | 2026-09-30 | **Phase 1 实现完成**（`feat/sales-status-lifecycle`）：新建写 `draft`（字典条目 id）、报价发出（`quotes/send` + 有效期 + 买方邮箱字段与 parties 预填）/作废、订单确认/作废、列表状态徽章 + 「有效至」+ 过期高亮、下单门禁、发运分摊只列 confirmed（历史 NULL 标注）、对外订单补「（PO）」、行数列改名「明细行数」；单测 3 套新增/更新，真机 5 条链路验证，AC-001…AC-008 全部通过 |
 | 2026-09-30 | **Phase 2·C 实现完成**（`feat/export-finance-status-coherence`）：收款/退税记录的**状态与事实**在写入时校验（`lib/statusCoherence.ts`，422 逐条回报；历史行不动）；两个档案页新增**派生**的逾期标记（柜「退税逾期」/ 订单「收款逾期」，阈值常量 45 天、边界不含、缺失日期不标），进列表列与 CSV。证据：单元两套 + 真机 API（三种非法组合 422、finance 口径回读 `collectionOverdue`、CSV 表头含「退税逾期」）。开放问题记入 Q-008（是否把「柜未收货不得登记收款」做成硬门禁——收款按采购单记，一单可跨多柜）。 |
+| 2026-09-30 | **Phase 3 剩余块与 Phase 4 盘点定稿（仅文档）**：平台结算单收口查清「缺的是人工确认动作 + 确认/付款时间戳列（实体没有任何付款日期列）」，`reconciled` 的自动语义与「确认」的关系记为 **Q-010**，未定稿前不动代码；费用 `pending/paid`、结算单确认/付款列与 Phase 2·B 的 `status` 列**合并为同一批迁移**。Phase 4 收窄为「逾期清单今天可做（复用 Phase 2·C 派生、不发明新阈值）／转化率与停留时长需要状态时间戳（报表立项）／通知订阅随口径同批」。 |
 | 2026-09-30 | **Phase 3·A 实现完成**（`feat/supplier-product-status-toggle`）：供应商产品库列表新增「停用 / 启用」行操作（走既有 update 命令 + 乐观锁 + 事件，载荷只带必填字段 + `status`，什么都不删），停用即离开默认 `active` 视图、可在「停用」筛选里恢复。同时**核对并记录了现网已有物**：采购单收货/付款门禁与五个生命周期事件（`commands/orders.ts:803/929/961`、`events.ts:16-20`）已在库里，Phase 3 起草时列的「补门禁/事件」不再需要；平台结算单状态收口与费用 `pending/paid`（需迁移）留待定稿。 |
 | 2026-09-30 | **Phase 2·A 实现完成**（`feat/shipment-close-lifecycle`）：发运单新增终态 `closed`（归档）——迁移表 `SHIPMENT_TRANSITIONS` 成为 depart/receive/close/cancel 四个守卫与详情页动作矩阵的唯一权威；新增 `cross_border.shipments.close` 命令/路由与 `cross_border.shipment.closed` 事件；徽章/筛选/标签与 `export_finance` 穷尽表同步。**独立评审后补齐**：`finance` 的落地成本扫描、`trade_docs` 合同详情、`export_finance` 柜档案三处「只认 received」的读路径都补 `closed`；终态单证写入（create/update/delete）被新守卫拒绝且详情页隐藏入口；迁移表查找对未知状态 fail-closed（不再 500）；状态列表单一来源（组件 re-export API 枚举）。证据：单元 `shipmentStatus.test.ts` + 集成 `shipment-close.spec.ts` 3/3（临时库）。 |
 
