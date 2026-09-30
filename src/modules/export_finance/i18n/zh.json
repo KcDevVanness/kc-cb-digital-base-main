@@ -327,7 +327,7 @@
   "export_finance.cabinets.detail.refund.needsAmount": "「已到账」需要填写退税金额。",
   "export_finance.cabinets.detail.refund.mustBeEmpty": "「未开始 / 未知」不能带退税金额，请先清空。",
   "export_finance.overdue.page.title": "逾期清单",
-  "export_finance.overdue.page.description": "钱还没有到位、而且已经等了太久的单据。判定规则与「柜档案 / 订单档案」的逾期标记完全同一份，本页只做汇总。",
+  "export_finance.overdue.page.description": "钱还没有到位、而且已经等了太久的单据。判定规则与「柜档案 / 订单档案」的逾期标记完全同一份；「已提醒」来自提醒命令发出的通知，页面只显示它，不做推断。",
   "export_finance.overdue.section.refunds": "退税逾期（柜）",
   "export_finance.overdue.section.refunds.empty": "当前没有退税逾期的柜。",
   "export_finance.overdue.section.collections": "收款逾期（订单）",
@@ -340,5 +340,6 @@
   "export_finance.notifications.collectionOverdue.body": "已收货 {days} 天，收款仍未到账（状态：{status}）。去逾期清单处理。",
   "export_finance.notifications.refundOverdue.title": "退税逾期：{title}",
   "export_finance.notifications.refundOverdue.body": "已收货 {days} 天，退税仍未完成（状态：{status}）。去逾期清单处理。",
-  "export_finance.notifications.action": "查看逾期清单"
+  "export_finance.notifications.action": "查看逾期清单",
+  "export_finance.overdue.reminded": "已提醒"
 }
