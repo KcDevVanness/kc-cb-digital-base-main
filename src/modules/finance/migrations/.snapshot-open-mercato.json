@@ -212,6 +212,23 @@
           "enumItems": [],
           "mappedType": "uuid"
         },
+        "paid_at": {
+          "name": "paid_at",
+          "type": "date",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "date"
+        },
         "party_id": {
           "name": "party_id",
           "type": "uuid",
@@ -562,6 +579,23 @@
           "collation": null,
           "enumItems": [],
           "mappedType": "uuid"
+        },
+        "paid_at": {
+          "name": "paid_at",
+          "type": "date",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "date"
         },
         "party_id": {
           "name": "party_id",
