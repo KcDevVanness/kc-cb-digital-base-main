@@ -1,7 +1,7 @@
 # 单据状态（status）在各业务板块的补齐与赋能（document status lifecycle）
 
 **Date**: 2026-09-30
-**Status**: Phase 1 Implemented（`feat/sales-status-lifecycle`）；Phase 2·A Implemented（`feat/shipment-close-lifecycle`）；Phase 2·C Implemented（`feat/export-finance-status-coherence`）；Phase 2·B 与 Phase 3–4 为草案
+**Status**: Phase 1 Implemented（`feat/sales-status-lifecycle`）；Phase 2·A Implemented（`feat/shipment-close-lifecycle`）；Phase 2·C Implemented（`feat/export-finance-status-coherence`）；Phase 3·A Implemented（`feat/supplier-product-status-toggle`）；Phase 2·B、Phase 3 其余块与 Phase 4 为草案
 **Scope route**: `spec-pr`（本文件）；Phase 1 实现单元 `feat/sales-status-lifecycle`（`module-data` + `backend-ui`，含 `cross_border` 一处门禁）
 
 ## TLDR
@@ -253,9 +253,42 @@
   - **AC-213** ✅ 现有行不迁移、不校验（列本身可空，「没答案」是合法状态）——只在写入路径生效。
 - **不做**：`appliedAt`/`completedAt` 时间戳与「已申报/已到账」日期列（需要 DDL，随 2·B 的迁移一起）；把「登记收款要求柜已收货」做成硬门禁（收款按采购单记，一张单可跨多柜，「全部到货才可收款」需要业务口径确认，先记为开放问题而非发明规则）。
 
-### Phase 3 — 采购与平台运营（草案）
+### Phase 3 — 采购与平台运营（2026-09-30 起按块定稿）
 
-采购单状态 × 收货/应付门禁与事件；供应商产品库 `archived`；平台镜像/结算单状态收口；费用 `pending/paid`。
+起草时的四件里，**两件在核对现网实现后不存在了**，一件本轮做完，一件需要迁移：
+
+- **采购单状态 × 收货/应付门禁与事件：现网已有，不重做**。证据：`commands/orders.ts:929`（未 `shipped` 的采购单拒绝收货、
+  `cancelled` 拒绝收货）、同文件 `:803`（`cancelled`/`closed` 的采购单拒绝登记付款）、收货自动推进
+  `shipped → received`（同文件 `:961`）与五个生命周期事件（`events.ts:16-20`：placed/shipped/received/closed/cancelled）。
+  本 Phase 只在 Phase 4 的报表/提醒里**消费**这些事件。
+- **供应商产品库 `archived`：本轮以「停用 / 启用」落地（Phase 3·A，见下）** —— 库里的词表是 `active`/`inactive`，
+  英文草稿写作 `archived`，语义相同。
+- **品台运营状态收口（仍待定稿）**：镜像的 `status` 是渠道原样存档（**不是**本系统的生命周期，不该改）；结算单
+  `open/imported/reconciled` 与对账项 `open/resolved/ignored` 都已有转换命令，缺的是「对账完成 → 结算确认 → 已付款」
+  这段动作与页面收口。
+- **费用 `pending/paid`（需要迁移）**：`finance_shipment_costs` / `finance_expenses` 没有付款日期列，
+  「已付/未付」无处可写；与 Phase 2·B 的 `status` 列同一批迁移一起加。
+
+#### Phase 3·A — 供应商产品库「停用 / 启用」（本文件定稿，实现中）
+
+- **目标**：`purchasing_supplier_products.status`（`active`/`inactive`）是**目录可见性**，不是历史。停用要能一键做、
+  能撤销，且**不删除任何东西**；停用后该行必须立刻离开默认视图（默认筛选 `status=active`）。
+- **Requirements**
+  - REQ-300 列表行操作「停用 / 启用」（需 `purchasing.supplier-products.manage`）：走**既有**
+    `purchasing.supplier-products.update` 命令（乐观锁版本头 + `purchasing.supplier_product.updated` 事件 + 索引副作用），
+    载荷只带更新契约的必填字段（`supplierSku`/`name`/`unit`）+ `status`；命令对未提交字段保持不动，因此编码、
+    价格、图片、备注、历史引用一律不变。确认框写明「不会被删除」。
+  - REQ-301 停用后从默认视图（`status=active`）消失，切「停用」筛选可见并在同一处恢复；失败（含 409 版本冲突）
+    走既有冲突提示并刷新列表。
+- **Tests**：TEST-300 真机（行操作菜单出现「停用」且点击后确认 → 该行离开活跃列表、`status=inactive`、`updatedAt` 前移；
+  同一请求路径 `PUT` 最小载荷 + 版本头 → 200 且可恢复 `active`）。
+- **验收**
+  - **AC-300** ✅ 真机（2026-09-30）：`PREVIEW-QA-1` 经行操作停用 → 活跃列表 8 → 7、停用列表 0 → 1、`updatedAt` 更新；
+    随后以同一载荷（`status: active`）恢复 → 活跃 8、停用 0。改动全部回滚，dev 库回到测试前状态。
+  - **AC-301** ⚠️ 「启用」按钮**未在浏览器里点到**（同一轮点击受列表本地筛选状态影响，切不到停用视图）；
+    它走的是同一条命令与同一份载荷（`status` 相反），已由 AC-300 的第二个请求证明可用。
+- **不做**：采购行选品器的可见性审计（选品器读列表默认 `active`，行为未变）；批量停用；停用行在历史单据里的展示变化
+  （行快照本来就冻结）。
 
 ### Phase 4 — 报表与提醒（草案）
 
@@ -327,6 +360,7 @@
 | 2026-09-30 | **Phase 1 定稿并进入实现**（owner「按照这个流程先实作」）：Q-001…Q-007 按推荐默认落定；补齐 Domain Vocabulary / Journeys / UI / API / Tests / Traceability / Acceptance；Phase 2–4 仍为草案 |
 | 2026-09-30 | **Phase 1 实现完成**（`feat/sales-status-lifecycle`）：新建写 `draft`（字典条目 id）、报价发出（`quotes/send` + 有效期 + 买方邮箱字段与 parties 预填）/作废、订单确认/作废、列表状态徽章 + 「有效至」+ 过期高亮、下单门禁、发运分摊只列 confirmed（历史 NULL 标注）、对外订单补「（PO）」、行数列改名「明细行数」；单测 3 套新增/更新，真机 5 条链路验证，AC-001…AC-008 全部通过 |
 | 2026-09-30 | **Phase 2·C 实现完成**（`feat/export-finance-status-coherence`）：收款/退税记录的**状态与事实**在写入时校验（`lib/statusCoherence.ts`，422 逐条回报；历史行不动）；两个档案页新增**派生**的逾期标记（柜「退税逾期」/ 订单「收款逾期」，阈值常量 45 天、边界不含、缺失日期不标），进列表列与 CSV。证据：单元两套 + 真机 API（三种非法组合 422、finance 口径回读 `collectionOverdue`、CSV 表头含「退税逾期」）。开放问题记入 Q-008（是否把「柜未收货不得登记收款」做成硬门禁——收款按采购单记，一单可跨多柜）。 |
+| 2026-09-30 | **Phase 3·A 实现完成**（`feat/supplier-product-status-toggle`）：供应商产品库列表新增「停用 / 启用」行操作（走既有 update 命令 + 乐观锁 + 事件，载荷只带必填字段 + `status`，什么都不删），停用即离开默认 `active` 视图、可在「停用」筛选里恢复。同时**核对并记录了现网已有物**：采购单收货/付款门禁与五个生命周期事件（`commands/orders.ts:803/929/961`、`events.ts:16-20`）已在库里，Phase 3 起草时列的「补门禁/事件」不再需要；平台结算单状态收口与费用 `pending/paid`（需迁移）留待定稿。 |
 | 2026-09-30 | **Phase 2·A 实现完成**（`feat/shipment-close-lifecycle`）：发运单新增终态 `closed`（归档）——迁移表 `SHIPMENT_TRANSITIONS` 成为 depart/receive/close/cancel 四个守卫与详情页动作矩阵的唯一权威；新增 `cross_border.shipments.close` 命令/路由与 `cross_border.shipment.closed` 事件；徽章/筛选/标签与 `export_finance` 穷尽表同步。**独立评审后补齐**：`finance` 的落地成本扫描、`trade_docs` 合同详情、`export_finance` 柜档案三处「只认 received」的读路径都补 `closed`；终态单证写入（create/update/delete）被新守卫拒绝且详情页隐藏入口；迁移表查找对未知状态 fail-closed（不再 500）；状态列表单一来源（组件 re-export API 枚举）。证据：单元 `shipmentStatus.test.ts` + 集成 `shipment-close.spec.ts` 3/3（临时库）。 |
 
 ## Appendix — Phase 2–4 板块盘点（保留自骨架，待各自定稿）
