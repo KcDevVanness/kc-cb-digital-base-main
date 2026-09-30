@@ -265,6 +265,8 @@
   本 Phase 只在 Phase 4 的报表/提醒里**消费**这些事件。
 - **供应商产品库 `archived`：本轮以「停用 / 启用」落地（Phase 3·A，见下）** —— 库里的词表是 `active`/`inactive`，
   英文草稿写作 `archived`，语义相同。
+> **2026-09-30 owner 决定：先不做** —— 结算单确认/付款（本节的 Q-010）与下方 Phase 4 的分公司仪表盘、以及把当前 main 部署到 production，owner 明确「先不做吧」。本文件保留全部设计与成本说明；改主意时按同一模式重做（迁移脚本、动作矩阵、页面口径都已在 git 历史与本节留痕）。
+
 - **平台运营状态收口（2026-09-30 盘点后定稿，需要迁移 + 一个业务口径）**：
   - 现有：`platform_ops_settlements.status` ∈ {`open`,`imported`,`reconciled`}，由**导入**写死
     （`commands/settlements.ts:95` 建行 `open`、`:237` 有对账问题时 `imported` 否则 `reconciled`）；对账项
