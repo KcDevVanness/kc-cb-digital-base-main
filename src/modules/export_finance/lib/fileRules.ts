@@ -190,6 +190,11 @@ export type OrderFileFilters = {
   collectionStatus?: string
   taxRefundStatus?: string
   search?: string
+  /**
+   * Keeps only the rows whose money is late — the 逾期清单 reads through this, and it is applied to
+   * the row's own derived flag (`collectionOverdue`), so the list and the flag can never disagree.
+   */
+  overdue?: boolean
 }
 
 export type OrderFileListParams = {
@@ -634,6 +639,8 @@ export type ContainerFileFilters = {
   status?: string
   taxRefundStatus?: string
   search?: string
+  /** Keeps only late refunds — the 逾期清单 reads through this. See `OrderFileFilters.overdue`. */
+  overdue?: boolean
 }
 
 export type ContainerFileListParams = {

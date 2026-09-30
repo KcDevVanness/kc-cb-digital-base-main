@@ -325,5 +325,15 @@
   "export_finance.orders.collection.needsAmountAndDate": "「已收款」需要同时填写收款金额与收款日期。",
   "export_finance.orders.collection.mustBeEmpty": "「未收款 / 未知」不能带金额或收款日期，请先清空这两项。",
   "export_finance.cabinets.detail.refund.needsAmount": "「已到账」需要填写退税金额。",
-  "export_finance.cabinets.detail.refund.mustBeEmpty": "「未开始 / 未知」不能带退税金额，请先清空。"
+  "export_finance.cabinets.detail.refund.mustBeEmpty": "「未开始 / 未知」不能带退税金额，请先清空。",
+  "export_finance.overdue.page.title": "逾期清单",
+  "export_finance.overdue.page.description": "钱还没有到位、而且已经等了太久的单据。判定规则与「柜档案 / 订单档案」的逾期标记完全同一份，本页只做汇总。",
+  "export_finance.overdue.section.refunds": "退税逾期（柜）",
+  "export_finance.overdue.section.refunds.empty": "当前没有退税逾期的柜。",
+  "export_finance.overdue.section.collections": "收款逾期（订单）",
+  "export_finance.overdue.section.collections.empty": "当前没有收款逾期的订单。",
+  "export_finance.overdue.age": "已等待",
+  "export_finance.overdue.days": "天",
+  "export_finance.overdue.capped": "仅显示最旧的一部分，全部逾期项请到柜档案按逾期列查看。",
+  "export_finance.overdue.loadFailed": "载入失败，请稍后重试。"
 }

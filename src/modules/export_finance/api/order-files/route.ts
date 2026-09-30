@@ -215,6 +215,7 @@ export async function GET(request: Request) {
         collectionStatus: query.collectionStatus,
         taxRefundStatus: query.taxRefundStatus,
         search: query.search,
+        overdue: query.overdue,
       },
       page: query.page,
       pageSize: query.pageSize,
@@ -259,6 +260,8 @@ export const openApi: OpenApiRouteDoc = {
     GET: {
       summary: 'List the 订单档案 (order file) in both the business and the finance view',
       tags: [exportFinanceTag],
+      description:
+        'Filters: `status`, `taxRefundStatus`, `search` and — for the 逾期清单 — `overdue=true`, which keeps only the rows whose money is late. The rule is the same one behind the 逾期 column and the CSV, so list, count and export can never disagree; any value other than a truthy token leaves the list unfiltered.',
       query: orderFileListSchema,
       responses: [
         {
