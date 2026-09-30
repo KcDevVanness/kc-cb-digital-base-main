@@ -36,6 +36,7 @@ app 自有模块。把多张采购单**拼柜**成一张发运单，跟踪在途
 - **分摊快照带供应商货号**：分摊行引用采购单行并把该行的 `product_snapshot` 原样冻结，快照里的 `supplierSku`（= 供应商产品库的 `item_no ?? supplier_sku`）随 `GET /api/cross_border/shipments/allocations` 的 `supplierSku` 输出，界面在商品名后显示"货号"；历史快照没有该键，读侧按 null。**分摊载荷本身不变**（仍是 `{ purchaseOrderLineId, quantity }`）。
 - **合同枢纽的入口带 `?contractId=`（2026-09-29）**：合同详情的关联区块把用户直接送进新建页——发运单新建页读 `?contractId=` 并**预填一张已关联合同**（点它进来的人已经选过合同了），装箱单新建页读 `?contractId=` 把**发运单选择器收窄到该合同的发运单**，且只有一个候选时直接选中（多个候选/读取失败则交回完整选择器，猜柜号只会把箱单挂到错的柜上）。预填只发生在**新建**页；编辑页仍按记录原值。
 - **没有目录链接就不能收货**：采购单行没有官方目录链接时拒绝分摊（**422**），报错直接点明要"先把供应商产品同步成商品并补目录链接"——收货是变体级（`wms.inventory.receive`），而变体只能经官方目录解析。收货时若该目录商品没有变体，同样 **422**。外贸侧**不另建产品清单**，出货依据就是采购单行来源 + 快照。
+- **仓库/库位主数据在 WMS 组维护（2026-09-30 起菜单可见）**：目的仓库/库位下拉读 `/api/wms/warehouses`、`/api/wms/locations`，这两张表由官方 `wms` 模块的页面维护——左侧菜单 **WMS** 组的 仓库 `/backend/wms/warehouses` 与 库位 `/backend/wms/locations`（此前只做 `navHidden`，业务只能记 URL）。没有仓库/库位就无法收货；建仓库要 `wms.manage_warehouses`、建库位要 `wms.manage_locations`。见 [`docs/dev/architecture.md`](../../../docs/dev/architecture.md) 的隐藏策略。
 - **不跨模块 ORM 关联**：对 `purchasing`、`wms`、`attachments` 只存 ID，靠命令与事件联动。
 
 - **单证可预览（2026-09-24）**：单证列的「预览」与单证表单字段的「预览」走 app 级共享查看器（`src/lib/attachments/AttachmentPreview.tsx`）：图片对话框内等比显示，PDF 由 Mozilla PDF.js（`pdfjs-dist`，已声明依赖）渲染到 canvas（`src/lib/attachments/PdfPreview.tsx`，不改平台 inline 策略、不新增路由与权限），其它类型给出说明并保留「下载」。
