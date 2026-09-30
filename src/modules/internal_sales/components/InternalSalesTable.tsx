@@ -286,7 +286,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
         <p className="mb-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
           {t(
             'internal_sales.list.unmarkedHintFiltered',
-            'This organization has {{count}} document(s) that predate the trade-type marker and carry no type, so neither sales entry lists them. Classify them with: yarn mercato internal_sales backfill-trade-type --apply',
+            'This organization has {{count}} document(s) with no trade-type marker, so neither sales entry lists them. The backfill command (yarn mercato internal_sales backfill-trade-type --apply) classifies the ones with a buyer link; the rest must be saved one by one from the entry that owns them.',
             { count: unmarkedCount },
           )}
         </p>

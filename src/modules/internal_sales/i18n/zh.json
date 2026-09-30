@@ -93,5 +93,5 @@
   "internal_sales.form.externalQuote.editTitle": "编辑对外销售报价单",
   "internal_sales.form.externalOrder.createTitle": "新建对外销售订单",
   "internal_sales.form.externalOrder.editTitle": "编辑对外销售订单",
-  "internal_sales.list.unmarkedHintFiltered": "本组织有 {{count}} 张单据早于贸易类型标记、还没有类型，因此对内 / 对外两个入口都不列出。归类请运行：yarn mercato internal_sales backfill-trade-type --apply"
+  "internal_sales.list.unmarkedHintFiltered": "本组织有 {{count}} 张单据没有贸易类型标记，因此对内 / 对外两个入口都不列出。带买方链接的可批量归类：yarn mercato internal_sales backfill-trade-type --apply；没有链接的回填会跳过，需要逐单在对应入口的编辑页保存（保存按入口类型打标）。"
 }

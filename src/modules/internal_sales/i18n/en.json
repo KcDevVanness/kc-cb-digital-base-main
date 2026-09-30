@@ -93,5 +93,5 @@
   "internal_sales.form.externalQuote.editTitle": "Edit external sales quote",
   "internal_sales.form.externalOrder.createTitle": "New external sales order",
   "internal_sales.form.externalOrder.editTitle": "Edit external sales order",
-  "internal_sales.list.unmarkedHintFiltered": "This organization has {{count}} document(s) that predate the trade-type marker and carry no type, so neither sales entry lists them. Classify them with: yarn mercato internal_sales backfill-trade-type --apply"
+  "internal_sales.list.unmarkedHintFiltered": "This organization has {{count}} document(s) with no trade-type marker, so neither sales entry lists them. Documents with a buyer link can be classified in bulk with: yarn mercato internal_sales backfill-trade-type --apply — the command skips the ones without a link, which must be saved one by one from the entry that owns them (a save stamps that entry's type)."
 }

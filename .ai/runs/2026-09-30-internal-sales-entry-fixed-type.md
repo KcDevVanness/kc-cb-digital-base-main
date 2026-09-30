@@ -86,12 +86,12 @@ Owner 2026-09-30 反馈：`/backend/external-sales/quotes` 是**专门的对外*
 
 ### Phase 4: 文档
 
-- [ ] 4.1 README / 架构 / 计划表 / spec / lesson
+- [x] 4.1 README / 架构 / 计划表 / spec / lesson — 4a124a1
 
 ### Phase 5: 验证
 
-- [ ] 5.1 门禁全绿
-- [ ] 5.2 浏览器实测（zh/en + 两个列表 + 锁定表单）
+- [x] 5.1 门禁全绿（generate / typecheck 0 错 / lint 0 error（8 个既有 warning，全在 example）/ check-lessons / ds:check 956 files / test 61 suites·517 / build）
+- [x] 5.2 浏览器实测（zh/en + 两个列表 + 锁定表单）
 - [ ] 5.3 PR 标签 / 评审 / 总结 / ready
 
 ## Risks / Assumptions
@@ -102,3 +102,17 @@ Owner 2026-09-30 反馈：`/backend/external-sales/quotes` 是**专门的对外*
 - 直接输入 URL 打开**其它类型**单据的编辑页仍会跳到它的入口（保持既有行为）；未标记单据按**你所在的入口**
   归类（保存时打该入口的通道），不再静默当作对内。
 - 组名 label 改了、key 没改：已保存的侧边栏偏好不受影响。
+
+## Verification
+
+| 项 | 结果 |
+|---|---|
+| `yarn generate` | ✓ |
+| `yarn typecheck` | 0 错 |
+| `yarn lint` | 0 error（8 warnings，全在既有 `example` 模块） |
+| `node scripts/check-lessons.mjs` | ✓ |
+| `yarn ds:check` | 956 files passed |
+| `yarn test` | 61 suites / 517 passed |
+| `yarn build` | ✓ |
+| 浏览器（dev server 4100，本工作树 `.env` 端口块 +1000；中文字典 + 切 en） | 侧边栏「出口业务-对内销售」/「出口业务-对外销售」两组四个菜单项就位，en 为 "EXPORT OPERATIONS — INTERNAL SALES"；对内报价列表 2 行（= API `channelId=<internal>` 的 2 张）、订单列表 1 行 + 「4 张无标记、两个入口都不列出」提示（= `channelIdsEmpty` total 4）、对外订单列表 1 行 + 同一条提示，两侧互不出现对方单据；类型控件只读「对内」/「对外」+ 新说明文案，买方选择器只列该类型来源（关联组织 / 外部客户），报价载入选择器只列 2 张对内报价；跨入口编辑页双向跳转正确；420px + 深色无横向溢出。截图见 PR #61 的验证评论 |
+| `yarn mercato internal_sales backfill-trade-type`（dry-run，只读） | 8 单扫描 → 0 可分类 · 4 已标记 · 4 无买家链接（证实「命令清不掉无链接那部分」的文案修正） |
