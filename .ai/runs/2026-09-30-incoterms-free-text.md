@@ -66,17 +66,17 @@ shipping-method seeds are untouched.
 
 ## Progress
 
-PR: （本单元 PR 建成后补）
+PR: #72
 
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
 ### Phase 1: drop the option list, keep the field
 
-- [ ] 1.1 setup.ts + formOptions
-- [ ] 1.2 forms as free text + i18n
-- [ ] 1.3 contract list projection fix
+- [x] 1.1 setup.ts + formOptions
+- [x] 1.2 forms as free text + i18n
+- [x] 1.3 contract list projection fix
 
 ### Phase 2: gate + smoke
 
-- [ ] 2.1 full gate
-- [ ] 2.2 browser smoke
+- [x] 2.1 full gate
+- [x] 2.2 browser smoke
