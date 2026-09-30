@@ -104,3 +104,7 @@ PR: #69
 - [x] 3.1 spec / README / plan rows — bb0e976
 - [x] 3.2 full gate（generate/typecheck/lint/lessons/ds:check/test/build 全过）
 - [x] 3.3 browser smoke
+
+### Phase 4: review pass
+
+- [x] 4.1 apply the review findings（预览竞态加固 + 删除已死的 both-channels 分支 + 计划措辞）— 07c6929
