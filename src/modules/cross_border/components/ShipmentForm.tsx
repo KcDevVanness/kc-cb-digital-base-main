@@ -430,9 +430,11 @@ export async function loadAllocatablePurchaseOrderOptions(
 /**
  * A picked order's display label: the option list's label when the picker on screen already cached
  * it, otherwise resolved from the order's own option source — so an operator who picks an order
- * without typing (the suggestions load unfiltered) never sees a raw uuid in a row.
+ * without typing (the suggestions load unfiltered) never sees a raw uuid in a row. `t` is what the
+ * sales source needs to word its options' direction the same way the picker did.
  */
 export async function resolveOrderOptionLabel(
+  t: TranslateFn,
   errorMessage: string,
   kind: 'purchase' | 'sales',
   orderId: string,
@@ -443,7 +445,7 @@ export async function resolveOrderOptionLabel(
   try {
     const options = kind === 'purchase'
       ? await loadAllocatablePurchaseOrderOptions(errorMessage, '')
-      : await loadSalesOrderOptions(errorMessage, '')
+      : await loadSalesOrderOptions(t, errorMessage, '')
     return options.find((option) => option.value === orderId)?.label ?? orderId
   } catch {
     return orderId
@@ -802,6 +804,19 @@ export function ShipmentDestinationFields({
     setValue('destinationLocationId', value === warehouseId ? locationId : '')
   }, [locationId, setValue, warehouseId])
 
+  // Stable identities: the pickers re-run their load effect whenever `loadSuggestions` changes, and
+  // an inline arrow here changed on every render of the form (every keystroke anywhere re-rendered
+  // the whole thing) — each re-render refetched the list and swapped the open options for the
+  // loading line, which is what made a click miss the option it was aimed at.
+  const loadWarehouseSuggestions = React.useCallback(
+    (query?: string) => loadWarehouseOptions(t('cross_border.shipments.form.loadFailed'), query),
+    [t],
+  )
+  const loadLocationSuggestions = React.useCallback(
+    (query?: string) => loadLocationOptions(t('cross_border.shipments.form.loadFailed'), warehouseId, query),
+    [t, warehouseId],
+  )
+
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <div className="space-y-1.5">
@@ -810,7 +825,7 @@ export function ShipmentDestinationFields({
           value={warehouseId}
           onChange={handleWarehouseChange}
           resolveLabel={async (value) => (await resolveWarehouseLabel(value)) ?? value}
-          loadSuggestions={(query) => loadWarehouseOptions(t('cross_border.shipments.form.loadFailed'), query)}
+          loadSuggestions={loadWarehouseSuggestions}
           allowCustomValues={false}
           clearable
         />
@@ -821,15 +836,80 @@ export function ShipmentDestinationFields({
           value={locationId}
           onChange={(next) => setValue('destinationLocationId', next.trim())}
           resolveLabel={async (value) => (await resolveLocationLabel(value)) ?? value}
-          loadSuggestions={(query) => loadLocationOptions(
-            t('cross_border.shipments.form.loadFailed'),
-            warehouseId,
-            query,
-          )}
+          loadSuggestions={loadLocationSuggestions}
           allowCustomValues={false}
           disabled={warehouseId.length === 0}
           clearable
         />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * One contract-picker row of `ShipmentContractEditor`. A component of its own so the row keeps a
+ * **stable** `loadSuggestions` across renders: an inline arrow re-ran the picker's load effect on
+ * every re-render of the editor (which happens whenever the contract list changes), refetching the
+ * list under the operator's cursor and replacing the open options with the loading line.
+ */
+function ShipmentContractRow({
+  t,
+  row,
+  index,
+  labelCache,
+  onPick,
+  onRemove,
+}: {
+  t: TranslateFn
+  row: ShipmentContractValues
+  index: number
+  labelCache: React.RefObject<Map<string, string>>
+  onPick: (index: number, patch: Partial<ShipmentContractValues>) => void
+  onRemove: (index: number) => void
+}) {
+  const loadSuggestions = React.useCallback(async (query?: string) => {
+    const loaded = await loadContractOptions(query)
+    for (const option of loaded) {
+      labelCache.current.set(option.value, option.label)
+    }
+    return loaded
+  }, [labelCache])
+
+  return (
+    <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-12">
+      <div className="space-y-1.5 md:col-span-10">
+        <FieldLabel htmlFor={`shipment-contract-${index}`}>
+          {t('cross_border.shipments.contracts.contract')}
+        </FieldLabel>
+        <ComboboxInput
+          value={row.contractId}
+          onChange={(next) => {
+            onPick(index, {
+              contractId: next,
+              contractLabel: next ? (labelCache.current.get(next) ?? row.contractLabel) : '',
+            })
+          }}
+          placeholder={t('cross_border.shipments.contracts.select')}
+          seedOptions={
+            row.contractId && row.contractLabel
+              ? [{ value: row.contractId, label: row.contractLabel }]
+              : undefined
+          }
+          loadSuggestions={loadSuggestions}
+          allowCustomValues={false}
+          clearable
+        />
+      </div>
+      <div className="flex items-end justify-end md:col-span-2">
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="lg"
+          aria-label={t('cross_border.shipments.contracts.remove')}
+          onClick={() => onRemove(index)}
+        >
+          <Trash2 className="size-4" aria-hidden="true" />
+        </IconButton>
       </div>
     </div>
   )
@@ -910,48 +990,15 @@ export function ShipmentContractEditor({
       <p className="text-xs text-muted-foreground">{t('cross_border.shipments.contracts.help')}</p>
 
       {contracts.map((row, index) => (
-        <div key={row.key} className="grid grid-cols-1 items-end gap-3 md:grid-cols-12">
-          <div className="space-y-1.5 md:col-span-10">
-            <FieldLabel htmlFor={`shipment-contract-${index}`}>
-              {t('cross_border.shipments.contracts.contract')}
-            </FieldLabel>
-            <ComboboxInput
-              value={row.contractId}
-              onChange={(next) => {
-                updateRow(index, {
-                  contractId: next,
-                  contractLabel: next ? (labelCache.current.get(next) ?? row.contractLabel) : '',
-                })
-              }}
-              placeholder={t('cross_border.shipments.contracts.select')}
-              seedOptions={
-                row.contractId && row.contractLabel
-                  ? [{ value: row.contractId, label: row.contractLabel }]
-                  : undefined
-              }
-              loadSuggestions={async (query) => {
-                const loaded = await loadContractOptions(query)
-                for (const option of loaded) {
-                  labelCache.current.set(option.value, option.label)
-                }
-                return loaded
-              }}
-              allowCustomValues={false}
-              clearable
-            />
-          </div>
-          <div className="flex items-end justify-end md:col-span-2">
-            <IconButton
-              type="button"
-              variant="ghost"
-              size="lg"
-              aria-label={t('cross_border.shipments.contracts.remove')}
-              onClick={() => removeRow(index)}
-            >
-              <Trash2 className="size-4" aria-hidden="true" />
-            </IconButton>
-          </div>
-        </div>
+        <ShipmentContractRow
+          key={row.key}
+          t={t}
+          row={row}
+          index={index}
+          labelCache={labelCache}
+          onPick={updateRow}
+          onRemove={removeRow}
+        />
       ))}
 
       <Button type="button" variant="outline" onClick={addRow}>
@@ -1104,7 +1151,7 @@ function ContractAllocationReferenceDialog({
                 value={contractId}
                 onChange={handleSelectContract}
                 placeholder={t('cross_border.shipments.allocations.reference.selectContract')}
-                loadSuggestions={async (query) => loadContractOptions(query)}
+                loadSuggestions={loadContractOptions}
                 allowCustomValues={false}
                 clearable
               />
@@ -1190,11 +1237,25 @@ function ShipmentAllocationEditor({
 }: CrudFormGroupComponentProps & { t: TranslateFn }) {
   const allocations = readAllocations(values.allocations)
   const [orderId, setOrderId] = React.useState('')
-  const [orderOptions, setOrderOptions] = React.useState<CrudFieldOption[]>([])
   const [lines, setLines] = React.useState<PurchaseOrderLineOption[]>([])
   const [draftQuantities, setDraftQuantities] = React.useState<Record<string, string>>({})
   const [linesError, setLinesError] = React.useState<string | null>(null)
   const error = firstAllocationError(errors)
+  /**
+   * The last suggestion payload, kept in a **ref, not state**: it is read once, when a line is added,
+   * to hand `resolveOrderOptionLabel` the label the operator just saw. Holding it in state re-rendered
+   * this editor on every load, which minted a new `loadSuggestions` identity for the picker, which
+   * re-ran its own load effect — an endless reload that kept swapping the options for the loading
+   * line and swallowed the click that was meant to select one (2026-09-30). A ref also keeps
+   * `loadOrderOptions` referentially stable, which is what breaks that loop.
+   */
+  const orderOptionsRef = React.useRef<CrudFieldOption[]>([])
+
+  const loadOrderOptions = React.useCallback(async (query?: string) => {
+    const next = await loadAllocatablePurchaseOrderOptions(t('cross_border.shipments.form.loadFailed'), query)
+    orderOptionsRef.current = next
+    return next
+  }, [t])
 
   React.useEffect(() => {
     const scopedOrderId = orderId.trim()
@@ -1234,10 +1295,11 @@ function ShipmentAllocationEditor({
 
   const addAllocation = React.useCallback(async (line: PurchaseOrderLineOption) => {
     const label = await resolveOrderOptionLabel(
+      t,
       t('cross_border.shipments.form.loadFailed'),
       'purchase',
       orderId,
-      orderOptions.find((option) => option.value === orderId)?.label,
+      orderOptionsRef.current.find((option) => option.value === orderId)?.label,
     )
     setValue('allocations', [...allocations, {
       key: newRowKey(),
@@ -1255,7 +1317,7 @@ function ShipmentAllocationEditor({
       delete next[line.id]
       return next
     })
-  }, [allocations, draftQuantities, orderId, orderOptions, setValue, t])
+  }, [allocations, draftQuantities, orderId, setValue, t])
 
   const updateAllocation = React.useCallback((index: number, quantity: string) => {
     setValue(
@@ -1277,6 +1339,7 @@ function ShipmentAllocationEditor({
     const orderIds = Array.from(new Set(allocations.map((row) => row.purchaseOrderId).filter(Boolean)))
     for (const scopedOrderId of orderIds) {
       const label = await resolveOrderOptionLabel(
+        t,
         t('cross_border.shipments.form.loadFailed'),
         'purchase',
         scopedOrderId,
@@ -1334,14 +1397,7 @@ function ShipmentAllocationEditor({
         <ComboboxInput
           value={orderId}
           onChange={handleOrderChange}
-          loadSuggestions={async (query) => {
-            const next = await loadAllocatablePurchaseOrderOptions(
-              t('cross_border.shipments.form.loadFailed'),
-              query,
-            )
-            setOrderOptions(next)
-            return next
-          }}
+          loadSuggestions={loadOrderOptions}
           allowCustomValues={false}
           clearable
         />
@@ -1434,7 +1490,8 @@ function ShipmentAllocationEditor({
 }
 
 /**
- * The **sales** allocation editor: pick an internal sales order, its lines load as candidates,
+ * The **sales** allocation editor: pick a sales order (either trade type, since 2026-09-30), its
+ * lines load as candidates,
  * allocate a quantity per line, and the row carries the line's frozen price/currency. The product
  * is derived from the picked line — its app-owned product is resolved to the installed catalog
  * product through the same product picker the rest of the app uses — so a line that is not bridged
@@ -1449,12 +1506,27 @@ function ShipmentSalesAllocationEditor({
   const { organizationId } = useOrganizationScopeDetail()
   const allocations = readSalesAllocations(values.salesAllocations)
   const [orderId, setOrderId] = React.useState('')
-  const [orderOptions, setOrderOptions] = React.useState<CrudFieldOption[]>([])
   const [lines, setLines] = React.useState<SalesOrderLineOption[]>([])
   const [draftQuantities, setDraftQuantities] = React.useState<Record<string, string>>({})
   const [linesError, setLinesError] = React.useState<string | null>(null)
   const productCache = React.useRef(new Map<string, ProductOption | null>())
   const error = firstAllocationError(errors, 'salesAllocations')
+  /**
+   * The last suggestion payload, in a ref for the same reason as the purchase editor's: it feeds the
+   * picked row's label, and holding it in state re-rendered the editor on every load — which
+   * re-minted the picker's `loadSuggestions` and reloaded the suggestions forever (2026-09-30).
+   */
+  const orderOptionsRef = React.useRef<CrudFieldOption[]>([])
+
+  const loadOrderOptions = React.useCallback(async (query?: string) => {
+    const next = await loadSalesOrderOptions(
+      t,
+      t('cross_border.shipments.salesAllocations.loadLinesFailed'),
+      query,
+    )
+    orderOptionsRef.current = next
+    return next
+  }, [t])
 
   React.useEffect(() => {
     const scopedOrderId = orderId.trim()
@@ -1514,10 +1586,11 @@ function ShipmentSalesAllocationEditor({
       return
     }
     const label = await resolveOrderOptionLabel(
+      t,
       t('cross_border.shipments.salesAllocations.loadLinesFailed'),
       'sales',
       orderId,
-      orderOptions.find((candidate) => candidate.value === orderId)?.label,
+      orderOptionsRef.current.find((candidate) => candidate.value === orderId)?.label,
     )
     setValue('salesAllocations', [...allocations, {
       key: newRowKey(),
@@ -1539,7 +1612,7 @@ function ShipmentSalesAllocationEditor({
       delete next[line.id]
       return next
     })
-  }, [allocations, draftQuantities, orderId, orderOptions, resolveProduct, setValue, t])
+  }, [allocations, draftQuantities, orderId, resolveProduct, setValue, t])
 
   const updateAllocation = React.useCallback((index: number, patch: Partial<ShipmentSalesAllocationValues>) => {
     setValue(
@@ -1552,13 +1625,14 @@ function ShipmentSalesAllocationEditor({
     setValue('salesAllocations', allocations.filter((_, position) => position !== index))
   }, [allocations, setValue])
 
-  // Candidates for the contract reference: the lines of the internal sales orders this shipment
-  // already allocates from, keyed by the owned product id (first line wins on a repeat).
+  // Candidates for the contract reference: the lines of the sales orders this shipment already
+  // allocates from, keyed by the owned product id (first line wins on a repeat).
   const loadReferenceCandidates = React.useCallback(async () => {
     const byProduct = new Map<string, AllocationReferenceCandidate>()
     const orderIds = Array.from(new Set(allocations.map((row) => row.salesOrderId).filter(Boolean)))
     for (const scopedOrderId of orderIds) {
       const label = await resolveOrderOptionLabel(
+        t,
         t('cross_border.shipments.salesAllocations.loadLinesFailed'),
         'sales',
         scopedOrderId,
@@ -1627,14 +1701,7 @@ function ShipmentSalesAllocationEditor({
         <ComboboxInput
           value={orderId}
           onChange={handleOrderChange}
-          loadSuggestions={async (query) => {
-            const next = await loadSalesOrderOptions(
-              t('cross_border.shipments.salesAllocations.loadLinesFailed'),
-              query,
-            )
-            setOrderOptions(next)
-            return next
-          }}
+          loadSuggestions={loadOrderOptions}
           allowCustomValues={false}
           clearable
         />

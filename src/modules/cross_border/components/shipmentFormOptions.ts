@@ -1,8 +1,15 @@
 import type { CrudFieldOption } from '@open-mercato/ui/backend/CrudForm'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionaries/lib/clientEntries'
-import { channelIdForTradeType, tradeTypeFromSnapshot } from '../../internal_sales/lib/tradeType'
-import { loadTradeTypeChannelIds } from '../../internal_sales/lib/tradeTypeChannels'
+import type { TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import {
+  SALES_TRADE_TYPES,
+  channelIdForTradeType,
+  resolveRowTradeType,
+  type SalesTradeType,
+} from '../../internal_sales/lib/tradeType'
+import { readBuyerSnapshot } from '../../internal_sales/lib/buyer'
+import { loadTradeTypeChannelIds, type TradeTypeChannelMap } from '../../internal_sales/lib/tradeTypeChannels'
 
 /**
  * Option loaders for the shipment form.
@@ -56,17 +63,19 @@ function readOptionText(source: Record<string, unknown>, ...keys: string[]): str
 /**
  * The list query a shipment's sales-order picker sends.
  *
- * `channelId` is the whole point: a shipment's sales allocation is an **internal** (总部 → 分公司)
- * sale, so the marker decides. `null` (no `INTERNAL_SALES` channel yet) is still a valid query — the
- * caller pairs it with the unmarked bucket below. Pure so the param contract is testable without a
- * network.
+ * `channelIds` are the organization's trade-type channels — **both** of them, because a shipment
+ * allocates to internal (总部 → 分公司) and external (分公司 → 当地客户) orders alike since
+ * 2026-09-30. The ids travel as the list route's comma-separated plural filter; an empty list
+ * (no channel seeded yet) omits the filter rather than narrowing to nothing, and the caller pairs
+ * that with the unmarked bucket below. Pure so the param contract is testable without a network.
  */
 export function buildSalesOrderListParams(
-  channelId: string | null,
+  channelIds: readonly string[],
   term: string,
 ): Record<string, string | number> {
+  const scopedIds = channelIds.map((id) => id.trim()).filter((id) => id.length > 0)
   return {
-    ...(channelId ? { channelId } : {}),
+    ...(scopedIds.length ? { channelIds: scopedIds.join(',') } : {}),
     pageSize: SALES_OPTION_PAGE_SIZE,
     sortField: 'created_at',
     sortDir: 'desc',
@@ -74,51 +83,71 @@ export function buildSalesOrderListParams(
   }
 }
 
-/**
- * A document written before the trade-type marker existed carries no channel. The ones whose buyer
- * is a related organization are internal sales, and they must stay allocatable until the backfill
- * runs — otherwise a shipment could not be built from any pre-marker order.
- */
-export function isUnmarkedInternalOrder(item: Record<string, unknown>): boolean {
-  return tradeTypeFromSnapshot(item.customerSnapshot ?? item.customer_snapshot) === 'internal'
+/** The 对内/对外 word an option's direction is labelled with, keyed by the trade type it resolves to. */
+function salesTradeTypeLabel(t: TranslateFn, type: SalesTradeType): string {
+  return t(`cross_border.shipments.salesAllocations.tradeType.${type}`)
 }
 
 /**
- * Internal sales orders a shipment's sales allocation may draw from.
+ * Sales orders a shipment's sales allocation may draw from — both trade types.
  *
  * Read from the installed `sales` list — the module that owns the order resolves it, and the label
  * carries the order number so an operator can pick without memorizing ids. The route's own scope
  * rules apply, so an order outside the caller's organization is never offered.
  *
- * Only **internal** trade-type orders are offered: an external order has no 总部 → 分公司 pricing
- * link behind it. Two buckets make that complete without guessing: the orders already marked with
- * the internal channel, plus the unmarked ones whose frozen buyer is a related organization (the
- * backfill classifies exactly these, and until it runs a pre-marker order must stay allocatable).
+ * Both directions are offered because a container's goods are sold on both: the internal order is
+ * the head-office → branch sale the allocation used to be limited to, the external one is the
+ * branch → local-customer sale the same goods end up in. Each option carries its own direction in
+ * front of the label, so the two families cannot be confused in one search box.
+ *
+ * Two buckets make the list complete: the orders marked with either trade-type channel, plus every
+ * order carrying no channel at all (documents written before the marker existed — the backfill
+ * classifies them, and until it runs they must stay allocatable).
  */
-export async function loadSalesOrderOptions(errorMessage: string, query?: string): Promise<CrudFieldOption[]> {
+export async function loadSalesOrderOptions(
+  t: TranslateFn,
+  errorMessage: string,
+  query?: string,
+): Promise<CrudFieldOption[]> {
   const term = query?.trim() ?? ''
   const channelIds = await loadTradeTypeChannelIds('order', errorMessage)
-  const internalChannelId = channelIdForTradeType('internal', channelIds)
+  const tradeTypeChannelIds = SALES_TRADE_TYPES
+    .map((type) => channelIdForTradeType(type, channelIds))
+    .filter((id): id is string => id !== null)
   try {
     const [marked, unmarked] = await Promise.all([
-      fetchCrudList<Record<string, unknown>>(SALES_ORDERS_API_PATH, buildSalesOrderListParams(internalChannelId, term)),
+      fetchCrudList<Record<string, unknown>>(
+        SALES_ORDERS_API_PATH,
+        buildSalesOrderListParams(tradeTypeChannelIds, term),
+      ),
       fetchCrudList<Record<string, unknown>>(SALES_ORDERS_API_PATH, {
-        ...buildSalesOrderListParams(null, term),
+        ...buildSalesOrderListParams([], term),
         channelIdsEmpty: 'true',
       }),
     ])
-    return toSalesOrderOptions([
-      ...(marked.items ?? []),
-      ...(unmarked.items ?? []).filter(isUnmarkedInternalOrder),
-    ])
+    return toSalesOrderOptions(t, [...(marked.items ?? []), ...(unmarked.items ?? [])], channelIds)
   } catch {
     // A caller-localized message beats the transport error for an operator staring at a search box.
     throw new Error(errorMessage)
   }
 }
 
-/** Option shape shared by the two buckets, deduplicated by id (a row carries a channel or does not). */
-function toSalesOrderOptions(items: Array<Record<string, unknown>>): CrudFieldOption[] {
+/**
+ * Option shape shared by the two buckets, deduplicated by id (a row carries a channel or does not).
+ * The direction is read off the channel marker first and the frozen buyer snapshot second, and it
+ * goes **in front of** the label: it is what the eye compares when two orders name the same branch,
+ * and a row whose direction cannot be resolved at all (a hand-typed buyer, written before the
+ * marker) keeps the plain label rather than a guess.
+ *
+ * The buyer is read off the row when the list projects one and off the frozen snapshot otherwise
+ * (`sales/orders` carries it only inside `customerSnapshot`), because an order number alone does not
+ * tell two orders of the same week apart in a search box.
+ */
+function toSalesOrderOptions(
+  t: TranslateFn,
+  items: Array<Record<string, unknown>>,
+  channelIds: TradeTypeChannelMap,
+): CrudFieldOption[] {
   const seen = new Set<string>()
   const options: CrudFieldOption[] = []
   for (const item of items) {
@@ -127,7 +156,10 @@ function toSalesOrderOptions(items: Array<Record<string, unknown>>): CrudFieldOp
     seen.add(value)
     const number = readOptionText(item, 'orderNumber', 'order_number') || value.slice(0, 8)
     const customer = readOptionText(item, 'customerName', 'customer_name')
-    options.push({ value, label: customer ? `${number} — ${customer}` : number })
+      || readBuyerSnapshot(item.customerSnapshot ?? item.customer_snapshot).name
+    const label = customer ? `${number} — ${customer}` : number
+    const tradeType = resolveRowTradeType(item, channelIds)
+    options.push({ value, label: tradeType ? `${salesTradeTypeLabel(t, tradeType)} · ${label}` : label })
   }
   return options
 }
@@ -145,7 +177,7 @@ export type SalesOrderLineOption = {
 }
 
 /**
- * The lines of one internal sales order — the candidates a sales allocation can be built from.
+ * The lines of one sales order — the candidates a sales allocation can be built from.
  * The product master id is kept so the editor can resolve the product's catalog link; the unit
  * price and currency are the line's own values, offered as the row's editable default.
  */
