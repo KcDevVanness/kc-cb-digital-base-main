@@ -53,8 +53,8 @@ The order's refund **status** is the least advanced of its containers:
 
 | Surface | What ships |
 |---|---|
-| Backend pages | `/backend/export-finance/orders` (订单档案 list, business/finance tabs, CSV export) and `/backend/export-finance/orders/[id]` (order file detail); `/backend/export-finance/containers` (柜档案 list, CSV export) and `/backend/export-finance/containers/[id]` (container file detail). All four carry `pageGroupKey: export_finance.nav.group` — the sidebar group 「财务」 / "Finance" (`src/modules.ts` puts it fourth in `nav.groupOrder`, after 采购 / 出口业务 / 经营概览). 2026-09-28: the trade_docs tax-invoice ledger (`/backend/trade-docs/invoices`, pageOrder 420) also joins this group, and the same day the boss-facing pages (月损益 / SKU 毛利 / 库存资金占用) and the RU pipeline pages moved out to 「经营概览」 (`executive_overview.nav.group`) and 「数据同步」 (`ru_sync.nav.group`) — this group is now the finance desk's work and ledgers only. The key and its label are unchanged, so stored sidebar preferences keep working. |
-| API | `GET\|PUT /api/export_finance/collections` and `GET\|PUT /api/export_finance/refunds` — `GET` is the anchor read, `PUT` runs `collections.save` / `refunds.save`; `GET\|POST\|PUT\|DELETE /api/export_finance/collection-documents` and `…/refund-documents` — `GET` is the list, the three write verbs are the six document commands; `GET /api/export_finance/order-files` and `GET /api/export_finance/container-files` — the two projections, JSON by default, `?format=csv` for the export (the order file also takes `?view=business\|finance`). |
+| Backend pages | `/backend/export-finance/orders` (订单档案 list, business/finance tabs, CSV export) and `/backend/export-finance/orders/[id]` (order file detail); `/backend/export-finance/containers` (柜档案 list, CSV export) and `/backend/export-finance/containers/[id]` (container file detail). 2026-09-30: `/backend/export-finance/overdue`（逾期清单）joins the same group — 两段到期未回款的汇总（柜的退税逾期 / 订单的收款逾期），行直接链到对应档案详情；它**不自己判定逾期**，两段都读 `?overdue=true`。 All four carry `pageGroupKey: export_finance.nav.group` — the sidebar group 「财务」 / "Finance" (`src/modules.ts` puts it fourth in `nav.groupOrder`, after 采购 / 出口业务 / 经营概览). 2026-09-28: the trade_docs tax-invoice ledger (`/backend/trade-docs/invoices`, pageOrder 420) also joins this group, and the same day the boss-facing pages (月损益 / SKU 毛利 / 库存资金占用) and the RU pipeline pages moved out to 「经营概览」 (`executive_overview.nav.group`) and 「数据同步」 (`ru_sync.nav.group`) — this group is now the finance desk's work and ledgers only. The key and its label are unchanged, so stored sidebar preferences keep working. |
+| API | `GET\|PUT /api/export_finance/collections` and `GET\|PUT /api/export_finance/refunds` — `GET` is the anchor read, `PUT` runs `collections.save` / `refunds.save`; `GET\|POST\|PUT\|DELETE /api/export_finance/collection-documents` and `…/refund-documents` — `GET` is the list, the three write verbs are the six document commands; `GET /api/export_finance/order-files` and `GET /api/export_finance/container-files` — the two projections, JSON by default, `?format=csv` for the export (the order file also takes `?view=business\|finance`); both also take `?overdue=true` (only the rows whose money is late — the 逾期清单's two sections and the 档案 pages' 逾期 column read the same rule). |
 | Commands | `export_finance.collections.save`, `export_finance.refunds.save`, `export_finance.collection-documents.{create,update,delete}`, `export_finance.refund-documents.{create,update,delete}` |
 | Events | `export_finance.collections.updated`, `export_finance.refunds.updated` — the upsert commands emit only the `updated` form, and both are `clientBroadcast`; `export_finance.{collection,refund}-documents.{created,updated,deleted}` for the document CRUD. All fire after the write committed. |
 | Components | `components/OrderFilesTable.tsx`, `components/OrderFileDetail.tsx`, `components/ContainerFilesTable.tsx`, `components/ContainerFileDetail.tsx`, `components/labels.ts` (status labels) |
@@ -88,6 +88,19 @@ dictionary (`currency_policy/lib/clientOptions.ts` → `GET /api/currency_policy
 record's own code into the list, so opening a 收汇/退税 shows the currency it already holds instead of a
 silent `CNY` fallback. The API still accepts any ISO-shaped code (`data/validators.ts`), so an older
 record whose currency left the policy list keeps working.
+
+## Money status rules (2026-09-30)
+
+- **状态与事实必须自洽，否则写入被拒（422）**：收款记录 `received` 必须同时给出
+  `collectedAmount` 与 `collectedAt`；`not_received` 不得带金额或收款日期；`unknown` 两者都不带。
+  退税记录 `completed` 必须给出 `taxRefundAmount`；`not_started`/`unknown` 不得带金额；`applied` 允许带
+  （已申报但未到账时常已知金额）。规则是纯函数（`lib/statusCoherence.ts`），命令在写库前跑一次并逐条回报问题；
+  **只在写入路径生效**——历史行不迁移、不校验（列本身可空，「没答案」是合法状态）。
+- **逾期标记（派生，无新列）**：柜已 `received`/`closed` 且收货超过 `REFUND_OVERDUE_DAYS`（默认 45 天，常量在
+  `lib/fileRules.ts`，业务方可调）而退税仍未 `completed` ⇒ 柜档案标「退税逾期」；订单已 `received`/`closed`
+  且超过 `COLLECTION_OVERDUE_DAYS` 而收款仍非 `received` ⇒ 订单档案（财务口径）标「收款逾期」。
+  边界为**不含**：正好 N 天不算逾期；日期缺失或无法解析一律**不标**（宁可漏报不误报）；一次加载只取一个
+  `now`，同页各行口径一致。两个标记同时进列表列与 CSV（`refundOverdue` / `collectionOverdue`）。
 
 ## Verification
 

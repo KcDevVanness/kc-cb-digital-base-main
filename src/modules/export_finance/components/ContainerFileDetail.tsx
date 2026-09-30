@@ -94,6 +94,7 @@ const SHIPMENT_STATUS_VARIANTS: StatusMap<ShipmentStatus> = {
   draft: 'neutral',
   in_transit: 'info',
   received: 'success',
+  closed: 'neutral',
   cancelled: 'error',
 }
 
@@ -766,6 +767,21 @@ export default function ContainerFileDetail({ shipmentId }: { shipmentId: string
     await Promise.all([load(), loadDocuments(refundId)])
   }, [load, loadDocuments, refundId])
 
+  /**
+   * The command's coherence rule, said before the round trip: a completed refund needs its amount,
+   * and a not-started/unknown one must not carry one. `null` means "nothing to warn about".
+   */
+  const refundCoherenceHint = React.useMemo(() => {
+    const hasAmount = form.amount.trim().length > 0
+    if (form.status === 'completed' && !hasAmount) {
+      return t('export_finance.cabinets.detail.refund.needsAmount')
+    }
+    if ((form.status === 'not_started' || form.status === 'unknown') && hasAmount) {
+      return t('export_finance.cabinets.detail.refund.mustBeEmpty')
+    }
+    return null
+  }, [form.amount, form.status, t])
+
   const handleSaveRefund = React.useCallback(async () => {
     setIsSaving(true)
     setRefundError(null)
@@ -1091,7 +1107,14 @@ export default function ContainerFileDetail({ shipmentId }: { shipmentId: string
           <p className="text-sm text-muted-foreground">{t('export_finance.cabinets.detail.refund.empty')}</p>
         ) : null}
         <div>
-          <Button type="button" disabled={readOnly || isSaving} onClick={() => { void handleSaveRefund() }}>
+          {refundCoherenceHint ? (
+            <p className="text-sm text-muted-foreground" role="status">{refundCoherenceHint}</p>
+          ) : null}
+          <Button
+            type="button"
+            disabled={readOnly || isSaving || refundCoherenceHint !== null}
+            onClick={() => { void handleSaveRefund() }}
+          >
             {isSaving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
             {t('export_finance.cabinets.detail.refund.save')}
           </Button>

@@ -94,6 +94,7 @@ export const contractListFields = [
   'signed_at',
   'delivery_date',
   'payment_terms',
+  'incoterms',
   'shipping_method',
   'destination',
   'notes',
@@ -189,6 +190,10 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       signedAt: toDateOnly(item.signed_at),
       deliveryDate: toDateOnly(item.delivery_date),
       paymentTerms: asNullableString(item.payment_terms),
+      // The form re-reads the record through this projection, so a header field that prints must
+      // travel here too: without it the edit page opens blank and the next save nulls the stored
+      // term (the same reason `paymentTerms` and `shippingMethod` are already projected).
+      incoterms: asNullableString(item.incoterms),
       shippingMethod: asNullableString(item.shipping_method),
       destination: asNullableString(item.destination),
       notes: asNullableString(item.notes),

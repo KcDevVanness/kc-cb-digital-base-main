@@ -75,6 +75,7 @@ const SHIPMENT_STATUS_LABEL: Record<string, { key: string; fallback: string }> =
   draft: { key: 'cross_border.shipments.status.draft', fallback: 'Draft' },
   in_transit: { key: 'cross_border.shipments.status.in_transit', fallback: 'In transit' },
   received: { key: 'cross_border.shipments.status.received', fallback: 'Received' },
+  closed: { key: 'cross_border.shipments.status.closed', fallback: 'Closed' },
   cancelled: { key: 'cross_border.shipments.status.cancelled', fallback: 'Cancelled' },
 }
 
@@ -82,6 +83,7 @@ const SHIPMENT_STATUS_VARIANT: Record<string, 'neutral' | 'info' | 'success' | '
   draft: 'neutral',
   in_transit: 'info',
   received: 'success',
+  closed: 'neutral',
   cancelled: 'error',
 }
 

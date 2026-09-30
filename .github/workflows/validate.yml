@@ -1,15 +1,20 @@
 name: validate
 
-# The same gate every agent runs locally (.ai/agentic.config.json → validation.commands),
-# executed on every PR and on main so a green check means "the gate passed", not "someone said so".
+# The same gate every agent runs locally (.ai/agentic.config.json → validation.commands), executed
+# where it decides a release: the PR that promotes `dev` to `main` (or `production`), and every
+# push to `main`. Unit PRs into the integration trunk `dev` skip it by policy (2026-09-30) and
+# merge on their author's local gate — that local run is therefore *mandatory* before `gh pr ready`
+# (AGENTS.md → Validation). What a green `validate` on a `dev` PR means is exactly this: "nothing to
+# run here", not "the code was checked".
 #
 # Shape — decide, run the two halves at the same time, report once:
 #
-#   scope    reads the diff and publishes `needed` (docs / deploy-side diffs cannot fail the gate)
+#   scope    reads the base branch and the diff, publishes `needed` (release targets only; docs /
+#            deploy-side diffs cannot fail the gate)
 #   checks   install → generate → typecheck → lint → lessons → ds:check → test
 #   build    install → build (`yarn build` runs `yarn generate` itself)
 #   validate the fan-in: green only when scope passed and every slice passed or was skipped as
-#            out of scope. This job is the required check `main` waits for.
+#            out of scope. This job is the required check `dev`, `main` and `production` wait for.
 #
 # Why it is split rather than one job: serializing all seven commands made the run ~5:45 end to
 # end, and parallel development pays that wall clock once per PR in flight. The critical path is
@@ -21,9 +26,10 @@ name: validate
 # "Expected — Waiting" (`.ai/lessons/gate-must-cover-every-pr-target.md`). Renaming the fan-in, or
 # replacing it with a matrix, breaks that.
 on:
-  # Every PR target, not only `main`: unit PRs land on integration branches first, and a gate that
-  # skipped them merged a unit with `no checks reported` (2026-09-28). The docs/deploy scope step
-  # below keeps doc-only PRs cheap, so widening the trigger costs minutes, not correctness.
+  # No branch filter and no `paths-ignore`, deliberately: `dev`, `main` and `production` all require
+  # this check, and a required check that never *reports* leaves every PR on "Expected — Waiting"
+  # forever (`.ai/lessons/gate-must-cover-every-pr-target.md`, 2026-09-28). Coverage is decided
+  # inside the `scope` job as `needed=false`, which reports green in seconds.
   pull_request:
   push:
     branches: [main]
@@ -37,6 +43,10 @@ jobs:
     name: scope
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      # Interpolated through the environment, not inlined into the script: a branch name is
+      # repository-controlled text and `${{ }}` would splice it into shell source.
+      PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
     outputs:
       # `needed=false` is the only thing that lets the slices skip; anything else runs the gate.
       needed: ${{ steps.decide.outputs.needed }}
@@ -49,13 +59,37 @@ jobs:
       - name: Decide whether the gate can be skipped
         id: decide
         run: |
-          # Changes confined to these paths cannot fail
+          # 1) Release targets only (2026-09-30): a pull request into `main` / `production` — the
+          # wave PR and the production sync — is where the broad gate decides something. Unit PRs
+          # land on the integration trunk `dev` (and stacked children of other unit branches) and
+          # merge on the author's local run of `validation.commands`; here they report the required
+          # check green in seconds instead of spending three minutes re-proving it. `push` events
+          # skip this branch because the workflow only listens on `main`.
+          if [ '${{ github.event_name }}' = 'pull_request' ]; then
+            case "${PR_BASE_REF}" in
+              main|production)
+                ;;
+              '')
+                echo "needed=true" >> "$GITHUB_OUTPUT"
+                echo "no base ref in the event payload — running the gate"
+                exit 0
+                ;;
+              *)
+                echo "needed=false" >> "$GITHUB_OUTPUT"
+                echo "base '${PR_BASE_REF}' is an integration branch — the gate belongs to the release PR"
+                exit 0
+                ;;
+            esac
+          fi
+
+          # 2) Changes confined to these paths cannot fail
           # generate / typecheck / lint / ds:check / test / build. The test is an
           # allow-list: anything not listed runs the full gate, so a new source
           # directory can only cost time, never skip a real check.
           #
           # This is deliberately not `paths-ignore` on the workflow: a check that is
-          # filtered out never reports, and `main` requires `validate`.
+          # filtered out never reports, and `dev` / `main` / `production` all require
+          # `validate`.
           #
           # Run plans and analysis notes are pure metadata, so they join the allow-list.
           # A lesson edit is NOT listed: the lessons step must run for it.

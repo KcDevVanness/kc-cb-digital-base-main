@@ -3,9 +3,9 @@ import {
   channelIdForTradeType,
   readChannelId,
   resolveRowTradeType,
-  salesEntryFromPathname,
   tradeTypeFromBuyerKind,
   tradeTypeFromChannelId,
+  tradeTypeFromPathname,
   tradeTypeFromSnapshot,
 } from '../tradeType'
 import { classifyDocument, toDocumentRow } from '../../cli'
@@ -39,10 +39,12 @@ describe('trade type classification', () => {
     expect(resolveRowTradeType({ customerSnapshot: { internalSales: { partyId: 'x' } } }, CHANNELS)).toBe('external')
   })
 
-  it('reads the entry from the route prefix', () => {
-    expect(salesEntryFromPathname('/backend/external-sales/orders')).toBe('external')
-    expect(salesEntryFromPathname('/backend/internal-sales/orders')).toBe('sales')
-    expect(salesEntryFromPathname(null)).toBe('sales')
+  it('reads the trade type an entry owns from the route prefix', () => {
+    expect(tradeTypeFromPathname('/backend/external-sales/orders')).toBe('external')
+    expect(tradeTypeFromPathname('/backend/internal-sales/orders')).toBe('internal')
+    // Anything else — the internal prefix, a missing pathname — is the internal entry.
+    expect(tradeTypeFromPathname('/backend/internal-sales/quotes')).toBe('internal')
+    expect(tradeTypeFromPathname(null)).toBe('internal')
   })
 })
 

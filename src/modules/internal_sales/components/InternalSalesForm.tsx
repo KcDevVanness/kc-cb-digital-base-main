@@ -47,13 +47,13 @@ import {
   isUuid,
 } from '../lib/buyer'
 import { useTradeTypeChannels, type TradeTypeChannelMap } from '../lib/tradeTypeChannels'
+import { SALES_STATUS_DRAFT, SALES_STATUS_SENT } from '../lib/salesStatus'
+import { useSalesStatusEntries } from '../lib/salesStatusEntries'
 import {
-  SALES_TRADE_TYPES,
   channelIdForTradeType,
   isSalesTradeType,
-  resolveRowTradeType,
-  salesEntryFromPathname,
   tradeTypeFromBuyerKind,
+  tradeTypeFromPathname,
   type SalesTradeType,
 } from '../lib/tradeType'
 import {
@@ -228,7 +228,11 @@ function toHeadPayload(
     channelIds?: Partial<Record<SalesTradeType, string | null | undefined>>
   },
 ): Record<string, unknown> {
-  const snapshot = buildBuyerSnapshot({ name: values.customerName, ref: values.buyerRef })
+  const snapshot = buildBuyerSnapshot({
+    name: values.customerName,
+    ref: values.buyerRef,
+    email: values.buyerEmail,
+  })
   const channelId = channelIdForTradeType(values.tradeType, options?.channelIds ?? {})
   return {
     // The trade type travels on the engine's channel; callers resolve the map and block the save
@@ -247,14 +251,20 @@ function toHeadPayload(
  * The create command takes the head **and** the lines in one call. `currencyCode` is required per
  * line as well as per document, and the totals block is deliberately omitted: the installed sales
  * engine computes it from the lines, so sending our own would only give it a second opinion.
+ *
+ * `statusEntryId` is the tenant dictionary entry for `draft`: a document is born as a draft, and
+ * only an explicit action (`quotes/send`, `确认订单`) moves it on. The engine resolves the value
+ * from the entry, so the tenant keeps owning its status vocabulary.
  */
 export function buildInternalSalesPayload(
   kind: InternalSalesKind,
   values: InternalSalesFormValues,
   channelIds: Partial<Record<SalesTradeType, string | null | undefined>> = {},
+  statusEntryId?: string | null,
 ): Record<string, unknown> {
   return {
     ...toHeadPayload(values, { channelIds }),
+    ...(statusEntryId ? { statusEntryId } : {}),
     // Provenance only, and only on create: the engine's update path leaves `metadata` untouched
     // when the payload omits it, so the edit form never rewrites the stored value.
     ...(values.sourceQuote ? { metadata: buildDocumentMetadata(values.sourceQuote) } : {}),
@@ -362,16 +372,20 @@ function useRelatedOrganizations(): {
  * read the module's other surfaces use as well. `null` on failure — the caller degrades instead of
  * inventing a name.
  */
-async function fetchPartyDetail(partyId: string): Promise<{ code: string; name: string } | null> {
+async function fetchPartyDetail(partyId: string): Promise<{ code: string; name: string; email: string } | null> {
   try {
-    const call = await apiCall<{ item?: { code?: string; name?: string } }>(
+    const call = await apiCall<{ item?: { code?: string; name?: string; email?: string | null } }>(
       `/api/parties/${encodeURIComponent(partyId)}`,
     )
     if (!call.ok) return null
     const item = call.result?.item
     const name = typeof item?.name === 'string' ? item.name.trim() : ''
     if (!name) return null
-    return { code: typeof item?.code === 'string' ? item.code.trim() : '', name }
+    return {
+      code: typeof item?.code === 'string' ? item.code.trim() : '',
+      name,
+      email: typeof item?.email === 'string' ? item.email.trim() : '',
+    }
   } catch {
     return null
   }
@@ -407,6 +421,12 @@ function BuyerPickerField({
    */
   const rawTradeType = values?.tradeType
   const tradeType: SalesTradeType = isSalesTradeType(rawTradeType) ? rawTradeType : 'internal'
+  /** The sibling email field, so the party prefill never overwrites what the operator typed. */
+  const currentEmail = typeof values?.buyerEmail === 'string' ? values.buyerEmail : ''
+  // The prefill resolves asynchronously; a ref carries the *latest* typed address into that callback
+  // so an address entered while the party read was in flight is not overwritten.
+  const latestEmailRef = React.useRef(currentEmail)
+  latestEmailRef.current = currentEmail
   /**
    * A buyer from the other namespace cannot survive a trade-type switch (an organization id is not
    * a customer). The check is on the *picked value's* kind rather than on a previous-render ref: an
@@ -541,9 +561,12 @@ function BuyerPickerField({
       }
       if (ref.kind === 'party') {
         // The label carries a code prefix, so the printed name comes from the party read; a failed
-        // read leaves whatever the operator has in the name field untouched.
+        // read leaves whatever the operator has in the name field untouched. The party's email is
+        // only a prefill — an address already typed here is never overwritten.
         void fetchPartyDetail(ref.id).then((detail) => {
-          if (detail) setFormValue?.('customerName', detail.name)
+          if (!detail) return
+          setFormValue?.('customerName', detail.name)
+          if (detail.email && !latestEmailRef.current.trim()) setFormValue?.('buyerEmail', detail.email)
         })
       }
     },
@@ -791,38 +814,25 @@ function InternalSalesLinesEditor(
 }
 
 /**
- * `fixedTradeType` locks the control to one value: the external menu (`/backend/external-sales/**`)
- * is the entry for trade with local customers, so that surface must not be able to write an internal
- * document. The sales entry passes `null` — it owns both types, and switching a document's type
- * there is how a mis-typed one is corrected.
+ * The trade type is the entry's, so the control is a read-only value rather than a one-option
+ * select (`.ai/lessons/one-option-picker-is-a-defect.md`): `/backend/internal-sales/**` writes
+ * internal documents and `/backend/external-sales/**` external ones, and the picker's buyer source
+ * — and the channel the document is stamped with — follows that one value.
  */
-function useFields(t: TranslateFn, fixedTradeType: SalesTradeType | null = null): CrudField[] {
+function useFields(t: TranslateFn, entryTradeType: SalesTradeType): CrudField[] {
   return React.useMemo<CrudField[]>(() => [
-    fixedTradeType
-      ? {
-          // A one-option select reads as a broken control (`.ai/lessons/one-option-picker-is-a-defect.md`);
-          // the entry fixes the type, so it is shown as a value.
-          id: 'tradeType',
-          label: t('internal_sales.form.field.tradeType'),
-          type: 'custom',
-          layout: 'half',
-          description: t('internal_sales.form.field.tradeTypeFixed'),
-          component: () => (
-            <p className="pt-2 text-sm font-medium">{t(`internal_sales.form.tradeType.${fixedTradeType}`)}</p>
-          ),
-        }
-      : {
-          id: 'tradeType',
-          label: t('internal_sales.form.field.tradeType'),
-          type: 'select',
-          required: true,
-          layout: 'half',
-          description: t('internal_sales.form.field.tradeTypeHelp'),
-          options: SALES_TRADE_TYPES.map((type) => ({
-            value: type,
-            label: t(`internal_sales.form.tradeType.${type}`),
-          })),
-        },
+    {
+      id: 'tradeType',
+      label: t('internal_sales.form.field.tradeType'),
+      type: 'custom',
+      layout: 'half',
+      description: t('internal_sales.form.field.tradeTypeFixed', 'This entry is fixed to {{type}}.', {
+        type: t(`internal_sales.form.tradeType.${entryTradeType}`),
+      }),
+      component: () => (
+        <p className="pt-2 text-sm font-medium">{t(`internal_sales.form.tradeType.${entryTradeType}`)}</p>
+      ),
+    },
     {
       id: 'buyerRef',
       label: t('internal_sales.form.field.customer'),
@@ -831,6 +841,16 @@ function useFields(t: TranslateFn, fixedTradeType: SalesTradeType | null = null)
       component: (props) => <BuyerPickerField {...props} t={t} />,
     },
     { id: 'customerName', label: t('internal_sales.form.field.customerName'), type: 'text', layout: 'half' },
+    {
+      id: 'buyerEmail',
+      label: t('internal_sales.form.field.buyerEmail', 'Buyer email'),
+      type: 'text',
+      layout: 'half',
+      description: t(
+        'internal_sales.form.field.buyerEmailHelp',
+        'Used when a quote is sent to the buyer (acceptance link and email).',
+      ),
+    },
     {
       id: 'currencyCode',
       label: t('internal_sales.form.field.currency'),
@@ -841,7 +861,7 @@ function useFields(t: TranslateFn, fixedTradeType: SalesTradeType | null = null)
     },
     { id: 'customerReference', label: t('internal_sales.form.field.customerReference'), type: 'text', layout: 'half' },
     { id: 'comments', label: t('internal_sales.form.field.comments'), type: 'textarea', layout: 'half' },
-  ], [fixedTradeType, t])
+  ], [entryTradeType, t])
 }
 
 /**
@@ -849,18 +869,36 @@ function useFields(t: TranslateFn, fixedTradeType: SalesTradeType | null = null)
  * there is nothing upstream of a quote to load from, and the panel's read-only half only makes
  * sense where a document can carry a source quote.
  */
+/**
+ * The "this quote has been sent" banner on the edit page.
+ *
+ * The engine returns a sent quote to `draft` and kills its acceptance link on **any** update
+ * (`sales/commands/documents.js`), so saving silently un-sends the quote. The operator is told
+ * before/after the save instead of discovering it from a changed badge.
+ */
+function SentQuoteNotice({ values, t }: { values?: Record<string, unknown>; t: TranslateFn }) {
+  const status = typeof values?.status === 'string' ? values.status : null
+  if (status !== SALES_STATUS_SENT) return null
+  return (
+    <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+      {t(
+        'internal_sales.form.sentQuoteHint',
+        'This quote has been sent: saving returns it to draft and invalidates the link that went out. Send it again when ready.',
+      )}
+    </p>
+  )
+}
+
 function useGroups(
   t: TranslateFn,
-  { withQuoteLoad = false, mode = 'create' as 'create' | 'edit', autoLoadFrom = null, tradeType = 'internal' as SalesTradeType, channelIds = {}, adoptQuoteType = true }: {
+  { withQuoteLoad = false, mode = 'create' as 'create' | 'edit', autoLoadFrom = null, tradeType = 'internal' as SalesTradeType, channelIds = {} }: {
     withQuoteLoad?: boolean
     mode?: 'create' | 'edit'
     autoLoadFrom?: string | null
     /** The entry's trade type, so the panel's quote link stays inside the entry it was opened from. */
     tradeType?: SalesTradeType
-    /** The organization's trade-type channels, so the quote picker offers this order's own type. */
+    /** The organization's trade-type channels, so the quote picker offers this entry's own type. */
     channelIds?: TradeTypeChannelMap
-    /** Whether loading a quote may adopt the quote's trade type — false on a locked entry. */
-    adoptQuoteType?: boolean
   } = {},
 ): CrudFormGroup[] {
   return React.useMemo<CrudFormGroup[]>(() => [
@@ -877,43 +915,52 @@ function useGroups(
               autoLoadFrom={autoLoadFrom}
               quoteEditHref={(quoteId) => documentEditHrefForTradeType('quote', quoteId, tradeType)}
               channelIds={channelIds}
-              adoptQuoteType={adoptQuoteType}
             />
           ),
         }]
       : []),
-    { id: 'header', column: 1, fields: ['tradeType', 'buyerRef', 'customerName', 'currencyCode', 'customerReference', 'comments'] },
+    ...(mode === 'edit' && withQuoteLoad === false
+      ? [{
+          id: 'sent-notice',
+          column: 1 as const,
+          bare: true,
+          component: (context: CrudFormGroupComponentProps) => (
+            <SentQuoteNotice values={context.values} t={t} />
+          ),
+        }]
+      : []),
+    { id: 'header', column: 1, fields: ['tradeType', 'buyerRef', 'customerName', 'buyerEmail', 'currencyCode', 'customerReference', 'comments'] },
     {
       id: 'lines',
       column: 1,
       bare: true,
       component: (context) => <InternalSalesLinesEditor {...context} t={t} />,
     },
-  ], [adoptQuoteType, autoLoadFrom, channelIds, mode, t, tradeType, withQuoteLoad])
+  ], [autoLoadFrom, channelIds, mode, t, tradeType, withQuoteLoad])
 }
 
 /**
- * The trade type this route fixes its documents to, or `null` when the entry leaves the choice to
- * the operator.
- *
- * `/backend/external-sales/**` is the external-only entry, so it must not be able to write an
- * internal document. The sales entry keeps the switch: it owns both types, and that is also what
- * lets an internal operator correct a document that was typed wrong before the backfill ran.
+ * The trade type this entry owns — the route prefix *is* the type, and every document written here
+ * gets its channel. There is no switch: the other type has its own entry, so a document can never
+ * be created (or re-stamped) as the wrong type from this page.
  */
-function useFixedTradeType(): SalesTradeType | null {
+function useEntryTradeType(): SalesTradeType {
   const pathname = usePathname()
-  return salesEntryFromPathname(pathname) === 'external' ? 'external' : null
+  return tradeTypeFromPathname(pathname)
 }
 
 function CreateForm({ kind }: { kind: InternalSalesKind }) {
   const t = useT()
   const router = useRouter()
-  const fixedTradeType = useFixedTradeType()
-  const fields = useFields(t, fixedTradeType)
+  const entryTradeType = useEntryTradeType()
+  const fields = useFields(t, entryTradeType)
   const { channels, hasAll: hasAllChannels, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
+  // A new document is born as a draft; the draft entry comes from the tenant's own dictionary, so
+  // the vocabulary stays theirs (a disabled `draft` blocks the save with a clear message instead of
+  // writing a status the tenant cannot see).
+  const { entryIdFor, isLoading: statusLoading, failed: statusFailed } = useSalesStatusEntries()
   // The quote list's row action arrives here; the panel loads that quote once on mount.
   const fromQuote = useSearchParams().get('fromQuote')
-  const entryTradeType: SalesTradeType = fixedTradeType ?? 'internal'
   const entryHref = listHrefForTradeType(kind, entryTradeType)
   const groups = useGroups(t, {
     withQuoteLoad: kind === 'order',
@@ -921,7 +968,6 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
     autoLoadFrom: fromQuote,
     tradeType: entryTradeType,
     channelIds: channels,
-    adoptQuoteType: fixedTradeType === null,
   })
 
   const handleSubmit = React.useCallback(async (values: InternalSalesFormValues) => {
@@ -929,7 +975,22 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       flash(missingChannelMessage, 'error')
       throw new Error(missingChannelMessage)
     }
-    const payload = buildInternalSalesPayload(kind, values, channels)
+    const draftEntryId = entryIdFor(SALES_STATUS_DRAFT)
+    if (!draftEntryId && !statusLoading) {
+      // A failed read and a dictionary without `draft` both leave no entry id; say which it is.
+      const message = statusFailed
+        ? t(
+            'internal_sales.form.statusDictionaryFailed',
+            'Could not read this organization’s sales status dictionary. Retry; if it keeps failing, ask an administrator.',
+          )
+        : t(
+            'internal_sales.form.statusMissing',
+            'This organization has no "draft" status in its sales status dictionary. Ask an administrator to add it.',
+          )
+      flash(message, 'error')
+      throw new Error(message)
+    }
+    const payload = buildInternalSalesPayload(kind, values, channels, draftEntryId)
     const lines = payload.lines as unknown[]
     if (lines.length === 0) {
       flash(t('internal_sales.form.linesRequired'), 'error')
@@ -964,12 +1025,12 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       flash(t('internal_sales.form.saveFailed'), 'error')
       throw error
     }
-  }, [channels, entryHref, hasAllChannels, kind, missingChannelMessage, router, t])
+  }, [channels, entryHref, entryIdFor, hasAllChannels, kind, missingChannelMessage, router, statusFailed, statusLoading, t])
 
   return (
     <CrudForm<InternalSalesFormValues>
       title={t(
-        fixedTradeType === 'external'
+        entryTradeType === 'external'
           ? (kind === 'quote' ? 'internal_sales.form.externalQuote.createTitle' : 'internal_sales.form.externalOrder.createTitle')
           : (kind === 'quote' ? 'internal_sales.form.quote.createTitle' : 'internal_sales.form.order.createTitle'),
       )}
@@ -979,7 +1040,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       groups={groups}
       initialValues={{
         ...EMPTY_VALUES,
-        tradeType: fixedTradeType ?? EMPTY_VALUES.tradeType,
+        tradeType: entryTradeType,
         lines: [{ ...EMPTY_LINE }],
       }}
       submitLabel={t('internal_sales.form.save')}
@@ -992,17 +1053,15 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
 function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: string }) {
   const t = useT()
   const router = useRouter()
-  const fixedTradeType = useFixedTradeType()
-  const fields = useFields(t, fixedTradeType)
+  const entryTradeType = useEntryTradeType()
+  const fields = useFields(t, entryTradeType)
   const { channels, hasAll: hasAllChannels, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
-  const entryTradeType: SalesTradeType = fixedTradeType ?? 'internal'
   const entryHref = listHrefForTradeType(kind, entryTradeType)
   const groups = useGroups(t, {
     withQuoteLoad: kind === 'order',
     mode: 'edit',
     tradeType: entryTradeType,
     channelIds: channels,
-    adoptQuoteType: fixedTradeType === null,
   })
   const [initial, setInitial] = React.useState<InternalSalesFormValues | null>(null)
   const [loadedLineIds, setLoadedLineIds] = React.useState<string[]>([])
@@ -1044,10 +1103,13 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
         const lineRecords = linePayload.items ?? []
         const lines = lineRecords.map(toInternalSalesLineValues)
         if (!cancelled) {
-          const loaded = toInternalSalesFormValues(item, lines, channels)
-          // A document that belongs to the other entry must not be saved from here: the locked
+          // The entry's type is the fallback for a document written before the marker existed: it
+          // is what the operator sees and what the save stamps, so an unclassified document is
+          // classified by the entry it was edited in rather than silently treated as internal.
+          const loaded = toInternalSalesFormValues(item, lines, channels, entryTradeType)
+          // A document that belongs to the other entry must not be saved from here: the fixed
           // control would rewrite its marker. Send the operator to the page that owns it.
-          if (fixedTradeType && loaded.tradeType !== fixedTradeType) {
+          if (loaded.tradeType !== entryTradeType) {
             router.replace(documentEditHrefForTradeType(kind, documentId, loaded.tradeType))
             return
           }
@@ -1071,17 +1133,17 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
     // Primitive deps on purpose: the channel map object is memoized by the hook, but primitive deps
     // keep this effect from re-running on a fresh map identity (it re-reads the document and lines).
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see the primitive deps below
-  }, [channels.internal, channels.external, documentId, fixedTradeType, kind, reloadToken, router, t])
+  }, [channels.internal, channels.external, documentId, entryTradeType, kind, reloadToken, router, t])
 
   const fallback = React.useMemo<InternalSalesFormValues>(
     () => ({
       ...EMPTY_VALUES,
-      tradeType: fixedTradeType ?? EMPTY_VALUES.tradeType,
+      tradeType: entryTradeType,
       id: documentId,
       lines: [{ ...EMPTY_LINE }],
       updatedAt: null,
     }),
-    [documentId, fixedTradeType],
+    [documentId, entryTradeType],
   )
 
   const handleSubmit = React.useCallback(async (values: InternalSalesFormValues) => {
@@ -1125,7 +1187,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
   return (
     <CrudForm<InternalSalesFormValues>
       title={t(
-        (fixedTradeType ?? initial?.tradeType) === 'external'
+        entryTradeType === 'external'
           ? (kind === 'quote' ? 'internal_sales.form.externalQuote.editTitle' : 'internal_sales.form.externalOrder.editTitle')
           : (kind === 'quote' ? 'internal_sales.form.quote.editTitle' : 'internal_sales.form.order.editTitle'),
       )}

@@ -19,6 +19,7 @@ import {
   type OrderContainerRef,
   type OrderFileListParams,
   type OrderFileRow,
+  isCollectionOverdue,
 } from './fileRules'
 import { AMOUNT_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
 
@@ -442,6 +443,8 @@ export async function loadOrderFiles(
     milestones.filter((row) => row.milestone === 'picked_up').map((row) => String(row.shipment_id)),
   )
 
+  // One clock for the whole page (see the container projection).
+  const now = new Date()
   const items: OrderFileRow[] = orders.map((order) => {
     const orderId = String(order.id)
 
@@ -568,6 +571,15 @@ export async function loadOrderFiles(
         exchangeRate: kcContract?.exchangeRate ?? null,
       }),
       collectionStatus: collection ? String(collection.collection_status ?? 'unknown') : 'unknown',
+      collectionOverdue: isCollectionOverdue({
+        businessStatus: deriveBusinessStatus({
+          poStatus: String(order.status ?? 'draft'),
+          pickedUp: containers.some((container) => container.pickedUp),
+          departed: containers.some((container) => container.departed),
+        }),
+        receivedAt: toIsoTimestamp(latestContainer?.receivedAt ?? order.received_at),
+        collectionStatus: collection ? String(collection.collection_status ?? 'unknown') : 'unknown',
+      }, now),
       refundStatus: aggregateRefundStatus(containers.map((container) => container.taxRefundStatus)),
       allocatedRefundAmount,
       containers: containers.map((container) => ({
@@ -591,6 +603,8 @@ export async function loadOrderFiles(
     if (params.filters.status && item.businessStatus !== params.filters.status) return false
     if (params.filters.collectionStatus && item.collectionStatus !== params.filters.collectionStatus) return false
     if (params.filters.taxRefundStatus && item.refundStatus !== params.filters.taxRefundStatus) return false
+    // 逾期 comes from the row's own flag — see the container projection's note.
+    if (params.filters.overdue && !item.collectionOverdue) return false
     return true
   })
 

@@ -22,7 +22,7 @@ import {
  * What is pinned here is the mapping that turns a *quotation* (head + snake_case line rows) into
  * *order* form values — the part where a mistake silently produces a wrong order — plus the source
  * quote that is written onto the new order's `metadata`. The network half (`loadQuoteDraft`,
- * `applyQuoteDraftToForm`) is exercised in the browser smoke, not here.
+ * `loadQuoteDraft` + `applyQuoteDraft`) is exercised in the browser smoke, not here.
  */
 
 const QUOTE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -35,6 +35,7 @@ function formValues(patch: Partial<InternalSalesFormValues> = {}): InternalSales
     tradeType: 'internal',
     buyerRef: '',
     customerName: '',
+    buyerEmail: '',
     currencyCode: '',
     customerReference: '',
     comments: '',
@@ -271,5 +272,29 @@ describe('line and draft helpers', () => {
     expect(second!.key).toBe('line-2')
     expect(first!.productId).toBe('p-1')
     expect(first!.quantity).toBe('3')
+  })
+})
+
+describe('trade type of a loaded document', () => {
+  const CHANNELS = { internal: 'channel-internal', external: 'channel-external' }
+
+  it('keeps the stored type and gives an unclassified document the entry that opened it', () => {
+    // The marker wins over everything, including the entry the operator is standing in.
+    expect(toInternalSalesFormValues(
+      { id: QUOTE_ID, channelId: 'channel-internal', customerSnapshot: { internalSales: { partyId: PARTY_ID } } },
+      [],
+      CHANNELS,
+      'external',
+    ).tradeType).toBe('internal')
+    // Without a marker the frozen link decides (the same rule the backfill uses) …
+    expect(toInternalSalesFormValues(
+      { id: QUOTE_ID, customerSnapshot: { internalSales: { partyId: PARTY_ID } } },
+      [],
+      CHANNELS,
+      'external',
+    ).tradeType).toBe('external')
+    // … and with neither, the entry does — this is what its save stamps on the document.
+    expect(toInternalSalesFormValues({ id: QUOTE_ID }, [], CHANNELS, 'external').tradeType).toBe('external')
+    expect(toInternalSalesFormValues({ id: QUOTE_ID }, [], CHANNELS, 'internal').tradeType).toBe('internal')
   })
 })

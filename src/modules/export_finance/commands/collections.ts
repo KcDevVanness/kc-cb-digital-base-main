@@ -3,12 +3,13 @@ import type { CommandHandler } from '@open-mercato/shared/lib/commands'
 import { registerCommand } from '@open-mercato/shared/lib/commands'
 import { emitCrudSideEffects } from '@open-mercato/shared/lib/commands/helpers'
 import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/optimistic-lock-command'
-import { notFound } from '@open-mercato/shared/lib/crud/errors'
+import { CrudHttpError, notFound } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import { ExportFinanceCollection } from '../data/entities'
 import { collectionSaveSchema } from '../data/validators'
 import { ensureScope, type Scope } from '../lib/scope'
+import { collectionStatusIssues } from '../lib/statusCoherence'
 
 const COLLECTION_ENTITY_ID = 'export_finance:export_finance_collection' as const
 const COLLECTION_RESOURCE_KIND = 'export_finance.collection' as const
@@ -87,6 +88,17 @@ const saveCollectionCommand: CommandHandler<Record<string, unknown>, ExportFinan
       // Absent/blank/`null` all mean "nobody has recorded a receipt": stored as null, never as 0.
       amount: parsed.collectedAmount ?? null,
       receivedAt: parsed.collectedAt ? new Date(parsed.collectedAt) : null,
+    }
+
+    // The status and the facts it claims must agree before anything is written, or the receivables
+    // ledger has to guess which half of the record to believe.
+    const issues = collectionStatusIssues({
+      collectionStatus: fields.collectionStatus,
+      amount: fields.amount,
+      receivedAt: fields.receivedAt,
+    })
+    if (issues.length > 0) {
+      throw new CrudHttpError(422, { error: issues.join('; ') })
     }
 
     const record = existing
