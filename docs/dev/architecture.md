@@ -71,16 +71,26 @@ app 自建了业务面（`products`/`purchasing`/`trade_docs`/`platform_ops`/`cr
   message-object href、catalog search presenter。通知的 `linkHref` 在创建时就冻结成行数据，
   所以摘除路由会让**已经存在**的通知点开即 404，改通知类型也救不回来——只能让 URL 继续可解析。
 
-已按此策略隐藏的模块：`catalog`（8 个产品/类目页 + `config/catalog` 配置页）、`customers`、`sales`、`wms`、`currencies`、
+已按此策略隐藏的模块：`catalog`（8 个产品/类目页 + `config/catalog` 配置页）、`customers`、`sales`、`currencies`、
 `feature_toggles`（全部 `navHidden`）。隐藏只作用于导航：模块的 API/命令/实体/ACL
 不受影响，页面自身的 `requireFeatures` 也照旧生效，改回一行即恢复。
+
+按「app 有没有替代面」逐个判断，**不隐藏**的有两处（2026-09-30 起）。其一是 **`wms`**
+（12 个页面的 `navHidden` 覆盖整块删除）：app 没有自建仓库/库存面，而 `wms` 是本部署的库存账
+（海外仓收货走 `wms.inventory.receive`），发运单的「目的仓库/库位」选择器就读
+`/api/wms/{warehouses,locations}`（`src/modules/cross_border/components/ShipmentForm.tsx:72-73`）——
+页面藏起来时，业务连一个仓库/库位都建不出来，只能靠记 URL。落点：主菜单新增 **WMS** 分组
+（运营看板 `/backend/wms`、库存、仓库、库区、库位、批次、库存流水、预留）+ Settings 的 `config/wms`；
+门禁仍是各页 `page.meta.ts` 的 `wms.view`，各动作 `wms.manage_warehouses`/`wms.manage_zones`/
+`wms.manage_locations`/`wms.adjust_inventory`/`wms.cycle_count`，中文标签取 `src/modules/wms/i18n/zh.json`。
+要再收窄（例如只留仓库/库位）就是给对应页面加回一行 `navHidden`。
 
 `config/catalog` 是 2026-09-23 追加的一项（业主口径：Settings 面板条目太多）：页面只维护
 catalog 价格类型与欧盟单位价展示开关，本部署没有自有面读它（价格词表在 `products_prices.price_tier`，
 `purchasing`/`sourcing` 用自己的 `supplier_cost`/`company_offer` 码，`catalog_price_kinds` 为空表），
 但 catalog 搜索 presenter 会把 `catalog:catalog_price_kind` 的结果链到该 URL，所以仍走 `navHidden` 而不是 `null`。
 
-**唯一的例外是 `dictionaries`**：字典库的页面体是 app 自建的
+**另一处不隐藏的是 `dictionaries`**：字典库的页面体是 app 自建的
 （`src/modules/dictionaries/backend/config/dictionaries/page.tsx` 遮蔽包内同名文件），而 app 的主数据下拉
 （币种、单位、国家/地区、港口、承运人、付款方式、运输方式、平台、报价分类）都读它维护的词表，所以
 `/backend/config/dictionaries` **不隐藏**（`src/modules.ts` 里 `{ id: 'dictionaries', from: '@open-mercato/core' }`，
