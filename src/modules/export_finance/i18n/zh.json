@@ -335,5 +335,10 @@
   "export_finance.overdue.age": "已等待",
   "export_finance.overdue.days": "天",
   "export_finance.overdue.capped": "仅显示最旧的一部分，全部逾期项请到柜档案按逾期列查看。",
-  "export_finance.overdue.loadFailed": "载入失败，请稍后重试。"
+  "export_finance.overdue.loadFailed": "载入失败，请稍后重试。",
+  "export_finance.notifications.collectionOverdue.title": "收款逾期：{title}",
+  "export_finance.notifications.collectionOverdue.body": "已收货 {days} 天，收款仍未到账（状态：{status}）。去逾期清单处理。",
+  "export_finance.notifications.refundOverdue.title": "退税逾期：{title}",
+  "export_finance.notifications.refundOverdue.body": "已收货 {days} 天，退税仍未完成（状态：{status}）。去逾期清单处理。",
+  "export_finance.notifications.action": "查看逾期清单"
 }

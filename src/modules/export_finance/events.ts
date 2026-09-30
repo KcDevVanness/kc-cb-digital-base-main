@@ -20,6 +20,10 @@ const events = [
   { id: 'export_finance.refund-documents.created', label: 'Refund Document Created', entity: 'refund-documents', category: 'crud' },
   { id: 'export_finance.refund-documents.updated', label: 'Refund Document Updated', entity: 'refund-documents', category: 'crud' },
   { id: 'export_finance.refund-documents.deleted', label: 'Refund Document Deleted', entity: 'refund-documents', category: 'crud' },
+  // 逾期提醒 (Phase 4·B): one event per rule, emitted by the `export-finance overdue-reminders`
+  // command right before the notification of the same condition is raised.
+  { id: 'export_finance.reminder.collection_overdue', label: 'Collection Overdue Reminder', entity: 'reminder', category: 'custom' },
+  { id: 'export_finance.reminder.refund_overdue', label: 'Tax Refund Overdue Reminder', entity: 'reminder', category: 'custom' },
 ] as const
 
 export const eventsConfig = createModuleEvents({
