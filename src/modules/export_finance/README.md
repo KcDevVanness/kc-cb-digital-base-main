@@ -110,8 +110,10 @@ yarn jest --config jest.config.cjs src/modules/export_finance
 
 Remove the registry line from `src/modules.ts` (`{ id: 'export_finance', from: '@app' }`) and run
 `yarn generate`: pages, routes, commands, events and ACL entries disappear. The four tables and their
-data stay. Migrations here are forward-only — the generated `Migration*` classes define `up()` only,
-and the toolchain ships `db:generate` / `db:migrate` / `db:greenfield` (there is no `db:migrate:down`),
-so a data rollback means restoring the database, or rebuilding it with `yarn db:greenfield` (which
-drops every public table — a whole-database reset, not a per-module undo). No installed file was
-modified by this module.
+data stay. The toolchain ships `db:generate` / `db:migrate` / `db:greenfield` (there is no
+`db:migrate:down`), so nothing ever runs a `down()` — but the generated classes are not uniform on
+that point: `Migration20260928071448_export_finance.ts` and `Migration20260928073630_export_finance.ts`
+do implement `down()` while the original `Migration20260922082558_export_finance.ts` defines `up()`
+only. Either way a data rollback means restoring the database, or rebuilding it with
+`yarn db:greenfield` (which drops every public table — a whole-database reset, not a per-module undo).
+No installed file was modified by this module.

@@ -48,7 +48,7 @@ function clamp01(value) { … }
 > — they are raw sandbox sources read by the generator via `fs`, never imported.
 > The consuming `tsconfig.json` MUST `exclude` those globs.
 
-本仓的 `tsconfig.json` 少了这个 `exclude`——这是脚手架的缺口，不是使用者写错代码。
+本仓的 `tsconfig.json` **当时**少了这个 `exclude`——这是脚手架的缺口，不是使用者写错代码。**已修复（2026-09-28）**：`tsconfig.json` 第 56–60 行现已带该 `exclude`（`node_modules` + `src/modules/*/agents/**/scripts|tools/**`），本节下面的处置已落地，无需重复诊断。
 
 ## 处置
 
