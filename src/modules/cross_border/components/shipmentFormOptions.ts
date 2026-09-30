@@ -9,6 +9,7 @@ import {
   type SalesTradeType,
 } from '../../internal_sales/lib/tradeType'
 import { readBuyerSnapshot } from '../../internal_sales/lib/buyer'
+import { salesStatusActions } from '../../internal_sales/lib/salesStatus'
 import { loadTradeTypeChannelIds, type TradeTypeChannelMap } from '../../internal_sales/lib/tradeTypeChannels'
 
 /**
@@ -103,11 +104,18 @@ function salesTradeTypeLabel(t: TranslateFn, type: SalesTradeType): string {
  * Two buckets make the list complete: the orders marked with either trade-type channel, plus every
  * order carrying no channel at all (documents written before the marker existed — the backfill
  * classifies them, and until it runs they must stay allocatable).
+ *
+ * A third rule rides on the document's **status** (`lib/salesStatus.ts` in `internal_sales`): a
+ * shipment allocates only orders that reached `confirmed` — a `draft` order has not been agreed
+ * with yet, and a `canceled` one must never be shipped. Orders written before statuses were stamped
+ * carry none: they stay offerable and their option label says so (`unmarkedStatusLabel`), so the
+ * gate never silently deletes existing orders from the picker.
  */
 export async function loadSalesOrderOptions(
   t: TranslateFn,
   errorMessage: string,
   query?: string,
+  options?: { unmarkedStatusLabel?: string },
 ): Promise<CrudFieldOption[]> {
   const term = query?.trim() ?? ''
   const channelIds = await loadTradeTypeChannelIds('order', errorMessage)
@@ -125,11 +133,43 @@ export async function loadSalesOrderOptions(
         channelIdsEmpty: 'true',
       }),
     ])
-    return toSalesOrderOptions(t, [...(marked.items ?? []), ...(unmarked.items ?? [])], channelIds)
+    return toSalesOrderOptions(
+      t,
+      [...(marked.items ?? []), ...(unmarked.items ?? [])],
+      channelIds,
+      options?.unmarkedStatusLabel ?? '',
+    )
   } catch {
     // A caller-localized message beats the transport error for an operator staring at a search box.
     throw new Error(errorMessage)
   }
+}
+
+/**
+ * One sales order's display label by id — the **resolver** path.
+ *
+ * Deliberately outside `loadSalesOrderOptions`: resolving the label of an order that is already
+ * allocated to this shipment is display, not selection, and the allocation gate (status) must not
+ * turn such a row into a bare uuid — an order allocated while confirmed may be canceled later and
+ * still has to render. `null` when the order is not readable (the caller falls back to the id).
+ */
+export async function loadSalesOrderLabel(orderId: string): Promise<string | null> {
+  try {
+    const payload = await fetchCrudList<Record<string, unknown>>(SALES_ORDERS_API_PATH, { id: orderId, pageSize: 1 })
+    const item = payload.items?.[0]
+    if (!item) return null
+    const number = readOptionText(item, 'orderNumber', 'order_number') || orderId.slice(0, 8)
+    const customer = readOptionText(item, 'customerName', 'customer_name')
+    return customer ? `${number} — ${customer}` : number
+  } catch {
+    return null
+  }
+}
+
+/** The document's status as the list projects it: a dictionary value, or `null` when never stamped. */
+function readOrderStatus(item: Record<string, unknown>): string | null {
+  const raw = item.status
+  return typeof raw === 'string' && raw.length > 0 ? raw : null
 }
 
 /**
@@ -147,19 +187,26 @@ function toSalesOrderOptions(
   t: TranslateFn,
   items: Array<Record<string, unknown>>,
   channelIds: TradeTypeChannelMap,
+  unmarkedStatusLabel: string,
 ): CrudFieldOption[] {
   const seen = new Set<string>()
   const options: CrudFieldOption[] = []
   for (const item of items) {
     const value = String(item.id ?? '')
     if (!value || seen.has(value)) continue
+    const status = readOrderStatus(item)
+    // The status gate: only orders that reached confirmation may be shipped (both directions).
+    if (!salesStatusActions('order', status).canAllocateToShipment) continue
     seen.add(value)
     const number = readOptionText(item, 'orderNumber', 'order_number') || value.slice(0, 8)
     const customer = readOptionText(item, 'customerName', 'customer_name')
       || readBuyerSnapshot(item.customerSnapshot ?? item.customer_snapshot).name
     const label = customer ? `${number} — ${customer}` : number
     const tradeType = resolveRowTradeType(item, channelIds)
-    options.push({ value, label: tradeType ? `${salesTradeTypeLabel(t, tradeType)} · ${label}` : label })
+    // A document that predates the status stamp is offered, but says so — the operator decides.
+    const statusHint = status === null && unmarkedStatusLabel ? ` (${unmarkedStatusLabel})` : ''
+    const directed = tradeType ? `${salesTradeTypeLabel(t, tradeType)} · ${label}` : label
+    options.push({ value, label: `${directed}${statusHint}` })
   }
   return options
 }

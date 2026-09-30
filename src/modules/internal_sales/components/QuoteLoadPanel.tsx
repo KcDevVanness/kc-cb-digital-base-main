@@ -61,9 +61,10 @@ import type { TradeTypeChannelMap } from '../lib/tradeTypeChannels'
 import type { InternalSalesFormValues, SourceQuoteRef } from '../lib/documentValues'
 import { SALES_STATUS_DICTIONARY_KEY } from '../lib/salesStatus'
 import {
-  applyQuoteDraftToForm,
+  applyQuoteDraft,
   hasOperatorInput,
   loadQuoteDraft,
+  quoteDraftOrderable,
   loadQuoteOptions,
   resolveQuoteLabel,
   sourceQuotePreviewFromDraft,
@@ -175,7 +176,14 @@ export default function QuoteLoadPanel({
       setBusy(true)
       setInlineError(null)
       try {
-        const { number, lineCount } = await applyQuoteDraftToForm(id, setValue)
+        // The same gate the list's row actions apply: a quote that was never sent (or was canceled)
+        // must not become an order through the loader either.
+        const draft = await loadQuoteDraft(id)
+        if (!quoteDraftOrderable(draft)) {
+          setInlineError(t('internal_sales.form.quoteLoad.notOrderable', 'This quote has not been sent yet, or was canceled — it cannot be ordered.'))
+          return
+        }
+        const { number, lineCount } = applyQuoteDraft(draft, setValue)
         flash(
           t('internal_sales.form.quoteLoad.done', 'Loaded from quote {number}', {
             number: number || id.slice(0, 8),

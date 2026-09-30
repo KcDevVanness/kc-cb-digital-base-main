@@ -138,6 +138,45 @@ describe('loadSalesOrderOptions', () => {
     expect(options).toEqual([{ value: 'order-1', label: 'SO-1 — ACME' }])
   })
 
+  it('offers only confirmed orders and says so on the ones without a status', async () => {
+    jest.mocked(loadTradeTypeChannelIds).mockResolvedValue({ internal: 'channel-internal', external: null })
+    jest.mocked(fetchCrudList).mockImplementation(async (_path: unknown, params?: unknown) => {
+      const query = (params ?? {}) as Record<string, unknown>
+      if (query.channelIdsEmpty === 'true') {
+        return {
+          items: [{
+            id: 'legacy',
+            orderNumber: 'SO-LEGACY',
+            customerName: 'Branch',
+            customerSnapshot: { internalSales: { organizationId: 'org-1' } },
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        } as never
+      }
+      return {
+        items: [
+          { id: 'draft-order', orderNumber: 'SO-DRAFT', customerName: 'A', channelId: 'channel-internal', status: 'draft' },
+          { id: 'confirmed-order', orderNumber: 'SO-CONF', customerName: 'B', channelId: 'channel-internal', status: 'confirmed' },
+          { id: 'canceled-order', orderNumber: 'SO-CANCEL', customerName: 'C', channelId: 'channel-internal', status: 'canceled' },
+        ],
+        total: 3,
+        page: 1,
+        pageSize: 50,
+      } as never
+    })
+
+    const options = await loadSalesOrderOptions(t, ERROR_MESSAGE, '', { unmarkedStatusLabel: 'status not marked' })
+
+    // An unconfirmed or canceled order must never reach a shipment; a legacy order is offered, but says so.
+    expect(options.map((option) => option.value)).toEqual(['confirmed-order', 'legacy'])
+    expect(options.map((option) => option.label)).toEqual([
+      'cross_border.shipments.salesAllocations.tradeType.internal · SO-CONF — B',
+      'cross_border.shipments.salesAllocations.tradeType.internal · SO-LEGACY — Branch (status not marked)',
+    ])
+  })
+
   it('surfaces the caller message when the read fails', async () => {
     jest.mocked(loadTradeTypeChannelIds).mockResolvedValue({ internal: 'channel-internal', external: null })
     jest.mocked(fetchCrudList).mockRejectedValue(new Error('transport') as never)

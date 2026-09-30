@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 57 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 58 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -85,3 +85,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [An installed sales single-document read returns metadata only for `id`, never for `ids`](lessons/sales-single-doc-read-id-vs-ids-projection.md) — area:framework-context,module-data,backend-ui; module:internal_sales,sales; topic:sales-documents,list-projection,metadata,single-document-read,read-after-write,field-vs-projection
 - [A picker whose value comes from a record needs resolveLabel, not the component's fallback](lessons/preselected-picker-value-needs-a-label-resolver.md) — area:backend-ui,debugging,framework-context; module:platform,internal_sales,products; topic:combobox-input,preselected-value,resolve-label,strict-mode,effect-cancellation,raw-uuid
 - [Dev UI only hydrates on an allowed dev origin; a fallback port browsed as 127.0.0.1 serves 403 chunks](lessons/dev-origin-must-match-allowed-dev-origins.md) — area:backend-ui,testing,debugging; module:platform; topic:dev-server,allowed-dev-origins,hydration,playwright,verification,beforeall-timeout
+- [A dictionary-backed status is written by entry id, never by value — and its labels are tenant data](lessons/dictionary-status-writes-need-entry-ids.md) — area:module-data,backend-ui; module:internal_sales,cross_border; topic:dictionary,status-lifecycle,engine-contract,event-emission,i18n-labels

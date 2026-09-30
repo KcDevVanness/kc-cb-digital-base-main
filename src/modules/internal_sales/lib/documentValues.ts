@@ -54,12 +54,21 @@ export type InternalSalesFormValues = {
    */
   buyerRef: string
   customerName: string
+  /**
+   * The buyer's email address, frozen into the snapshot (`contact.email`) — the installed
+   * `POST /api/sales/quotes/send` reads it first when sending a quote to the buyer.
+   */
+  buyerEmail: string
   currencyCode: string
   customerReference: string
   comments: string
   lines: InternalSalesLineValues[]
   /** Set when this order was loaded from an existing quote; `null`/absent when it was not. */
   sourceQuote?: SourceQuoteRef | null
+  /** The document's status as the engine reports it (`sales.order_status` value, may be null). */
+  status?: string | null
+  /** Quote only: the deadline written by `quotes/send` (ISO string, `null` when never sent). */
+  validUntil?: string | null
   updatedAt?: string | null
 }
 
@@ -80,6 +89,7 @@ export const EMPTY_VALUES: InternalSalesFormValues = {
   tradeType: 'internal',
   buyerRef: '',
   customerName: '',
+  buyerEmail: '',
   currencyCode: '',
   customerReference: '',
   comments: '',
@@ -156,6 +166,7 @@ export function toInternalSalesFormValues(
     tradeType: resolveRowTradeType(item, channelIds) ?? fallbackTradeType,
     buyerRef: buyer.ref,
     customerName: buyer.name,
+    buyerEmail: buyer.email,
     currencyCode: readText(item, 'currencyCode', 'currency_code'),
     customerReference: readText(item, 'customerReference', 'customer_reference'),
     // The document read answers with `comment` (singular — the sales factory's serializer), while
@@ -163,6 +174,10 @@ export function toInternalSalesFormValues(
     comments: readText(item, 'comments', 'comment'),
     lines: lines.length > 0 ? lines : [{ ...EMPTY_LINE }],
     sourceQuote: readSourceQuote(item.metadata),
+    status: typeof item.status === 'string' && item.status.length > 0 ? item.status : null,
+    validUntil: typeof (item.validUntil ?? item.valid_until) === 'string'
+      ? (item.validUntil ?? item.valid_until) as string
+      : null,
     updatedAt: typeof updatedAt === 'string' ? updatedAt : null,
   }
 }

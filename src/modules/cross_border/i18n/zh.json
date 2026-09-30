@@ -106,6 +106,7 @@
   "cross_border.shipments.salesAllocations.salesOrder": "销售订单",
   "cross_border.shipments.salesAllocations.tradeType.internal": "对内",
   "cross_border.shipments.salesAllocations.tradeType.external": "对外",
+  "cross_border.shipments.salesAllocations.unmarkedStatus": "未标记状态",
   "cross_border.shipments.salesAllocations.line": "行号",
   "cross_border.shipments.salesAllocations.product": "商品",
   "cross_border.shipments.salesAllocations.ordered": "订购量",

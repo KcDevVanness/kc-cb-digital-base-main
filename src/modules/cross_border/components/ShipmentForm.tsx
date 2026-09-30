@@ -43,6 +43,7 @@ import {
   loadContractOptions,
   loadPortOptions,
   loadSalesOrderLineOptions,
+  loadSalesOrderLabel,
   loadSalesOrderOptions,
   type ContractLineOption,
   type SalesOrderLineOption,
@@ -443,9 +444,11 @@ export async function resolveOrderOptionLabel(
   const cached = (cachedLabel ?? '').trim()
   if (cached && cached !== orderId) return cached
   try {
-    const options = kind === 'purchase'
-      ? await loadAllocatablePurchaseOrderOptions(errorMessage, '')
-      : await loadSalesOrderOptions(t, errorMessage, '')
+    if (kind === 'sales') {
+      // Display only: the allocation gate must not hide an order that is already on the shipment.
+      return await loadSalesOrderLabel(orderId) ?? orderId
+    }
+    const options = await loadAllocatablePurchaseOrderOptions(errorMessage, '')
     return options.find((option) => option.value === orderId)?.label ?? orderId
   } catch {
     return orderId
@@ -1523,6 +1526,8 @@ function ShipmentSalesAllocationEditor({
       t,
       t('cross_border.shipments.salesAllocations.loadLinesFailed'),
       query,
+      // A document written before statuses existed is still allocatable; its label says so.
+      { unmarkedStatusLabel: t('cross_border.shipments.salesAllocations.unmarkedStatus', 'status not marked') },
     )
     orderOptionsRef.current = next
     return next
