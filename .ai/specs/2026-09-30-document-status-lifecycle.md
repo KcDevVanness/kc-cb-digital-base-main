@@ -345,6 +345,24 @@
 - **通知订阅（`scheduler` + `notifications`）**：机制现成（本仓已有提醒/调度事实页），缺的是**谁在什么阈值上
   收什么通知**的口径；与逾期清单同批定稿再订阅。
 
+#### Phase 4·B — 逾期提醒（口径草案，待确认；无 DDL）
+
+- **目标**：逾期清单已经存在，但**要人主动去看**。这一块把「出现逾期」变成一次主动告知：及时、不重复、可关闭。
+- **推荐默认（逐条可改，改哪条说哪条）**
+  - **谁收**：① 该单据的**负责人**（订单行/柜的快照里已有的 owner；解析不到就只发 ②）+ ② **财务组**
+    （现有 `export_finance.orders.view` / `cabinets.view` 的持有者）。两者都已经和这张单有关，**不新建角色、不做订阅名单 UI**。
+  - **阈值**：**沿用 Phase 2·C 的 45 天，不新增阈值、不做每组织可调**（可调阈值要列 + 配置面，属另一件事）。
+  - **时机与幂等**：每日一次（工作时段首次）跑一遍两个清单接口的 `overdue=true`；**只在某行「当天首次进入逾期」时发一次**——
+    幂等键 = 资源（订单/柜）+ 逾期起始日，查 `notifications` 里是否已有同键记录即可，**不需要新表**。清单上同步显示「已提醒」，
+    避免「到底通知过没有」靠猜。
+  - **渠道**：站内通知（`notifications`，`clientBroadcast`）+ 邮件（组织已配置发信时）；**默认关闭，按组织开启**。
+  - **频率上限**：站内逐条；邮件每组织**每日一封摘要**（多条合并），避免一天几十封。
+  - **内容**：单号 + 关联方 + 已等待天数 + 一键直达（清单锚点或单据详情）。
+- **实现要点（全部现成机制）**：调度走 `scheduler`；发送走 `notifications`；幂等靠既有通知记录的查询，不建表、不加列。
+- **开放问题（Q-011）**：谁收（负责人 / 财务组 / 两者 / 自定义名单）；是否允许每组织调阈值；邮件是否默认开。
+  **这三问答复前不动代码**——提醒发错人是可见的骚扰，比不发更糟。
+- **不做**：短信 / 企业微信等外部渠道（未接入）；订阅名单管理 UI；把阈值做成配置项。
+
 ## Requirement Traceability
 
 | REQ | Journey | 实现 | Phase | Test | AC |
@@ -411,6 +429,7 @@
 | 2026-09-30 | **Phase 1 定稿并进入实现**（owner「按照这个流程先实作」）：Q-001…Q-007 按推荐默认落定；补齐 Domain Vocabulary / Journeys / UI / API / Tests / Traceability / Acceptance；Phase 2–4 仍为草案 |
 | 2026-09-30 | **Phase 1 实现完成**（`feat/sales-status-lifecycle`）：新建写 `draft`（字典条目 id）、报价发出（`quotes/send` + 有效期 + 买方邮箱字段与 parties 预填）/作废、订单确认/作废、列表状态徽章 + 「有效至」+ 过期高亮、下单门禁、发运分摊只列 confirmed（历史 NULL 标注）、对外订单补「（PO）」、行数列改名「明细行数」；单测 3 套新增/更新，真机 5 条链路验证，AC-001…AC-008 全部通过 |
 | 2026-09-30 | **Phase 2·C 实现完成**（`feat/export-finance-status-coherence`）：收款/退税记录的**状态与事实**在写入时校验（`lib/statusCoherence.ts`，422 逐条回报；历史行不动）；两个档案页新增**派生**的逾期标记（柜「退税逾期」/ 订单「收款逾期」，阈值常量 45 天、边界不含、缺失日期不标），进列表列与 CSV。证据：单元两套 + 真机 API（三种非法组合 422、finance 口径回读 `collectionOverdue`、CSV 表头含「退税逾期」）。开放问题记入 Q-008（是否把「柜未收货不得登记收款」做成硬门禁——收款按采购单记，一单可跨多柜）。 |
+| 2026-09-30 | **Phase 4·B 逾期提醒口径草案（仅文档，待确认）**：以「每日一次扫描 `overdue=true`、某行当天首次进入逾期才发、幂等键=资源+逾期起始日（查既有 `notifications` 记录，不建表）」为核心；收件人推荐「单据负责人 + 财务组（现有 view 持有者）」、阈值沿用 45 天不加配置、渠道站内 + 邮件且**默认关闭按组织开启**、邮件每日合并一封。开放问题 **Q-011**（收件人 / 阈值可调性 / 邮件默认开关）答复前不动代码。 |
 | 2026-09-30 | **Phase 4「转化率/停留时长」实测后改道（仅文档）**：查 dev 库 `action_logs`（1 417 行，2026-09-24 起）——时间线明文且已索引、`sales.quote`/`sales.order` 的状态写入确实落日志（`changed_fields = ['status','statusEntryId']`），**但取值列（`command_payload` / `changes_json` / `snapshot_after`）是 at-rest 加密的 `…:v1` 密文**，SQL 侧无法判定某行日志代表哪个状态。因此停留时长/转化率**不建在审计载荷上**，改为随迁移批次给单据加 `status_changed_at`（至少 `sales_quotes`/`sales_orders`），此后纯读侧聚合即可；该列并入「结算单确认/付款 + 费用付款日期 + 2·B 的 `export_documents.status`」同一批迁移，一次批准。 |
 | 2026-09-30 | **Phase 4·A 实现完成**（`feat/export-finance-overdue-worklist`）：`/backend/export-finance/overdue` 上线 —— 两段清单（柜退税逾期 / 订单收款逾期）各读 `?overdue=true`，**谓词直接落在行自己派生的 `refundOverdue`/`collectionOverdue` 上**（`containerFileProjection.ts` / `orderFileProjection.ts` 的 filtered 段），因此列表、`total`、CSV 必然同口径；参数用 `parseBooleanToken`（`"false"` 不会变真），任何非真值=不过滤。**真机证据**：夹具柜（收货 60 天前）进清单、控制柜（10 天前）不进（`all=2 / overdue=1 / CSV 1 行`）；夹具订单（`received` + 收货 60 天前）使订单段 `overdue=1`（订单总数 10）；页面两段各 1 行（`已等待 60 天`，状态取自 `export_finance.refund.status.*` / `collection.status.*` 字典）；删夹具后两段空态正确。**落地时修正定稿里的一处误判**：过滤不在 SQL 层——两个投影本来就把全部行装配完、再按 TS 谓词过滤、最后分页（`total = filtered.length`），所以复用行上的派生标记就是同口径实现，不需要重复 SQL 谓词。 |
 | 2026-09-30 | **Phase 4·A 逾期清单定稿（仅文档，待实现）**：把「逾期清单」从一行愿望写成可实现的单元——表面 `/backend/export-finance/overdue`、服务端 `overdue=true` 过滤（跨表谓词，禁止对已分页结果做事后过滤）、SQL/计数/CSV 三处同口径且阈值只从 `fileRules.ts` 取、边界由 TEST-401 锁死；明确**不引入第二阈值、不做可配置**。 |
