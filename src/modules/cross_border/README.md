@@ -8,15 +8,17 @@ app 自有模块。把多张采购单**拼柜**成一张发运单，跟踪在途
 | 层 | 内容 |
 |---|---|
 | 实体（`data/entities.ts`） | `CrossBorderShipment` / `CrossBorderShipmentAllocation` / `CrossBorderShipmentMilestone` / `CrossBorderExportDocument` → 表 `cross_border_shipments` / `cross_border_shipment_allocations` / `cross_border_shipment_milestones` / `cross_border_export_documents`；**2026-09-28（Phase 2）** 新增 `CrossBorderShipmentSalesAllocation` → `cross_border_shipment_sales_allocations`（发运单 ↔ 销售订单（对内 / 对外两个贸易类型，2026-09-30 起）**分摊到行**：`sales_order_id`/`sales_order_line_id`/`sales_order_number` 快照、`catalog_product_id`、`product_snapshot`、`quantity`、`unit_price`/`currency_code` 快照；唯一键 `(shipment_id, sales_order_line_id)`）；**2026-09-29（合同关联）** 新增 `CrossBorderShipmentContract` → `cross_border_shipment_contracts`（发运单 ↔ 购销合同 **M:N**：`contract_id` 标量 + `contract_number`/`contract_direction` 冻结快照；唯一键 `(shipment_id, contract_id)`、按 `(org, tenant, contract_id)` 建索引供合同侧反查）与 `CrossBorderExportDocumentLine` → `cross_border_export_document_lines`（装箱单明细：`line_number` + 商品快照 + 数量/箱数/毛重/净重/体积/备注，唯一键 `(document_id, line_number)`） |
-| API | `GET|POST|PUT|DELETE /api/cross_border/shipments`、`/shipments/documents`；`GET /shipments/allocations`（只读：分摊只经发运单 create/update 写入，超发校验在那里）；`GET /shipments/sales-allocations?shipmentId=`（只读，同样只经发运单命令写入）；`GET|POST /shipments/milestones`（POST = 前进里程碑）；动作路由 `POST /shipments/{depart,receive,cancel}`（同路径的 GET 列表只为 CRUD 工厂解析作用域，不是 UI 契约）；**新增（2026-09-29）** `GET /shipments/contracts?shipmentId=|contractId=`（只读：关联只经发运单命令写入）与 `GET /shipments/documents/lines?documentId=`（只读：明细只经单证命令写入）；列表新增 `?contractId=` 过滤（发运单按关联表、单证按关联发运单） |
-| 命令 | `cross_border.shipments.{create,update,delete,depart,receive,cancel,advance-milestone}`、`cross_border.documents.{create,update,delete}`（`salesAllocations`/`allocations` 与 **`contracts[]`** 都是**整体替换**语义；`documents` 的载荷新增可选 **`lines[]`**，同样整体替换，仅 `packing_list` 允许；销售行必须能经商品主数据的 `catalog_product_id` 桥接到官方目录，否则 422） |
+| API | `GET|POST|PUT|DELETE /api/cross_border/shipments`、`/shipments/documents`；`GET /shipments/allocations`（只读：分摊只经发运单 create/update 写入，超发校验在那里）；`GET /shipments/sales-allocations?shipmentId=`（只读，同样只经发运单命令写入）；`GET|POST /shipments/milestones`（POST = 前进里程碑）；动作路由 `POST /shipments/{depart,receive,close,cancel}`（同路径的 GET 列表只为 CRUD 工厂解析作用域，不是 UI 契约）；**新增（2026-09-29）** `GET /shipments/contracts?shipmentId=|contractId=`（只读：关联只经发运单命令写入）与 `GET /shipments/documents/lines?documentId=`（只读：明细只经单证命令写入）；列表新增 `?contractId=` 过滤（发运单按关联表、单证按关联发运单） |
+| 命令 | `cross_border.shipments.{create,update,delete,depart,receive,close,cancel,advance-milestone}`、`cross_border.documents.{create,update,delete}`（`salesAllocations`/`allocations` 与 **`contracts[]`** 都是**整体替换**语义；`documents` 的载荷新增可选 **`lines[]`**，同样整体替换，仅 `packing_list` 允许；销售行必须能经商品主数据的 `catalog_product_id` 桥接到官方目录，否则 422） |
 | 后台页面 | `/backend/cross_border/shipments`（列表/新建/详情：**关联合同**、采购分摊、**销售分摊**、节点时间线、单证）；**`/backend/cross_border/packing-lists`（装箱单（PL）台账，2026-09-29）** 跨发运单列出全部 `packing_list` 单证（单号/发运单/签发日/文件/备注），另有 **`/…/packing-lists/{create,[id],[id]/edit}` 三个页面**（2026-09-29 起：登记/详情/编辑，明细行编辑器 + 「从合同引用商品行」；原登记对话框已退役）；发运单表单的「关联合同」行编辑器与详情区块（`components/{ShipmentForm,ShipmentDetail}.tsx`），**两个分摊编辑器与装箱单明细编辑器都带「从合同引用商品」**（`components/{ShipmentForm,PackingListForm}.tsx`） |
 | 读缝（跨模块） | `lib/shipmentSalesReads.ts`：`readShipmentSalesAllocations` / `readShipmentPurchaseAllocations` / `loadSalesOrderLines`（其他模块读分摊只走这里，不直接碰本模块实体）；`lib/contractReads.ts`：`loadContractRefs`（写入前解析合同号/方向快照）与 `loadShipmentIdsForContract`（`?contractId=` 过滤） |
-| 事件 | `cross_border.shipment.{created,updated,departed,received,cancelled,deleted,milestone_recorded}`、`cross_border.export_document.{created,updated,deleted}` |
+| 事件 | `cross_border.shipment.{created,updated,departed,received,closed,cancelled,deleted,milestone_recorded}`、`cross_border.export_document.{created,updated,deleted}` |
 | 权限 | `cross_border.shipments.view|manage`、`cross_border.shipments.receive`、`cross_border.documents.manage` |
 | 迁移 | `migrations/Migration20260921092726_cross_border.ts`（发运单 / 分摊 / 里程碑 / 出口单证四表）、`Migration20260922082558_cross_border.ts`（发运单头 `container_type` / `container_number` / `seal_number` / `booking_number`）、`Migration20260928030727_cross_border.ts`（销售分摊表 `cross_border_shipment_sales_allocations` + 作用域索引 + 唯一键 `(shipment_id, sales_order_line_id)`）、`Migration20260928073630_cross_border.ts`（销售分摊 `unit_price` 收窄为 `numeric(18,4)`）、`Migration20260929073318_cross_border.ts`（合同关联表 + 装箱单明细表，只增） |
 
 ## 规则（有意为之）
+
+- **状态机只有一个权威（2026-09-30）**：`lib/shipmentStatus.ts` 的 `SHIPMENT_TRANSITIONS` 定义 `draft → in_transit → received → closed`，旁路 `draft|in_transit → cancelled`，`closed`/`cancelled` 是终态；depart / receive / close / cancel 四个命令的守卫与详情页的动作按钮都读它（此前「只有草稿可发运」之类规则散在各命令的 `if` 里，加一个状态要改四处）。**归档（`closed`）表示单证与结算已完成**：`received` 之后唯一的动作，归档后不可编辑、不可取消、不可记录里程碑，发 `cross_border.shipment.closed` 事件供订阅者收口（结算/通知）。加状态不需要迁移：`status` 是文本列，`closed` 只是新值；`closedAt` 时间戳留待后续迁移（变更审计已记录时间与操作者）。
 
 - **分摊不可超发**：`allocations` 累计数量不得超过采购单行的订购数量，超出返回 **422**；同一采购单**行**重复分摊同样拒绝（载荷内重复，或该发运单已占用该行，唯一约束 `(shipment_id, purchase_order_line_id)`）。
 - **合同关联是 M:N 且只读快照（2026-09-29）**：一张柜可挂多张购销合同（拼柜混货），一张合同也可被多张发运单引用；写入只经 `cross_border.shipments.create/update` 的 `contracts[]`（整体替换，缺省=不动、`[]`=清空），服务端用 `lib/contractReads.ts` 的 scoped 读解析合同号与方向并**冻结在关联行**（合同改名/换向不回写），**已作废（cancelled）合同拒绝关联（422）**，跨组织合同 404/422；关联只允许在**草稿**发运单上改（`update` 本身的规则），详情页因此只在 draft 状态给出「编辑关联」。
@@ -43,6 +45,16 @@ app 自有模块。把多张采购单**拼柜**成一张发运单，跟踪在途
 - **单证可预览（2026-09-24）**：单证列的「预览」与单证表单字段的「预览」走 app 级共享查看器（`src/lib/attachments/AttachmentPreview.tsx`）：图片对话框内等比显示，PDF 由 Mozilla PDF.js（`pdfjs-dist`，已声明依赖）渲染到 canvas（`src/lib/attachments/PdfPreview.tsx`，不改平台 inline 策略、不新增路由与权限），其它类型给出说明并保留「下载」。
 
 ## 验证
+
+发运单归档（Phase 2·A，2026-09-30）：
+
+```bash
+JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral shipment-close
+#  __integration__/shipment-close.spec.ts：received → close 回读 closed；draft / in_transit 直接 close → 422 且状态不变；
+#  closed 后再 cancel → 422、状态仍 closed（自建临时库，afterAll 清理；received/closed 的单据按命令规则无法经 API 删除，
+#  留在一次性库里随库销毁）。
+npx jest src/modules/cross_border/lib/__tests__/shipmentStatus.test.ts   # 迁移矩阵 / 终态 / 筛选顺序
+```
 
 ```bash
 yarn generate && yarn typecheck

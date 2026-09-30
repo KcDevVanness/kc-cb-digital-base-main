@@ -67,6 +67,7 @@ const SHIPMENT_STATUS_VARIANTS: StatusMap<ShipmentStatus> = {
   draft: 'neutral',
   in_transit: 'info',
   received: 'success',
+  closed: 'neutral',
   cancelled: 'error',
 }
 
