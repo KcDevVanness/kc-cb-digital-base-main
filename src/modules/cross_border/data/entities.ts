@@ -286,6 +286,16 @@ export class CrossBorderExportDocument {
   @Property({ name: 'issued_at', type: 'date', nullable: true })
   issuedAt?: Date | null
 
+  /**
+   * 签发状态 (Phase 2·B): `draft` / `issued` / `void`.
+   *
+   * Nullable on purpose: documents that existed before the column are **unknown**, not drafts, and the
+   * gate that reads it (未签发的 PI 不能作收款依据) lets them through with a hint instead of inventing a
+   * state for them.
+   */
+  @Property({ type: 'text', nullable: true })
+  status?: string | null
+
   @Property({ name: 'attachment_id', type: 'uuid', nullable: true })
   attachmentId?: string | null
 
