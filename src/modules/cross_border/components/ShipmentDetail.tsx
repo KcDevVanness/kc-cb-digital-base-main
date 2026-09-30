@@ -14,6 +14,7 @@ import {
 import { ErrorMessage, LoadingMessage, RecordNotFoundState } from '@open-mercato/ui/backend/detail'
 import { SectionHeader } from '@open-mercato/ui/backend/SectionHeader'
 import { RowActions } from '@open-mercato/ui/backend/RowActions'
+import { isTerminalShipmentStatus } from '../lib/shipmentStatus'
 import { FormHeader } from '@open-mercato/ui/backend/forms'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
@@ -659,10 +660,13 @@ function ShipmentDocumentsSection({
   shipmentId,
   documents,
   onChanged,
+  locked,
 }: {
   shipmentId: string
   documents: ShipmentDocumentRecord[]
   onChanged: () => Promise<void>
+  /** A closed/cancelled shipment is filed: the command refuses document writes, so the UI must too. */
+  locked: boolean
 }) {
   const t = useT()
   const locale = useLocale()
@@ -851,7 +855,7 @@ function ShipmentDocumentsSection({
         <SectionHeader
           title={t('cross_border.shipments.documents.title')}
           count={documents.length}
-          action={(
+          action={locked ? undefined : (
             <Button type="button" variant="outline" onClick={() => setDialogOpen(true)}>
               <Plus className="size-4" aria-hidden="true" />
               {t('cross_border.shipments.actions.addDocument')}
@@ -870,7 +874,7 @@ function ShipmentDocumentsSection({
               title={t('cross_border.shipments.documents.empty')}
             />
           )}
-          rowActions={(row) => (
+          rowActions={locked ? undefined : (row) => (
             <RowActions
               items={[
                 {
@@ -1270,6 +1274,7 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
         shipmentId={shipment.id}
         documents={documents}
         onChanged={load}
+        locked={isTerminalShipmentStatus(shipment.status)}
       />
 
       <Dialog open={receiveDialogOpen} onOpenChange={setReceiveDialogOpen}>

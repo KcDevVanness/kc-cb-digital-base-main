@@ -76,9 +76,9 @@ const LOCATIONS_API_URL = '/api/wms/locations'
 const OPTION_PAGE_SIZE = 50
 const OPTION_ID_PAGE_SIZE = 1
 
-/** Statuses the list filter offers, in the order the state machine walks them. */
-export const SHIPMENT_STATUSES = ['draft', 'in_transit', 'received', 'closed', 'cancelled'] as const
-export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number]
+/** Statuses the list filter offers — the API's own enum, never a second literal. */
+import { SHIPMENT_STATUS_FILTER_ORDER as SHIPMENT_STATUSES, type ShipmentStatus } from '../lib/shipmentStatus'
+export { SHIPMENT_STATUSES, type ShipmentStatus }
 
 const SHIPMENT_STATUS_MAP: StatusMap<ShipmentStatus> = {
   draft: 'neutral',

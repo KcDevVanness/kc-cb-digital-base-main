@@ -1,5 +1,7 @@
 import { SHIPMENT_STATUSES, type ShipmentStatus } from '../data/validators'
 
+export { SHIPMENT_STATUSES, type ShipmentStatus }
+
 /**
  * The shipment state machine — one authority for "which status may follow which".
  *
@@ -21,7 +23,9 @@ export const SHIPMENT_TRANSITIONS: Record<ShipmentStatus, readonly ShipmentStatu
 
 /** Whether `to` may follow `from`. Unknown pairs (including a no-op) are never allowed. */
 export function canTransitionShipment(from: ShipmentStatus, to: ShipmentStatus): boolean {
-  return SHIPMENT_TRANSITIONS[from].includes(to)
+  // `from` arrives from a text column (and from the API), so an out-of-enum value must fail closed
+  // with a 422 from the caller's guard — never throw a TypeError out of the command.
+  return (SHIPMENT_TRANSITIONS[from] ?? []).includes(to)
 }
 
 /** Terminal statuses: no action may move a shipment out of them. */
@@ -31,6 +35,7 @@ export function isTerminalShipmentStatus(status: ShipmentStatus): boolean {
 
 /**
  * The order the list filter offers the statuses in: the physical stages, then the two ways out.
- * Kept next to the transition table so a new status cannot land in one and miss the other.
+ * Re-exported from the API's own enum, which stays the single source — the UI filter and the
+ * component's badge/label maps read this instead of keeping a second literal.
  */
 export const SHIPMENT_STATUS_FILTER_ORDER: readonly ShipmentStatus[] = SHIPMENT_STATUSES
