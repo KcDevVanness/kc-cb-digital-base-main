@@ -74,6 +74,7 @@ const SALES_QUOTES_API_PATH = 'sales/quotes'
 const PURCHASE_ORDERS_API_PATH = 'purchasing/purchase-orders'
 const SHIPMENTS_API_PATH = 'cross_border/shipments'
 const DOCUMENTS_API_PATH = 'trade_docs/documents'
+const OUR_PARTIES_PROFILES_API_PATH = 'our_parties/profiles'
 
 export function readText(source: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
@@ -487,6 +488,58 @@ export async function loadCounterpartyDetail(
     id: scopedId,
     name: readText(item, 'name'),
     address: readText(item, 'address'),
+    contact: readText(item, 'contactName', 'contact_name') || readText(item, 'email'),
+    bankAccounts: toCounterpartyBankAccounts(item.bankAccounts),
+  }
+}
+
+/**
+ * The print profile of one of our own companies (the 我方主体 block), read from the app-owned
+ * `our_parties` master: the profile row is keyed by organization, and its bank block lives in a
+ * child collection the list route does not project — so existence and the aggregate are two reads.
+ *
+ * `null` means "this company has no profile yet" (or the caller may not read it): the picker then
+ * fills the organization's name only and leaves the rest editable, which is the behaviour a
+ * pre-profile contract always had.
+ */
+export type OurPartyProfileDetail = {
+  id: string
+  organizationId: string
+  address: string
+  contact: string
+  bankAccounts: PartyDetail['bankAccounts']
+}
+
+export async function loadOurPartyProfile(
+  errorMessage: string,
+  organizationId: string,
+): Promise<OurPartyProfileDetail | null> {
+  const scopedOrganizationId = organizationId.trim()
+  if (!scopedOrganizationId) return null
+  const list = await readApiResultOrThrow<{ items?: Array<{ id?: string; organizationId?: string }> }>(
+    `/api/${OUR_PARTIES_PROFILES_API_PATH}?organizationId=${encodeURIComponent(scopedOrganizationId)}&pageSize=1`,
+    undefined,
+    { errorMessage },
+  )
+  const profileId = String(list.items?.[0]?.id ?? '')
+  if (!profileId) return null
+  const payload = await readApiResultOrThrow<{ item?: Record<string, unknown> }>(
+    `/api/${OUR_PARTIES_PROFILES_API_PATH}/${encodeURIComponent(profileId)}`,
+    undefined,
+    { errorMessage },
+  )
+  const item = payload.item
+  if (!item) return null
+  const address = [
+    readText(item, 'addressLine1', 'address_line1'),
+    readText(item, 'addressLine2', 'address_line2'),
+    readText(item, 'city'),
+    readText(item, 'countryCode', 'country_code'),
+  ].filter((part) => part.length > 0).join(', ')
+  return {
+    id: profileId,
+    organizationId: scopedOrganizationId,
+    address,
     contact: readText(item, 'contactName', 'contact_name') || readText(item, 'email'),
     bankAccounts: toCounterpartyBankAccounts(item.bankAccounts),
   }

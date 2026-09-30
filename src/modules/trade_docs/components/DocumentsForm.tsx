@@ -250,7 +250,7 @@ export function toDocumentFormValues(
     counterpartyAddress: snapshotText(counterpartySnapshot, 'address'),
     counterpartyContact: snapshotText(counterpartySnapshot, 'contact'),
     counterpartyBank: snapshotText(counterpartySnapshot, 'bank'),
-    ourPartyId: snapshotText(ourPartySnapshot, 'partyId'),
+    ourPartyId: snapshotText(ourPartySnapshot, 'organizationId'),
     ourPartyBankAccountId: snapshotText(ourPartySnapshot, 'bankAccountId'),
     ourPartyName: snapshotText(ourPartySnapshot, 'name'),
     ourPartyAddress: snapshotText(ourPartySnapshot, 'address'),
@@ -299,7 +299,7 @@ export function buildDocumentPayload(values: DocumentFormValues): Record<string,
     contact: values.ourPartyContact,
     bank: values.ourPartyBank,
   })
-  if (values.ourPartyId.trim()) ourParty.partyId = values.ourPartyId.trim()
+  if (values.ourPartyId.trim()) ourParty.organizationId = values.ourPartyId.trim()
   if (values.ourPartyBankAccountId.trim()) ourParty.bankAccountId = values.ourPartyBankAccountId.trim()
 
   const counterparty = partySnapshot({
