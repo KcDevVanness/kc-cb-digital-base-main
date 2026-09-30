@@ -35,7 +35,7 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 - **发号在签发时**：`draft → issued` 才取 `PI-<年>-<4位>`（按 `(tenant, organization)` 独立），草稿先写 `PENDING-<id8>` 占位再解析真号；唯一索引 `trade_docs_documents_scope_number_uniq` 兜底，撞号 → **409** 重试（与 `nextContractNumber` / `nextOrderNumber` 同一口径）。
 - **签发后冻结**：`update` 只允许 `draft`（否则 409）；`delete` 拒绝 `issued`（改作废）；行与头金额由命令重算——`amount` 缺省时 = `数量 × 单价` 按 **2 位** HALF_UP 量化，显式传入则以票面为准（`lib/money.ts` 的 `computeLineAmounts`）。
 - **文件两条指针互不覆盖**：`generated_attachment_id`（我方渲染的 XLSX，重复生成前移指针、旧件保留）与 `attachment_id`（上传的盖章/回签/报关件）。
-- **字典**：`setup.ts` 新增 `incoterms` 种子（EXW/FCA/FOB/CFR/CIF/CPT/CIP/DAP/DPU/DDP，单语言显示名）；合同的 `incoterms` 列与打印同步接上（F-005）。
+- **贸易术语（2026-09-30 起为自由文本）**：合同的 `incoterms` 列与打印照旧（F-005），但**不再播种 `incoterms` 字典选项**（owner 2026-09-30：这些数据选项不需要）——合同/PI/CI 的该字段是普通文本输入，按谈定的措辞填写；付款方式与运输方式的字典种子不受影响。
 - **收款要素**：`our_party_snapshot` 用 `lib/partySnapshot.ts` 的同一 shape（含 `partyId`/`bankAccountId`），合同表单（`OurPartyPicker`）与 PI 表单共用主体 + 银行账户选择器（F-004）。
 
 ### CI（商业发票）— 2026-09-28 Phase 2

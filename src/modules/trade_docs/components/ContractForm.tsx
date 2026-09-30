@@ -36,7 +36,6 @@ import { CONTRACT_DIRECTIONS, CONTRACT_STATUSES, directionLabel } from './contra
 import { ContractLineSourceDialog, type ContractLineSourceHead } from './ContractLineSourceDialog'
 import {
   loadCurrencyOptions,
-  loadIncotermOptions,
   loadPartyBankAccountOptions,
   loadPartyDetail,
   loadPartyOptions,
@@ -812,14 +811,11 @@ function useContractFields(t: TranslateFn): CrudField[] {
     {
       id: 'incoterms',
       label: t('trade_docs.contracts.form.field.incoterms'),
-      // Trade terms come from the `incoterms` dictionary the setup seeds; the field stays free-text
-      // so a negotiated term (or a dictionary not yet seeded) never blocks the form.
-      type: 'combobox',
+      // 贸易术语 is the wording the deal was signed with, so it is plain free text: no seeded option
+      // list stands between the operator and what the contract actually says.
+      type: 'text',
       layout: 'half',
       description: t('trade_docs.contracts.form.field.incotermsHelp'),
-      allowCustomValues: true,
-      resolveLabel: (value) => value,
-      loadOptions: (query) => loadIncotermOptions(query),
     },
     {
       id: 'shippingMethod',
