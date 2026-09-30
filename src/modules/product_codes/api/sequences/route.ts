@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
+import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import type { EntityManager } from '@mikro-orm/postgresql'
 import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
 import { createLogger } from '@open-mercato/shared/lib/logger'
 import { productCodeSequencesQuerySchema } from '../../data/validators'
 import { listIssuedScopes } from '../../lib/issuance'
 import { resolveRequestScope } from '../../lib/requestScope'
+import { productCodesTag } from '../openapi'
 
 const logger = createLogger('product_codes')
 
@@ -43,4 +46,31 @@ export async function GET(request: Request) {
     logger.error('Failed to read code sequences', { err })
     return NextResponse.json({ error: 'Could not read the sequences' }, { status: 500 })
   }
+}
+
+const issuedScopeSchema = z.object({
+  brandValue: z.string(),
+  categoryValue: z.string().nullable(),
+  issued: z.number(),
+  nextSerial: z.number(),
+})
+
+export const openApi: OpenApiRouteDoc = {
+  tag: productCodesTag,
+  summary: 'Issued code sequences',
+  methods: {
+    GET: {
+      summary: 'How far a rule\'s counters have run, per scope',
+      description:
+        'Read-only. One row per (brand, category) scope the rule has issued into: `issued` is the count and `nextSerial` the serial the next issuance would take. The gap between them is what a preview-then-abandoned issuance leaves behind — the panel exists so an operator can see that instead of wondering whether a number was lost.',
+      tags: [productCodesTag],
+      responses: [
+        { status: 200, description: 'The scopes of one rule', schema: z.object({ scopes: z.array(issuedScopeSchema) }) },
+        { status: 400, description: 'Missing `ruleId`', schema: z.object({ error: z.string() }).passthrough() },
+        { status: 401, description: 'Not authenticated', schema: z.object({ error: z.string() }).passthrough() },
+        { status: 403, description: 'Missing product_codes.rules.view', schema: z.object({ error: z.string() }).passthrough() },
+        { status: 500, description: 'The read failed', schema: z.object({ error: z.string() }).passthrough() },
+      ],
+    },
+  },
 }

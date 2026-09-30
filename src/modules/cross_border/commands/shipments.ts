@@ -17,6 +17,7 @@ import {
 import {
   SHIPMENT_MILESTONES,
   shipmentCancelSchema,
+  shipmentCloseSchema,
   shipmentCreateSchema,
   shipmentDepartSchema,
   shipmentReceiveSchema,
@@ -24,7 +25,9 @@ import {
   milestoneAdvanceSchema,
   type ShipmentCreateInput,
   type ShipmentMilestone,
+  type ShipmentStatus,
 } from '../data/validators'
+import { canTransitionShipment } from '../lib/shipmentStatus'
 import { invalidatePeerCaches, invalidateShipmentCaches, PEER_CACHE_RESOURCES } from '../lib/cacheInvalidation'
 import { loadContractRefs } from '../lib/contractReads'
 import { ensureScope, type Scope } from '../lib/scope'
@@ -588,7 +591,7 @@ const departShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
     const shipment = await loadShipment(em, scope, parsed.id)
-    if (shipment.status !== 'draft') {
+    if (!canTransitionShipment(shipment.status as ShipmentStatus, 'in_transit')) {
       throw new CrudHttpError(422, { error: `Cannot depart a shipment in status ${shipment.status}` })
     }
 
@@ -755,7 +758,7 @@ const receiveShipmentCommand: CommandHandler<
     const em = ctx.container.resolve('em') as EntityManager
 
     const shipment = await loadShipment(em, scope, parsed.id)
-    if (shipment.status !== 'in_transit') {
+    if (!canTransitionShipment(shipment.status as ShipmentStatus, 'received')) {
       throw new CrudHttpError(422, { error: `Only an in-transit shipment can be received (currently ${shipment.status})` })
     }
     const performedBy = ctx.auth?.sub ?? null
@@ -863,7 +866,7 @@ const cancelShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
     const em = ctx.container.resolve('em') as EntityManager
 
     const shipment = await loadShipment(em, scope, parsed.id)
-    if (shipment.status !== 'draft' && shipment.status !== 'in_transit') {
+    if (!canTransitionShipment(shipment.status as ShipmentStatus, 'cancelled')) {
       throw new CrudHttpError(422, { error: `Cannot cancel a shipment in status ${shipment.status}` })
     }
 
@@ -897,6 +900,55 @@ const cancelShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorder
   }),
 }
 
+/**
+ * Archival. A closed shipment is done: paperwork filed, settlement agreed — the state machine's
+ * terminal stage, and the one the container file pages read as "this cabinet is finished".
+ *
+ * The guard is the shared transition table (`lib/shipmentStatus.ts`), so "only a received shipment
+ * may be closed" cannot drift from what the detail page offers.
+ */
+const closeShipmentCommand: CommandHandler<Record<string, unknown>, CrossBorderShipment> = {
+  id: 'cross_border.shipments.close',
+  isUndoable: false,
+  async execute(rawInput, ctx) {
+    const parsed = shipmentCloseSchema.parse(rawInput)
+    const scope = ensureScope(ctx)
+    const em = ctx.container.resolve('em') as EntityManager
+
+    const shipment = await loadShipment(em, scope, parsed.id)
+    if (!canTransitionShipment(shipment.status as ShipmentStatus, 'closed')) {
+      throw new CrudHttpError(422, {
+        error: `Only a received shipment can be closed (currently ${shipment.status})`,
+      })
+    }
+
+    await em.fork().nativeUpdate(
+      CrossBorderShipment,
+      { id: shipment.id },
+      { status: 'closed' },
+    )
+    shipment.status = 'closed'
+
+    await eventsConfig.emit('cross_border.shipment.closed', {
+      id: String(shipment.id),
+      number: shipment.number ?? null,
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+    })
+
+    return shipment
+  },
+  captureAfter: (_input, result) => ({ id: String(result.id), status: result.status }),
+  buildLog: async ({ result }) => ({
+    actionLabel: 'Close shipment',
+    resourceKind: SHIPMENT_RESOURCE_KIND,
+    resourceId: String(result.id),
+    tenantId: String(result.tenantId),
+    organizationId: String(result.organizationId),
+    snapshotAfter: { id: String(result.id), status: result.status },
+  }),
+}
+
 registerCommand(createShipmentCommand)
 registerCommand(updateShipmentCommand)
 registerCommand(deleteShipmentCommand)
@@ -904,6 +956,7 @@ registerCommand(departShipmentCommand)
 registerCommand(advanceMilestoneCommand)
 registerCommand(receiveShipmentCommand)
 registerCommand(cancelShipmentCommand)
+registerCommand(closeShipmentCommand)
 
 export {
   createShipmentCommand,
@@ -913,4 +966,5 @@ export {
   advanceMilestoneCommand,
   receiveShipmentCommand,
   cancelShipmentCommand,
+  closeShipmentCommand,
 }

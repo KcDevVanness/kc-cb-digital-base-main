@@ -9,10 +9,26 @@
 
 | 分支 | 作用 | 触发什么 |
 |---|---|---|
-| `main` | 集成分支 | `validate.yml`（`scope` → `checks` ∥ `build` → 汇总 `validate`，命令仍是 generate/typecheck/lint/lessons/ds:check/test/build） |
-| `feat/*` | 特性分支 | 开 PR 时跑 `validate.yml` |
-| `production` | **发布分支，唯一会部署的分支** | `deploy.yml`（构建镜像 → 部署到 AWS） |
+| `dev` | 集成分支（单元 PR 的落点） | `guard-tree.yml`；`validate.yml` 照常上报但按 scope 跳过整套命令（base 是集成分支）——见下方「门禁覆盖」 |
+| `main` | 发布主线（只收 `dev → main` 波次 PR） | `validate.yml` 全套（base `main` 的 PR 与 `main` 的推送）、`guard-tree.yml` |
+| `feat/*` | 特性分支 | 开 PR 时跑 `validate.yml`（同上，按 scope 判定是否真跑命令） |
+| `production` | **发布分支，唯一会部署的分支** | `deploy.yml`（构建镜像 → 部署到 AWS）；base `production` 的 PR 跑 `validate.yml` 全套 |
 | 任意 PR 目标 | 所有分支 | `guard-tree.yml`（`scripts/guards/guard-tree.mjs`，拒收丢失仓库的树） |
+
+### 门禁覆盖（2026-09-30 起）
+
+`validate.yml` 的**触发**仍然覆盖所有 PR（必需检查必须上报，否则 PR 会永久卡在
+"Expected — Waiting"），但**是否真跑命令**由 `scope` job 决定：
+
+- base 是 `main` / `production`（波次 PR、生产同步 PR）→ 跑全套（再按 docs/部署侧白名单跳过）；
+- base 是集成分支（`dev`，以及堆叠在别的单元分支上的子 PR）→ `needed=false`，两个 job skipped，
+  汇总 job 秒级报绿。**这类 PR 的实际验证是作者本地的 `validation.commands`**——`om-auto-create-pr`
+  第 8 步与 `AGENTS.md` 的 Validation 一节都要求它，CI 只是转发结论，不再复跑；
+- 推送 `main` → 跑全套（波次落地后的复核）。
+
+代价是显式的：单元 PR 合进 `dev` 时 CI 不再证明它绿，红要等到 `dev → main` 的波次 PR（或 `main`
+推送）才暴露；换来的是单元 PR 的合并不再等 3 分钟。判定逻辑与拒绝条件见
+`.ai/lessons/gate-must-cover-every-pr-target.md`。
 
 部署不是「合并到 main 的副作用」：把某个提交提升到生产是一次显式的动作——日常走**从 `production`
 切出的同步分支 → PR（base `production`）→ squash 合并**（PR #19/#22 的形状），合并即触发部署；

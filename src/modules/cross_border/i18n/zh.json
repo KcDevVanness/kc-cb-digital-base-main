@@ -1,5 +1,5 @@
 {
-  "cross_border.nav.group.sales": "出口业务-销售",
+  "cross_border.nav.group.sales": "出口业务-对内销售",
   "cross_border.nav.group.externalSales": "出口业务-对外销售",
   "cross_border.nav.group.contracts": "出口业务-购销合同",
   "cross_border.nav.group.shipping": "出口业务-发运",
@@ -103,7 +103,10 @@
   "cross_border.shipments.salesAllocations.title": "销售分摊",
   "cross_border.shipments.salesAllocations.add": "添加",
   "cross_border.shipments.salesAllocations.remove": "删除",
-  "cross_border.shipments.salesAllocations.salesOrder": "对内销售订单",
+  "cross_border.shipments.salesAllocations.salesOrder": "销售订单",
+  "cross_border.shipments.salesAllocations.tradeType.internal": "对内",
+  "cross_border.shipments.salesAllocations.tradeType.external": "对外",
+  "cross_border.shipments.salesAllocations.unmarkedStatus": "未标记状态",
   "cross_border.shipments.salesAllocations.line": "行号",
   "cross_border.shipments.salesAllocations.product": "商品",
   "cross_border.shipments.salesAllocations.ordered": "订购量",
@@ -198,5 +201,9 @@
   "cross_border.packingLists.detail.loading": "装箱单加载中…",
   "cross_border.packingLists.detail.loadFailed": "装箱单加载失败",
   "cross_border.packingLists.detail.notFound": "找不到这张装箱单。",
-  "cross_border.packingLists.detail.untitled": "未编号装箱单"
+  "cross_border.packingLists.detail.untitled": "未编号装箱单",
+  "cross_border.shipments.status.closed": "已归档",
+  "cross_border.shipments.actions.close": "归档",
+  "cross_border.shipments.closeConfirmTitle": "把这张发运单归档？",
+  "cross_border.shipments.closeConfirmBody": "归档是终态：之后不能再编辑、取消或记录里程碑；请确认单证与结算已完成。"
 }

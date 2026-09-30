@@ -142,6 +142,7 @@ function financeColumns(translate: Translate): CrudExportColumn[] {
     { field: 'kcPriceAmount', header: translate('export_finance.orders.csv.kcPrice', 'KC order price') },
     { field: 'subsidiaryInvoiceAmount', header: translate('export_finance.orders.csv.subsidiaryInvoice', 'Subsidiary invoice (USD)') },
     { field: 'collectionStatus', header: translate('export_finance.orders.csv.collectionStatus', 'Collection status') },
+    { field: 'collectionOverdue', header: translate('export_finance.orders.csv.collectionOverdue', 'Collection overdue') },
     { field: 'refundStatus', header: translate('export_finance.orders.csv.refundStatus', 'Tax refund status') },
     { field: 'allocatedRefundAmount', header: translate('export_finance.orders.csv.allocatedRefund', 'Allocated refund') },
     { field: 'containers', header: translate('export_finance.orders.csv.containers', 'Containers') },
@@ -175,6 +176,7 @@ function toCsvRow(row: OrderFileRow, view: OrderFileView, translate: Translate):
         ? ''
         : `${row.finance.subsidiaryInvoiceAmount} ${row.finance.subsidiaryInvoiceCurrency ?? ''}`.trim(),
       collectionStatus: translate(`export_finance.collection.status.${row.collectionStatus}`, row.collectionStatus),
+      collectionOverdue: row.collectionOverdue ? translate('export_finance.orders.overdue', 'Overdue') : '',
       refundStatus: translate(`export_finance.refund.status.${row.refundStatus}`, row.refundStatus),
       allocatedRefundAmount: row.allocatedRefundAmount ?? '',
     }
@@ -213,6 +215,7 @@ export async function GET(request: Request) {
         collectionStatus: query.collectionStatus,
         taxRefundStatus: query.taxRefundStatus,
         search: query.search,
+        overdue: query.overdue,
       },
       page: query.page,
       pageSize: query.pageSize,
@@ -257,6 +260,8 @@ export const openApi: OpenApiRouteDoc = {
     GET: {
       summary: 'List the 订单档案 (order file) in both the business and the finance view',
       tags: [exportFinanceTag],
+      description:
+        'Filters: `status`, `taxRefundStatus`, `search` and — for the 逾期清单 — `overdue=true`, which keeps only the rows whose money is late. The rule is the same one behind the 逾期 column and the CSV, so list, count and export can never disagree; any value other than a truthy token leaves the list unfiltered.',
       query: orderFileListSchema,
       responses: [
         {

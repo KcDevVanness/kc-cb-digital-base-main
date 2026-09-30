@@ -41,6 +41,7 @@ Route first; never probe unmatched context.
 ## Validation
 
 Broad: `yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test && yarn build`; integration: `yarn test:integration:ephemeral`. Never migrate to validate.
+That broad run **is** the unit-PR gate: CI's `validate` runs those commands only for release targets (PRs based on `main`/`production`, pushes to `main`) and reports a green, out-of-scope verdict on PRs based on `dev` — so never flip a unit PR to ready without this local run, and never read that green as verification.
 
 ## Delivery Flow (default, every session)
 

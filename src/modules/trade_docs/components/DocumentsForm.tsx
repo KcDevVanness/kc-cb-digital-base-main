@@ -49,8 +49,9 @@ import {
 } from './DocumentsTable'
 import {
   loadContractOptions,
+  loadContractSourceHeadFacts,
   loadCurrencyOptions,
-  loadIncotermOptions,
+  loadOrderSourceHeadFacts,
   loadPaymentTermOptions,
   loadProductOption,
   loadProductOptions,
@@ -66,6 +67,12 @@ import {
 import { directionLabel } from './contractLabels'
 import { CounterpartyPicker } from './CounterpartyPicker'
 import { COUNTERPARTY_KIND_BY_DIRECTION } from '../data/validators'
+import {
+  SourcePreviewDrawer,
+  type SourcePreviewField,
+  type SourcePreviewLine,
+} from '@/lib/source-preview/SourcePreviewDrawer'
+import { contractPreviewLines, orderPreviewLines, sourcePreviewFields } from './sourcePreview'
 
 const DOCUMENTS_API_PATH = 'trade_docs/documents'
 const DOCUMENT_LINES_API_PATH = 'trade_docs/documents/lines'
@@ -73,6 +80,13 @@ const CONTRACTS_API_PATH = 'trade_docs/contracts'
 const CONTRACT_LINES_API_PATH = 'trade_docs/contracts/lines'
 const SALES_ORDER_LINES_API_PATH = 'sales/order-lines'
 const PURCHASE_ORDER_LINES_API_PATH = 'purchasing/purchase-orders/lines'
+/**
+ * The installed sales line collections answer a larger `pageSize` with a 400 — 100 is their cap, the
+ * same limit `internal_sales/lib/quoteLoad` documents — while this module's own contract lines route
+ * accepts 500 (the limit the contract-reference copy has always read with).
+ */
+const ORDER_LINES_PAGE_SIZE = 100
+const CONTRACT_LINES_PAGE_SIZE = 500
 
 /** The order anchor the "copy lines from an order" dialog can draw from. */
 type OrderAnchorKind = 'sales_order' | 'purchase_order'
@@ -105,6 +119,8 @@ export type DocumentFormValues = {
   counterpartyContact: string
   counterpartyBank: string
   ourPartyId: string
+  /** Legacy `partyId` key of pre-organization snapshots; re-emitted when no company is picked. */
+  ourPartyLegacyPartyId: string
   ourPartyBankAccountId: string
   ourPartyName: string
   ourPartyAddress: string
@@ -162,6 +178,7 @@ function emptyDocumentValues(): DocumentFormValues {
     counterpartyContact: '',
     counterpartyBank: '',
     ourPartyId: '',
+    ourPartyLegacyPartyId: '',
     ourPartyBankAccountId: '',
     ourPartyName: '',
     ourPartyAddress: '',
@@ -236,7 +253,8 @@ export function toDocumentFormValues(
     counterpartyAddress: snapshotText(counterpartySnapshot, 'address'),
     counterpartyContact: snapshotText(counterpartySnapshot, 'contact'),
     counterpartyBank: snapshotText(counterpartySnapshot, 'bank'),
-    ourPartyId: snapshotText(ourPartySnapshot, 'partyId'),
+    ourPartyId: snapshotText(ourPartySnapshot, 'organizationId'),
+    ourPartyLegacyPartyId: snapshotText(ourPartySnapshot, 'partyId'),
     ourPartyBankAccountId: snapshotText(ourPartySnapshot, 'bankAccountId'),
     ourPartyName: snapshotText(ourPartySnapshot, 'name'),
     ourPartyAddress: snapshotText(ourPartySnapshot, 'address'),
@@ -285,7 +303,8 @@ export function buildDocumentPayload(values: DocumentFormValues): Record<string,
     contact: values.ourPartyContact,
     bank: values.ourPartyBank,
   })
-  if (values.ourPartyId.trim()) ourParty.partyId = values.ourPartyId.trim()
+  if (values.ourPartyId.trim()) ourParty.organizationId = values.ourPartyId.trim()
+  else if (values.ourPartyLegacyPartyId.trim()) ourParty.partyId = values.ourPartyLegacyPartyId.trim()
   if (values.ourPartyBankAccountId.trim()) ourParty.bankAccountId = values.ourPartyBankAccountId.trim()
 
   const counterparty = partySnapshot({
@@ -511,6 +530,18 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
   const [refOpen, setRefOpen] = React.useState(false)
   const [refContractId, setRefContractId] = React.useState('')
   const [isReferencing, setIsReferencing] = React.useState(false)
+  /** The read-only source preview (order or contract) the copy dialogs open. */
+  const [previewOpen, setPreviewOpen] = React.useState(false)
+  const [previewBusy, setPreviewBusy] = React.useState(false)
+  const [previewError, setPreviewError] = React.useState<string | null>(null)
+  const [previewTitle, setPreviewTitle] = React.useState('')
+  const [previewSubtitle, setPreviewSubtitle] = React.useState('')
+  const [previewFields, setPreviewFields] = React.useState<SourcePreviewField[]>([])
+  const [previewLines, setPreviewLines] = React.useState<SourcePreviewLine[]>([])
+  /** Guards the preview state against a read that a newer click has superseded. */
+  const previewRequest = React.useRef(0)
+  /** Lines already read per source, so preview → copy never fetches the same document twice. */
+  const sourceLinesCache = React.useRef(new Map<string, Record<string, unknown>[]>())
   const formContractId = typeof values.contractId === 'string' ? values.contractId.trim() : ''
 
   const cacheProducts = React.useCallback((options: ProductOption[]) => {
@@ -599,6 +630,119 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
     setCopyOpen(true)
   }, [values.sourceId, values.sourceKind])
 
+  /** One read per source, shared by the preview and the copy that follows it. */
+  const readSourceItems = React.useCallback(
+    async (cacheKey: string, path: string, parentParam: string, parentId: string, pageSize: number) => {
+      const cached = sourceLinesCache.current.get(cacheKey)
+      if (cached) return cached
+      const payload = await fetchCrudList<Record<string, unknown>>(path, {
+        [parentParam]: parentId,
+        pageSize,
+      })
+      const items = payload.items ?? []
+      sourceLinesCache.current.set(cacheKey, items)
+      return items
+    },
+    [],
+  )
+
+  const readOrderItems = React.useCallback(
+    (kind: OrderAnchorKind, id: string) =>
+      readSourceItems(
+        `${kind}:${id}`,
+        kind === 'purchase_order' ? PURCHASE_ORDER_LINES_API_PATH : SALES_ORDER_LINES_API_PATH,
+        'orderId',
+        id,
+        ORDER_LINES_PAGE_SIZE,
+      ),
+    [readSourceItems],
+  )
+
+  const readContractItems = React.useCallback(
+    (id: string) =>
+      readSourceItems(`contract:${id}`, CONTRACT_LINES_API_PATH, 'contractId', id, CONTRACT_LINES_PAGE_SIZE),
+    [readSourceItems],
+  )
+
+  const handlePreviewOrder = React.useCallback(async () => {
+    const id = copyOrderId.trim()
+    if (!id) {
+      flash(t('trade_docs.documents.form.lines.copyOrderRequired', '请先选择一张订单'), 'error')
+      return
+    }
+    const request = previewRequest.current + 1
+    previewRequest.current = request
+    setPreviewTitle(t('trade_docs.documents.form.lines.preview.orderTitle', 'Order preview'))
+    setPreviewOpen(true)
+    setPreviewBusy(true)
+    setPreviewError(null)
+    setPreviewFields([])
+    setPreviewLines([])
+    setPreviewSubtitle(id.slice(0, 8))
+    try {
+      const [facts, items] = await Promise.all([loadOrderSourceHeadFacts(copyKind, id), readOrderItems(copyKind, id)])
+      if (previewRequest.current !== request) return
+      setPreviewSubtitle(
+        facts ? [facts.number, facts.counterparty].filter((part) => part.length > 0).join(' — ') : id.slice(0, 8),
+      )
+      setPreviewFields(sourcePreviewFields(facts, t, id))
+      setPreviewLines(
+        orderPreviewLines(
+          items,
+          copyKind === 'purchase_order' ? 'purchase_order' : 'sales',
+          facts?.currencyCode ?? '',
+          t('ui.sourcePreview.unnamedLine', '(Unnamed line)'),
+        ),
+      )
+    } catch (error) {
+      if (previewRequest.current !== request) return
+      setPreviewError(
+        error instanceof Error && error.message
+          ? error.message
+          : t('ui.sourcePreview.previewFailed', 'Could not load the source document preview'),
+      )
+    } finally {
+      if (previewRequest.current === request) setPreviewBusy(false)
+    }
+  }, [copyKind, copyOrderId, readOrderItems, t])
+
+  const handlePreviewContract = React.useCallback(async () => {
+    const id = refContractId.trim()
+    if (!id) {
+      flash(t('trade_docs.documents.form.lines.contractRefRequired', '请先选择一张合同'), 'error')
+      return
+    }
+    const request = previewRequest.current + 1
+    previewRequest.current = request
+    setPreviewTitle(t('trade_docs.documents.form.lines.preview.contractTitle', 'Contract preview'))
+    setPreviewOpen(true)
+    setPreviewBusy(true)
+    setPreviewError(null)
+    setPreviewFields([])
+    setPreviewLines([])
+    setPreviewSubtitle(id.slice(0, 8))
+    try {
+      const [facts, items] = await Promise.all([loadContractSourceHeadFacts(id), readContractItems(id)])
+      if (previewRequest.current !== request) return
+      setPreviewSubtitle(
+        facts ? [facts.number, facts.counterparty].filter((part) => part.length > 0).join(' — ') : id.slice(0, 8),
+      )
+      setPreviewFields(sourcePreviewFields(facts, t, id))
+      setPreviewLines(
+        contractPreviewLines(items, facts?.currencyCode ?? '', t('ui.sourcePreview.unnamedLine', '(Unnamed line)')),
+      )
+    } catch (error) {
+      if (previewRequest.current !== request) return
+      setPreviewError(
+        error instanceof Error && error.message
+          ? error.message
+          : t('ui.sourcePreview.previewFailed', 'Could not load the source document preview'),
+      )
+    } finally {
+      if (previewRequest.current === request) setPreviewBusy(false)
+    }
+  }, [readContractItems, refContractId, t])
+
   const handleCopyLines = React.useCallback(async () => {
     if (!copyOrderId.trim()) {
       flash(t('trade_docs.documents.form.lines.copyOrderRequired', '请先选择一张订单'), 'error')
@@ -606,12 +750,9 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
     }
     setIsCopying(true)
     try {
-      const payload = await fetchCrudList<Record<string, unknown>>(
-        copyKind === 'purchase_order' ? PURCHASE_ORDER_LINES_API_PATH : SALES_ORDER_LINES_API_PATH,
-        { orderId: copyOrderId.trim(), pageSize: 100 },
-      )
+      const items = await readOrderItems(copyKind, copyOrderId.trim())
       const copiedAt = new Date().toISOString()
-      const appended: DocumentLineValues[] = (payload.items ?? []).map((item) => {
+      const appended: DocumentLineValues[] = items.map((item) => {
         const draft = copyKind === 'purchase_order' ? purchaseLineToDraft(item) : salesLineToDraft(item)
         return {
           productId: draft.productId,
@@ -651,7 +792,7 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
     } finally {
       setIsCopying(false)
     }
-  }, [copyKind, copyOrderId, setValue, t])
+  }, [copyKind, copyOrderId, readOrderItems, setValue, t])
 
   /**
    * 「从合同引用商品行」: one-shot copy of a contract's lines into editable document lines. Re-running
@@ -667,16 +808,13 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
       }
       setIsReferencing(true)
       try {
-        const [linePayload, contractPayload] = await Promise.all([
-          fetchCrudList<Record<string, unknown>>(CONTRACT_LINES_API_PATH, {
-            contractId: scopedContractId,
-            pageSize: 500,
-          }),
-          fetchCrudList<Record<string, unknown>>(CONTRACTS_API_PATH, { ids: scopedContractId, pageSize: 1 }),
+        const [facts, items] = await Promise.all([
+          loadContractSourceHeadFacts(scopedContractId),
+          readContractItems(scopedContractId),
         ])
-        const contractNumber = readText(contractPayload.items?.[0] ?? {}, 'number')
+        const contractNumber = facts?.number ?? ''
         const copiedAt = new Date().toISOString()
-        const copied: DocumentLineValues[] = (linePayload.items ?? []).map((item) => {
+        const copied: DocumentLineValues[] = items.map((item) => {
           const quantity = readText(item, 'quantity') || '0'
           const unitPrice = readText(item, 'unitPrice', 'unit_price') || '0'
           return {
@@ -724,7 +862,7 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
         setIsReferencing(false)
       }
     },
-    [setValue, t],
+    [readContractItems, setValue, t],
   )
 
   // With a contract already on the form, copy straight from it; otherwise ask which contract first.
@@ -963,6 +1101,14 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
             <Button type="button" variant="outline" onClick={() => setCopyOpen(false)} disabled={isCopying}>
               {t('ui.actions.cancel')}
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isCopying || copyOrderId.trim().length === 0}
+              onClick={() => void handlePreviewOrder()}
+            >
+              {t('ui.actions.preview', 'Preview')}
+            </Button>
             <Button type="button" disabled={isCopying || copyOrderId.trim().length === 0} onClick={() => void handleCopyLines()}>
               {t('trade_docs.documents.form.lines.copyConfirm', '复制行')}
             </Button>
@@ -1009,6 +1155,14 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
             </Button>
             <Button
               type="button"
+              variant="outline"
+              disabled={isReferencing || refContractId.trim().length === 0}
+              onClick={() => void handlePreviewContract()}
+            >
+              {t('ui.actions.preview', 'Preview')}
+            </Button>
+            <Button
+              type="button"
               disabled={isReferencing || refContractId.trim().length === 0}
               onClick={() => void copyContractLines(refContractId)}
             >
@@ -1017,6 +1171,17 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
           </div>
         </DialogContent>
       </Dialog>
+
+      <SourcePreviewDrawer
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        title={previewTitle}
+        subtitle={previewSubtitle}
+        busy={previewBusy}
+        error={previewError}
+        fields={previewFields}
+        lines={previewLines}
+      />
     </div>
   )
 }
@@ -1086,12 +1251,10 @@ function useDocumentFields(t: TranslateFn, kind: DocumentKind): CrudField[] {
       {
         id: 'incoterms',
         label: t('trade_docs.documents.form.field.incoterms', '贸易术语'),
-        type: 'combobox',
+        // Free text, like the contract's own field: the term is whatever the deal was signed with.
+        type: 'text',
         layout: 'half',
-        description: t('trade_docs.documents.form.field.incotermsHelp', '选项来自贸易术语字典；也可直接输入谈定的术语。'),
-        allowCustomValues: true,
-        resolveLabel: (value) => value,
-        loadOptions: (query) => loadIncotermOptions(query),
+        description: t('trade_docs.documents.form.field.incotermsHelp', 'Free text — type the term the contract was signed with.'),
       },
       {
         id: 'validUntil',

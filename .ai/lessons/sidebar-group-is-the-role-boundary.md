@@ -67,6 +67,19 @@ reported them as simply wrong. The fix renamed the group key to `cross_border.na
 entry's list to show both types with an always-on 类型 column. Naming and list scope are one decision:
 a name that covers both types while the list filters to one is the next report.
 
+**2026-09-30 — "one entry serves both types" is itself the wrong answer when the other type already
+has an entry.** The owner rejected the previous day's widening outright: with
+`/backend/external-sales/**` existing, `/backend/internal-sales/**` *is* the internal entry, so its
+trade type had to be fixed to internal and its name had to say so. The entry — not just its name —
+was narrowed: the list filters by the entry's own `channelId`, the type control is a read-only value,
+the 类型 column and its i18n key are gone because every row is the entry's type, and the group label
+went 「出口业务-销售」→「出口业务-对内销售」. Two mechanics worth reusing: (1) the **label** moved while
+the **key** stayed, so stored sidebar preferences survived — a rename of the id, not of its text, is
+what orphans them; (2) the list no longer degrades to an unfiltered query when the channel is missing
+(it shows the seeding command instead), because "which types am I looking at" is exactly what an
+entry is for. When a surface is dedicated to one thing, widen neither its scope nor its name — make
+them match that one thing.
+
 **Applies to**: `src/modules.ts`, every `src/modules/*/backend/**/page.meta.ts`, the modules' i18n
 catalogs (`*.nav.group` keys), and any future regroup or page addition — a new page that forgets its
 `pageGroupKey` silently lands in the framework's default section.

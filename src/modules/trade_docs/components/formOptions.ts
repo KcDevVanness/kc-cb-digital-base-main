@@ -2,6 +2,11 @@ import type { CrudFieldOption } from '@open-mercato/ui/backend/CrudForm'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionaries/lib/clientEntries'
+import {
+  readContractSourceHeadFacts,
+  readOrderSourceHeadFacts,
+  type SourceHeadFacts,
+} from '../lib/contractLineSource'
 
 /**
  * Re-exported from the product master, which owns how its own products are listed.
@@ -26,7 +31,6 @@ export { loadPortOptions } from '../../cross_border/components/shipmentFormOptio
 
 export const PAYMENT_TERM_DICTIONARY_KEY = 'payment_terms'
 export const SHIPPING_METHOD_DICTIONARY_KEY = 'shipping_method'
-export const INCOTERM_DICTIONARY_KEY = 'incoterms'
 
 /**
  * Suggestions from one of this module's own dictionaries (payment terms, shipping methods). These
@@ -50,16 +54,6 @@ export function loadShippingMethodOptions(query?: string): Promise<CrudFieldOpti
 }
 
 /**
- * Trade terms (贸易术语) printed on a PI/CI: `EXW`, `FOB`, `CIF`, … — the same `incoterms`
- * dictionary the setup seeds. `loadDictionaryOptions` returns an empty list when the dictionary is
- * missing, so a deployment that has not seeded it simply offers no suggestions instead of throwing;
- * the field keeps `allowCustomValues`, so a negotiated term is still typeable.
- */
-export function loadIncotermOptions(query?: string): Promise<CrudFieldOption[]> {
-  return loadDictionaryOptions(INCOTERM_DICTIONARY_KEY, query)
-}
-
-/**
  * Option loaders shared by the contract and invoice forms.
  *
  * Every picker is backed by the owning module's own scoped option source, so a form can only offer
@@ -76,9 +70,11 @@ const PRODUCTS_API_PATH = 'products/items'
 const CONTRACTS_API_PATH = 'trade_docs/contracts'
 const CONTRACT_LINES_API_PATH = 'trade_docs/contracts/lines'
 const SALES_ORDERS_API_PATH = 'sales/orders'
+const SALES_QUOTES_API_PATH = 'sales/quotes'
 const PURCHASE_ORDERS_API_PATH = 'purchasing/purchase-orders'
 const SHIPMENTS_API_PATH = 'cross_border/shipments'
 const DOCUMENTS_API_PATH = 'trade_docs/documents'
+const OUR_PARTIES_PROFILES_API_PATH = 'our_parties/profiles'
 
 export function readText(source: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
@@ -282,6 +278,39 @@ export async function loadPurchaseOrderOptions(query?: string): Promise<CrudFiel
 }
 
 /**
+ * The head of one order/quote, read by id for a copy preview. `ids` is the list route's own filter,
+ * so the row arrives with the same projection (and the same scope) the picker lists it with; a row
+ * the caller may not read is simply absent and the preview falls back to the lines alone.
+ */
+export async function loadOrderSourceHeadFacts(
+  kind: 'purchase_order' | 'sales_order' | 'sales_quote',
+  id: string,
+): Promise<SourceHeadFacts | null> {
+  const scopedId = id.trim()
+  if (!scopedId) return null
+  const source = kind === 'purchase_order'
+    ? { path: PURCHASE_ORDERS_API_PATH, family: 'purchase_order' as const, key: 'number' }
+    : kind === 'sales_quote'
+      ? { path: SALES_QUOTES_API_PATH, family: 'sales' as const, key: 'quoteNumber' }
+      : { path: SALES_ORDERS_API_PATH, family: 'sales' as const, key: 'orderNumber' }
+  const payload = await fetchCrudList<Record<string, unknown>>(source.path, { ids: scopedId, pageSize: 1 })
+  const item = payload.items?.[0]
+  return item ? readOrderSourceHeadFacts(item, source.family, source.key) : null
+}
+
+/** The head of one contract, read by id for a copy preview (`id` is the list route's exact filter). */
+export async function loadContractSourceHeadFacts(id: string): Promise<SourceHeadFacts | null> {
+  const scopedId = id.trim()
+  if (!scopedId) return null
+  const payload = await fetchCrudList<Record<string, unknown>>(CONTRACTS_API_PATH, {
+    id: scopedId,
+    pageSize: 1,
+  })
+  const item = payload.items?.[0]
+  return item ? readContractSourceHeadFacts(item) : null
+}
+
+/**
  * Shipments a commercial invoice can be anchored to (the CI's 来源单据 = shipment anchor).
  *
  * Read from the cross-border shipment list, so the shipment is resolved by the module that owns it;
@@ -341,54 +370,6 @@ export async function loadDocumentOptions(
         number: (item.number ?? null) as string | null,
         counterpartyName,
       }
-    })
-    .filter((option) => option.value.length > 0)
-}
-
-/**
- * The parties master's own option source (`/api/parties/options`).
- *
- * Used by the contract/PI "our party" picker so the printed seller head comes from master data;
- * search is by party code, matching the route's own filter, and an unreadable list rejects with the
- * caller's message so the form can show it instead of silently offering nothing.
- */
-export async function loadPartyOptions(
-  errorMessage: string,
-  query?: string,
-): Promise<CrudFieldOption[]> {
-  const term = query?.trim()
-  const url = term ? `${PARTIES_OPTIONS_URL}?search=${encodeURIComponent(term)}` : PARTIES_OPTIONS_URL
-  const payload = await readApiResultOrThrow<{ items?: Array<{ value?: string; label?: string }> }>(
-    url,
-    undefined,
-    { errorMessage },
-  )
-  return (payload.items ?? [])
-    .map((item) => ({ value: String(item.value ?? ''), label: String(item.label ?? '') }))
-    .filter((option) => option.value.length > 0)
-}
-
-/**
- * Bank accounts of one party, as `GET /api/parties/{id}` projects them, so a contract/PI can print
- * the beneficiary account the master data holds. An account with no number still lists by bank name
- * so the picker is never empty for a party that has one.
- */
-export async function loadPartyBankAccountOptions(
-  errorMessage: string,
-  partyId: string,
-): Promise<CrudFieldOption[]> {
-  const scopedPartyId = partyId.trim()
-  if (!scopedPartyId) return []
-  const payload = await readApiResultOrThrow<{
-    item?: { bankAccounts?: Array<Record<string, unknown>> }
-  }>(`/api/parties/${encodeURIComponent(scopedPartyId)}`, undefined, { errorMessage })
-  return (payload.item?.bankAccounts ?? [])
-    .map((account) => {
-      const value = String(account.id ?? '')
-      const bank = readText(account, 'beneficiaryBank', 'beneficiary_bank')
-      const number = readText(account, 'accountNumber', 'account_number')
-      const label = [bank, number].filter((part) => part.length > 0).join(' — ') || value.slice(0, 8)
-      return { value, label: account.isDefault === true ? `${label} ★` : label }
     })
     .filter((option) => option.value.length > 0)
 }
@@ -459,6 +440,58 @@ export async function loadCounterpartyDetail(
     id: scopedId,
     name: readText(item, 'name'),
     address: readText(item, 'address'),
+    contact: readText(item, 'contactName', 'contact_name') || readText(item, 'email'),
+    bankAccounts: toCounterpartyBankAccounts(item.bankAccounts),
+  }
+}
+
+/**
+ * The print profile of one of our own companies (the 我方主体 block), read from the app-owned
+ * `our_parties` master: the profile row is keyed by organization, and its bank block lives in a
+ * child collection the list route does not project — so existence and the aggregate are two reads.
+ *
+ * `null` means "this company has no profile yet" (or the caller may not read it): the picker then
+ * fills the organization's name only and leaves the rest editable, which is the behaviour a
+ * pre-profile contract always had.
+ */
+export type OurPartyProfileDetail = {
+  id: string
+  organizationId: string
+  address: string
+  contact: string
+  bankAccounts: PartyDetail['bankAccounts']
+}
+
+export async function loadOurPartyProfile(
+  errorMessage: string,
+  organizationId: string,
+): Promise<OurPartyProfileDetail | null> {
+  const scopedOrganizationId = organizationId.trim()
+  if (!scopedOrganizationId) return null
+  const list = await readApiResultOrThrow<{ items?: Array<{ id?: string; organizationId?: string }> }>(
+    `/api/${OUR_PARTIES_PROFILES_API_PATH}?organizationId=${encodeURIComponent(scopedOrganizationId)}&pageSize=1`,
+    undefined,
+    { errorMessage },
+  )
+  const profileId = String(list.items?.[0]?.id ?? '')
+  if (!profileId) return null
+  const payload = await readApiResultOrThrow<{ item?: Record<string, unknown> }>(
+    `/api/${OUR_PARTIES_PROFILES_API_PATH}/${encodeURIComponent(profileId)}`,
+    undefined,
+    { errorMessage },
+  )
+  const item = payload.item
+  if (!item) return null
+  const address = [
+    readText(item, 'addressLine1', 'address_line1'),
+    readText(item, 'addressLine2', 'address_line2'),
+    readText(item, 'city'),
+    readText(item, 'countryCode', 'country_code'),
+  ].filter((part) => part.length > 0).join(', ')
+  return {
+    id: profileId,
+    organizationId: scopedOrganizationId,
+    address,
     contact: readText(item, 'contactName', 'contact_name') || readText(item, 'email'),
     bankAccounts: toCounterpartyBankAccounts(item.bankAccounts),
   }

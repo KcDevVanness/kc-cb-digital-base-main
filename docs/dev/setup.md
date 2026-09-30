@@ -96,6 +96,12 @@ yarn db:generate  # 改了实体后生成迁移，先 review SQL 再 apply
 时 `POST /api/auth/session/refresh` 被拒（日志 WARN，`allowedOrigins=["http://localhost:3100"]`）。
 端口块见本机 `.env` 顶部的 `PROJECT-LOCAL PORT ALLOCATION` 注释（`.env.example` 不含此块）与 [`parallel-development.md`](./parallel-development.md)。
 
+**发信（邮件）**：本仓 dev 没有配置发信 provider，平台的 `sendEmail` 会抛 `EMAIL_TRANSPORT_NOT_CONFIGURED`。
+而引擎的报价发出路由（`POST /api/sales/quotes/send`）**先提交状态再发信**，于是「状态已变 `sent`、界面报失败」同时出现。
+本地联调请在该工作树的 `.env` 里设 `OM_DISABLE_EMAIL_DELIVERY=true`（`sendEmail` 直接返回，不外发）；
+想连接受链接一起验证可再加 `OM_TEST_MODE=true`，每封邮件（含链接）会追加到 `/tmp/open-mercato-email-capture.jsonl`。
+**生产不要设这两个变量**（`.env.example` 里同样有注释）。
+
 ## 验证命令
 
 提交前跑整套：

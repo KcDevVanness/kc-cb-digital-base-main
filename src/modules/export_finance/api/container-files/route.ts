@@ -93,6 +93,7 @@ function containerColumns(translate: Translate): CrudExportColumn[] {
     { field: 'eta', header: translate('export_finance.cabinets.csv.eta', 'ETA') },
     { field: 'orders', header: translate('export_finance.cabinets.csv.orders', 'Orders in this container') },
     { field: 'taxRefundStatus', header: translate('export_finance.cabinets.csv.refundStatus', 'Tax refund status') },
+    { field: 'refundOverdue', header: translate('export_finance.cabinets.csv.refundOverdue', 'Tax refund overdue') },
     { field: 'taxRefundAmount', header: translate('export_finance.cabinets.csv.refundAmount', 'Tax refund amount') },
     { field: 'exportChecklist', header: translate('export_finance.cabinets.csv.exportChecklist', 'Export documents') },
     { field: 'refundChecklist', header: translate('export_finance.cabinets.csv.refundChecklist', 'Refund documents') },
@@ -114,6 +115,7 @@ function toCsvRow(row: ContainerFileRow, translate: Translate): Record<string, u
     eta: row.eta ?? '',
     orders: row.orders.map((order) => order.businessNumber ?? order.number ?? order.purchaseOrderId).join(' | '),
     taxRefundStatus: translate(`export_finance.refund.status.${row.taxRefundStatus}`, row.taxRefundStatus),
+    refundOverdue: row.refundOverdue ? translate('export_finance.cabinets.overdue', 'Overdue') : '',
     taxRefundAmount: row.taxRefundAmount ?? '',
     exportChecklist: checklistCounter(row, CONTAINER_EXPORT_CHECKLIST_KEYS),
     refundChecklist: checklistCounter(row, CONTAINER_REFUND_CHECKLIST_KEYS),
@@ -134,6 +136,7 @@ export async function GET(request: Request) {
         status: query.status,
         taxRefundStatus: query.taxRefundStatus,
         search: query.search,
+        overdue: query.overdue,
       },
       page: query.page,
       pageSize: query.pageSize,
@@ -177,6 +180,8 @@ export const openApi: OpenApiRouteDoc = {
     GET: {
       summary: 'List the 柜档案 (container file): container facts, orders with allocated refunds, and the refund application',
       tags: [exportFinanceTag],
+      description:
+        'Filters: `status`, `taxRefundStatus`, `search` and — for the 逾期清单 — `overdue=true`, which keeps only the rows whose money is late. The rule is the same one behind the 逾期 column and the CSV, so list, count and export can never disagree; any value other than a truthy token leaves the list unfiltered.',
       query: containerFileListSchema,
       responses: [
         {

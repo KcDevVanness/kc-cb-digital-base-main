@@ -88,8 +88,13 @@ export const enabledModules: ModuleEntry[] = [
   // App policy for the installed ERP business modules (`customers`, `sales`, `wms`,
   // `currencies`, `dictionaries`, `feature_toggles`): they stay ENABLED — their entities,
   // commands, events, API routes and ACL are the data layer the app-owned modules build on —
-  // but their authored admin UI is hidden, because the app ships its own surfaces
-  // (`src/modules/products|purchasing|trade_docs|platform_ops|cross_border|sourcing`).
+  // but the authored admin UI of the ones the app replaced is hidden, because the app ships its own
+  // surfaces (`src/modules/products|purchasing|trade_docs|platform_ops|cross_border|sourcing`).
+  //
+  // The hide covers what the app replaced. Where the app ships *no* replacement, the pages stay
+  // visible: `wms` (this business's stock ledger — see its entry below) and `dictionaries`
+  // (settings sidebar — see its entry below). The currencies module is the same case in the middle:
+  // its master list is hidden, its exchange-rate pages are not.
   //
   // One mode only: `{ metadata: { navHidden: true } }` on every page. Domain is always
   // `routes.pages`, keyed by page pathname; a top-level `pages` key is read by nothing (the
@@ -159,28 +164,26 @@ export const enabledModules: ModuleEntry[] = [
       },
     },
   },
-  {
-    id: 'wms',
-    from: '@open-mercato/core',
-    overrides: {
-      routes: {
-        pages: {
-          '/backend/config/wms': { metadata: { navHidden: true } },
-          '/backend/wms': { metadata: { navHidden: true } },
-          '/backend/wms/inventory': { metadata: { navHidden: true } },
-          '/backend/wms/locations': { metadata: { navHidden: true } },
-          '/backend/wms/lots': { metadata: { navHidden: true } },
-          '/backend/wms/movements': { metadata: { navHidden: true } },
-          '/backend/wms/reservations': { metadata: { navHidden: true } },
-          '/backend/wms/warehouses': { metadata: { navHidden: true } },
-          '/backend/wms/zones': { metadata: { navHidden: true } },
-          '/backend/wms/location/[id]': { metadata: { navHidden: true } },
-          '/backend/wms/lot/[id]': { metadata: { navHidden: true } },
-          '/backend/wms/sku/[id]': { metadata: { navHidden: true } },
-        },
-      },
-    },
-  },
+  // EXCEPTION to the hide-installed-admin-UI policy (the second one, alongside `dictionaries`): the app
+  // owns no warehouse/inventory surface, and `wms` is the stock ledger of record for this business —
+  // goods land in the overseas warehouse through `wms.inventory.receive`, so the shipped pages are
+  // the only place an operator can create a warehouse or a location, and the only place stock can be
+  // inspected, adjusted or counted.
+  //
+  // What consumes it: the shipment form's destination warehouse + location pickers
+  // (`/api/wms/warehouses`, `/api/wms/locations` — src/modules/cross_border/components/ShipmentForm.tsx:72-73)
+  // and the shipment receive call (`cross_border/commands/shipments.ts:780`); `finance` reads the
+  // balances and warehouses read-only (`finance/lib/peerReads.ts:253-274`). The deployment's roles
+  // already carry the module's features (`ru-/sea-warehouse`: `wms.view|manage_inventory|adjust_inventory|
+  // receive_inventory|cycle_count|manage_reservations|manage_locations`; `supervisor`/`admin`: `wms.*`),
+  // and the runbook tells operators to use these pages (docs/dev/multi-company-org-model.md step 5).
+  //
+  // Left visible on purpose — the WMS group in the main sidebar plus `config/wms` in Settings. Each
+  // page keeps its own `requireFeatures` (`wms.view`), each action its `wms.manage_warehouses` /
+  // `wms.manage_zones` / `wms.manage_locations` / `wms.adjust_inventory` / `wms.cycle_count` gate, and
+  // the module's zh labels come from `src/modules/wms/i18n/zh.json`. Re-hiding is one `navHidden`
+  // override per page if the business decides some pages are noise.
+  { id: 'wms', from: '@open-mercato/core' },
   {
     id: 'currencies',
     from: '@open-mercato/core',
@@ -241,11 +244,12 @@ enabledModules.push({
   id: 'purchasing',
   from: '@app',
   // Sidebar group order is a single app-wide decision: the business-role groups come first —
-  // 采购 / 出口业务 / 经营概览 (boss-facing results) / 财务 (finance-desk work and ledgers) /
+  // 采购 / 出口业务 / WMS (warehouse operations — the stock ledger the shipped pages maintain) /
+  // 经营概览 (boss-facing results) / 财务 (finance-desk work and ledgers) /
   // 数据同步 (the RU pipeline's maintenance pages) / 商品主数据 / 交易对手 / 平台运营 — then the
   // 基础数据 vocabulary group (the dictionary library's main-menu entry), and every installed
   // group keeps its existing position after them.
-  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group.sales', 'cross_border.nav.group.externalSales', 'cross_border.nav.group.contracts', 'cross_border.nav.group.shipping', 'cross_border.nav.group.documents', 'executive_overview.nav.group', 'export_finance.nav.group', 'ru_sync.nav.group', 'products.nav.group', 'parties.nav.group', 'platform_ops.nav.group', 'master_data.nav.group'] } },
+  overrides: { nav: { groupOrder: ['purchasing.nav.group', 'cross_border.nav.group.sales', 'cross_border.nav.group.externalSales', 'cross_border.nav.group.contracts', 'cross_border.nav.group.shipping', 'cross_border.nav.group.documents', 'wms.nav.group', 'executive_overview.nav.group', 'export_finance.nav.group', 'ru_sync.nav.group', 'products.nav.group', 'parties.nav.group', 'our_parties.nav.group', 'platform_ops.nav.group', 'master_data.nav.group'] } },
 })
 
 // App-owned cross-border module — consignments (shipments) that combine purchase orders, their
@@ -318,6 +322,11 @@ enabledModules.push({ id: 'boss_cockpit', from: '@app' })
 // App-owned trading-party master — buyers, branches and service providers with their bank block.
 // See .ai/specs/2026-09-22-app-owned-party-master.md
 enabledModules.push({ id: 'parties', from: '@app' })
+
+// App-owned our-entity master — one print profile (address, contact, bank block) per organization,
+// the 我方主体 the contracts/PI/CI print as our own side. See
+// .ai/specs/2026-09-30-our-entity-master.md
+enabledModules.push({ id: 'our_parties', from: '@app' })
 
 // App-owned storage-operations CLI — `audit`, `migrate`, `verify`, `rollback`, `prune-local` for the
 // local → object-storage move. No entity, no route, no page: it is an operator tool that drives the

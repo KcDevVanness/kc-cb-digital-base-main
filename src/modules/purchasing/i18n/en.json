@@ -340,5 +340,15 @@
   "purchasing.supplierProducts.code.partialHint": "The segments marked unregistered are not in their code list; the reading is inferred from the rule shape.",
   "purchasing.supplierProducts.code.generateFailed": "The code could not be generated",
   "purchasing.supplierProducts.code.editableHint": "Generate only fills a starting value into “Product SKU”; edit it freely — a code no rule describes is still typed by hand.",
-  "purchasing.supplierProducts.form.group.code": "Product SKU and brand"
+  "purchasing.supplierProducts.form.group.code": "Product SKU and brand",
+  "purchasing.supplierProducts.actions.disable": "Stop offering",
+  "purchasing.supplierProducts.actions.enable": "Offer again",
+  "purchasing.supplierProducts.actions.disableConfirmTitle": "Stop offering this item?",
+  "purchasing.supplierProducts.actions.disableConfirmBody": "Codes, prices and photos stay, but the row leaves the active view and the pickers that read it. Nothing is deleted.",
+  "purchasing.supplierProducts.actions.enableConfirmTitle": "Offer this item again?",
+  "purchasing.supplierProducts.actions.enableConfirmBody": "The row returns to the active view and to the pickers that read it.",
+  "purchasing.supplierProducts.actions.disabled": "This item is no longer offered.",
+  "purchasing.supplierProducts.actions.enabled": "This item is offered again.",
+  "purchasing.supplierProducts.actions.disableFailed": "Could not stop this item.",
+  "purchasing.supplierProducts.actions.enableFailed": "Could not re-enable this item."
 }
