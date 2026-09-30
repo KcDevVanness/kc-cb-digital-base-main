@@ -1,14 +1,14 @@
 export const metadata = {
   requireAuth: true,
   requireFeatures: ['sales.orders.manage'],
-  pageTitle: 'Edit external sales order',
+  pageTitle: 'Edit external sales order (PO)',
   pageTitleKey: 'internal_sales.form.externalOrder.editTitle',
   pageGroup: 'Export operations — External sales',
   pageGroupKey: 'cross_border.nav.group.externalSales',
   pageOrder: 322,
   icon: 'globe',
   breadcrumb: [
-    { label: 'External sales orders', labelKey: 'internal_sales.list.externalOrder.title', href: '/backend/external-sales/orders' },
+    { label: 'External sales orders (PO)', labelKey: 'internal_sales.list.externalOrder.title', href: '/backend/external-sales/orders' },
     { label: 'Edit', labelKey: 'internal_sales.form.externalOrder.editTitle' },
   ],
 }

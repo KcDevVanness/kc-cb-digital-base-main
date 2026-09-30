@@ -35,6 +35,7 @@ function formValues(patch: Partial<InternalSalesFormValues> = {}): InternalSales
     tradeType: 'internal',
     buyerRef: '',
     customerName: '',
+    buyerEmail: '',
     currencyCode: '',
     customerReference: '',
     comments: '',

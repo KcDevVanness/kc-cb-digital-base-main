@@ -13,6 +13,17 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { RowActions } from '@open-mercato/ui/backend/RowActions'
 import { Button } from '@open-mercato/ui/primitives/button'
+import { FieldLabel } from '@open-mercato/ui/primitives/label'
+import { Input } from '@open-mercato/ui/primitives/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@open-mercato/ui/primitives/dialog'
+import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
+import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
 import { formatDate } from '@open-mercato/ui/utils/format'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { usePathname } from 'next/navigation'
@@ -20,9 +31,14 @@ import { hasFeature } from '@open-mercato/shared/security/features'
 import { useBackendChrome } from '@open-mercato/ui/backend/BackendChromeProvider'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { createDictionaryMap, DictionaryValue, type DictionaryMap } from '@open-mercato/core/modules/dictionaries/components/dictionaryAppearance'
-import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionaries/lib/clientEntries'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
-import { SALES_STATUS_DICTIONARY_KEY } from '../lib/salesStatus'
+import {
+  SALES_STATUS_CANCELED,
+  SALES_STATUS_CONFIRMED,
+  isQuoteExpired,
+  salesStatusActions,
+} from '../lib/salesStatus'
+import { useSalesStatusEntries } from '../lib/salesStatusEntries'
 import type { InternalSalesKind } from './InternalSalesForm'
 import { useTradeTypeChannels } from '../lib/tradeTypeChannels'
 import {
@@ -51,6 +67,10 @@ type DocumentRecord = {
   total: string
   customerName: string | null
   status: string | null
+  /** Quote only: the deadline `quotes/send` wrote (ISO date, `null` when never sent). */
+  validUntil: string | null
+  /** Carried for the optimistic lock every status write sends (`buildOptimisticLockHeader`). */
+  updatedAt: string | null
   lineItemCount: number
   createdAt: string | null
 }
@@ -76,9 +96,30 @@ function toDocumentRecord(item: Record<string, unknown>, kind: InternalSalesKind
     total: typeof total === 'number' ? String(total) : typeof total === 'string' ? total : '0',
     customerName,
     status: readText(item, 'status') || null,
+    validUntil: readText(item, 'validUntil', 'valid_until') || null,
+    updatedAt: readText(item, 'updatedAt', 'updated_at') || null,
     lineItemCount: Number(item.lineItemCount ?? item.line_item_count ?? 0),
     createdAt: (item.createdAt ?? item.created_at ?? null) as string | null,
   }
+}
+
+/**
+ * The quote's validity cell: the deadline `quotes/send` wrote, and — when it has passed while the
+ * quote is still `sent` — the date in the destructive tone with an "expired" chip, so nobody has to
+ * open the document to spot a stale quote.
+ */
+function quoteValidityLabel(record: DocumentRecord, locale: string, t: TranslateFn): React.ReactNode {
+  if (!record.validUntil) return <span className="text-xs text-muted-foreground">—</span>
+  const formatted = formatDate(record.validUntil, locale) ?? record.validUntil
+  if (!isQuoteExpired(record.status, record.validUntil)) return <span>{formatted}</span>
+  return (
+    <span className="inline-flex items-center gap-1.5 text-destructive">
+      {formatted}
+      <span className="rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-medium">
+        {t('internal_sales.list.quoteExpired', 'Expired')}
+      </span>
+    </span>
+  )
 }
 
 function buildColumns(
@@ -113,6 +154,17 @@ function buildColumns(
         />
       ),
     },
+    ...(kind === 'quote'
+      ? [{
+          accessorKey: 'validUntil' as const,
+          header: t('internal_sales.list.columns.validUntil', 'Valid until'),
+          enableSorting: false,
+          cell: ({ row }: { row: { original: DocumentRecord } }) => {
+            const expiry = quoteValidityLabel(row.original, locale, t)
+            return expiry
+          },
+        }]
+      : []),
     {
       accessorKey: 'total',
       header: t('internal_sales.list.columns.total'),
@@ -152,6 +204,10 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
   const scopeVersion = useOrganizationScopeVersion()
   const [search, setSearch] = React.useState('')
   const [page, setPage] = React.useState(1)
+  /** The quote awaiting the "send" dialog, and the validity the operator picked (platform caps 1–365). */
+  const [sendTarget, setSendTarget] = React.useState<DocumentRecord | null>(null)
+  const [sendValidDays, setSendValidDays] = React.useState(14)
+  const [sendBusy, setSendBusy] = React.useState(false)
   // Create/edit are gated server-side by the document's manage feature; hide the controls from a
   // read-only operator (same pattern as the products list and the purchasing supplier library).
   // Nothing is hidden while the chrome payload loads, so a permitted operator never sees flicker.
@@ -252,16 +308,106 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
     }
   }, [confirm, entryTradeType, queryClient, queryKey, router, t])
   // Statuses are the tenant's own dictionary, so the column resolves labels from it rather than
-  // hard-coding the seeded values. An unreadable dictionary degrades to a dash / raw code.
-  const { data: salesStatusEntries } = useQuery({
-    queryKey: ['internal-sales-status-options', scopeVersion],
-    queryFn: () => loadDictionaryEntriesByKey(SALES_STATUS_DICTIONARY_KEY),
-    staleTime: 5 * 60 * 1000,
-  })
+  // hard-coding the seeded values, and every status write resolves its entry id here. An
+  // unreadable dictionary degrades to a dash / raw code and leaves the status actions disabled.
+  const { entries: salesStatusEntries, entryIdFor } = useSalesStatusEntries()
   const statusMap = React.useMemo(
-    () => (salesStatusEntries ? createDictionaryMap(salesStatusEntries) : null),
+    () => (salesStatusEntries.length > 0 ? createDictionaryMap(salesStatusEntries) : null),
     [salesStatusEntries],
   )
+  /**
+   * Writes one status transition through the engine's own document update.
+   *
+   * The engine takes a dictionary **entry id** (`statusEntryId`), resolves the value itself, keeps
+   * the change trail and — for orders moving to `confirmed`/`canceled` — emits
+   * `sales.order.confirmed` / `sales.order.cancelled`. The row's `updatedAt` rides along as the
+   * optimistic lock, so a document somebody else touched in the meantime answers 409 instead of
+   * being overwritten.
+   */
+  const applyStatus = React.useCallback(async (row: DocumentRecord, value: string): Promise<boolean> => {
+    const statusEntryId = entryIdFor(value)
+    if (!statusEntryId) {
+      flash(t('internal_sales.list.actions.statusMissing', 'This status is not configured for your organization.'), 'error')
+      return false
+    }
+    try {
+      await readApiResultOrThrow(
+        `/api/${apiPath}`,
+        {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            ...(row.updatedAt ? buildOptimisticLockHeader(row.updatedAt) : {}),
+          },
+          body: JSON.stringify({ id: row.id, statusEntryId, updatedAt: row.updatedAt ?? null }),
+        },
+        { errorMessage: t('internal_sales.list.actions.statusFailed', 'Could not change the status.') },
+      )
+      await queryClient.invalidateQueries({ queryKey })
+      return true
+    } catch (statusError) {
+      if (surfaceRecordConflict(statusError, t)) {
+        await queryClient.invalidateQueries({ queryKey })
+        return false
+      }
+      const message = statusError instanceof Error && statusError.message
+        ? statusError.message
+        : t('internal_sales.list.actions.statusFailed', 'Could not change the status.')
+      flash(message, 'error')
+      return false
+    }
+  }, [apiPath, entryIdFor, queryClient, queryKey, t])
+
+  /** Quote only: hand the document to the engine's send route (validity, acceptance link, email). */
+  const handleSendQuote = React.useCallback(async (row: DocumentRecord, validForDays: number) => {
+    setSendBusy(true)
+    try {
+      await readApiResultOrThrow(
+        '/api/sales/quotes/send',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ quoteId: row.id, validForDays }),
+        },
+        { errorMessage: t('internal_sales.list.actions.sendFailed') },
+      )
+      flash(t('internal_sales.list.actions.sendDone'), 'success')
+      setSendTarget(null)
+      await queryClient.invalidateQueries({ queryKey })
+    } catch (sendError) {
+      const message = sendError instanceof Error && sendError.message
+        ? sendError.message
+        : t('internal_sales.list.actions.sendFailed')
+      flash(message, 'error')
+      // The engine commits the sent state before it hands the mail to the transport, so a mail
+      // failure leaves the quote marked `sent`: re-read instead of claiming nothing happened.
+      await queryClient.invalidateQueries({ queryKey })
+    } finally {
+      setSendBusy(false)
+    }
+  }, [queryClient, queryKey, t])
+
+  const handleConfirmOrder = React.useCallback(async (row: DocumentRecord) => {
+    const confirmed = await confirm({
+      title: t('internal_sales.list.actions.confirmConfirmTitle'),
+      description: t('internal_sales.list.actions.confirmConfirmBody'),
+      confirmText: t('internal_sales.list.actions.confirm'),
+    })
+    if (!confirmed) return
+    if (await applyStatus(row, SALES_STATUS_CONFIRMED)) flash(t('internal_sales.list.actions.confirmDone'), 'success')
+  }, [applyStatus, confirm, t])
+
+  const handleCancel = React.useCallback(async (row: DocumentRecord) => {
+    const confirmed = await confirm({
+      title: t('internal_sales.list.actions.cancelConfirmTitle'),
+      description: t('internal_sales.list.actions.cancelConfirmBody'),
+      confirmText: t('internal_sales.list.actions.cancel'),
+      variant: 'destructive',
+    })
+    if (!confirmed) return
+    if (await applyStatus(row, SALES_STATUS_CANCELED)) flash(t('internal_sales.list.actions.cancelDone'), 'success')
+  }, [applyStatus, confirm, t])
+
   const unmarkedCount = data?.unmarkedCount ?? 0
   const columns = React.useMemo(
     () => buildColumns(t, locale, kind, statusMap),
@@ -331,29 +477,59 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
               : {})}
           />
       )}
-      rowActions={(row) => (
-        <RowActions
-          items={[
-            ...(canManage
-              ? [{ id: 'edit', label: t('internal_sales.list.actions.edit'), href: `${listHref}/${row.id}/edit` }]
-              : []),
-            ...(canOrderFromQuote
-              ? [
-                  {
-                    id: 'new-order-from-quote',
-                    label: t('internal_sales.list.actions.newOrderFromQuote'),
-                    href: `${ordersCreateHref}?fromQuote=${row.id}`,
-                  },
-                  {
-                    id: 'convert-to-order',
-                    label: t('internal_sales.list.actions.convert'),
-                    onSelect: () => { void handleConvertToOrder(row) },
-                  },
-                ]
-              : []),
-          ]}
-        />
-      )}
+      rowActions={(row) => {
+        // Everything the row offers is derived from its status (`lib/salesStatus.ts`): a draft
+        // quote cannot be ordered, a canceled document offers neither send nor order nor edit, and
+        // an order can only be confirmed while it is a draft. Legacy rows carry `null` and keep
+        // their actions — see `salesStatusActions`.
+        const allowed = salesStatusActions(kind === 'quote' ? 'quote' : 'order', row.status)
+        return (
+          <RowActions
+            items={[
+              ...(canManage && allowed.canEdit
+                ? [{ id: 'edit', label: t('internal_sales.list.actions.edit'), href: `${listHref}/${row.id}/edit` }]
+                : []),
+              ...(canManage && kind === 'quote' && allowed.canSend
+                ? [{
+                    id: 'send-quote',
+                    label: row.status === 'sent'
+                      ? t('internal_sales.list.actions.resend')
+                      : t('internal_sales.list.actions.send'),
+                    onSelect: () => { setSendTarget(row); setSendValidDays(14) },
+                  }]
+                : []),
+              ...(canManage && kind === 'order' && allowed.canConfirm
+                ? [{
+                    id: 'confirm-order',
+                    label: t('internal_sales.list.actions.confirm'),
+                    onSelect: () => { void handleConfirmOrder(row) },
+                  }]
+                : []),
+              ...(canOrderFromQuote && allowed.canOrderFrom
+                ? [
+                    {
+                      id: 'new-order-from-quote',
+                      label: t('internal_sales.list.actions.newOrderFromQuote'),
+                      href: `${ordersCreateHref}?fromQuote=${row.id}`,
+                    },
+                    {
+                      id: 'convert-to-order',
+                      label: t('internal_sales.list.actions.convert'),
+                      onSelect: () => { void handleConvertToOrder(row) },
+                    },
+                  ]
+                : []),
+              ...(canManage && allowed.canCancel
+                ? [{
+                    id: 'cancel-document',
+                    label: t('internal_sales.list.actions.cancel'),
+                    onSelect: () => { void handleCancel(row) },
+                  }]
+                : []),
+            ]}
+          />
+        )
+      }}
       pagination={{
         page,
         pageSize: PAGE_SIZE,
@@ -367,6 +543,68 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
         onRowClick={(row) => router.push(`${listHref}/${row.id}/edit`)}
       />
       {ConfirmDialogElement}
+      {/* Sending is the engine's own quote route: it stamps `sent`, writes the validity deadline,
+          mints the acceptance link and mails it to the buyer — the dialog only asks how long the
+          offer stands. */}
+      <Dialog
+        open={sendTarget !== null}
+        onOpenChange={(next) => { if (!next && !sendBusy) setSendTarget(null) }}
+      >
+        <DialogContent
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && sendTarget && !sendBusy) {
+              event.preventDefault()
+              void handleSendQuote(sendTarget, sendValidDays)
+            }
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t('internal_sales.list.actions.sendDialogTitle', 'Send this quote to the buyer')}</DialogTitle>
+            <DialogDescription>
+              {t(
+                'internal_sales.list.actions.sendDialogBody',
+                'The quote is marked as sent, gets an acceptance link for the buyer and an email is queued. Editing the quote afterwards returns it to draft and invalidates the link.',
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <FieldLabel htmlFor="send-valid-days">
+                {t('internal_sales.list.actions.sendValidDays', 'Valid for (days)')}
+              </FieldLabel>
+              <Input
+                id="send-valid-days"
+                type="number"
+                min={1}
+                max={365}
+                value={String(sendValidDays)}
+                onChange={(event) => {
+                  const parsed = Number.parseInt(event.target.value, 10)
+                  setSendValidDays(Number.isFinite(parsed) ? Math.min(365, Math.max(1, parsed)) : 14)
+                }}
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {t(
+                'internal_sales.list.actions.sendEmailHint',
+                'The buyer email comes from the quote’s buyer field (Client email); fill it on the quote before sending.',
+              )}
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setSendTarget(null)} disabled={sendBusy}>
+              {t('ui.actions.cancel', 'Cancel')}
+            </Button>
+            <Button
+              type="button"
+              disabled={sendBusy}
+              onClick={() => { if (sendTarget) void handleSendQuote(sendTarget, sendValidDays) }}
+            >
+              {sendBusy ? t('internal_sales.list.actions.sending', 'Sending…') : t('internal_sales.list.actions.send')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

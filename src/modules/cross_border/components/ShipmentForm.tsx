@@ -1523,6 +1523,8 @@ function ShipmentSalesAllocationEditor({
       t,
       t('cross_border.shipments.salesAllocations.loadLinesFailed'),
       query,
+      // A document written before statuses existed is still allocatable; its label says so.
+      { unmarkedStatusLabel: t('cross_border.shipments.salesAllocations.unmarkedStatus', 'status not marked') },
     )
     orderOptionsRef.current = next
     return next

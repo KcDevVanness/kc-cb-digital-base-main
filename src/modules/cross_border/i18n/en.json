@@ -106,6 +106,7 @@
   "cross_border.shipments.salesAllocations.salesOrder": "Sales order",
   "cross_border.shipments.salesAllocations.tradeType.internal": "Internal",
   "cross_border.shipments.salesAllocations.tradeType.external": "External",
+  "cross_border.shipments.salesAllocations.unmarkedStatus": "status not marked",
   "cross_border.shipments.salesAllocations.line": "Line",
   "cross_border.shipments.salesAllocations.product": "Product",
   "cross_border.shipments.salesAllocations.ordered": "Ordered",
