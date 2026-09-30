@@ -363,9 +363,14 @@
   - **渠道**：站内通知（`notifications`，`clientBroadcast`）+ 邮件（组织已配置发信时）；**默认关闭，按组织开启**。
   - **频率上限**：站内逐条；邮件每组织**每日一封摘要**（多条合并），避免一天几十封。
   - **内容**：单号 + 关联方 + 已等待天数 + 一键直达（清单锚点或单据详情）。
-- **实现要点（全部现成机制）**：调度走 `scheduler`；发送走 `notifications`；幂等靠既有通知记录的查询，不建表、不加列。
-- **开放问题（Q-011）**：谁收（负责人 / 财务组 / 两者 / 自定义名单）；是否允许每组织调阈值；邮件是否默认开。
-  **这三问答复前不动代码**——提醒发错人是可见的骚扰，比不发更糟。
+- **实现要点（2026-09-30 核对平台契约后）**：
+  - **发送**走 `notificationService`（DI token，`notifications/di.ts:8`），实际投递由队列 worker `notifications:create`（`queue=notifications`，concurrency=5）完成 —— 因此是**异步 + 可重试**，调用点只需入队。
+  - **类型与偏好是平台的，不是我们的**：`notification_types` 注册类型、`notification_preferences` 是**每用户自己的开关**（渠道偏好也在这里）。所以「站内还是邮件」「谁想收」这类问题**平台已经有答案**，我们不需要再造一个订阅开关 —— 这也把 Q-011 收窄成「这个类型注册后默认开还是默认关」。
+  - **收件人可解**：采购单上有 **`owner_user_id`**（`purchasing/data/entities.ts:184`，与 `owner_snapshot` 同一行），所以「订单的收款逾期」可以把通知直接投给单据负责人；柜侧没有自己的负责人字段，但柜的分摊订单（`cross_border_shipment_allocations`）各自的 `owner_user_id` 就是责任人 —— **两条都不需要加列**。
+  - **调度**走 `scheduler`；**幂等**键 = 资源 + 逾期起始日，查既有 `notifications` 记录即可，不建表、不加列。
+- **开放问题（Q-011，核对契约后已收窄为两问）**：① 只发**单据负责人**，还是负责人 + **财务组**（后者需要按 `export_finance.*.view` 反查用户，属额外一步）；
+  ② 新注册的通知类型**默认开**还是**默认关**（渠道与否由每用户 `notification_preferences` 决定，不需要我们选）。
+  **这两问答复前不动代码**——提醒发错人是可见的骚扰，比不发更糟；机制本身已全部可用（见上）。
 - **不做**：短信 / 企业微信等外部渠道（未接入）；订阅名单管理 UI；把阈值做成配置项。
 
 ## Requirement Traceability
@@ -436,6 +441,7 @@
 | 2026-09-30 | **Phase 2·C 实现完成**（`feat/export-finance-status-coherence`）：收款/退税记录的**状态与事实**在写入时校验（`lib/statusCoherence.ts`，422 逐条回报；历史行不动）；两个档案页新增**派生**的逾期标记（柜「退税逾期」/ 订单「收款逾期」，阈值常量 45 天、边界不含、缺失日期不标），进列表列与 CSV。证据：单元两套 + 真机 API（三种非法组合 422、finance 口径回读 `collectionOverdue`、CSV 表头含「退税逾期」）。开放问题记入 Q-008（是否把「柜未收货不得登记收款」做成硬门禁——收款按采购单记，一单可跨多柜）。 |
 | 2026-09-30 | **Phase 4 转化率实现完成**（`feat/internal-sales-quote-conversion`）：`/backend/internal-sales/quote-conversion` 上线 —— 关联读订单冻结的 `metadata.internalSales.sourceQuote.id`（不加列、不依赖审计），「已发出」按 `sent_at` 事实判断，页面同时给出**两个分母的比率**（全部报价 / 已发出）与原始计数，把口径选择留给业务。纯聚合在 `lib/quoteConversion.ts`（单测 5 例：转化判定 / 状态词不算已发出 / 空分母返回 null 而非 NaN / 区间外订单不计入 / 百分比取整）。**真机**：夹具（给一张报价写 `sent_at` + 把一张订单的 `metadata` 指向它）→ `quotes=2 / sent=1 / converted=1 / 50% / 100%`，页面四个数字与两行明细正确；回滚夹具后 `converted=0 / sent=0 / 0% / —`（null 正确渲染）。 |
 | 2026-09-30 | **Phase 4「转化率」与「停留时长」拆开（仅文档）**：查证订单从报价创建时冻结了 `metadata.internalSales.sourceQuote = { id, number }`（`internal_sales/lib/documentValues.ts:28/142`），**转化率因此不需要新列、不依赖审计**，只剩「分母」一个口径待定（发出数 vs 全部报价）；**只有停留时长**需要迁移批次的 `status_changed_at`。迁移申请范围据此收窄。 |
+| 2026-09-30 | **Phase 4·B 机制核对（仅文档）**：`notificationService`（`notifications/di.ts:8`）+ 队列 worker `notifications:create`（异步可重试）是投递入口；**类型注册与每用户 `notification_preferences` 由平台提供**，所以渠道/是否收是用户自己的开关，不是我们要造的东西；收件人**可解**——采购单有 `owner_user_id`（`purchasing/data/entities.ts:184`），柜的责任人取其分摊订单的 owner。Q-011 因此收窄为**两问**（只发负责人还是加财务组；新类型默认开还是关），其余机制就绪，等这两问即开工。 |
 | 2026-09-30 | **Phase 4·B 逾期提醒口径草案（仅文档，待确认）**：以「每日一次扫描 `overdue=true`、某行当天首次进入逾期才发、幂等键=资源+逾期起始日（查既有 `notifications` 记录，不建表）」为核心；收件人推荐「单据负责人 + 财务组（现有 view 持有者）」、阈值沿用 45 天不加配置、渠道站内 + 邮件且**默认关闭按组织开启**、邮件每日合并一封。开放问题 **Q-011**（收件人 / 阈值可调性 / 邮件默认开关）答复前不动代码。 |
 | 2026-09-30 | **Phase 4「转化率/停留时长」实测后改道（仅文档）**：查 dev 库 `action_logs`（1 417 行，2026-09-24 起）——时间线明文且已索引、`sales.quote`/`sales.order` 的状态写入确实落日志（`changed_fields = ['status','statusEntryId']`），**但取值列（`command_payload` / `changes_json` / `snapshot_after`）是 at-rest 加密的 `…:v1` 密文**，SQL 侧无法判定某行日志代表哪个状态。因此停留时长/转化率**不建在审计载荷上**，改为随迁移批次给单据加 `status_changed_at`（至少 `sales_quotes`/`sales_orders`），此后纯读侧聚合即可；该列并入「结算单确认/付款 + 费用付款日期 + 2·B 的 `export_documents.status`」同一批迁移，一次批准。 |
 | 2026-09-30 | **Phase 4·A 实现完成**（`feat/export-finance-overdue-worklist`）：`/backend/export-finance/overdue` 上线 —— 两段清单（柜退税逾期 / 订单收款逾期）各读 `?overdue=true`，**谓词直接落在行自己派生的 `refundOverdue`/`collectionOverdue` 上**（`containerFileProjection.ts` / `orderFileProjection.ts` 的 filtered 段），因此列表、`total`、CSV 必然同口径；参数用 `parseBooleanToken`（`"false"` 不会变真），任何非真值=不过滤。**真机证据**：夹具柜（收货 60 天前）进清单、控制柜（10 天前）不进（`all=2 / overdue=1 / CSV 1 行`）；夹具订单（`received` + 收货 60 天前）使订单段 `overdue=1`（订单总数 10）；页面两段各 1 行（`已等待 60 天`，状态取自 `export_finance.refund.status.*` / `collection.status.*` 字典）；删夹具后两段空态正确。**落地时修正定稿里的一处误判**：过滤不在 SQL 层——两个投影本来就把全部行装配完、再按 TS 谓词过滤、最后分页（`total = filtered.length`），所以复用行上的派生标记就是同口径实现，不需要重复 SQL 谓词。 |
