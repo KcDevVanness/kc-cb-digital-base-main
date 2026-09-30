@@ -40,6 +40,7 @@ import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import {
   SHIPMENT_ALLOCATIONS_API_PATH,
   SHIPMENT_CANCEL_API_PATH,
+  SHIPMENT_CLOSE_API_PATH,
   SHIPMENT_COMMERCIAL_INVOICE_HREF,
   SHIPMENT_CONTRACTS_API_PATH,
   SHIPMENT_DEPART_API_PATH,
@@ -118,24 +119,29 @@ export type ShipmentDocumentRecord = {
 }
 
 /** Only the actions the current status allows — mirroring the command's transition table. */
-type ShipmentAction = 'depart' | 'receive' | 'cancel'
+type ShipmentAction = 'depart' | 'receive' | 'close' | 'cancel'
 
 const SHIPMENT_ACTIONS_BY_STATUS: Record<ShipmentStatus, readonly ShipmentAction[]> = {
   draft: ['depart', 'cancel'],
   in_transit: ['receive', 'cancel'],
-  received: [],
+  // Received goods whose paperwork and settlement are done are archived; a closed shipment offers
+  // nothing (the state machine's terminal stage).
+  received: ['close'],
+  closed: [],
   cancelled: [],
 }
 
 const SHIPMENT_ACTION_LABEL_KEYS: Record<ShipmentAction, string> = {
   depart: 'cross_border.shipments.actions.depart',
   receive: 'cross_border.shipments.actions.receive',
+  close: 'cross_border.shipments.actions.close',
   cancel: 'cross_border.shipments.actions.cancel',
 }
 
 const SHIPMENT_ACTION_PATHS: Record<ShipmentAction, string> = {
   depart: SHIPMENT_DEPART_API_PATH,
   receive: SHIPMENT_RECEIVE_API_PATH,
+  close: SHIPMENT_CLOSE_API_PATH,
   cancel: SHIPMENT_CANCEL_API_PATH,
 }
 
@@ -1054,6 +1060,25 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
     }
   }, [confirm, load, runAction, t])
 
+  /**
+   * Archival has no payload, but it does have a consequence worth confirming: the shipment stops
+   * accepting edits, cancellations and milestones.
+   */
+  const handleClose = React.useCallback(async () => {
+    const confirmed = await confirm({
+      title: t('cross_border.shipments.closeConfirmTitle'),
+      text: t('cross_border.shipments.closeConfirmBody'),
+      confirmText: t('cross_border.shipments.actions.close'),
+    })
+    if (!confirmed) return
+    try {
+      await runAction('close', {})
+    } catch (error) {
+      if (surfaceRecordConflict(error, t, { onRefresh: () => void load() })) return
+      flash(shipmentErrorMessage(error, t('cross_border.shipments.form.saveFailed')), 'error')
+    }
+  }, [confirm, load, runAction, t])
+
   // The receive dialog re-seeds from the shipment each time it opens (the operator may have just
   // corrected the destination), and holds its values steady while it stays open.
   const receiveInitialValues = React.useMemo<ReceiveFormValues>(() => ({
@@ -1166,6 +1191,10 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
                   }
                   if (action === 'receive') {
                     setReceiveDialogOpen(true)
+                    return
+                  }
+                  if (action === 'close') {
+                    void handleClose()
                     return
                   }
                   setCancelDialogOpen(true)

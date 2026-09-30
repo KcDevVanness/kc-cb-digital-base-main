@@ -66,6 +66,7 @@ export const SHIPMENT_DOCUMENTS_API_PATH = 'cross_border/shipments/documents'
 export const SHIPMENT_DEPART_API_PATH = 'cross_border/shipments/depart'
 export const SHIPMENT_RECEIVE_API_PATH = 'cross_border/shipments/receive'
 export const SHIPMENT_CANCEL_API_PATH = 'cross_border/shipments/cancel'
+export const SHIPMENT_CLOSE_API_PATH = 'cross_border/shipments/close'
 export const SHIPMENTS_LIST_HREF = '/backend/cross_border/shipments'
 
 const PURCHASE_ORDERS_API_URL = '/api/purchasing/purchase-orders'
@@ -76,13 +77,15 @@ const OPTION_PAGE_SIZE = 50
 const OPTION_ID_PAGE_SIZE = 1
 
 /** Statuses the list filter offers, in the order the state machine walks them. */
-export const SHIPMENT_STATUSES = ['draft', 'in_transit', 'received', 'cancelled'] as const
+export const SHIPMENT_STATUSES = ['draft', 'in_transit', 'received', 'closed', 'cancelled'] as const
 export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number]
 
 const SHIPMENT_STATUS_MAP: StatusMap<ShipmentStatus> = {
   draft: 'neutral',
   in_transit: 'info',
   received: 'success',
+  // Archival: done and filed, not a new achievement — neutral reads correctly next to `received`.
+  closed: 'neutral',
   cancelled: 'error',
 }
 
@@ -90,6 +93,7 @@ const SHIPMENT_STATUS_LABEL_KEYS: Record<ShipmentStatus, string> = {
   draft: 'cross_border.shipments.status.draft',
   in_transit: 'cross_border.shipments.status.in_transit',
   received: 'cross_border.shipments.status.received',
+  closed: 'cross_border.shipments.status.closed',
   cancelled: 'cross_border.shipments.status.cancelled',
 }
 

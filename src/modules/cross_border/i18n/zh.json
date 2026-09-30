@@ -201,5 +201,9 @@
   "cross_border.packingLists.detail.loading": "装箱单加载中…",
   "cross_border.packingLists.detail.loadFailed": "装箱单加载失败",
   "cross_border.packingLists.detail.notFound": "找不到这张装箱单。",
-  "cross_border.packingLists.detail.untitled": "未编号装箱单"
+  "cross_border.packingLists.detail.untitled": "未编号装箱单",
+  "cross_border.shipments.status.closed": "已归档",
+  "cross_border.shipments.actions.close": "归档",
+  "cross_border.shipments.closeConfirmTitle": "把这张发运单归档？",
+  "cross_border.shipments.closeConfirmBody": "归档是终态：之后不能再编辑、取消或记录里程碑；请确认单证与结算已完成。"
 }

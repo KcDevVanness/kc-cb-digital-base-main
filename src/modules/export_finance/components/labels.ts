@@ -48,6 +48,7 @@ export const SHIPMENT_STATUS_LABEL_KEYS: Record<ShipmentStatus, string> = {
   draft: 'cross_border.shipments.status.draft',
   in_transit: 'cross_border.shipments.status.in_transit',
   received: 'cross_border.shipments.status.received',
+  closed: 'cross_border.shipments.status.closed',
   cancelled: 'cross_border.shipments.status.cancelled',
 }
 

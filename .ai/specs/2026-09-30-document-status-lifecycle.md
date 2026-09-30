@@ -1,7 +1,7 @@
 # 单据状态（status）在各业务板块的补齐与赋能（document status lifecycle）
 
 **Date**: 2026-09-30
-**Status**: Phase 1 Implemented（owner 2026-09-30「按照这个流程先实作」；实现单元 `feat/sales-status-lifecycle`，见 Final Compliance Report）；Phase 2–4 仍为草案
+**Status**: Phase 1 Implemented（`feat/sales-status-lifecycle`）；Phase 2·A 实现中（`feat/shipment-close-lifecycle`），Phase 2·B/C 与 Phase 3–4 为草案
 **Scope route**: `spec-pr`（本文件）；Phase 1 实现单元 `feat/sales-status-lifecycle`（`module-data` + `backend-ui`，含 `cross_border` 一处门禁）
 
 ## TLDR
@@ -211,9 +211,33 @@
 - **Tests**：TEST-001…TEST-006。
 - **Exit gate**：新建单据 100% 带 `draft`；未确认报价无法下单（UI 禁用 + API 侧无写请求）；未确认订单不出现在分摊选择器；报价发出后 `sent` + 「有效至」；浏览器实测（zh/en、窄屏、深色）。
 
-### Phase 2 — 履约与资金（草案）
+### Phase 2 — 履约与资金
 
-发运单 `closed`（结算/归档）与状态事件；发运单证区 `draft/issued/void`；订单 `in_fulfillment`/`fulfilled` 由发运/收货联动回写；收款/退税状态与逾期清单。
+**Phase 2 拆成三个切片，逐个交付。**
+
+#### Phase 2·A — 发运单归档 `closed`（本文件定稿，实现中）
+
+- **目标**：柜的生命周期有终点。现在 `received` 之后单据停在原地，柜档案/结算没有「收口」状态；归档后不允许再改、再取消。
+- **状态机**（唯一权威：`lib/shipmentStatus.ts` 的 `SHIPMENT_TRANSITIONS`）：`draft → in_transit → received → closed`，旁路 `draft|in_transit → cancelled`；`closed` 与 `cancelled` 为终态。
+- **Requirements**
+  - REQ-201 发运单新增 `closed`（归档）状态，只能由 `received` 迁入（命令 `cross_border.shipments.close`）；其他状态一律 422 并给出当前状态。
+  - REQ-202 归档是终态：`closed` 之后不可编辑、不可取消、不可记录里程碑（现有守卫按状态白名单天然拒绝，测试固定）。
+  - REQ-203 归档发放域事件 `cross_border.shipment.closed`（`id/number/tenantId/organizationId`），供订阅者做结算/通知。
+  - REQ-204 列表与详情显示 `closed` 徽章与标签（zh「已归档」/en“Closed”），列表筛选包含该状态。
+- **Tests**：TEST-201 单元（`SHIPMENT_TRANSITIONS` 矩阵：只允许 `received → closed`、终态无出边）；TEST-202 集成（API：received → close 200 + 事件；`draft` 直接 close → 422；close 后再 cancel → 422）；TEST-203 浏览器（详情页 `received` 出现「归档」按钮、`closed` 无动作、列表筛选与徽章）。
+- **验收**
+  - **AC-201** 一张 `received` 发运单执行「归档」→ 状态 `closed`，库内值与徽章一致；再次归档/取消被 422 拒绝。
+  - **AC-202** `draft`/`in_transit` 发运单不出现「归档」动作，直接调 API 也是 422。
+  - **AC-203** 列表状态筛选含「已归档」，筛出的行全部是 `closed`。
+- **不做**：`closedAt` 时间戳列（需要 DDL；状态变更审计已记录时间与操作者，等 Phase 3 的迁移一起加）；柜档案/结算页的「已归档」聚合（Phase 4 报表）。
+
+#### Phase 2·B — 发运单证区状态（草案，需要迁移）
+
+`cross_border_export_documents` 增 `status`（`draft/issued/void`，对齐 `trade_docs` 的 PI/CI 词表）+ 签发/作废动作 + 门禁（未签发 PI 不能作为收款依据）。**需要一张加列的迁移**，落地前单独批准。
+
+#### Phase 2·C — 收款 / 退税状态与逾期（草案）
+
+收款 `collection_status`、退税 `tax_refund_status` 已有词表且可写；缺口是门禁（登记收款要求柜已 `received`/`closed`）、逾期清单（未收/未到账）、以及「已申报/已到账」时间戳（需要 DDL，随 2·B 的迁移一起）。
 
 ### Phase 3 — 采购与平台运营（草案）
 
