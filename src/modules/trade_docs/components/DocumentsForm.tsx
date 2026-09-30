@@ -119,6 +119,8 @@ export type DocumentFormValues = {
   counterpartyContact: string
   counterpartyBank: string
   ourPartyId: string
+  /** Legacy `partyId` key of pre-organization snapshots; re-emitted when no company is picked. */
+  ourPartyLegacyPartyId: string
   ourPartyBankAccountId: string
   ourPartyName: string
   ourPartyAddress: string
@@ -176,6 +178,7 @@ function emptyDocumentValues(): DocumentFormValues {
     counterpartyContact: '',
     counterpartyBank: '',
     ourPartyId: '',
+    ourPartyLegacyPartyId: '',
     ourPartyBankAccountId: '',
     ourPartyName: '',
     ourPartyAddress: '',
@@ -250,7 +253,8 @@ export function toDocumentFormValues(
     counterpartyAddress: snapshotText(counterpartySnapshot, 'address'),
     counterpartyContact: snapshotText(counterpartySnapshot, 'contact'),
     counterpartyBank: snapshotText(counterpartySnapshot, 'bank'),
-    ourPartyId: snapshotText(ourPartySnapshot, 'partyId'),
+    ourPartyId: snapshotText(ourPartySnapshot, 'organizationId'),
+    ourPartyLegacyPartyId: snapshotText(ourPartySnapshot, 'partyId'),
     ourPartyBankAccountId: snapshotText(ourPartySnapshot, 'bankAccountId'),
     ourPartyName: snapshotText(ourPartySnapshot, 'name'),
     ourPartyAddress: snapshotText(ourPartySnapshot, 'address'),
@@ -299,7 +303,8 @@ export function buildDocumentPayload(values: DocumentFormValues): Record<string,
     contact: values.ourPartyContact,
     bank: values.ourPartyBank,
   })
-  if (values.ourPartyId.trim()) ourParty.partyId = values.ourPartyId.trim()
+  if (values.ourPartyId.trim()) ourParty.organizationId = values.ourPartyId.trim()
+  else if (values.ourPartyLegacyPartyId.trim()) ourParty.partyId = values.ourPartyLegacyPartyId.trim()
   if (values.ourPartyBankAccountId.trim()) ourParty.bankAccountId = values.ourPartyBankAccountId.trim()
 
   const counterparty = partySnapshot({

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2, X } from 'lucide-react'
 import {
@@ -36,9 +37,8 @@ import { CONTRACT_DIRECTIONS, CONTRACT_STATUSES, directionLabel } from './contra
 import { ContractLineSourceDialog, type ContractLineSourceHead } from './ContractLineSourceDialog'
 import {
   loadCurrencyOptions,
-  loadPartyBankAccountOptions,
+  loadOurPartyProfile,
   loadPartyDetail,
-  loadPartyOptions,
   loadPaymentTermOptions,
   loadPortOptions,
   loadProductOption,
@@ -47,9 +47,10 @@ import {
   readText,
   useUnitOptions,
   withCurrentUnit,
-  type PartyDetail,
+  type OurPartyProfileDetail,
   type ProductOption,
 } from './formOptions'
+import { useOurPartyOrganizations } from './useOurPartyOrganizations'
 import { CounterpartyPicker } from './CounterpartyPicker'
 // The direction→kind map is the single source of "who may stand on this side of the document".
 import { COUNTERPARTY_KIND_BY_DIRECTION } from '../data/validators'
@@ -85,6 +86,11 @@ export type ContractFormValues = {
   counterpartyBank: string
   /** `parties` id of our own side, when the head was picked from master data (F-004). */
   ourPartyId: string
+  /**
+   * A `partyId` the snapshot carried before our own side became an organization (an old document).
+   * Kept in the form values only so re-saving that document does not erase the legacy link.
+   */
+  ourPartyLegacyPartyId: string
   /** `PartyBankAccount` id the bank text was filled from; carried into the snapshot. */
   ourPartyBankAccountId: string
   ourPartyName: string
@@ -136,6 +142,7 @@ const EMPTY_CONTRACT_VALUES: ContractFormValues = {
   counterpartyContact: '',
   counterpartyBank: '',
   ourPartyId: '',
+  ourPartyLegacyPartyId: '',
   ourPartyBankAccountId: '',
   ourPartyName: '',
   ourPartyAddress: '',
@@ -180,7 +187,8 @@ export function toContractFormValues(
     counterpartyAddress: snapshotText(counterpartySnapshot, 'address'),
     counterpartyContact: snapshotText(counterpartySnapshot, 'contact'),
     counterpartyBank: snapshotText(counterpartySnapshot, 'bank'),
-    ourPartyId: snapshotText(ourPartySnapshot, 'partyId'),
+    ourPartyId: snapshotText(ourPartySnapshot, 'organizationId'),
+    ourPartyLegacyPartyId: snapshotText(ourPartySnapshot, 'partyId'),
     ourPartyBankAccountId: snapshotText(ourPartySnapshot, 'bankAccountId'),
     ourPartyName: snapshotText(ourPartySnapshot, 'name'),
     ourPartyAddress: snapshotText(ourPartySnapshot, 'address'),
@@ -269,7 +277,10 @@ export function buildContractPayload(values: ContractFormValues): Record<string,
   }) ?? {}
   // The master-data ids ride inside the free-form snapshot; the validator accepts any object, so the
   // printed head stays traceable to `parties` without a command change.
-  if (values.ourPartyId.trim()) ourParty.partyId = values.ourPartyId.trim()
+  if (values.ourPartyId.trim()) ourParty.organizationId = values.ourPartyId.trim()
+  // A document that predates the organization-keyed picker keeps its legacy link when it is saved
+  // without choosing a company again; choosing one replaces it with the organization id.
+  else if (values.ourPartyLegacyPartyId.trim()) ourParty.partyId = values.ourPartyLegacyPartyId.trim()
   if (values.ourPartyBankAccountId.trim()) ourParty.bankAccountId = values.ourPartyBankAccountId.trim()
 
   const counterparty = partySnapshot({
@@ -625,10 +636,12 @@ function ContractLinesEditor(
 }
 
 /**
- * Our own side (F-004): the pickers fill the printed seller head and the beneficiary bank from the
- * `parties` master, while the four free-text fields below stay editable for contracts that predate
- * the master data. The chosen party/account ids travel inside `ourPartySnapshot` (the validator
- * accepts a free-form snapshot, so no command change is needed).
+ * Our own side (F-004): the picker names **one of our organizations** and fills the printed seller
+ * head and the beneficiary bank from that company's profile in the `our_parties` master
+ * (`.ai/specs/2026-09-30-our-entity-master.md`). The four free-text fields below stay editable — a
+ * company without a profile yet fills only the organization's name, which is exactly how a
+ * hand-written contract behaved — and the chosen organization/account ids travel inside
+ * `ourPartySnapshot` (the validator accepts a free-form snapshot, so no command change is needed).
  */
 export function OurPartyPicker({
   values,
@@ -636,15 +649,18 @@ export function OurPartyPicker({
   t,
   idPrefix = 'contract',
 }: CrudFormGroupComponentProps & { t: TranslateFn; idPrefix?: string }) {
-  const partyId = typeof values.ourPartyId === 'string' ? values.ourPartyId : ''
+  const organizationId = typeof values.ourPartyId === 'string' ? values.ourPartyId : ''
   const bankAccountId = typeof values.ourPartyBankAccountId === 'string' ? values.ourPartyBankAccountId : ''
   const partyName = typeof values.ourPartyName === 'string' ? values.ourPartyName : ''
   const bankText = typeof values.ourPartyBank === 'string' ? values.ourPartyBank : ''
-  /** Accounts of the last party we loaded, so picking a second account needs no second request. */
-  const accountsRef = React.useRef<PartyDetail['bankAccounts']>([])
+  const organizations = useOurPartyOrganizations()
+  /** The resolved profile for the currently picked organization; `profileId: null` = none yet. */
+  const [resolved, setResolved] = React.useState<{ organizationId: string; profileId: string | null } | null>(null)
+  /** Accounts of the last organization we loaded, so picking a second account needs no second request. */
+  const accountsRef = React.useRef<OurPartyProfileDetail['bankAccounts']>([])
 
   const applyBankAccount = React.useCallback(
-    (account: PartyDetail['bankAccounts'][number]) => {
+    (account: OurPartyProfileDetail['bankAccounts'][number]) => {
       setValue('ourPartyBankAccountId', account.id)
       setValue(
         'ourPartyBank',
@@ -656,25 +672,32 @@ export function OurPartyPicker({
     [setValue],
   )
 
-  const handlePartyChange = React.useCallback(
-    (nextId: string) => {
-      setValue('ourPartyId', nextId)
-      if (!nextId) return
-      void loadPartyDetail(t('trade_docs.contracts.form.partyLoadFailed'), nextId)
-        .then((party) => {
-          if (!party) return
-          accountsRef.current = party.bankAccounts
-          setValue('ourPartyName', party.name)
-          setValue('ourPartyAddress', party.address)
-          setValue('ourPartyContact', party.contact)
+  const handleOrganizationChange = React.useCallback(
+    (nextOrganizationId: string) => {
+      setValue('ourPartyId', nextOrganizationId)
+      if (!nextOrganizationId) return
+      const label = organizations.entries.find((entry) => entry.id === nextOrganizationId)?.name ?? ''
+      // The name comes from the organization itself, so it is filled whether or not the profile read
+      // succeeds — an unreadable profile must not leave the printed head empty.
+      setValue('ourPartyName', label)
+      void loadOurPartyProfile(t('trade_docs.contracts.form.partyLoadFailed'), nextOrganizationId)
+        .then((profile) => {
+          accountsRef.current = profile?.bankAccounts ?? []
+          setResolved({ organizationId: nextOrganizationId, profileId: profile?.id ?? null })
+          setValue('ourPartyAddress', profile?.address ?? '')
+          setValue('ourPartyContact', profile?.contact ?? '')
           setValue('ourPartyBankAccountId', '')
-          const preferred = party.bankAccounts.find((account) => account.isDefault) ?? party.bankAccounts[0]
+          const preferred = accountsRef.current.find((account) => account.isDefault) ?? accountsRef.current[0]
           if (preferred) applyBankAccount(preferred)
           else setValue('ourPartyBank', '')
         })
-        .catch(() => undefined)
+        .catch(() => {
+          // Degrade exactly like "no profile": name only, nothing silently prefixed.
+          accountsRef.current = []
+          setResolved({ organizationId: nextOrganizationId, profileId: null })
+        })
     },
-    [applyBankAccount, setValue, t],
+    [applyBankAccount, organizations.entries, setValue, t],
   )
 
   const handleBankAccountChange = React.useCallback(
@@ -686,17 +709,19 @@ export function OurPartyPicker({
         applyBankAccount(cached)
         return
       }
-      if (!partyId) return
-      void loadPartyDetail(t('trade_docs.contracts.form.partyLoadFailed'), partyId)
-        .then((party) => {
-          accountsRef.current = party?.bankAccounts ?? []
+      if (!organizationId) return
+      void loadOurPartyProfile(t('trade_docs.contracts.form.partyLoadFailed'), organizationId)
+        .then((profile) => {
+          accountsRef.current = profile?.bankAccounts ?? []
           const account = accountsRef.current.find((row) => row.id === nextId)
           if (account) applyBankAccount(account)
         })
         .catch(() => undefined)
     },
-    [applyBankAccount, partyId, setValue, t],
+    [applyBankAccount, organizationId, setValue, t],
   )
+
+  const profileMissing = resolved !== null && resolved.organizationId === organizationId && resolved.profileId === null
 
   return (
     <div className="grid gap-3 md:grid-cols-2">
@@ -705,13 +730,19 @@ export function OurPartyPicker({
           {t('trade_docs.contracts.form.field.ourPartyFromMaster')}
         </FieldLabel>
         <ComboboxInput
-          value={partyId}
-          onChange={handlePartyChange}
+          value={organizationId}
+          onChange={handleOrganizationChange}
           placeholder={t('trade_docs.contracts.form.field.ourPartySelect')}
-          seedOptions={partyId ? [{ value: partyId, label: partyName || partyId }] : undefined}
+          seedOptions={
+            organizationId
+              ? [{ value: organizationId, label: partyName || organizations.entries.find((entry) => entry.id === organizationId)?.name || organizationId }]
+              : undefined
+          }
           loadSuggestions={async (query) => {
-            const options = await loadPartyOptions(t('trade_docs.contracts.form.partyLoadFailed'), query)
-            return options.map<ComboboxOption>((option) => ({ value: option.value, label: option.label }))
+            const term = (query ?? '').trim().toLowerCase()
+            return organizations.entries
+              .filter((entry) => (term.length > 0 ? entry.name.toLowerCase().includes(term) : true))
+              .map<ComboboxOption>((entry) => ({ value: entry.id, label: entry.name }))
           }}
           allowCustomValues={false}
           clearable
@@ -719,6 +750,14 @@ export function OurPartyPicker({
         <p className="text-xs text-muted-foreground">
           {t('trade_docs.contracts.form.field.ourPartyFromMasterHelp')}
         </p>
+        {profileMissing ? (
+          <p className="text-xs text-muted-foreground">
+            {t('trade_docs.contracts.form.field.ourPartyNoProfile')}{' '}
+            <Link href="/backend/our-parties/create" className="underline">
+              {t('trade_docs.contracts.form.field.ourPartyNoProfileAction')}
+            </Link>
+          </p>
+        ) : null}
       </div>
       <div className="space-y-1.5">
         <FieldLabel htmlFor={`${idPrefix}-our-party-bank`}>
@@ -728,17 +767,22 @@ export function OurPartyPicker({
           value={bankAccountId}
           onChange={handleBankAccountChange}
           placeholder={t('trade_docs.contracts.form.field.bankAccountSelect')}
-          disabled={!partyId}
+          disabled={!organizationId}
           seedOptions={bankAccountId ? [{ value: bankAccountId, label: bankText || bankAccountId }] : undefined}
           loadSuggestions={async (query) => {
-            const options = await loadPartyBankAccountOptions(
-              t('trade_docs.contracts.form.partyLoadFailed'),
-              partyId,
-            )
+            // On an edit page the form opens with a company already picked and the ref empty, so the
+            // dropdown hydrates from the profile once instead of offering only the seeded account.
+            if (organizationId && accountsRef.current.length === 0) {
+              const profile = await loadOurPartyProfile(
+                t('trade_docs.contracts.form.partyLoadFailed'),
+                organizationId,
+              ).catch(() => null)
+              accountsRef.current = profile?.bankAccounts ?? []
+            }
             const term = query?.trim().toLowerCase() ?? ''
-            return options
-              .filter((option) => (term.length ? option.label.toLowerCase().includes(term) : true))
-              .map<ComboboxOption>((option) => ({ value: option.value, label: option.label }))
+            return accountsRef.current
+              .filter((account) => (term.length > 0 ? labelBankAccount(account).toLowerCase().includes(term) : true))
+              .map<ComboboxOption>((account) => ({ value: account.id, label: labelBankAccount(account) }))
           }}
           allowCustomValues={false}
           clearable
@@ -746,6 +790,13 @@ export function OurPartyPicker({
       </div>
     </div>
   )
+}
+
+/** `银行 — 账号 ★` (the star marks the default account), the same shape the counterparty block uses. */
+function labelBankAccount(account: OurPartyProfileDetail['bankAccounts'][number]): string {
+  const label = [account.beneficiaryBank, account.accountNumber].filter((part) => part.length > 0).join(' — ')
+  const text = label.length > 0 ? label : account.id.slice(0, 8)
+  return account.isDefault ? `${text} ★` : text
 }
 
 function useContractFields(t: TranslateFn): CrudField[] {
