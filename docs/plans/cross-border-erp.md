@@ -19,7 +19,17 @@
   - ✅ 已做：付款附件（`PurchaseOrderDetail` 的付款附件上传/预览 + `purchasing.purchase-payments.attach`，2026-09-30 核对现网已实现）；提醒规则（PRD Q6 已答 → `finance due-reminders` 既有约定，2026-09-30 按同款补齐 `export_finance overdue-reminders`）。
   - ✅ 已做：**全量集成套件**（2026-09-30）：**104 passed / 4 failed / 5 did not run（43.8s）**；4 个失败**全在 `storage_ops`**，原因是 `STORAGE_OPS_TEST_S3_CONFIG` 未设置（spec 自带门禁的报错原文），不是回归。**跑法要点**（第一次尝试失败的原因在此）：ephemeral 以 **production 模式**起服务，`.env` 里的占位 `JWT_SECRET` 会让它直接退出（`Refusing to run in production with an unsafe signing secret`）⇒ 必须给真密钥；另外建议把 `DATABASE_URL` 指到独立库（本次跑在临时库 `kc_cb_itest` 上，跑完已 DROP），避免集成夹具写进开发库。
   - ✅ 已做：**审计/撤销链实测**（2026-09-30）：改一个商品的 `description`（走 `PUT /api/products/items`）→ `GET /api/audit_logs/audit-logs/actions?resourceKind=products.product&resourceId=<id>` 拿到该次写入的 `undoToken` → `POST /api/audit_logs/audit-logs/actions/undo` **200** `{ok:true, logId}` → 商品字段回到改前值（`description` 复原为 `null`）、审计条目 `executionState` 变为 `undone` 且**该条不再携带 `undoToken`**（不能重复撤销）。**路径坑**：接口真实前缀是 `/api/audit_logs/audit-logs/…`（模块 id 与源目录名各占一层），写成 `/api/audit_logs/actions` 会 404。
-  - ⬜ 待办：分公司仪表盘（需要页面口径）。
+  - ⬜ **待办：分公司仪表盘**（需要页面口径 —— 本文把候选数与其数据来源列全，等你勾选即可开工；**全部来自现有读，无新列**）：
+    - **候选数字（每项都已存在，或有现成派生规则可复用）**：① **在途柜数** —— `cross_border_shipments` 状态不在 `received/closed/cancelled` 的行数；
+      ② **应收未收（订单）** —— 收款状态非 `received` 的单据数，并可复用 Phase 2·C 的**逾期**派生给出「其中逾期 N 单」；
+      ③ **退税未到（柜）** —— 退税状态非 `completed` 的柜数，同样带逾期标记；④ **本月出运** —— `departed_at` 落在本月的柜数（可加订单数）；
+      ⑤ **采购在途** —— `purchasing_purchase_orders` 状态在 `placed/shipped` 的单数；⑥ **报价转化率** —— 直接复用 `/backend/internal-sales/quote-conversion` 的两个分母口径；
+      ⑦ **库存低于阈值** —— `finance due-reminders` 已算出的那条规则，可在同一页展示计数（不新造阈值）。
+    - **表面建议**：一页**只读**看板，挂「**经营概览**」组（与驾驶舱/月损益同组，老板与分公司负责人同看）；组织由平台 `om_selected_org` 作用域决定
+      —— 分公司用户只看自己组织，HQ 可切换组织查看。**若你要的是「一张表按组织分组横向对比」**，那是同一页的第二种形态，也能做（每个组织一次作用域读）。
+    - **需要你定的只有三件**：① **勾选上面的数字**（或加/减）；② **给谁看**（经营概览组 / 对内销售组 / 两者）；③ **要不要横向对比**（HQ 视角）。
+    - **不做（避免范围膨胀）**：图表库/可拖拽仪表盘（现有页面都是静态块 + 共享组件）；指标定义编辑器；缓存层（数据量小，直读）。
+
 - [x] **阶段六 products + trade_docs：产品主数据与购销合同/发票（金额 2 位、单价 4 位）** —— 验收：三档价格（采购/内部结算/对外销售）可取；类别树 `tree_path` 正确且环被拒 422；采购/销售合同两方向可流转（单号 `PC/SC-<年>-<4位>`）、非法流转 422；行绑定**已确认**发票后财务金额取发票值、发票作废回退；金额 = `HALF_UP(数量×单价, 2)`（合同与财务口径同为 2 位、与币种无关）；发票附件可归档下载；合同 Excel 最后补（栏位以 `lib/contractTemplate.ts` 常量为准）。spec：[`.ai/specs/2026-09-22-products-and-trade-docs.md`](../../.ai/specs/2026-09-22-products-and-trade-docs.md)
 
 - [x] **阶段七 sourcing：供应商报价单 + Excel 报价导入** —— 验收：`.xls`/`.xlsx` 都能解析（PetKit 报价单 69 行 + 6 个分类横幅；形式发票 78 行且页脚/银行账号被剔除）；列映射带置信度并可存为模板复用；复核台可勾选/改 SKU；确认得 `SQ-<年>-<4位>`；提升按 SKU 建/改商品并合并 `purchase` 档价格（不动 internal/export），重复提升幂等；标准模板下载后免映射；AI 映射未配置时置灰。spec：[`.ai/specs/2026-09-22-supplier-quotation-import.md`](../../.ai/specs/2026-09-22-supplier-quotation-import.md)
@@ -153,3 +163,4 @@
 | 六·补45 全量集成套件实跑（阶段五） | ✅ 完成 | `yarn test:integration:ephemeral` 在独立库 + 真 `JWT_SECRET` 下实跑：**104 passed / 4 failed / 5 did not run（43.8s）**；4 个失败全为 `storage_ops` 的 `STORAGE_OPS_TEST_S3_CONFIG` 未设置（spec 自带门禁），非回归。首次失败根因写在阶段五行内（production 模式拒绝占位 JWT 密钥）。证据：阶段五行 + 本次运行日志 |
 | 六·补46 审计/撤销链实测（阶段五） | ✅ 完成 | 改字段 → 取 `undoToken` → undo **200** → 字段复原、条目 `undone`、令牌不可复用；路径前缀 `/api/audit_logs/audit-logs/…` 已记入阶段五行。证据：阶段五行 + 本次会话真机调用 |
 | 六·补47 逾期清单「已提醒」标记（status 规格 Phase 4·B 可见性） | ✅ 完成并验证 | 只读接口 `GET /api/export_finance/overdue-reminder-status`（按 `group_key` 反查本模块写出的 `notifications`，取每资源最近时间戳；作用域 Kysely 标量读）+ 页面行标记（中英各 1 键）+ 解析器单测 2 例。真机：夹具（柜/订单各 60 天）→ 提醒命令报 2 条 → 接口返回两个资源键与时间戳 → 页面两行「已提醒 2026-09-30」；拆夹具后标记消失、通知行清零。证据：spec Phase 4·B |
+| 六·补48 分公司仪表盘口径草案（阶段五，待 owner 勾选） | ✅ 完成 | 把「需要页面口径」具体化为 **7 个候选数字 + 各自数据来源**（全部现有读、无新列：在途柜数 / 应收未收+逾期 / 退税未到+逾期 / 本月出运 / 采购在途 / 报价转化率 / 库存低阈值），给出表面建议（经营概览组、按组织作用域；可选 HQ 横向对比）与**只需你定的三件事**（勾数字 / 给谁看 / 要不要对比）；同时写明不做项（图表库、指标编辑器、缓存层）。证据：阶段五行内 |
