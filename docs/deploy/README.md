@@ -15,3 +15,4 @@
 | [storage-cutover-runbook.md](./storage-cutover-runbook.md) | Phase 2 切换实作手册：桶/凭据申请参数、窗口内逐条命令与预期输出、失败判据、回滚决策树、保留期、证据记录表 |
 | [cicd.md](./cicd.md) | production 分支流水线、AWS 主机契约、`.env` 清单、回滚 |
 | [host-access.md](./host-access.md) | 公网地址契约（必须用 Elastic IP）、四层可达性诊断、SSH 与 AWS 侧访问 |
+| [reminders.md](./reminders.md) | 提醒作业：两条命令、前提（真 `JWT_SECRET`）、幂等与收件人解析、建议 cron、验证与回滚 |
