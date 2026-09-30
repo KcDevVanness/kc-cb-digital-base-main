@@ -125,7 +125,7 @@
   "internal_sales.form.sentQuoteHint": "This quote has been sent: saving returns it to draft and invalidates the link that went out. Send it again when ready.",
   "internal_sales.form.statusDictionaryFailed": "Could not read this organization’s sales status dictionary. Retry; if it keeps failing, ask an administrator.",
   "internal_sales.conversion.page.title": "Quote conversion",
-  "internal_sales.conversion.page.description": "Of the quotes created in the period, how many became orders. 已发出 is read from the sent timestamp, not a status word, so older data is not silently dropped.",
+  "internal_sales.conversion.page.description": "Of the quotes created in the period, how many became orders. \"Sent\" is read from the sent timestamp rather than a status word, so older data is not silently dropped.",
   "internal_sales.conversion.period.label": "Period",
   "internal_sales.conversion.period.days": "{days} days",
   "internal_sales.conversion.fact.quotes": "Quotes",
