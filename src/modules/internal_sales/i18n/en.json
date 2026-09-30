@@ -67,6 +67,7 @@
   "internal_sales.list.actions.sendDialogBody": "The quote is marked as sent, gets an acceptance link for the buyer and an email is queued. Editing the quote afterwards returns it to draft and invalidates the link.",
   "internal_sales.list.actions.sendValidDays": "Valid for (days)",
   "internal_sales.list.actions.sendEmailHint": "The address comes from the quote's buyer email; fill “Buyer email” on the quote when it is empty.",
+  "internal_sales.list.actions.sendNoEmail": "Fill in the buyer email on this quote before sending it.",
   "internal_sales.list.actions.confirm": "Confirm order",
   "internal_sales.list.actions.confirmConfirmTitle": "Confirm this order?",
   "internal_sales.list.actions.confirmConfirmBody": "Only a confirmed order may be allocated to a shipment.",

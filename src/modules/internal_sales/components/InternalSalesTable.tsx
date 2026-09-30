@@ -66,6 +66,8 @@ type DocumentRecord = {
   currencyCode: string
   total: string
   customerName: string | null
+  /** The buyer address `quotes/send` needs; the list carries the snapshot, so the dialog can pre-check. */
+  buyerEmail: string | null
   status: string | null
   /** Quote only: the deadline `quotes/send` wrote (ISO date, `null` when never sent). */
   validUntil: string | null
@@ -88,6 +90,17 @@ function toDocumentRecord(item: Record<string, unknown>, kind: InternalSalesKind
   const customerName = snapshot && typeof snapshot === 'object'
     ? readText(snapshot as Record<string, unknown>, 'name') || null
     : null
+  // The same two keys the engine's `resolveQuoteEmail` reads, so the dialog can block a send the
+  // route would refuse anyway (and say why) instead of letting the operator discover it by 400.
+  const snapshotRecord = snapshot && typeof snapshot === 'object' ? snapshot as Record<string, unknown> : null
+  const contact = snapshotRecord?.contact
+  const customer = snapshotRecord?.customer
+  const buyerEmail = (contact && typeof contact === 'object' && !Array.isArray(contact)
+    ? readText(contact as Record<string, unknown>, 'email')
+    : '')
+    || (customer && typeof customer === 'object' && !Array.isArray(customer)
+      ? readText(customer as Record<string, unknown>, 'primaryEmail')
+      : '')
   const total = item.grandTotalNetAmount ?? item.grand_total_net_amount ?? item.grandTotalGrossAmount
   return {
     id: String(item.id),
@@ -95,6 +108,7 @@ function toDocumentRecord(item: Record<string, unknown>, kind: InternalSalesKind
     currencyCode: readText(item, 'currencyCode', 'currency_code') || 'CNY',
     total: typeof total === 'number' ? String(total) : typeof total === 'string' ? total : '0',
     customerName,
+    buyerEmail: buyerEmail || null,
     status: readText(item, 'status') || null,
     validUntil: readText(item, 'validUntil', 'valid_until') || null,
     updatedAt: readText(item, 'updatedAt', 'updated_at') || null,
@@ -360,6 +374,11 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
 
   /** Quote only: hand the document to the engine's send route (validity, acceptance link, email). */
   const handleSendQuote = React.useCallback(async (row: DocumentRecord, validForDays: number) => {
+    if (!row.buyerEmail) {
+      // The engine refuses a send without an address; say it here, before a round trip.
+      flash(t('internal_sales.list.actions.sendNoEmail', 'Fill in the buyer email on this quote before sending it.'), 'error')
+      return
+    }
     setSendBusy(true)
     try {
       await readApiResultOrThrow(
@@ -585,10 +604,15 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
               />
             </div>
             <p className="text-sm text-muted-foreground">
-              {t(
-                'internal_sales.list.actions.sendEmailHint',
-                'The buyer email comes from the quote’s buyer field (Client email); fill it on the quote before sending.',
-              )}
+              {sendTarget && !sendTarget.buyerEmail
+                ? t(
+                    'internal_sales.list.actions.sendNoEmail',
+                    'Fill in the buyer email on this quote before sending it.',
+                  )
+                : t(
+                    'internal_sales.list.actions.sendEmailHint',
+                    'The buyer email comes from the quote’s buyer field (Client email); fill it on the quote before sending.',
+                  )}
             </p>
           </div>
           <div className="flex justify-end gap-2">
@@ -597,7 +621,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
             </Button>
             <Button
               type="button"
-              disabled={sendBusy}
+              disabled={sendBusy || (sendTarget !== null && !sendTarget.buyerEmail)}
               onClick={() => { if (sendTarget) void handleSendQuote(sendTarget, sendValidDays) }}
             >
               {sendBusy ? t('internal_sales.list.actions.sending', 'Sending…') : t('internal_sales.list.actions.send')}

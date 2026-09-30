@@ -1,7 +1,7 @@
 # 单据状态（status）在各业务板块的补齐与赋能（document status lifecycle）
 
 **Date**: 2026-09-30
-**Status**: Phase 1 Ready for implementation（owner 2026-09-30「按照这个流程先实作」）；Phase 2–4 仍为草案
+**Status**: Phase 1 Implemented（owner 2026-09-30「按照这个流程先实作」；实现单元 `feat/sales-status-lifecycle`，见 Final Compliance Report）；Phase 2–4 仍为草案
 **Scope route**: `spec-pr`（本文件）；Phase 1 实现单元 `feat/sales-status-lifecycle`（`module-data` + `backend-ui`，含 `cross_border` 一处门禁）
 
 ## TLDR
@@ -254,18 +254,24 @@
 
 ## Acceptance Criteria
 
-- [ ] **AC-001** — 新建报价与订单在库里 `status='draft'` 且 `status_entry_id` 指向本组织字典条目（API + DB 证据）。
-- [ ] **AC-002** — 有买方邮箱的报价执行「发出报价」后 `status='sent'`、`valid_until` 已写、列表出现「有效至」；无邮箱时前端拦截且**不发送请求**。
-- [ ] **AC-003** — `canceled` 报价：不再显示「发出/下单」动作；直接调 API 也被平台 400 拒绝。
-- [ ] **AC-004** — `draft` 报价的「转为订单 / 按此报价新建订单」不可用并给出原因；`sent|confirmed` 恢复可用。
-- [ ] **AC-005** — 订单 `draft → confirmed`、`→ canceled` 可执行且库内值正确；`canceled` 后不再出现「确认」动作。
-- [ ] **AC-006** — 发运分摊选择器只含 `confirmed` 订单；`draft`/`canceled` 不出现；历史 NULL 出现并标注。
-- [ ] **AC-007** — 列表状态徽章按字典标签/颜色渲染；过期报价高亮；历史 NULL 显示「—」。
-- [ ] **AC-008** — 买方邮箱写入快照 `contact.email`，编辑往返保留；对外报价从所选 customer 的 `parties.email` 预填。
+- [x] **AC-001** — 新建报价与订单在库里 `status='draft'` 且 `status_entry_id` 指向本组织字典条目（API + DB 证据）。
+- [x] **AC-002** — 有买方邮箱的报价执行「发出报价」后 `status='sent'`、`valid_until` 已写、列表出现「有效至」；无邮箱时前端拦截且**不发送请求**。
+- [x] **AC-003** — `canceled` 报价：不再显示「发出/下单」动作；直接调 API 也被平台 400 拒绝。
+- [x] **AC-004** — `draft` 报价的「转为订单 / 按此报价新建订单」不可用并给出原因；`sent|confirmed` 恢复可用。
+- [x] **AC-005** — 订单 `draft → confirmed`、`→ canceled` 可执行且库内值正确；`canceled` 后不再出现「确认」动作。
+- [x] **AC-006** — 发运分摊选择器只含 `confirmed` 订单；`draft`/`canceled` 不出现；历史 NULL 出现并标注。
+- [x] **AC-007** — 列表状态徽章按字典标签/颜色渲染；过期报价高亮；历史 NULL 显示「—」。
+- [x] **AC-008** — 买方邮箱写入快照 `contact.email`，编辑往返保留；对外报价从所选 customer 的 `parties.email` 预填。
 
 ## Final Compliance Report
 
-（Phase 1 验收后补：门禁/集成/浏览器证据与 CI 结果）
+| Check | Status | Evidence / resolution |
+|---|---|---|
+| Phase 1 acceptance criteria | pass（AC-001…AC-008） | 真机（dev server + 本工作树 `.env`，`OM_DISABLE_EMAIL_DELIVERY=true`）：新建报价/订单落 `draft` + `statusEntryId`；draft 报价无下单动作、发出后动作随状态打开；`sent` 写 `valid_until`；订单确认/作废落库；发运分摊选择器只含 confirmed + 历史未标记项、作废项消失；探针单据已删。逐条见 `src/modules/internal_sales/README.md` 的「验证」段 |
+| Unit tests | pass | `salesStatus.test.ts`（策略矩阵/过期/条目解析）、`buyer.test.ts`（快照邮箱两种键）、`shipmentFormOptions.test.ts`（状态门禁 + 未标记标注）；模块 7 suites / 67 tests |
+| Gate | pass | 本单元门禁见 PR（generate / typecheck / lint / check-lessons / ds:check / test / build）与 CI `validate` + `guard-tree` |
+| Compatibility | pass | 无 DDL；旧快照、旧单据（status NULL）行为不变；i18n 只增键（`list.columns.lines` 改文案）、菜单名走字典 |
+| Security | pass | 状态写入沿用引擎（组织作用域 + 功能位），邮箱只在加密快照列；无新端点、无新密钥 |
 
 ## Open Questions
 
@@ -277,6 +283,7 @@
 |---|---|
 | 2026-09-30 | Initial skeleton（owner：把各板块缺失的状态按业务流程补齐；先销售链），含 Q-001…Q-007 |
 | 2026-09-30 | **Phase 1 定稿并进入实现**（owner「按照这个流程先实作」）：Q-001…Q-007 按推荐默认落定；补齐 Domain Vocabulary / Journeys / UI / API / Tests / Traceability / Acceptance；Phase 2–4 仍为草案 |
+| 2026-09-30 | **Phase 1 实现完成**（`feat/sales-status-lifecycle`）：新建写 `draft`（字典条目 id）、报价发出（`quotes/send` + 有效期 + 买方邮箱字段与 parties 预填）/作废、订单确认/作废、列表状态徽章 + 「有效至」+ 过期高亮、下单门禁、发运分摊只列 confirmed（历史 NULL 标注）、对外订单补「（PO）」、行数列改名「明细行数」；单测 3 套新增/更新，真机 5 条链路验证，AC-001…AC-008 全部通过 |
 
 ## Appendix — Phase 2–4 板块盘点（保留自骨架，待各自定稿）
 
