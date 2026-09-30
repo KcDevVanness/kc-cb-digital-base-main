@@ -6,25 +6,36 @@ import { type TradeTypeChannelMap } from '../../internal_sales/lib/tradeTypeChan
  * trade type.
  *
  * A contract's direction decides the family: a purchase contract draws from purchase orders, a
- * sales contract from sales documents (orders and quotes). For sales the counterparty decides the
- * trade type — a branch (`parties` role `branch`) is an internal 总部 → 分公司 sale, an external
- * customer (`buyer`) is a 分公司 → 当地客户 sale — and the type becomes a `channelId` filter on the
- * installed sales list. Nothing here hits the network: the selection rules are pure so the filter
- * contract is testable without a session.
+ * sales contract from sales documents (orders and quotes). Sales documents come in two trade types
+ * — 对内 (总部 → 分公司) and 对外 (分公司 → 当地客户) — and each kind names its own type, the same
+ * vocabulary the contract's order links use (`CONTRACT_ORDER_KINDS`), so the source type the
+ * operator picks is never ambiguous. The contract's counterparty decides which types may be
+ * offered: a branch (`parties` role `branch`) is an internal sale, an external customer (`buyer`)
+ * an external one; the type becomes a `channelId` filter on the installed sales list. Nothing here
+ * hits the network: the selection rules are pure so the filter contract is testable without a
+ * session.
  */
 
 /** The document families a contract line can be copied from. */
-export const CONTRACT_LINE_SOURCE_KINDS = ['purchase_order', 'sales_order', 'sales_quote'] as const
+export const CONTRACT_LINE_SOURCE_KINDS = [
+  'purchase_order',
+  'internal_sales_order',
+  'internal_sales_quote',
+  'external_sales_order',
+  'external_sales_quote',
+] as const
 export type ContractLineSourceKind = (typeof CONTRACT_LINE_SOURCE_KINDS)[number]
 
 /**
- * Everything the picker and the line reader need for one source family. The sales order/quote pair
- * differs only in these strings, so they stay in one table instead of branching at each call site.
+ * Everything the picker and the line reader need for one source family. The four sales kinds differ
+ * only in these strings, so they stay in one table instead of branching at each call site.
  */
 export const CONTRACT_LINE_SOURCE_ROUTES: Record<
   ContractLineSourceKind,
   {
     family: 'purchase_order' | 'sales'
+    /** The sales trade type the kind belongs to; `null` for the purchase family. */
+    tradeType: SalesTradeType | null
     /** Head anchor the contract writes: a quote anchors as `sales_order` (no quote entry exists). */
     headSourceKind: 'purchase_order' | 'sales_order'
     headApiPath: string
@@ -37,22 +48,43 @@ export const CONTRACT_LINE_SOURCE_ROUTES: Record<
 > = {
   purchase_order: {
     family: 'purchase_order',
+    tradeType: null,
     headSourceKind: 'purchase_order',
     headApiPath: 'purchasing/purchase-orders',
     lineApiPath: 'purchasing/purchase-orders/lines',
     lineParentParam: 'orderId',
     headNumberKey: 'number',
   },
-  sales_order: {
+  internal_sales_order: {
     family: 'sales',
+    tradeType: 'internal',
     headSourceKind: 'sales_order',
     headApiPath: 'sales/orders',
     lineApiPath: 'sales/order-lines',
     lineParentParam: 'orderId',
     headNumberKey: 'orderNumber',
   },
-  sales_quote: {
+  internal_sales_quote: {
     family: 'sales',
+    tradeType: 'internal',
+    headSourceKind: 'sales_order',
+    headApiPath: 'sales/quotes',
+    lineApiPath: 'sales/quote-lines',
+    lineParentParam: 'quoteId',
+    headNumberKey: 'quoteNumber',
+  },
+  external_sales_order: {
+    family: 'sales',
+    tradeType: 'external',
+    headSourceKind: 'sales_order',
+    headApiPath: 'sales/orders',
+    lineApiPath: 'sales/order-lines',
+    lineParentParam: 'orderId',
+    headNumberKey: 'orderNumber',
+  },
+  external_sales_quote: {
+    family: 'sales',
+    tradeType: 'external',
     headSourceKind: 'sales_order',
     headApiPath: 'sales/quotes',
     lineApiPath: 'sales/quote-lines',
@@ -61,13 +93,32 @@ export const CONTRACT_LINE_SOURCE_ROUTES: Record<
   },
 }
 
+/** The two kinds one trade type offers, orders before quotes. */
+const SALES_KINDS_BY_TRADE_TYPE: Record<SalesTradeType, [ContractLineSourceKind, ContractLineSourceKind]> = {
+  internal: ['internal_sales_order', 'internal_sales_quote'],
+  external: ['external_sales_order', 'external_sales_quote'],
+}
+
 export function isSalesSourceKind(kind: ContractLineSourceKind): boolean {
   return CONTRACT_LINE_SOURCE_ROUTES[kind].family === 'sales'
 }
 
-/** The sources a contract direction is allowed to draw from — never the other family's. */
-export function sourceKindsForDirection(direction: string): ContractLineSourceKind[] {
-  return direction === 'sales' ? ['sales_order', 'sales_quote'] : ['purchase_order']
+/**
+ * The sources a contract direction is allowed to draw from — never the other family's.
+ *
+ * A sales contract whose counterparty resolved a trade type may only draw from that type: the
+ * contract's own side is fixed (a branch counterparty means an internal sale), so the other type's
+ * documents are not a legal source and are not offered. An unresolved counterparty (`null`) offers
+ * both types, each under its own kind name, so the operator states the type instead of it being
+ * guessed.
+ */
+export function sourceKindsForDirection(
+  direction: string,
+  tradeType: SalesTradeType | null = null,
+): ContractLineSourceKind[] {
+  if (direction !== 'sales') return ['purchase_order']
+  if (tradeType) return [...SALES_KINDS_BY_TRADE_TYPE[tradeType]]
+  return ['internal_sales_order', 'internal_sales_quote', 'external_sales_order', 'external_sales_quote']
 }
 
 /**
@@ -91,13 +142,12 @@ const SALES_HEAD_PAGE_SIZE = 100
 /**
  * The list query a sales-source picker sends.
  *
- * A resolved trade type becomes a hard `channelId` filter: a missing channel id yields `null` — no
- * request, no sources — rather than a widened list that would offer the other type's documents. An
- * unresolved counterparty lists both channels and lets the caller label each option with its own
- * trade type, so the operator can tell the two apart without a filter standing behind the list.
+ * The kind the operator picked carries its own trade type, which becomes a hard `channelId` filter:
+ * a missing channel id yields `null` — no request, no sources — rather than a widened list that
+ * would offer the other type's documents.
  */
 export function buildSalesSourceListParams(
-  type: SalesTradeType | null,
+  type: SalesTradeType,
   channelIds: TradeTypeChannelMap,
   term: string,
 ): Record<string, string | number> | null {
@@ -108,16 +158,8 @@ export function buildSalesSourceListParams(
     sortDir: 'desc',
     ...(search ? { search } : {}),
   } satisfies Record<string, string | number>
-  if (type) {
-    const channelId = channelIds[type]
-    return channelId ? { channelId, ...base } : null
-  }
-  const both = [channelIds.internal, channelIds.external].filter(
-    (id): id is string => typeof id === 'string' && id.length > 0,
-  )
-  // No trade-type channel exists at all: every option would be unlabelable, so offer nothing.
-  if (both.length === 0) return null
-  return { channelIds: both.join(','), ...base }
+  const channelId = channelIds[type]
+  return channelId ? { channelId, ...base } : null
 }
 
 /** One source line mapped onto the contract line's own field names. */
@@ -147,6 +189,67 @@ function snapshotSourceText(snapshot: unknown, key: string): string {
   if (!snapshot || typeof snapshot !== 'object') return ''
   const value = (snapshot as Record<string, unknown>)[key]
   return typeof value === 'string' ? value : ''
+}
+
+/**
+ * The head fields one source list row offers to the picker label and to the preview drawer, read
+ * tolerantly: a projection that does not carry a field (or carries `null`) leaves it empty and the
+ * surface simply omits it, so a list route can add or drop a column without breaking the picker.
+ */
+export type SourceHeadFacts = {
+  number: string
+  counterparty: string
+  currencyCode: string
+  amount: string
+  placedAt: string
+}
+
+/** A money total, which the sales projections carry as a number and the purchasing one as text. */
+function readSourceAmount(source: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'string' && value.length > 0) return value
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  }
+  return ''
+}
+
+export function readOrderSourceHeadFacts(
+  item: Record<string, unknown>,
+  family: 'purchase_order' | 'sales',
+  headNumberKey: string,
+): SourceHeadFacts {
+  const number = readSourceText(item, headNumberKey) || String(item.id ?? '').slice(0, 8)
+  if (family === 'purchase_order') {
+    return {
+      number,
+      counterparty: readSourceText(item, 'supplierName', 'supplier_name'),
+      currencyCode: readSourceText(item, 'currencyCode', 'currency_code'),
+      amount: readSourceAmount(item, 'total'),
+      placedAt: readSourceText(item, 'placedAt', 'placed_at', 'created_at', 'createdAt'),
+    }
+  }
+  return {
+    number,
+    // The sales list projects the buyer inside the frozen snapshot, not as a top-level column.
+    counterparty: snapshotSourceText(item.customerSnapshot ?? item.customer_snapshot, 'name'),
+    currencyCode: readSourceText(item, 'currencyCode', 'currency_code'),
+    amount: readSourceAmount(item, 'grandTotalNetAmount', 'grand_total_net_amount', 'total'),
+    placedAt: readSourceText(item, 'createdAt', 'created_at', 'placedAt', 'placed_at'),
+  }
+}
+
+/** One contract list row as head facts: the contract total in the contract's own currency. */
+export function readContractSourceHeadFacts(item: Record<string, unknown>): SourceHeadFacts {
+  return {
+    number: readSourceText(item, 'number') || String(item.id ?? '').slice(0, 8),
+    counterparty:
+      readSourceText(item, 'counterpartyName', 'counterparty_name') ||
+      snapshotSourceText(item.counterpartySnapshot ?? item.counterparty_snapshot, 'name'),
+    currencyCode: readSourceText(item, 'currencyCode', 'currency_code'),
+    amount: readSourceAmount(item, 'contractTotal', 'contract_total', 'total'),
+    placedAt: readSourceText(item, 'signedAt', 'signed_at', 'updatedAt', 'updated_at', 'created_at', 'createdAt'),
+  }
 }
 
 function orderLineSnapshot(

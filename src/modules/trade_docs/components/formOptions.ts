@@ -2,6 +2,11 @@ import type { CrudFieldOption } from '@open-mercato/ui/backend/CrudForm'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionaries/lib/clientEntries'
+import {
+  readContractSourceHeadFacts,
+  readOrderSourceHeadFacts,
+  type SourceHeadFacts,
+} from '../lib/contractLineSource'
 
 /**
  * Re-exported from the product master, which owns how its own products are listed.
@@ -65,6 +70,7 @@ const PRODUCTS_API_PATH = 'products/items'
 const CONTRACTS_API_PATH = 'trade_docs/contracts'
 const CONTRACT_LINES_API_PATH = 'trade_docs/contracts/lines'
 const SALES_ORDERS_API_PATH = 'sales/orders'
+const SALES_QUOTES_API_PATH = 'sales/quotes'
 const PURCHASE_ORDERS_API_PATH = 'purchasing/purchase-orders'
 const SHIPMENTS_API_PATH = 'cross_border/shipments'
 const DOCUMENTS_API_PATH = 'trade_docs/documents'
@@ -268,6 +274,39 @@ export async function loadPurchaseOrderOptions(query?: string): Promise<CrudFiel
       return { value, label: supplier ? `${number} — ${supplier}` : number }
     })
     .filter((option) => option.value.length > 0)
+}
+
+/**
+ * The head of one order/quote, read by id for a copy preview. `ids` is the list route's own filter,
+ * so the row arrives with the same projection (and the same scope) the picker lists it with; a row
+ * the caller may not read is simply absent and the preview falls back to the lines alone.
+ */
+export async function loadOrderSourceHeadFacts(
+  kind: 'purchase_order' | 'sales_order' | 'sales_quote',
+  id: string,
+): Promise<SourceHeadFacts | null> {
+  const scopedId = id.trim()
+  if (!scopedId) return null
+  const source = kind === 'purchase_order'
+    ? { path: PURCHASE_ORDERS_API_PATH, family: 'purchase_order' as const, key: 'number' }
+    : kind === 'sales_quote'
+      ? { path: SALES_QUOTES_API_PATH, family: 'sales' as const, key: 'quoteNumber' }
+      : { path: SALES_ORDERS_API_PATH, family: 'sales' as const, key: 'orderNumber' }
+  const payload = await fetchCrudList<Record<string, unknown>>(source.path, { ids: scopedId, pageSize: 1 })
+  const item = payload.items?.[0]
+  return item ? readOrderSourceHeadFacts(item, source.family, source.key) : null
+}
+
+/** The head of one contract, read by id for a copy preview (`id` is the list route's exact filter). */
+export async function loadContractSourceHeadFacts(id: string): Promise<SourceHeadFacts | null> {
+  const scopedId = id.trim()
+  if (!scopedId) return null
+  const payload = await fetchCrudList<Record<string, unknown>>(CONTRACTS_API_PATH, {
+    id: scopedId,
+    pageSize: 1,
+  })
+  const item = payload.items?.[0]
+  return item ? readContractSourceHeadFacts(item) : null
 }
 
 /**
