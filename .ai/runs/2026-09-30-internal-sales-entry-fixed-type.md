@@ -67,6 +67,8 @@ Owner 2026-09-30 反馈：`/backend/external-sales/quotes` 是**专门的对外*
 
 ## Progress
 
+PR: #61
+
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
 ### Phase 1: 入口 = 单一贸易类型（读/写口径）
@@ -92,7 +94,7 @@ Owner 2026-09-30 反馈：`/backend/external-sales/quotes` 是**专门的对外*
 
 - [x] 5.1 门禁全绿（generate / typecheck 0 错 / lint 0 error（8 个既有 warning，全在 example）/ check-lessons / ds:check 956 files / test 61 suites·517 / build）
 - [x] 5.2 浏览器实测（zh/en + 两个列表 + 锁定表单）
-- [ ] 5.3 PR 标签 / 评审 / 总结 / ready
+- [x] 5.3 PR 标签 / 评审 / 总结 / ready
 
 ## Risks / Assumptions
 
