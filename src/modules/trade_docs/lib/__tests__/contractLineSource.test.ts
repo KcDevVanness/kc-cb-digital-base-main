@@ -4,6 +4,8 @@ import {
   appendContractLines,
   buildContractSourceAnchorPayload,
   buildSalesSourceListParams,
+  readContractSourceHeadFacts,
+  readOrderSourceHeadFacts,
   sourceKindsForDirection,
   sourceLineToContractLine,
   tradeTypeFromPartyRoles,
@@ -30,16 +32,40 @@ describe('sourceKindsForDirection', () => {
   it('keeps a purchase contract on purchase orders only', () => {
     expect(sourceKindsForDirection('purchase')).toEqual(['purchase_order'])
     expect(sourceKindsForDirection('')).toEqual(['purchase_order'])
+    expect(sourceKindsForDirection('purchase', 'internal')).toEqual(['purchase_order'])
   })
 
-  it('offers orders and quotes for a sales contract, never a purchase order', () => {
-    expect(sourceKindsForDirection('sales')).toEqual(['sales_order', 'sales_quote'])
+  it('offers both trade types, each named by its own kind, when the counterparty is unresolved', () => {
+    expect(sourceKindsForDirection('sales')).toEqual([
+      'internal_sales_order',
+      'internal_sales_quote',
+      'external_sales_order',
+      'external_sales_quote',
+    ])
+  })
+
+  it('offers only the resolved trade type, orders before quotes, never a purchase order', () => {
+    expect(sourceKindsForDirection('sales', 'internal')).toEqual([
+      'internal_sales_order',
+      'internal_sales_quote',
+    ])
+    expect(sourceKindsForDirection('sales', 'external')).toEqual([
+      'external_sales_order',
+      'external_sales_quote',
+    ])
   })
 
   it('anchors a quote as a sales order, the only sales entry the contract schema knows', () => {
-    expect(CONTRACT_LINE_SOURCE_ROUTES.sales_quote.headSourceKind).toBe('sales_order')
-    expect(CONTRACT_LINE_SOURCE_ROUTES.sales_order.lineApiPath).toBe('sales/order-lines')
-    expect(CONTRACT_LINE_SOURCE_ROUTES.sales_quote.lineParentParam).toBe('quoteId')
+    expect(CONTRACT_LINE_SOURCE_ROUTES.internal_sales_quote.headSourceKind).toBe('sales_order')
+    expect(CONTRACT_LINE_SOURCE_ROUTES.internal_sales_order.lineApiPath).toBe('sales/order-lines')
+    expect(CONTRACT_LINE_SOURCE_ROUTES.external_sales_quote.lineParentParam).toBe('quoteId')
+    expect(CONTRACT_LINE_SOURCE_ROUTES.external_sales_quote.lineApiPath).toBe('sales/quote-lines')
+  })
+
+  it('carries each kind’s own trade type on the route table', () => {
+    expect(CONTRACT_LINE_SOURCE_ROUTES.purchase_order.tradeType).toBeNull()
+    expect(CONTRACT_LINE_SOURCE_ROUTES.internal_sales_order.tradeType).toBe('internal')
+    expect(CONTRACT_LINE_SOURCE_ROUTES.external_sales_quote.tradeType).toBe('external')
   })
 })
 
@@ -97,6 +123,97 @@ describe('buildSalesSourceListParams', () => {
   it('offers nothing when no trade-type channel exists at all', () => {
     expect(buildSalesSourceListParams(null, {}, '')).toBeNull()
     expect(buildSalesSourceListParams(null, { internal: null, external: null }, '')).toBeNull()
+  })
+})
+
+describe('readOrderSourceHeadFacts', () => {
+  it('reads a purchase order row, including the number fallback and the null-tolerant fields', () => {
+    expect(
+      readOrderSourceHeadFacts(
+        {
+          id: 'po-1',
+          number: 'PO-2026-0010',
+          supplierName: '宁波 XX',
+          currencyCode: 'CNY',
+          total: '2000.00',
+          createdAt: '2026-09-29T10:01:39.667Z',
+        },
+        'purchase_order',
+        'number',
+      ),
+    ).toEqual({
+      number: 'PO-2026-0010',
+      counterparty: '宁波 XX',
+      currencyCode: 'CNY',
+      amount: '2000.00',
+      placedAt: '2026-09-29T10:01:39.667Z',
+    })
+  })
+
+  it('reads a sales order row off the frozen customer snapshot, coercing the numeric total', () => {
+    expect(
+      readOrderSourceHeadFacts(
+        {
+          id: 'so-1',
+          orderNumber: 'ORDER-20260929-00007',
+          customerSnapshot: { name: '俄罗斯 AB 有限公司', internalSales: { organizationId: 'org-1' } },
+          currencyCode: 'USD',
+          grandTotalNetAmount: 125,
+          createdAt: '2026-09-28 05:22:12.227+00',
+        },
+        'sales',
+        'orderNumber',
+      ),
+    ).toEqual({
+      number: 'ORDER-20260929-00007',
+      counterparty: '俄罗斯 AB 有限公司',
+      currencyCode: 'USD',
+      amount: '125',
+      placedAt: '2026-09-28 05:22:12.227+00',
+    })
+  })
+
+  it('falls back to the id prefix and leaves absent fields empty instead of inventing them', () => {
+    expect(readOrderSourceHeadFacts({ id: 'abcdef12-3456-7890' }, 'sales', 'quoteNumber')).toEqual({
+      number: 'abcdef12',
+      counterparty: '',
+      currencyCode: '',
+      amount: '',
+      placedAt: '',
+    })
+  })
+})
+
+describe('readContractSourceHeadFacts', () => {
+  it('reads the contract total, counterparty and signed date from its own list projection', () => {
+    expect(
+      readContractSourceHeadFacts({
+        id: 'contract-1',
+        number: 'PC-2026-0010',
+        counterpartyName: '宁波 XX',
+        currencyCode: 'CNY',
+        contractTotal: '2000.00',
+        signedAt: '2026-09-20',
+      }),
+    ).toEqual({
+      number: 'PC-2026-0010',
+      counterparty: '宁波 XX',
+      currencyCode: 'CNY',
+      amount: '2000.00',
+      placedAt: '2026-09-20',
+    })
+  })
+
+  it('falls back to the counterparty snapshot and the id when the projection has no name', () => {
+    expect(
+      readContractSourceHeadFacts({ id: 'abcdef12-3456-7890', counterpartySnapshot: { name: '俄罗斯 AB' } }),
+    ).toEqual({
+      number: 'abcdef12',
+      counterparty: '俄罗斯 AB',
+      currencyCode: '',
+      amount: '',
+      placedAt: '',
+    })
   })
 })
 
@@ -158,7 +275,7 @@ describe('sourceLineToContractLine', () => {
         unit_price_net: '9.75',
         comment: 'gift wrap',
       },
-      'sales_quote',
+      'internal_sales_quote',
       'now',
     )
     expect(line).toMatchObject({
@@ -168,12 +285,12 @@ describe('sourceLineToContractLine', () => {
       quantity: '2',
       unitPrice: '9.75',
       note: 'gift wrap',
-      sourceSnapshot: { kind: 'order_line', id: 'line-3', orderKind: 'sales_quote', copiedAt: 'now' },
+      sourceSnapshot: { kind: 'order_line', id: 'line-3', orderKind: 'internal_sales_quote', copiedAt: 'now' },
     })
 
     const snapshotOnly = sourceLineToContractLine(
       { id: 'line-4', name: 'Legacy', catalog_snapshot: { sku: 'OLD-1', unit: 'SET' } },
-      'sales_order',
+      'external_sales_order',
       'now',
     )
     expect(snapshotOnly.sku).toBe('OLD-1')
