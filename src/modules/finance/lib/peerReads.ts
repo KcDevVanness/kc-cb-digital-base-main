@@ -471,7 +471,11 @@ export async function loadReceivedShipments(
     .where('tenant_id', '=', scope.tenantId)
     .where('organization_id', 'in', scope.organizationIds)
     .where('deleted_at', 'is', null)
-    .where('status', '=', 'received')
+    // `received` covers the landed-cost scan and `closed` must not drop out of it: archiving a
+    // container is paperwork/settlement, not a shipment that never landed. Filtering on `received`
+    // alone silently changed SKU landed costs (and every valuation reading them) the moment the
+    // archival status existed.
+    .where('status', 'in', ['received', 'closed'])
     .orderBy('received_at', 'desc')
     .limit(limit)
     .execute()

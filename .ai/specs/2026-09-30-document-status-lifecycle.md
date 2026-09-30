@@ -1,7 +1,7 @@
 # 单据状态（status）在各业务板块的补齐与赋能（document status lifecycle）
 
 **Date**: 2026-09-30
-**Status**: Phase 1 Implemented（owner 2026-09-30「按照这个流程先实作」；实现单元 `feat/sales-status-lifecycle`，见 Final Compliance Report）；Phase 2–4 仍为草案
+**Status**: Phase 1 Implemented（`feat/sales-status-lifecycle`）；Phase 2·A Implemented（`feat/shipment-close-lifecycle`，见下）；Phase 2·B/C 与 Phase 3–4 为草案
 **Scope route**: `spec-pr`（本文件）；Phase 1 实现单元 `feat/sales-status-lifecycle`（`module-data` + `backend-ui`，含 `cross_border` 一处门禁）
 
 ## TLDR
@@ -211,9 +211,34 @@
 - **Tests**：TEST-001…TEST-006。
 - **Exit gate**：新建单据 100% 带 `draft`；未确认报价无法下单（UI 禁用 + API 侧无写请求）；未确认订单不出现在分摊选择器；报价发出后 `sent` + 「有效至」；浏览器实测（zh/en、窄屏、深色）。
 
-### Phase 2 — 履约与资金（草案）
+### Phase 2 — 履约与资金
 
-发运单 `closed`（结算/归档）与状态事件；发运单证区 `draft/issued/void`；订单 `in_fulfillment`/`fulfilled` 由发运/收货联动回写；收款/退税状态与逾期清单。
+**Phase 2 拆成三个切片，逐个交付。**
+
+#### Phase 2·A — 发运单归档 `closed`（已实现，`feat/shipment-close-lifecycle`）
+
+- **目标**：柜的生命周期有终点。现在 `received` 之后单据停在原地，柜档案/结算没有「收口」状态；归档后不允许再改、再取消。
+- **状态机**（唯一权威：`lib/shipmentStatus.ts` 的 `SHIPMENT_TRANSITIONS`）：`draft → in_transit → received → closed`，旁路 `draft|in_transit → cancelled`；`closed` 与 `cancelled` 为终态。
+- **Requirements**
+  - REQ-201 发运单新增 `closed`（归档）状态，只能由 `received` 迁入（命令 `cross_border.shipments.close`）；其他状态一律 422 并给出当前状态。
+  - REQ-202 归档是终态：`closed` 之后不可编辑、不可取消、不可记录里程碑（现有守卫按状态白名单天然拒绝，测试固定）。
+  - REQ-203 归档发放域事件 `cross_border.shipment.closed`（`id/number/tenantId/organizationId`），供订阅者做结算/通知。
+  - REQ-204 列表与详情显示 `closed` 徽章与标签（zh「已归档」/en“Closed”），列表筛选包含该状态。
+- **Tests**：TEST-201 单元（`SHIPMENT_TRANSITIONS` 矩阵：只允许 `received → closed`、终态无出边、筛选顺序与 API 枚举一致）；TEST-202 集成（`__integration__/shipment-close.spec.ts`，自建临时库：`received → close` 2xx 且列表回读 `closed`；`draft` 与 `in_transit` 直接 close 均 422 且状态不变）；TEST-203 集成续（`closed` 后再 cancel → 422、状态仍 `closed`）。
+- **验收（已达成）**
+  - **AC-201** ✅ 一张 `received` 发运单执行 close → 2xx，`GET /api/cross_border/shipments?id=` 回读 `closed`（集成 TEST-201）。
+  - **AC-202** ✅ `draft`/`in_transit` 调 close 均 422 且状态不变（集成 TEST-202）；UI 侧：详情页动作矩阵只在 `received` 给「归档」（`closed`/`cancelled` 无动作）。
+  - **AC-203** ✅ 列表状态筛选与徽章含「已归档」（枚举 + `StatusMap` 穷尽类型；`export_finance` 的柜档案/柜列表/标签表由类型检查强制补齐）。
+- **证据**：`JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral shipment-close` → 本 spec 3/3 通过（同轮全套 103 passed / 4 failed（均为 `storage_ops` 的 `STORAGE_OPS_TEST_S3_CONFIG` 环境门）/ 5 skipped）；单元 `lib/__tests__/shipmentStatus.test.ts`；`yarn typecheck`/`yarn lint`/`yarn test` 全绿。
+- **不做**：`closedAt` 时间戳列（需要 DDL；状态变更审计已记录时间与操作者，等 Phase 3 的迁移一起加）；柜档案/结算页的「已归档」聚合（Phase 4 报表）。
+
+#### Phase 2·B — 发运单证区状态（草案，需要迁移）
+
+`cross_border_export_documents` 增 `status`（`draft/issued/void`，对齐 `trade_docs` 的 PI/CI 词表）+ 签发/作废动作 + 门禁（未签发 PI 不能作为收款依据）。**需要一张加列的迁移**，落地前单独批准。
+
+#### Phase 2·C — 收款 / 退税状态与逾期（草案）
+
+收款 `collection_status`、退税 `tax_refund_status` 已有词表且可写；缺口是门禁（登记收款要求柜已 `received`/`closed`）、逾期清单（未收/未到账）、以及「已申报/已到账」时间戳（需要 DDL，随 2·B 的迁移一起）。
 
 ### Phase 3 — 采购与平台运营（草案）
 
@@ -285,6 +310,7 @@
 | 2026-09-30 | Initial skeleton（owner：把各板块缺失的状态按业务流程补齐；先销售链），含 Q-001…Q-007 |
 | 2026-09-30 | **Phase 1 定稿并进入实现**（owner「按照这个流程先实作」）：Q-001…Q-007 按推荐默认落定；补齐 Domain Vocabulary / Journeys / UI / API / Tests / Traceability / Acceptance；Phase 2–4 仍为草案 |
 | 2026-09-30 | **Phase 1 实现完成**（`feat/sales-status-lifecycle`）：新建写 `draft`（字典条目 id）、报价发出（`quotes/send` + 有效期 + 买方邮箱字段与 parties 预填）/作废、订单确认/作废、列表状态徽章 + 「有效至」+ 过期高亮、下单门禁、发运分摊只列 confirmed（历史 NULL 标注）、对外订单补「（PO）」、行数列改名「明细行数」；单测 3 套新增/更新，真机 5 条链路验证，AC-001…AC-008 全部通过 |
+| 2026-09-30 | **Phase 2·A 实现完成**（`feat/shipment-close-lifecycle`）：发运单新增终态 `closed`（归档）——迁移表 `SHIPMENT_TRANSITIONS` 成为 depart/receive/close/cancel 四个守卫与详情页动作矩阵的唯一权威；新增 `cross_border.shipments.close` 命令/路由与 `cross_border.shipment.closed` 事件；徽章/筛选/标签与 `export_finance` 穷尽表同步。**独立评审后补齐**：`finance` 的落地成本扫描、`trade_docs` 合同详情、`export_finance` 柜档案三处「只认 received」的读路径都补 `closed`；终态单证写入（create/update/delete）被新守卫拒绝且详情页隐藏入口；迁移表查找对未知状态 fail-closed（不再 500）；状态列表单一来源（组件 re-export API 枚举）。证据：单元 `shipmentStatus.test.ts` + 集成 `shipment-close.spec.ts` 3/3（临时库）。 |
 
 ## Appendix — Phase 2–4 板块盘点（保留自骨架，待各自定稿）
 

@@ -201,5 +201,9 @@
   "cross_border.packingLists.detail.loading": "Loading the packing list…",
   "cross_border.packingLists.detail.loadFailed": "Failed to load the packing list",
   "cross_border.packingLists.detail.notFound": "This packing list could not be found.",
-  "cross_border.packingLists.detail.untitled": "Unnumbered packing list"
+  "cross_border.packingLists.detail.untitled": "Unnumbered packing list",
+  "cross_border.shipments.status.closed": "Closed",
+  "cross_border.shipments.actions.close": "Close",
+  "cross_border.shipments.closeConfirmTitle": "Close this shipment?",
+  "cross_border.shipments.closeConfirmBody": "Closing is terminal: the shipment can no longer be edited, cancelled or given milestones. Confirm its paperwork and settlement are done."
 }

@@ -7,9 +7,10 @@ import { CrudHttpError, notFound } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import { CrossBorderExportDocument, CrossBorderExportDocumentLine, CrossBorderShipment } from '../data/entities'
-import { documentCreateSchema, documentUpdateSchema, type ExportDocumentLineInput } from '../data/validators'
+import { documentCreateSchema, documentUpdateSchema, type ExportDocumentLineInput, type ShipmentStatus } from '../data/validators'
 import { invalidateDocumentCaches } from '../lib/cacheInvalidation'
 import { ensureScope, type Scope } from '../lib/scope'
+import { isTerminalShipmentStatus } from '../lib/shipmentStatus'
 import { eventsConfig } from '../events'
 
 const DOCUMENT_ENTITY_ID = 'cross_border:cross_border_export_document' as const
@@ -58,6 +59,20 @@ async function loadScopedShipment(
   } as FilterQuery<CrossBorderShipment>)
   if (!shipment) throw notFound('Shipment not found')
   return shipment
+}
+
+/**
+ * A closed (or cancelled) container is filed: its paperwork is part of what "closed" means, so the
+ * document commands refuse to add, edit or remove a paper on it. Without this the archive was only
+ * sealed for the shipment header — the document zone stayed writable (the shipment's own update
+ * guard does not see document commands).
+ */
+function assertShipmentAcceptsDocuments(shipment: CrossBorderShipment): void {
+  if (isTerminalShipmentStatus(shipment.status as ShipmentStatus)) {
+    throw new CrudHttpError(422, {
+      error: `This shipment is ${shipment.status}; its documents can no longer be changed`,
+    })
+  }
 }
 
 /**
@@ -127,6 +142,7 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, CrossBorder
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
     const shipment = await loadScopedShipment(em, scope, parsed.shipmentId)
+    assertShipmentAcceptsDocuments(shipment)
     assertLinesAllowed(parsed.docType, parsed.lines)
 
     const document = await de.createOrmEntity({
@@ -177,6 +193,11 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, CrossBorder
     if (!id) throw new Error('[internal] Missing export document id for undo')
     const scope = ensureScope(ctx)
     const de = ctx.container.resolve('dataEngine') as DataEngine
+    const em = ctx.container.resolve('em') as EntityManager
+    const existing = await em.fork().findOne(CrossBorderExportDocument, documentFilter(scope, id))
+    if (!existing) throw notFound('Export document not found')
+    assertShipmentAcceptsDocuments(await loadScopedShipment(em, scope, String(existing.shipment.id)))
+
     const removed = await de.deleteOrmEntity({
       entity: CrossBorderExportDocument,
       where: documentFilter(scope, id),
@@ -206,6 +227,7 @@ const updateDocumentCommand: CommandHandler<Record<string, unknown>, CrossBorder
 
     const existing = await em.fork().findOne(CrossBorderExportDocument, documentFilter(scope, parsed.id))
     if (!existing) throw notFound('Export document not found')
+    assertShipmentAcceptsDocuments(await loadScopedShipment(em, scope, String(existing.shipment.id)))
     assertLinesAllowed(parsed.docType ?? existing.docType, parsed.lines)
 
     const updated = await de.updateOrmEntity({
@@ -262,6 +284,10 @@ const deleteDocumentCommand: CommandHandler<
     const scope = ensureScope(ctx)
     const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
+
+    const existing = await em.fork().findOne(CrossBorderExportDocument, documentFilter(scope, id))
+    if (!existing) throw notFound('Export document not found')
+    assertShipmentAcceptsDocuments(await loadScopedShipment(em, scope, String(existing.shipment.id)))
 
     const removed = await de.deleteOrmEntity({
       entity: CrossBorderExportDocument,

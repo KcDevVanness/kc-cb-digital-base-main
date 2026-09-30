@@ -13,6 +13,7 @@ const events = [
   { id: 'cross_border.shipment.milestone_recorded', label: 'Shipment Milestone Recorded', entity: 'shipment', category: 'lifecycle', clientBroadcast: true },
   { id: 'cross_border.shipment.received', label: 'Shipment Received', entity: 'shipment', category: 'lifecycle', clientBroadcast: true },
   { id: 'cross_border.shipment.cancelled', label: 'Shipment Cancelled', entity: 'shipment', category: 'lifecycle', clientBroadcast: true },
+  { id: 'cross_border.shipment.closed', label: 'Shipment Closed', entity: 'shipment', category: 'lifecycle', clientBroadcast: true },
   { id: 'cross_border.export_document.created', label: 'Export Document Created', entity: 'export_document', category: 'crud' },
   { id: 'cross_border.export_document.updated', label: 'Export Document Updated', entity: 'export_document', category: 'crud' },
   { id: 'cross_border.export_document.deleted', label: 'Export Document Deleted', entity: 'export_document', category: 'crud' },
