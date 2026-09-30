@@ -10,6 +10,7 @@ import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { hasFeature } from '@open-mercato/shared/security/features'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
+import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import type { ContainerFileRow, OrderFileRow } from '../lib/fileRules'
 
 /**
@@ -23,6 +24,8 @@ import type { ContainerFileRow, OrderFileRow } from '../lib/fileRules'
  */
 const CONTAINERS_API_PATH = 'export_finance/container-files'
 const ORDERS_API_PATH = 'export_finance/order-files'
+/** Where the page asks whether a row has already been reminded (keyed by the same group_key). */
+const REMINDER_STATUS_API_PATH = '/api/export_finance/overdue-reminder-status'
 
 /**
  * One page holds the whole worklist on purpose: an operator must be able to see everything that is
@@ -60,6 +63,8 @@ type WorklistRow = {
   days: number | null
   /** 状态 — the money's own status word, already translated by the caller. */
   status: string
+  /** When a reminder for this row was last raised, or null when none was. */
+  remindedAt: string | null
 }
 
 function WorklistSection({
@@ -68,6 +73,7 @@ function WorklistSection({
   emptyLabel,
   ageLabel,
   daySuffix,
+  remindedPrefix,
   isLoading,
   errorLabel,
 }: {
@@ -76,6 +82,7 @@ function WorklistSection({
   emptyLabel: string
   ageLabel: string
   daySuffix: string
+  remindedPrefix: string
   isLoading: boolean
   errorLabel: string | null
 }) {
@@ -105,6 +112,11 @@ function WorklistSection({
               {row.party ? <span className="text-sm">{row.party}</span> : null}
               <span className="text-sm text-muted-foreground">{formatDay(row.since)}</span>
               <span className="ml-auto flex items-center gap-3">
+                {row.remindedAt ? (
+                  <span className="text-xs text-muted-foreground">
+                    {remindedPrefix} {formatDay(row.remindedAt)}
+                  </span>
+                ) : null}
                 <span className="text-sm text-muted-foreground">
                   {row.days === null ? '—' : `${ageLabel} ${row.days} ${daySuffix}`}
                 </span>
@@ -150,6 +162,16 @@ export default function OverdueWorklist() {
       }),
   })
 
+  // 已提醒 comes from the notifications the reminder command wrote — the page never guesses.
+  const remindersQuery = useQuery({
+    queryKey: ['export_finance', 'overdue-reminder-status', scopeVersion],
+    queryFn: async () => {
+      const response = await apiCall<{ reminders: Record<string, string> }>(REMINDER_STATUS_API_PATH, { method: 'GET' })
+      return response.ok && response.result ? response.result.reminders : {}
+    },
+  })
+  const reminders = React.useMemo(() => remindersQuery.data ?? {}, [remindersQuery.data])
+
   const containerRows: WorklistRow[] = React.useMemo(
     () =>
       (containersQuery.data?.items ?? [])
@@ -162,8 +184,9 @@ export default function OverdueWorklist() {
           since: row.receivedAt,
           days: daysSince(row.receivedAt, now),
           status: t(`export_finance.refund.status.${row.taxRefundStatus}`, row.taxRefundStatus),
+          remindedAt: reminders[row.shipmentId] ?? null,
         })),
-    [containersQuery.data, now, t],
+    [containersQuery.data, now, reminders, t],
   )
 
   const orderRows: WorklistRow[] = React.useMemo(
@@ -178,8 +201,9 @@ export default function OverdueWorklist() {
           since: row.receivedAt,
           days: daysSince(row.receivedAt, now),
           status: t(`export_finance.collection.status.${row.collectionStatus}`, row.collectionStatus),
+          remindedAt: reminders[row.purchaseOrderId] ?? null,
         })),
-    [now, ordersQuery.data, t],
+    [now, ordersQuery.data, reminders, t],
   )
 
   // Both sections are cut at the same size; saying so beats silently hiding row 101.
@@ -193,7 +217,7 @@ export default function OverdueWorklist() {
         <p className="text-sm text-muted-foreground">
           {t(
             'export_finance.overdue.page.description',
-            '钱还没有到位、而且已经等了太久的单据。判定规则与「柜档案 / 订单档案」的逾期标记完全同一份（见规格 Phase 2·C），本页只做汇总。',
+            '钱还没有到位、而且已经等了太久的单据。判定规则与「柜档案 / 订单档案」的逾期标记完全同一份；「已提醒」来自提醒命令发出的通知，页面只显示它，不做推断。',
           )}
         </p>
       </header>
@@ -210,6 +234,7 @@ export default function OverdueWorklist() {
             }
             ageLabel={t('export_finance.overdue.age', '已等待')}
             daySuffix={t('export_finance.overdue.days', '天')}
+            remindedPrefix={t('export_finance.overdue.reminded', '已提醒')}
             isLoading={containersQuery.isLoading}
             errorLabel={containersQuery.isError ? t('export_finance.overdue.loadFailed', '载入失败，请稍后重试。') : null}
           />
@@ -231,6 +256,7 @@ export default function OverdueWorklist() {
         }
         ageLabel={t('export_finance.overdue.age', '已等待')}
         daySuffix={t('export_finance.overdue.days', '天')}
+        remindedPrefix={t('export_finance.overdue.reminded', '已提醒')}
         isLoading={ordersQuery.isLoading}
         errorLabel={ordersQuery.isError ? t('export_finance.overdue.loadFailed', '载入失败，请稍后重试。') : null}
       />

@@ -363,9 +363,10 @@
     「要不要收、走哪个渠道」由平台**每用户 `notification_preferences`** 决定（与 `finance` 的三条提醒完全一致）。
   - **频率上限 ⚠️ 邮件摘要未做**：站内逐条 ✅；「每组织每日一封摘要邮件」没有实现（渠道由用户偏好决定，摘要属邮件侧增量）。
   - **内容 ✅**：通知标题/正文只带事实变量（`{title}` 单号、`{days}`、`{status}`），句子在字典里；行动按钮直达逾期清单。
-  - **可见性 ❌ 本轮没做**：草稿要求「清单上显示『已提醒』」——**没有实现**。平台的通知中心已能按类型看到已发出的提醒；
-    要在清单行上显示它，需按 `group_key = <kind>:<resourceId>:<逾期起始日>` 反查 `notifications` 并回填到两份 `overdue=true` 投影
-    （跨表标量读，与既有的 `sales_quotes`/`sales_channels` 只读同模式）。**列为独立后续小项；在它落地前，本规格不声称清单上有该标记。**
+  - **可见性 ✅（2026-09-30 补做）**：逾期清单行现在显示「**已提醒 <日期>**」——页面只读 `GET /api/export_finance/overdue-reminder-status`
+    （只读接口，`export_finance.orders.view`），它按 `group_key = <kind>:<resourceId>:<逾期起始日>` **反查本模块自己写出的 `notifications`**
+    并取每个资源最近一次的时间戳（跨表标量读，与 `tradeTypeChannels.server.ts` 同一模式）。因此标记**只能反映平台已接受的通知**，页面不做推断；
+    没有提醒过的行不显示任何标记。真机：夹具（柜 + 订单各 60 天）→ 命令报 2 条 → 接口返回两个资源键 → 页面两行都出现「已提醒 2026-09-30」；拆夹具后标记消失。
 - **实现要点（2026-09-30 核对平台契约后）**：
   - **发送**走 `notificationService`（DI token，`notifications/di.ts:8`），实际投递由队列 worker `notifications:create`（`queue=notifications`，concurrency=5）完成 —— 因此是**异步 + 可重试**，调用点只需入队。
   - **类型与偏好是平台的，不是我们的**：`notification_types` 注册类型、`notification_preferences` 是**每用户自己的开关**（渠道偏好也在这里）。所以「站内还是邮件」「谁想收」这类问题**平台已经有答案**，我们不需要再造一个订阅开关 —— 这也把 Q-011 收窄成「这个类型注册后默认开还是默认关」。
@@ -446,6 +447,7 @@
 | 2026-09-30 | **Phase 2·C 实现完成**（`feat/export-finance-status-coherence`）：收款/退税记录的**状态与事实**在写入时校验（`lib/statusCoherence.ts`，422 逐条回报；历史行不动）；两个档案页新增**派生**的逾期标记（柜「退税逾期」/ 订单「收款逾期」，阈值常量 45 天、边界不含、缺失日期不标），进列表列与 CSV。证据：单元两套 + 真机 API（三种非法组合 422、finance 口径回读 `collectionOverdue`、CSV 表头含「退税逾期」）。开放问题记入 Q-008（是否把「柜未收货不得登记收款」做成硬门禁——收款按采购单记，一单可跨多柜）。 |
 | 2026-09-30 | **Phase 4 转化率实现完成**（`feat/internal-sales-quote-conversion`）：`/backend/internal-sales/quote-conversion` 上线 —— 关联读订单冻结的 `metadata.internalSales.sourceQuote.id`（不加列、不依赖审计），「已发出」按 `sent_at` 事实判断，页面同时给出**两个分母的比率**（全部报价 / 已发出）与原始计数，把口径选择留给业务。纯聚合在 `lib/quoteConversion.ts`（单测 5 例：转化判定 / 状态词不算已发出 / 空分母返回 null 而非 NaN / 区间外订单不计入 / 百分比取整）。**真机**：夹具（给一张报价写 `sent_at` + 把一张订单的 `metadata` 指向它）→ `quotes=2 / sent=1 / converted=1 / 50% / 100%`，页面四个数字与两行明细正确；回滚夹具后 `converted=0 / sent=0 / 0% / —`（null 正确渲染）。 |
 | 2026-09-30 | **Phase 4「转化率」与「停留时长」拆开（仅文档）**：查证订单从报价创建时冻结了 `metadata.internalSales.sourceQuote = { id, number }`（`internal_sales/lib/documentValues.ts:28/142`），**转化率因此不需要新列、不依赖审计**，只剩「分母」一个口径待定（发出数 vs 全部报价）；**只有停留时长**需要迁移批次的 `status_changed_at`。迁移申请范围据此收窄。 |
+| 2026-09-30 | **Phase 4·B 可见性补做完成**（`feat/overdue-reminder-marker`）：清单行显示「已提醒 <日期>」——新增只读接口 `GET /api/export_finance/overdue-reminder-status`（按 `group_key` 反查本模块写出的 `notifications`，取每资源最近时间戳）+ 页面标记（中英各 1 键）+ 解析器单测 2 例；真机：夹具 → 命令 2 条 → 接口两键 → 页面两行「已提醒 2026-09-30」，拆夹具后消失。**Phase 4·B 至此全部落地**（含此前对账里标注未做的这一项）。 |
 | 2026-09-30 | **Phase 4·B 草稿与实现的对账（仅文档）**：把该节的「推荐默认」改写成逐条对账——**谁收**（改为功能位，与 `finance` 同款）、**阈值**、**时机与幂等**（实现比草稿更强：同一条条件永远只有一条通知）、**内容** 为 ✅；**渠道**（不造组织级开关，交平台每用户偏好）、**邮件摘要**、**清单「已提醒」标记**三处与草稿不同或未做，均已如实标注，其中「已提醒」写明最小实现路径并列为独立后续小项。 |
 | 2026-09-30 | **Phase 4·B 实现完成**（`feat/export-finance-overdue-reminders`）：`mercato export_finance overdue-reminders --org --tenant [--dry-run] [--today]` 上线 —— 两个逾期条件**直接复用 `?overdue=true`**（与清单/档案列/CSV 同源），每条件一个通知类型（`notifications.ts`）与一个事件（`category: 'custom'`），收件人按平台约定由功能位 fan-out，**幂等键 = 资源 + 变成逾期的那一天**（`becameLateOn()`，纯函数、单测锁死：同一天重复跑与次日跑都刷新同一条）。真机：夹具（柜 60 天 + 订单 `received` 60 天）→ 命令报 2 条，`notifications` 落 2×2 行（两名功能位持有者）且 `group_key` 为 `…:2026-09-15`；**再跑一次仍是 2 条**（刷新不堆叠）；`--dry-run` 0 写；拆夹具后 dry-run 回到 0、通知行清零。 |
 | 2026-09-30 | **Phase 4·B 机制核对（仅文档）**：`notificationService`（`notifications/di.ts:8`）+ 队列 worker `notifications:create`（异步可重试）是投递入口；**类型注册与每用户 `notification_preferences` 由平台提供**，所以渠道/是否收是用户自己的开关，不是我们要造的东西；收件人**可解**——采购单有 `owner_user_id`（`purchasing/data/entities.ts:184`），柜的责任人取其分摊订单的 owner。Q-011 因此收窄为**两问**（只发负责人还是加财务组；新类型默认开还是关），其余机制就绪，等这两问即开工。 |
