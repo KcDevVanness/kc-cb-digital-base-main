@@ -83,7 +83,7 @@ snapshots stay readable, nothing is migrated.
 
 ## Progress
 
-PR: （本单元 PR 建成后补）
+PR: #74
 
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
