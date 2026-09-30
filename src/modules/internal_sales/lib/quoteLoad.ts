@@ -205,18 +205,14 @@ export async function loadQuoteDraft(quoteId: string): Promise<QuoteDraft> {
  * Applies a quote to the form through the form's own `setValue`, one field per call.
  *
  * Returns what the caller needs for its message; an empty quote still fills the head and leaves the
- * starter line, so the operator sees the load happened and can add the lines.
+ * starter line, so the operator sees the load happened and can add the lines. The trade type is not
+ * among the fields: the entry owns it, and the picker already offers this entry's own type only.
  */
 export async function applyQuoteDraftToForm(
   quoteId: string,
   setValue: (field: string, value: unknown) => void,
-  options: { adoptQuoteType?: boolean } = {},
 ): Promise<{ number: string; lineCount: number }> {
   const draft = await loadQuoteDraft(quoteId)
-  // The order inherits the quote's trade type — the buyer link a document freezes and the type it
-  // is filed under must agree. `adoptQuoteType: false` is the locked entry (`/backend/external-sales/**`),
-  // whose control must not leave the type it is dedicated to.
-  if (options.adoptQuoteType !== false) setValue('tradeType', draft.values.tradeType)
   setValue('buyerRef', draft.values.buyerRef)
   setValue('customerName', draft.values.customerName)
   setValue('currencyCode', draft.values.currencyCode)
