@@ -18,6 +18,8 @@ import { SALES_STATUS_DICTIONARY_KEY, statusEntryIdForValue } from './salesStatu
 export type SalesStatusEntriesState = {
   entries: DictionaryEntryOption[]
   isLoading: boolean
+  /** The dictionary read failed — distinct from a tenant that simply lacks the value. */
+  failed: boolean
   /** The entry id for a value, or `null` when this tenant's dictionary lacks that value. */
   entryIdFor: (value: string) => string | null
 }
@@ -36,5 +38,5 @@ export function useSalesStatusEntries(): SalesStatusEntriesState {
     (value: string) => statusEntryIdForValue(entries, value),
     [entries],
   )
-  return { entries, isLoading: query.isLoading, entryIdFor }
+  return { entries, isLoading: query.isLoading, failed: query.isError, entryIdFor }
 }

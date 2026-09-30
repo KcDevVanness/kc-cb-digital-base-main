@@ -78,8 +78,8 @@
 
 **报价（sales_quotes）**
 - `draft` 草稿：新建即此值。可编辑、可发出、可作废、**不可下单**。
-- `sent` 已发出：只能由 `POST /api/sales/quotes/send` 产生（写 `validUntil`/`sentAt`/令牌 + 邮件）。可下单、可作废；
-  **任何编辑都会被打回 `draft`**（平台行为），页面在编辑后提示「已发出的报价被修改，需重新发出」。
+- `sent` 已发出：只能由 `POST /api/sales/quotes/send` 产生（写 `validUntil`/`sentAt`/令牌 + 邮件）。可下单、可作废，编辑页有「保存即退回草稿」横幅。
+  **任何更新都会被打回 `draft` 并作废令牌**（平台行为，且发生在载荷应用之后）——所以「作废一张 sent 报价」实现为两次写入：先无字段更新触发引擎撤回，再把状态置 `canceled`；每次写入后回读核对落库值才报成功。
 - `confirmed` 对方已接受（平台 `accept` 路径：接受即就地转订单）；列表按「已接受」展示。
 - `canceled` 作废：终态。不可再发出（平台 400）、不可下单、不可编辑（本模块不给编辑入口）。
 - 未标记（NULL，历史）：显示「—」，**下单放行**（不追溯）。
@@ -269,6 +269,7 @@
 |---|---|---|
 | Phase 1 acceptance criteria | pass（AC-001…AC-008） | 真机（dev server + 本工作树 `.env`，`OM_DISABLE_EMAIL_DELIVERY=true`）：新建报价/订单落 `draft` + `statusEntryId`；draft 报价无下单动作、发出后动作随状态打开；`sent` 写 `valid_until`；订单确认/作废落库；发运分摊选择器只含 confirmed + 历史未标记项、作废项消失；探针单据已删。逐条见 `src/modules/internal_sales/README.md` 的「验证」段 |
 | Unit tests | pass | `salesStatus.test.ts`（策略矩阵/过期/条目解析）、`buyer.test.ts`（快照邮箱两种键）、`shipmentFormOptions.test.ts`（状态门禁 + 未标记标注）；模块 7 suites / 67 tests |
+| Independent review pass | pass（修订后） | 只读评审提出 4 条 must-fix（sent 报价作废被引擎复位、sent 报价转换出的订单不可确认、载入选择器缺门禁、编辑页缺提示）——全部修复并在真机复验（见模块 README 验证段 ⑥–⑩）；另有 8 条 nice-to-have，其中 6 条一并修复（有效至只对 sent 显示、邮箱格式与 `metadata.customerEmail` 兜底、分摊标签解析不走门禁、字典读失败与缺值区分、派对预填竞态、常量替换裸字面量），2 条记录为文档措辞修正 |
 | Gate | pass | 本单元门禁见 PR（generate / typecheck / lint / check-lessons / ds:check / test / build）与 CI `validate` + `guard-tree` |
 | Compatibility | pass | 无 DDL；旧快照、旧单据（status NULL）行为不变；i18n 只增键（`list.columns.lines` 改文案）、菜单名走字典 |
 | Security | pass | 状态写入沿用引擎（组织作用域 + 功能位），邮箱只在加密快照列；无新端点、无新密钥 |

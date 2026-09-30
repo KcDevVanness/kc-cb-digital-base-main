@@ -63,7 +63,8 @@ export type SalesStatusActions = {
 
 export function salesStatusActions(kind: SalesDocumentKind, status: SalesStatusValue): SalesStatusActions {
   const canceled = status === SALES_STATUS_CANCELED
-  const allocatable = status === null || ALLOCATABLE_ORDER_STATUSES.includes(status)
+  const allocatable = status === null || (status !== null && ALLOCATABLE_ORDER_STATUSES.includes(status))
+  const pastConfirmation = status !== null && ALLOCATABLE_ORDER_STATUSES.includes(status)
   if (kind === 'quote') {
     return {
       // A sent quote may be re-sent (the engine refreshes validity and the acceptance token);
@@ -82,7 +83,12 @@ export function salesStatusActions(kind: SalesDocumentKind, status: SalesStatusV
     canSend: false,
     canOrderFrom: false,
     canEdit: !canceled,
-    canConfirm: status === null || status === SALES_STATUS_DRAFT,
+    // Anything that is not canceled and has not reached (or passed) confirmation can be confirmed.
+    // That includes `sent`: the engine copies a quote's status onto the order it converts into
+    // (`documents.js` — `status: snapshot.quote.status`), so a converted sent quote arrives as a
+    // `sent` order and must still be confirmable here, otherwise the conversion this module offers
+    // would produce a document that can never be shipped.
+    canConfirm: !canceled && !pastConfirmation,
     canCancel: !canceled,
     canAllocateToShipment: allocatable,
   }

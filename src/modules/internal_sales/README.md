@@ -80,17 +80,22 @@ app 自有**界面层**模块：为**对内（总部 → 分公司）与对外�
 
 | 单据 | 状态与动作 | 门禁 |
 |---|---|---|
-| 报价 | 新建即 `draft`；「发出报价」走引擎 `POST /api/sales/quotes/send`（写 `validUntil`/`sentAt`/接受令牌 + 发信）→ `sent`；「作废」→ `canceled`（终态） | **未 `sent`/`confirmed` 的报价不显示「转为订单 / 按此报价新建订单」**；`canceled` 之后三个动作全消失（平台 `send` 也拒绝 canceled） |
-| 订单 | 新建即 `draft`；「确认订单」→ `confirmed`；「作废」→ `canceled` | 发运单的销售分摊选择器**只列 `confirmed`**（`cross_border/lib/shipmentFormOptions.ts`）；`draft`/`canceled` 不出现 |
+| 报价 | 新建即 `draft`；「发出报价」走引擎 `POST /api/sales/quotes/send`（写 `validUntil`/`sentAt`/接受令牌 + 发信）→ `sent`；「作废」→ `canceled`（终态） | **未 `sent`/`confirmed` 的报价不显示「转为订单 / 按此报价新建订单」**（「从报价单载入」的选择器同样只列可下单的报价，`?fromQuote=` 指向不可下单的报价时行内拒绝）；`canceled` 之后三个动作全消失（平台 `send` 也拒绝 canceled） |
+| 订单 | 新建即 `draft`；「确认订单」→ `confirmed`；「作废」→ `canceled` | 发运单的销售分摊选择器只列**已确认及之后**的状态（`confirmed`/`in_fulfillment`/`fulfilled`，Phase 1 只写得到 `confirmed`）；`draft`/`canceled` 不出现 |
 | 历史单据 | `status` 为空（本模块启用前写入的单据） | 显示「—」；报价照旧可下单、订单照旧可分摊，选择器行内标注「未标记状态」——不追溯、不锁存量数据 |
 
 - **买方邮箱**：报价发出需要收件地址，引擎按 `customerSnapshot.contact.email` → `customer.displayName` 之外的第二顺位
   `customer.primaryEmail` → `metadata.customerEmail` 解析；本模块把它做成表单字段「买方邮箱」写进**快照**
   （`lib/buyer.ts` 的 `buildBuyerSnapshot({ email })`），选外部客户时会用 `GET /api/parties/{id}` 的 `email` 预填
   （已有输入不覆盖）。快照每次保存整体重写，所以没有 metadata 合并/覆盖的风险。
-- **发出后编辑会被打回草稿**：平台行为（`sales.quotes.update` 清 `acceptanceToken`/`sentAt` 并把状态复位 `draft`），
-  界面在发出对话框里写明；列表徽章会随之变化。
-- **列表新列**：报价多一列「有效至」（`validUntil`），`sent` 且已过期时红字 + 「已过期」；「行数」列改名
+- **发出后编辑会被打回草稿**：平台行为——**任何**对 `sent` 报价的更新都会清 `acceptanceToken`/`sentAt` 并把状态复位 `draft`
+  （引擎在应用完载荷之后无条件执行，载荷里的 `statusEntryId` 会被它覆盖），所以本模块：
+  ① 编辑页在单据仍是 `sent` 时显示横幅「保存会把状态退回草稿并作废已发链接」；
+  ② **作废一张已发出的报价要写两次**——先做一次无字段变更的更新（触发引擎自己的「撤回」），再用返回的新版本把状态置 `canceled`；
+  ③ 每次状态写入后**回读单据核对落库值**，不一致就如实报错，不谎报成功。
+- **转换出来的订单仍可确认**：`sent` 报价被「转为订单」时引擎把**报价状态复制给订单**（`status: snapshot.quote.status`），得到的是 `sent` 订单；
+  本模块的 `canConfirm` 对「未作废且未过确认」开放，所以这类订单能确认、能发运（否则转换会产出一张永远发不出去的订单）。
+- **列表新列**：报价多一列「有效至」（`validUntil`）——只有状态仍是 `sent` 的报价显示日期（引擎撤回后 `valid_until` 会留在库里），`sent` 且已过期时红字 + 「已过期」；「行数」列改名
   「明细行数」/“Line items”（它就是 `line_item_count` = 单据明细行数）。对外入口的订单标题与对内一样带业务缩写
   「对外销售订单（PO）」（N-1 缩写口径，2026-09-30 补齐）。
 - **本地开发发信**：本仓 dev 没有配置发信 provider，`sendEmail` 会抛 `EMAIL_TRANSPORT_NOT_CONFIGURED`——但引擎的
@@ -278,6 +283,12 @@ npx jest src/modules/internal_sales                     # 买方值协议 / 快�
 #  ⑤ 发运分摊门禁：`/backend/cross_border/shipments/create` 的「对内销售订单」选择器只出现
 #     `ORDER-20260930-00029`（confirmed）与 `ORDER-20260929-00007 (未标记状态)`（历史 NULL）；
 #     被作废的订单**不出现**（同一页面对照）。探针单据验后已删（列表回到 2 张报价 / 6 张订单）。
+#  评审修订后的复验（2026-09-30，同一 dev server）：
+#  ⑥ 作废一张 **sent** 报价（两步写入：引擎撤回 + 置 canceled）→ 读回 `status='canceled'`（此前一次 PUT 会被引擎复位成 draft）；
+#  ⑦ 「转为订单」一张 sent 报价 → 生成的订单 `status='sent'`，订单列表出现「确认订单」→ 确认后 `status='confirmed'`；
+#  ⑧ 「从报价单载入」选择器只列可下单的报价（draft 报价不出现），`/orders/create?fromQuote=<draft id>` 行内提示「这张报价还没有发出或已作废，不能下单。」且不填单；
+#  ⑨ 编辑一张 sent 报价 → 表单顶部出现横幅「保存会把状态退回草稿并作废已发链接，需要时请重新发出。」；
+#  ⑩ 「有效至」只对仍为 `sent` 的报价显示（撤回成 draft 的报价显示 —）。探针单据验后已删（回到 2 张报价 / 6 张订单）。
 ```
 
 ## 回滚

@@ -145,6 +145,27 @@ export async function loadSalesOrderOptions(
   }
 }
 
+/**
+ * One sales order's display label by id — the **resolver** path.
+ *
+ * Deliberately outside `loadSalesOrderOptions`: resolving the label of an order that is already
+ * allocated to this shipment is display, not selection, and the allocation gate (status) must not
+ * turn such a row into a bare uuid — an order allocated while confirmed may be canceled later and
+ * still has to render. `null` when the order is not readable (the caller falls back to the id).
+ */
+export async function loadSalesOrderLabel(orderId: string): Promise<string | null> {
+  try {
+    const payload = await fetchCrudList<Record<string, unknown>>(SALES_ORDERS_API_PATH, { id: orderId, pageSize: 1 })
+    const item = payload.items?.[0]
+    if (!item) return null
+    const number = readOptionText(item, 'orderNumber', 'order_number') || orderId.slice(0, 8)
+    const customer = readOptionText(item, 'customerName', 'customer_name')
+    return customer ? `${number} — ${customer}` : number
+  } catch {
+    return null
+  }
+}
+
 /** The document's status as the list projects it: a dictionary value, or `null` when never stamped. */
 function readOrderStatus(item: Record<string, unknown>): string | null {
   const raw = item.status

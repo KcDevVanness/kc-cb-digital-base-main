@@ -157,9 +157,9 @@ describe('loadSalesOrderOptions', () => {
       }
       return {
         items: [
-          { id: 'draft-order', orderNumber: 'SO-DRAFT', customerName: 'A', status: 'draft' },
-          { id: 'confirmed-order', orderNumber: 'SO-CONF', customerName: 'B', status: 'confirmed' },
-          { id: 'canceled-order', orderNumber: 'SO-CANCEL', customerName: 'C', status: 'canceled' },
+          { id: 'draft-order', orderNumber: 'SO-DRAFT', customerName: 'A', channelId: 'channel-internal', status: 'draft' },
+          { id: 'confirmed-order', orderNumber: 'SO-CONF', customerName: 'B', channelId: 'channel-internal', status: 'confirmed' },
+          { id: 'canceled-order', orderNumber: 'SO-CANCEL', customerName: 'C', channelId: 'channel-internal', status: 'canceled' },
         ],
         total: 3,
         page: 1,
@@ -167,13 +167,13 @@ describe('loadSalesOrderOptions', () => {
       } as never
     })
 
-    const options = await loadSalesOrderOptions(ERROR_MESSAGE, '', { unmarkedStatusLabel: 'status not marked' })
+    const options = await loadSalesOrderOptions(t, ERROR_MESSAGE, '', { unmarkedStatusLabel: 'status not marked' })
 
     // An unconfirmed or canceled order must never reach a shipment; a legacy order is offered, but says so.
     expect(options.map((option) => option.value)).toEqual(['confirmed-order', 'legacy'])
     expect(options.map((option) => option.label)).toEqual([
-      'SO-CONF — B',
-      'SO-LEGACY — Branch (status not marked)',
+      'cross_border.shipments.salesAllocations.tradeType.internal · SO-CONF — B',
+      'cross_border.shipments.salesAllocations.tradeType.internal · SO-LEGACY — Branch (status not marked)',
     ])
   })
 

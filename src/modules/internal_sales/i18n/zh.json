@@ -118,5 +118,10 @@
   "internal_sales.form.externalQuote.editTitle": "编辑对外销售报价单",
   "internal_sales.form.externalOrder.createTitle": "新建对外销售订单（PO）",
   "internal_sales.form.externalOrder.editTitle": "编辑对外销售订单（PO）",
-  "internal_sales.list.unmarkedHintFiltered": "本组织有 {{count}} 张单据没有贸易类型标记，因此对内 / 对外两个入口都不列出。带买方链接的可批量归类：yarn mercato internal_sales backfill-trade-type --apply；没有链接的回填会跳过，需要逐单在对应入口的编辑页保存（保存按入口类型打标）。"
+  "internal_sales.list.unmarkedHintFiltered": "本组织有 {{count}} 张单据没有贸易类型标记，因此对内 / 对外两个入口都不列出。带买方链接的可批量归类：yarn mercato internal_sales backfill-trade-type --apply；没有链接的回填会跳过，需要逐单在对应入口的编辑页保存（保存按入口类型打标）。",
+  "internal_sales.list.actions.sendBadEmail": "买方邮箱格式不对，请先在报价单上改正再发出。",
+  "internal_sales.list.actions.statusNotApplied": "状态没有生效（引擎未接受），请刷新列表后重试。",
+  "internal_sales.form.quoteLoad.notOrderable": "这张报价还没有发出或已作废，不能下单。",
+  "internal_sales.form.sentQuoteHint": "这是一张已发出的报价：保存会把状态退回草稿并作废已发链接，需要时请重新发出。",
+  "internal_sales.form.statusDictionaryFailed": "读取本组织的销售状态字典失败，请刷新重试；若持续失败请联系管理员。"
 }

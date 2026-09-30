@@ -32,9 +32,16 @@ describe('sales status actions', () => {
     expect(salesStatusActions('quote', SALES_STATUS_CANCELED).canCancel).toBe(false)
   })
 
-  it('confirms a draft order and gates allocation on confirmation', () => {
+  it('confirms every order that is not past confirmation, and gates allocation on it', () => {
     expect(salesStatusActions('order', SALES_STATUS_DRAFT).canConfirm).toBe(true)
     expect(salesStatusActions('order', SALES_STATUS_CONFIRMED).canConfirm).toBe(false)
+    // The engine copies a quote's status onto the order it converts into, so a converted `sent`
+    // quote arrives as a `sent` order — it must still be confirmable, or the conversion would
+    // produce a document this module can never ship.
+    expect(salesStatusActions('order', SALES_STATUS_SENT).canConfirm).toBe(true)
+    expect(salesStatusActions('order', SALES_STATUS_SENT).canAllocateToShipment).toBe(false)
+    expect(salesStatusActions('order', SALES_STATUS_CANCELED).canConfirm).toBe(false)
+    expect(salesStatusActions('order', null).canConfirm).toBe(true)
     expect(salesStatusActions('order', SALES_STATUS_DRAFT).canAllocateToShipment).toBe(false)
     expect(salesStatusActions('order', SALES_STATUS_CANCELED).canAllocateToShipment).toBe(false)
     expect(salesStatusActions('order', SALES_STATUS_CONFIRMED).canAllocateToShipment).toBe(true)

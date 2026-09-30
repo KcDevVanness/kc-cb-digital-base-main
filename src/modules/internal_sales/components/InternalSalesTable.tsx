@@ -35,6 +35,7 @@ import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import {
   SALES_STATUS_CANCELED,
   SALES_STATUS_CONFIRMED,
+  SALES_STATUS_SENT,
   isQuoteExpired,
   salesStatusActions,
 } from '../lib/salesStatus'
@@ -95,12 +96,18 @@ function toDocumentRecord(item: Record<string, unknown>, kind: InternalSalesKind
   const snapshotRecord = snapshot && typeof snapshot === 'object' ? snapshot as Record<string, unknown> : null
   const contact = snapshotRecord?.contact
   const customer = snapshotRecord?.customer
+  const metadata = item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+    ? item.metadata as Record<string, unknown>
+    : null
   const buyerEmail = (contact && typeof contact === 'object' && !Array.isArray(contact)
     ? readText(contact as Record<string, unknown>, 'email')
     : '')
     || (customer && typeof customer === 'object' && !Array.isArray(customer)
       ? readText(customer as Record<string, unknown>, 'primaryEmail')
       : '')
+    // Third key of the engine's own resolution chain (`resolveQuoteEmail`): an address another
+    // surface may have frozen into the document metadata.
+    || (metadata ? readText(metadata, 'customerEmail') : '')
   const total = item.grandTotalNetAmount ?? item.grand_total_net_amount ?? item.grandTotalGrossAmount
   return {
     id: String(item.id),
@@ -123,8 +130,12 @@ function toDocumentRecord(item: Record<string, unknown>, kind: InternalSalesKind
  * open the document to spot a stale quote.
  */
 function quoteValidityLabel(record: DocumentRecord, locale: string, t: TranslateFn): React.ReactNode {
-  if (!record.validUntil) return <span className="text-xs text-muted-foreground">—</span>
-  const formatted = formatDate(record.validUntil, locale) ?? record.validUntil
+  // The engine's sent→draft revoke clears the token but leaves `valid_until` behind, so only a
+  // quote that is still sent has a meaningful deadline.
+  if (record.status !== SALES_STATUS_SENT || !record.validUntil) {
+    return <span className="text-xs text-muted-foreground">—</span>
+  }
+  const formatted = formatDate(record.validUntil, locale)
   if (!isQuoteExpired(record.status, record.validUntil)) return <span>{formatted}</span>
   return (
     <span className="inline-flex items-center gap-1.5 text-destructive">
@@ -330,34 +341,64 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
     [salesStatusEntries],
   )
   /**
-   * Writes one status transition through the engine's own document update.
+   * Writes one status transition through the engine's own document update, then **verifies** it.
    *
    * The engine takes a dictionary **entry id** (`statusEntryId`), resolves the value itself, keeps
    * the change trail and — for orders moving to `confirmed`/`canceled` — emits
    * `sales.order.confirmed` / `sales.order.cancelled`. The row's `updatedAt` rides along as the
    * optimistic lock, so a document somebody else touched in the meantime answers 409 instead of
    * being overwritten.
+   *
+   * Two engine rules shape the write:
+   *
+   * - **Any update of a `sent` quote resets it to `draft` and clears the acceptance token**
+   *   (`sales/commands/documents.js`: `shouldInvalidateSentToken` + the `quote.status = "draft"`
+   *   block run *after* the payload is applied — a `statusEntryId` in that payload is overwritten).
+   *   Canceling a sent quote therefore takes two writes: first a no-op update that performs the
+   *   engine's own revoke, then the cancel on the now-draft document. The buyer's link dies with the
+   *   first write, which is exactly what canceling means.
+   * - The engine may still ignore a status we asked for, so the persisted value is re-read and the
+   *   operator is told what actually happened instead of a hopeful success message.
    */
+  const isSendableEmail = React.useCallback(
+    (value: string | null | undefined): boolean => typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
+    [],
+  )
+
   const applyStatus = React.useCallback(async (row: DocumentRecord, value: string): Promise<boolean> => {
     const statusEntryId = entryIdFor(value)
     if (!statusEntryId) {
       flash(t('internal_sales.list.actions.statusMissing', 'This status is not configured for your organization.'), 'error')
       return false
     }
-    try {
-      await readApiResultOrThrow(
-        `/api/${apiPath}`,
-        {
-          method: 'PUT',
-          headers: {
-            'content-type': 'application/json',
-            ...(row.updatedAt ? buildOptimisticLockHeader(row.updatedAt) : {}),
-          },
-          body: JSON.stringify({ id: row.id, statusEntryId, updatedAt: row.updatedAt ?? null }),
+    const write = async (entryId: string, updatedAt: string | null) => readApiResultOrThrow<{ updatedAt?: string }>(
+      `/api/${apiPath}`,
+      {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          ...(updatedAt ? buildOptimisticLockHeader(updatedAt) : {}),
         },
-        { errorMessage: t('internal_sales.list.actions.statusFailed', 'Could not change the status.') },
-      )
+        body: JSON.stringify({ id: row.id, statusEntryId: entryId, updatedAt: updatedAt ?? null }),
+      },
+      { errorMessage: t('internal_sales.list.actions.statusFailed', 'Could not change the status.') },
+    )
+    try {
+      let version = row.updatedAt
+      if (kind === 'quote' && row.status === SALES_STATUS_SENT) {
+        // The engine's revoke: any update of a sent quote returns it to draft and kills the link.
+        const revoked = await write(statusEntryId, version)
+        version = typeof revoked?.updatedAt === 'string' ? revoked.updatedAt : null
+        await queryClient.invalidateQueries({ queryKey })
+      }
+      await write(statusEntryId, version)
+      const persisted = await fetchCrudList<Record<string, unknown>>(apiPath, { id: row.id, pageSize: 1 })
+      const storedStatus = readText(persisted.items?.[0] ?? {}, 'status') || null
       await queryClient.invalidateQueries({ queryKey })
+      if (storedStatus !== value) {
+        flash(t('internal_sales.list.actions.statusNotApplied', 'The status did not stick — please reload the list.'), 'error')
+        return false
+      }
       return true
     } catch (statusError) {
       if (surfaceRecordConflict(statusError, t)) {
@@ -370,13 +411,17 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
       flash(message, 'error')
       return false
     }
-  }, [apiPath, entryIdFor, queryClient, queryKey, t])
+  }, [apiPath, entryIdFor, kind, queryClient, queryKey, t])
 
   /** Quote only: hand the document to the engine's send route (validity, acceptance link, email). */
   const handleSendQuote = React.useCallback(async (row: DocumentRecord, validForDays: number) => {
     if (!row.buyerEmail) {
       // The engine refuses a send without an address; say it here, before a round trip.
       flash(t('internal_sales.list.actions.sendNoEmail', 'Fill in the buyer email on this quote before sending it.'), 'error')
+      return
+    }
+    if (!isSendableEmail(row.buyerEmail)) {
+      flash(t('internal_sales.list.actions.sendBadEmail', 'That buyer email does not look like an address.'), 'error')
       return
     }
     setSendBusy(true)
@@ -404,7 +449,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
     } finally {
       setSendBusy(false)
     }
-  }, [queryClient, queryKey, t])
+  }, [isSendableEmail, queryClient, queryKey, t])
 
   const handleConfirmOrder = React.useCallback(async (row: DocumentRecord) => {
     const confirmed = await confirm({
@@ -511,7 +556,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
               ...(canManage && kind === 'quote' && allowed.canSend
                 ? [{
                     id: 'send-quote',
-                    label: row.status === 'sent'
+                    label: row.status === SALES_STATUS_SENT
                       ? t('internal_sales.list.actions.resend')
                       : t('internal_sales.list.actions.send'),
                     onSelect: () => { setSendTarget(row); setSendValidDays(14) },
@@ -609,10 +654,12 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
                     'internal_sales.list.actions.sendNoEmail',
                     'Fill in the buyer email on this quote before sending it.',
                   )
-                : t(
-                    'internal_sales.list.actions.sendEmailHint',
-                    'The buyer email comes from the quote’s buyer field (Client email); fill it on the quote before sending.',
-                  )}
+                : sendTarget && !isSendableEmail(sendTarget.buyerEmail)
+                  ? t('internal_sales.list.actions.sendBadEmail', 'That buyer email does not look like an address.')
+                  : t(
+                      'internal_sales.list.actions.sendEmailHint',
+                      'The buyer email comes from the quote’s buyer field (Client email); fill it on the quote before sending.',
+                    )}
             </p>
           </div>
           <div className="flex justify-end gap-2">
@@ -621,7 +668,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
             </Button>
             <Button
               type="button"
-              disabled={sendBusy || (sendTarget !== null && !sendTarget.buyerEmail)}
+              disabled={sendBusy || !isSendableEmail(sendTarget?.buyerEmail)}
               onClick={() => { if (sendTarget) void handleSendQuote(sendTarget, sendValidDays) }}
             >
               {sendBusy ? t('internal_sales.list.actions.sending', 'Sending…') : t('internal_sales.list.actions.send')}

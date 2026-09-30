@@ -118,5 +118,10 @@
   "internal_sales.form.externalQuote.editTitle": "Edit external sales quote",
   "internal_sales.form.externalOrder.createTitle": "New external sales order (PO)",
   "internal_sales.form.externalOrder.editTitle": "Edit external sales order (PO)",
-  "internal_sales.list.unmarkedHintFiltered": "This organization has {{count}} document(s) with no trade-type marker, so neither sales entry lists them. Documents with a buyer link can be classified in bulk with: yarn mercato internal_sales backfill-trade-type --apply — the command skips the ones without a link, which must be saved one by one from the entry that owns them (a save stamps that entry's type)."
+  "internal_sales.list.unmarkedHintFiltered": "This organization has {{count}} document(s) with no trade-type marker, so neither sales entry lists them. Documents with a buyer link can be classified in bulk with: yarn mercato internal_sales backfill-trade-type --apply — the command skips the ones without a link, which must be saved one by one from the entry that owns them (a save stamps that entry's type).",
+  "internal_sales.list.actions.sendBadEmail": "That buyer email does not look like an address — fix it on the quote first.",
+  "internal_sales.list.actions.statusNotApplied": "The status did not stick — reload the list and try again.",
+  "internal_sales.form.quoteLoad.notOrderable": "This quote has not been sent yet, or was canceled — it cannot be ordered.",
+  "internal_sales.form.sentQuoteHint": "This quote has been sent: saving returns it to draft and invalidates the link that went out. Send it again when ready.",
+  "internal_sales.form.statusDictionaryFailed": "Could not read this organization’s sales status dictionary. Retry; if it keeps failing, ask an administrator."
 }
