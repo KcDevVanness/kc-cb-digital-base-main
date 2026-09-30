@@ -335,5 +335,10 @@
   "export_finance.overdue.age": "waiting",
   "export_finance.overdue.days": "days",
   "export_finance.overdue.capped": "Only the oldest are shown; the full list lives in the container file under the overdue column.",
-  "export_finance.overdue.loadFailed": "Could not load the worklist. Try again shortly."
+  "export_finance.overdue.loadFailed": "Could not load the worklist. Try again shortly.",
+  "export_finance.notifications.collectionOverdue.title": "Collection overdue: {title}",
+  "export_finance.notifications.collectionOverdue.body": "Received {days} days ago and the collection is still open (status: {status}). Open the overdue worklist.",
+  "export_finance.notifications.refundOverdue.title": "Tax refund overdue: {title}",
+  "export_finance.notifications.refundOverdue.body": "Received {days} days ago and the tax refund is still open (status: {status}). Open the overdue worklist.",
+  "export_finance.notifications.action": "Open the overdue worklist"
 }
