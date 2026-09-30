@@ -327,7 +327,7 @@
   "export_finance.cabinets.detail.refund.needsAmount": "A completed refund needs its refunded amount.",
   "export_finance.cabinets.detail.refund.mustBeEmpty": "A not-started or unknown refund cannot carry an amount — clear it first.",
   "export_finance.overdue.page.title": "Overdue worklist",
-  "export_finance.overdue.page.description": "Documents whose money has not arrived, and has been waited on for too long. The rule is the same one behind the overdue markers on the container and order files — this page only gathers them.",
+  "export_finance.overdue.page.description": "Documents whose money has not arrived, and has been waited on for too long. The rule is the same one behind the overdue markers on the container and order files; \"Reminded\" comes from the notifications the reminder command actually sent — the page shows it, never guesses it.",
   "export_finance.overdue.section.refunds": "Refund overdue (containers)",
   "export_finance.overdue.section.refunds.empty": "No container is late on its tax refund.",
   "export_finance.overdue.section.collections": "Collection overdue (orders)",
@@ -340,5 +340,6 @@
   "export_finance.notifications.collectionOverdue.body": "Received {days} days ago and the collection is still open (status: {status}). Open the overdue worklist.",
   "export_finance.notifications.refundOverdue.title": "Tax refund overdue: {title}",
   "export_finance.notifications.refundOverdue.body": "Received {days} days ago and the tax refund is still open (status: {status}). Open the overdue worklist.",
-  "export_finance.notifications.action": "Open the overdue worklist"
+  "export_finance.notifications.action": "Open the overdue worklist",
+  "export_finance.overdue.reminded": "Reminded"
 }
