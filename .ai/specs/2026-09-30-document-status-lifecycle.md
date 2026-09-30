@@ -1,7 +1,7 @@
 # 单据状态（status）在各业务板块的补齐与赋能（document status lifecycle）
 
 **Date**: 2026-09-30
-**Status**: Phase 1 Implemented（`feat/sales-status-lifecycle`）；Phase 2·A Implemented（`feat/shipment-close-lifecycle`，见下）；Phase 2·B/C 与 Phase 3–4 为草案
+**Status**: Phase 1 Implemented（`feat/sales-status-lifecycle`）；Phase 2·A Implemented（`feat/shipment-close-lifecycle`）；Phase 2·C Implemented（`feat/export-finance-status-coherence`）；Phase 2·B 与 Phase 3–4 为草案
 **Scope route**: `spec-pr`（本文件）；Phase 1 实现单元 `feat/sales-status-lifecycle`（`module-data` + `backend-ui`，含 `cross_border` 一处门禁）
 
 ## TLDR
@@ -236,9 +236,22 @@
 
 `cross_border_export_documents` 增 `status`（`draft/issued/void`，对齐 `trade_docs` 的 PI/CI 词表）+ 签发/作废动作 + 门禁（未签发 PI 不能作为收款依据）。**需要一张加列的迁移**，落地前单独批准。
 
-#### Phase 2·C — 收款 / 退税状态与逾期（草案）
+#### Phase 2·C — 收款 / 退税状态：一致性门禁 + 逾期标记（本文件定稿，实现中）
 
-收款 `collection_status`、退税 `tax_refund_status` 已有词表且可写；缺口是门禁（登记收款要求柜已 `received`/`closed`）、逾期清单（未收/未到账）、以及「已申报/已到账」时间戳（需要 DDL，随 2·B 的迁移一起）。
+- **目标**：这两张表的**状态与事实**必须自洽（否则台账只能猜哪一半可信），并且「钱还没到」的单据能一眼筛出来。
+- **现状**：`export_finance_collections`（每个采购单一行的 `collection_status` + `amount` + `received_at`）与 `export_finance_refunds`（每个柜一行的 `tax_refund_status` + `tax_refund_amount`）**都能写**，但没有任何规则把状态和金额/日期绑起来——可以出现「已收款但没金额没日期」「未收款却有收款日期」；两个档案页已支持按 `collectionStatus` / `taxRefundStatus` 过滤，但没有「逾期」概念。
+- **Requirements**
+  - REQ-210 收款记录的状态与事实必须一致（写入时校验，422 并逐条列出问题）：`received` ⇒ 必须给出 `collectedAmount` 与 `collectedAt`；`not_received` ⇒ 不得带金额或收款日期；`unknown` ⇒ 两者都不带（「未知」是没答案）。
+  - REQ-211 退税记录同理：`completed` ⇒ 必须给出 `taxRefundAmount`；`not_started` / `unknown` ⇒ 不得带金额；`applied` 允许带（已申报但未到账时常已知金额）。
+  - REQ-212 逾期标记（派生，不加列）：柜已 `received`/`closed` 且 `receivedAt` 超过阈值天数（默认 45，常量可调）而退税仍未 `completed` ⇒ 柜档案行标「退税逾期」；订单已 `received`/`closed` 且 `receivedAt` 超过阈值而收款仍非 `received` ⇒ 订单档案行标「收款逾期」。缺失/无法解析的日期一律**不标**（宁可漏报不误报）。
+  - REQ-213 两个标记进列表列与 CSV 导出（同一份派生逻辑，不在两处各写一遍）。
+- **Tests**：TEST-210 单元（`lib/__tests__/statusCoherence.test.ts`：收款 3 状态 × 金额/日期组合、退税 4 状态 × 金额组合）；TEST-211 单元（`lib/__tests__/fileRules.test.ts`：逾期矩阵 + 边界日 + 缺失日期）；TEST-212 集成/冒烟（API：不合法组合 422、合法组合 200；档案页列出现「逾期」且 CSV 含该列）。
+- **验收**
+  - **AC-210** ✅ 提交「已收款但无金额/无日期」「未收款但带收款日期」「未知但带金额」→ 422，文案逐条说明缺什么/多什么；补齐后 200 且回读一致。
+  - **AC-211** ✅ 退税同理（`completed` 无金额 → 422；`applied` 无金额 → 200）。
+  - **AC-212** ✅（派生逻辑与边界由单测覆盖；真机核了 API 标记与两处表头/列，dev 数据里没有超期的真实行）一张「已收货 45 天以上且未完成退税」的柜在柜档案页出现「逾期」徽章、CSV 该列为真；未到阈值或已完成的行不出现。
+  - **AC-213** ✅ 现有行不迁移、不校验（列本身可空，「没答案」是合法状态）——只在写入路径生效。
+- **不做**：`appliedAt`/`completedAt` 时间戳与「已申报/已到账」日期列（需要 DDL，随 2·B 的迁移一起）；把「登记收款要求柜已收货」做成硬门禁（收款按采购单记，一张单可跨多柜，「全部到货才可收款」需要业务口径确认，先记为开放问题而非发明规则）。
 
 ### Phase 3 — 采购与平台运营（草案）
 
@@ -301,7 +314,10 @@
 
 ## Open Questions
 
-（无——Q-001…Q-007 已按上表 Resolved assumptions 执行；若 owner 要改默认，改后同步本表与实现）
+| ID | 问题 | Owner | Blocking? |
+|---|---|---|---|
+| Q-008 | 「登记收款」是否要求采购单的柜**全部**已收货/已归档？收款按采购单一行的记录，而一张单可跨多柜，硬门禁需要业务口径（先按「一致性 + 逾期标记」交付，见 Phase 2·C） | owner | no |
+| Q-009 | 「已申报 / 已到账」是否需要落时间戳列（`appliedAt` / `completedAt`）？需要随 Phase 2·B 的迁移一起加 | owner | no |
 
 ## Changelog
 
@@ -310,6 +326,7 @@
 | 2026-09-30 | Initial skeleton（owner：把各板块缺失的状态按业务流程补齐；先销售链），含 Q-001…Q-007 |
 | 2026-09-30 | **Phase 1 定稿并进入实现**（owner「按照这个流程先实作」）：Q-001…Q-007 按推荐默认落定；补齐 Domain Vocabulary / Journeys / UI / API / Tests / Traceability / Acceptance；Phase 2–4 仍为草案 |
 | 2026-09-30 | **Phase 1 实现完成**（`feat/sales-status-lifecycle`）：新建写 `draft`（字典条目 id）、报价发出（`quotes/send` + 有效期 + 买方邮箱字段与 parties 预填）/作废、订单确认/作废、列表状态徽章 + 「有效至」+ 过期高亮、下单门禁、发运分摊只列 confirmed（历史 NULL 标注）、对外订单补「（PO）」、行数列改名「明细行数」；单测 3 套新增/更新，真机 5 条链路验证，AC-001…AC-008 全部通过 |
+| 2026-09-30 | **Phase 2·C 实现完成**（`feat/export-finance-status-coherence`）：收款/退税记录的**状态与事实**在写入时校验（`lib/statusCoherence.ts`，422 逐条回报；历史行不动）；两个档案页新增**派生**的逾期标记（柜「退税逾期」/ 订单「收款逾期」，阈值常量 45 天、边界不含、缺失日期不标），进列表列与 CSV。证据：单元两套 + 真机 API（三种非法组合 422、finance 口径回读 `collectionOverdue`、CSV 表头含「退税逾期」）。开放问题记入 Q-008（是否把「柜未收货不得登记收款」做成硬门禁——收款按采购单记，一单可跨多柜）。 |
 | 2026-09-30 | **Phase 2·A 实现完成**（`feat/shipment-close-lifecycle`）：发运单新增终态 `closed`（归档）——迁移表 `SHIPMENT_TRANSITIONS` 成为 depart/receive/close/cancel 四个守卫与详情页动作矩阵的唯一权威；新增 `cross_border.shipments.close` 命令/路由与 `cross_border.shipment.closed` 事件；徽章/筛选/标签与 `export_finance` 穷尽表同步。**独立评审后补齐**：`finance` 的落地成本扫描、`trade_docs` 合同详情、`export_finance` 柜档案三处「只认 received」的读路径都补 `closed`；终态单证写入（create/update/delete）被新守卫拒绝且详情页隐藏入口；迁移表查找对未知状态 fail-closed（不再 500）；状态列表单一来源（组件 re-export API 枚举）。证据：单元 `shipmentStatus.test.ts` + 集成 `shipment-close.spec.ts` 3/3（临时库）。 |
 
 ## Appendix — Phase 2–4 板块盘点（保留自骨架，待各自定稿）

@@ -163,6 +163,8 @@ export type OrderFileRow = {
   shipmentCount: number
   finance: FinanceView
   collectionStatus: string
+  /** Derived: the order arrived long ago and the collection is still open (see `isCollectionOverdue`). */
+  collectionOverdue: boolean
   refundStatus: string
   allocatedRefundAmount: string | null
   containers: Array<{
@@ -556,6 +558,51 @@ export type ContainerOrderRow = {
   sharePercent: string | null
 }
 
+/**
+ * Overdue money work: how long an arrived container (or order) may sit with its money still open
+ * before the file lists flag it. **Business default** — an owner tunes it by editing the constant
+ * here, and nothing in the database depends on the number: the flag is derived on every read.
+ */
+export const REFUND_OVERDUE_DAYS = 45
+export const COLLECTION_OVERDUE_DAYS = 45
+
+/** Age of a date in whole milliseconds, or `null` when it is missing or unparsable. */
+function ageInMs(value: string | null | undefined, now: Date): number | null {
+  if (typeof value !== 'string' || value.trim().length === 0) return null
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+  return now.getTime() - parsed.getTime()
+}
+
+/**
+ * A container whose goods arrived and whose tax refund is still open for longer than the threshold.
+ *
+ * Only `received`/`closed` count as arrived — a container still in transit has not had time to be
+ * refunded yet. `completed` is the money being in. A missing or unparsable `receivedAt` answers
+ * `false`: a report errs towards silence, never towards a manufactured warning. The boundary is
+ * exclusive (exactly N days old is not yet overdue).
+ */
+export function isRefundOverdue(
+  row: Pick<ContainerFileRow, 'shipmentStatus' | 'receivedAt' | 'taxRefundStatus'>,
+  now: Date = new Date(),
+): boolean {
+  if (row.shipmentStatus !== 'received' && row.shipmentStatus !== 'closed') return false
+  if (row.taxRefundStatus === 'completed') return false
+  const age = ageInMs(row.receivedAt, now)
+  return age !== null && age > REFUND_OVERDUE_DAYS * 24 * 60 * 60 * 1000
+}
+
+/** The order-level twin: arrived, collection still open, older than the threshold. */
+export function isCollectionOverdue(
+  row: Pick<OrderFileRow, 'businessStatus' | 'receivedAt' | 'collectionStatus'>,
+  now: Date = new Date(),
+): boolean {
+  if (row.businessStatus !== 'received' && row.businessStatus !== 'closed') return false
+  if (row.collectionStatus === 'received') return false
+  const age = ageInMs(row.receivedAt, now)
+  return age !== null && age > COLLECTION_OVERDUE_DAYS * 24 * 60 * 60 * 1000
+}
+
 export type ContainerFileRow = {
   shipmentId: string
   shipmentNumber: string | null
@@ -575,6 +622,8 @@ export type ContainerFileRow = {
   taxRefundStatus: string
   taxRefundAmount: string | null
   taxRefundNote: string | null
+  /** Derived: the container arrived long ago and the refund is still open (see `isRefundOverdue`). */
+  refundOverdue: boolean
   checklist: ContainerChecklist
   checklistMissing: string[]
 }
