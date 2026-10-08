@@ -28,6 +28,7 @@ import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primiti
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { loadRelatedPage, RelatedSection } from '@/lib/related/RelatedSection'
 import { AMOUNT_SCALE, toScaledUnits } from '../lib/money'
 import { contractStatusLabel, directionLabel, invoiceStatusLabel, type ContractStatus } from './contractLabels'
 import { ContractOrdersDialog, orderKindLabel } from './ContractOrdersDialog'
@@ -52,10 +53,10 @@ const PROFORMAS_HREF = '/backend/trade-docs/proformas'
 const COMMERCIAL_INVOICES_HREF = '/backend/trade-docs/commercial-invoices'
 
 /**
- * The hub sections are previews, not ledgers: each reads one page of its collection, shows the
- * newest few rows and hands the rest to the filtered list page behind 「查看全部」.
+ * The hub sections are previews, not ledgers: the shared section loads a page of each collection
+ * (`loadRelatedPage`) and this page shows the newest few of it, handing the rest to the filtered
+ * list page behind 「查看全部」.
  */
-const RELATED_PAGE_SIZE = 20
 const RELATED_ROW_LIMIT = 5
 
 /** Kind → badge tone, so the purchase side reads apart from the two sales families at a glance. */
@@ -344,82 +345,6 @@ function toContractDocument(item: Record<string, unknown>): ContractDocumentReco
   }
 }
 
-/** A preview page of one related collection, plus the collection's total for the 「查看全部」 link. */
-type RelatedPage<T> = { items: T[]; total: number }
-
-/**
- * One hub section reads its own collection through its owner's list API — the shipment and packing
- * list from `cross_border`, the orders and the PI/CI from this module's own routes. The row mapper
- * keeps each section's display shape explicit; the `total` decides whether 「查看全部」 is offered.
- */
-async function loadRelatedPage<T>(
-  apiPath: string,
-  params: Record<string, unknown>,
-  mapItem: (item: Record<string, unknown>) => T,
-): Promise<RelatedPage<T>> {
-  const payload = await fetchCrudList<Record<string, unknown>>(apiPath, {
-    pageSize: RELATED_PAGE_SIZE,
-    ...params,
-  })
-  return { items: (payload.items ?? []).map(mapItem), total: payload.total ?? 0 }
-}
-
-type RelatedSectionProps = {
-  title: string
-  /** The 'new' or 'manage' entry in the header; omitted where the relation has no writer. */
-  action?: React.ReactNode
-  isLoading: boolean
-  failed: boolean
-  isEmpty: boolean
-  emptyLabel: string
-  /** Set only when the collection holds more rows than the preview shows. */
-  viewAllHref?: string | null
-  children: React.ReactNode
-}
-
-/**
- * One hub section: a header with its action, then exactly one of loading, error, empty or rows.
- * The five collections differ only in their rows and links, so the four states live here once; the
- * invoice section above predates this and keeps its own markup.
- */
-function RelatedSection({
-  title,
-  action,
-  isLoading,
-  failed,
-  isEmpty,
-  emptyLabel,
-  viewAllHref,
-  children,
-}: RelatedSectionProps) {
-  const t = useT()
-  return (
-    <section className="space-y-3">
-      <SectionHeader title={title} action={action} />
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">
-          {t('trade_docs.contracts.detail.related.loading', 'Loading…')}
-        </p>
-      ) : failed ? (
-        <p className="text-sm text-destructive">
-          {t('trade_docs.contracts.detail.related.loadFailed', 'Could not load this section.')}
-        </p>
-      ) : isEmpty ? (
-        <p className="text-sm text-muted-foreground">{emptyLabel}</p>
-      ) : (
-        <>
-          {children}
-          {viewAllHref ? (
-            <Link className="text-sm font-medium hover:underline" href={viewAllHref}>
-              {t('trade_docs.contracts.detail.related.viewAll', 'View all')}
-            </Link>
-          ) : null}
-        </>
-      )}
-    </section>
-  )
-}
-
 function SummaryField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-0.5">
@@ -666,6 +591,14 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
   const [isGenerating, setIsGenerating] = React.useState(false)
   const [isDownloading, setIsDownloading] = React.useState(false)
   const [ordersDialogOpen, setOrdersDialogOpen] = React.useState(false)
+
+  // The shared section is translation-agnostic, so this page keeps its own keys for the states it
+  // renders; it passes no `onRetry`, so a failed section shows text only.
+  const relatedSectionMessages = {
+    loading: t('trade_docs.contracts.detail.related.loading', 'Loading…'),
+    loadFailed: t('trade_docs.contracts.detail.related.loadFailed', 'Could not load this section.'),
+    viewAll: t('trade_docs.contracts.detail.related.viewAll', 'View all'),
+  }
 
   const headQuery = useQuery({
     queryKey: ['trade-docs-contract', contractId],
@@ -1003,6 +936,7 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
         )}
         isLoading={ordersQuery.isLoading}
         failed={Boolean(ordersQuery.error)}
+        messages={relatedSectionMessages}
         isEmpty={orders.items.length === 0}
         emptyLabel={t('trade_docs.contracts.detail.orders.empty', 'No orders linked yet.')}
       >
@@ -1044,6 +978,7 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
         )}
         isLoading={shipmentsQuery.isLoading}
         failed={Boolean(shipmentsQuery.error)}
+        messages={relatedSectionMessages}
         isEmpty={shipments.items.length === 0}
         emptyLabel={t('trade_docs.contracts.detail.shipments.empty', 'No shipments linked yet.')}
         viewAllHref={
@@ -1086,6 +1021,7 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
         )}
         isLoading={packingListsQuery.isLoading}
         failed={Boolean(packingListsQuery.error)}
+        messages={relatedSectionMessages}
         isEmpty={packingLists.items.length === 0}
         emptyLabel={t('trade_docs.contracts.detail.packingLists.empty', 'No packing lists linked yet.')}
         viewAllHref={
@@ -1125,6 +1061,7 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
         )}
         isLoading={proformasQuery.isLoading}
         failed={Boolean(proformasQuery.error)}
+        messages={relatedSectionMessages}
         isEmpty={proformas.items.length === 0}
         emptyLabel={t('trade_docs.contracts.detail.proformas.empty', 'No proforma invoices linked yet.')}
         viewAllHref={
@@ -1165,6 +1102,7 @@ export default function ContractDetail({ contractId }: { contractId: string }) {
         )}
         isLoading={commercialInvoicesQuery.isLoading}
         failed={Boolean(commercialInvoicesQuery.error)}
+        messages={relatedSectionMessages}
         isEmpty={commercialInvoices.items.length === 0}
         emptyLabel={t(
           'trade_docs.contracts.detail.commercialInvoices.empty',
