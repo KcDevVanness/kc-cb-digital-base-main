@@ -6,11 +6,14 @@ The backend sidebar is drawn by this module instead of by the shell's built-in f
 [`.ai/specs/2026-10-08-order-centric-entry.md`](../../../../.ai/specs/2026-10-08-order-centric-entry.md)
 (Phase 1) for the requirement record and `docs/dev/navigation.md` for the operator-facing notes.
 
-公司订单 is the app's entry for order work: the workbench (`/backend/orders`) plus four read-only
-ledgers — 采购单台账 / 合同台账 / 单据台账 / 发运台账 — where an order's blocks are looked up. The
-业务办理 domain is retired: its pages are now the filling layer, reached from an order detail's blocks
-and from the ledger entries, not from the sidebar. Supplier master data and supplier quotations live
-under 基础数据.
+公司订单 is the app's single entry for order work: the workbench (`/backend/orders`) creates and
+lists orders, and the four groups below it are where each order's blocks are filled in and looked up
+— 采购 (采购单 / 供应商 / 供应商产品库 / 供应商报价单), 出口销售 (对内 / 对外销售报价单), 合同与单据
+(购销合同 / PI / CI / 税务发票台账) and 发运与装箱 (发运单 / 装箱单). The per-trade-type order *lists*
+stay out of the tree because the workbench is their only entry; the quote lists live under 出口销售.
+The 业务办理 domain stays retired — its pages are the filling layer, reached from an order detail's
+blocks and from the group entries, not from the sidebar. 基础数据 is back to its original six entries
+(产品 / 分类 / 编码规则 / 往来单位 / 我方主体 / 字典), since the supplier pages now sit under 采购.
 
 No entity, no migration, no ACL feature: this is a **display layer**. Every page keeps its own
 `requireFeatures` gate, and the tree only decides what is *shown*.
@@ -46,9 +49,8 @@ so re-adding one to the tree without a decision fails loudly.
   `adoptSidebarDefaults` (label becomes default) → user preference → `itemOrder` → drop empty nodes.
   Same order as `resolveBackendChromePayload` (`@open-mercato/core/modules/auth/lib/backendChrome.tsx`).
 - **Preference keys**: a domain is keyed by its node id (`tree:orders`), an app-owned node by its
-  explicit id (`tree:module:*` for a business area, `tree:ledger:*` for a company-order ledger), a page
-  by its `href` — so legacy item-level preferences keep working and a node cannot collide with its
-  first page.
+  explicit id (`tree:module:*` for a business area), a page by its `href` — so legacy item-level
+  preferences keep working and a node cannot collide with its first page.
 - **Icons**: a page's own metadata wins when it names its icon (a string). An installed page whose
   `icon` is a ReactNode yields no name, so the config's `iconName` covers it — this is how the seven
   系统 entries get icons (e.g. `/backend/users` → `users`).
@@ -92,7 +94,7 @@ curl -s -b "$COOKIE" http://localhost:3100/api/nav_shell/tree | jq '.groups[].na
 Browser: the sidebar shows the 8 domains with no duplicate flat list, folds/unfolds at every level,
 highlights the active page, filters on a keyword, renders icon-only when the shell is collapsed, and
 renders inside the mobile drawer below 420px. A user whose only grant is
-`cross_border.shipments.view` sees 公司订单 → 发运台账 and nothing else, and a direct visit to
+`cross_border.shipments.view` sees 公司订单 → 发运与装箱 and nothing else, and a direct visit to
 `/backend/finance/payables` is still refused by the page gate.
 
 ## Rollback

@@ -22,15 +22,17 @@ Owner review 六个问题：入口已归集到公司订单，但菜单仍按旧�
 |D8|采购台账页保留自己的「新建采购单」（无来源订单的采购单合法）|
 |D9|工作台分页改为服务端聚合 API，真 `total` + 页码|
 |D10|订单详情是唯一的填写面：采购/发运/合同/单据/收汇退税 都在 hub 的 RelatedSection 块里补|
+|D11|（owner 复审 2026-10-08，取代 D1/D2/D3/D4 的分组口径）公司订单 = 订单工作台 + **采购 / 出口销售 / 合同与单据 / 发运与装箱 四个二级组**（三级为页面）；供应商 / 供应商产品库 / 供应商报价单 挂在「采购」下（基础数据不再含这三页）；对内/对外销售报价单在「出口销售」下回归树；上一版的四个「台账」节点取消（组内页面即台账）；对内/对外销售订单列表仍不进树（D5 不变）|
 
 ## 三个工作单元（一个单元 = 一个工作树 = 一个分支 = 一个 PR）
 
-1. `feat/order-centric-menu-rework` — 菜单收敛与图标（D1–D4、D6 的树侧）
-   - `nav_shell/lib/navTree.ts`：`tree:orders` = 工作台 + 4 个台账节点；删除 `tree:operations`；
-     `tree:master_data` 追加 供应商/供应商产品库/供应商报价单；4 个退役入口登记 `TREE_EXCLUDED`（带原因）。
+1. `feat/order-centric-menu-rework` — 菜单收敛与图标（D1–D4、D6 的树侧；D11 复审后为最终结构）
+   - `nav_shell/lib/navTree.ts`：删除 `tree:operations` 域；`tree:orders` = 工作台 + 采购 / 出口销售 /
+     合同与单据 / 发运与装箱 四个二级组（D11）；`tree:master_data` 保持原有六项；两个订单列表登记
+     `TREE_EXCLUDED`（带原因）。
    - `NavTreeLeaf.iconName` + `buildLeaf` 的解析优先级（页面元数据的字符串图标优先，配置兜底），
      「系统」域 7 条写死图标。
-   - i18n zh/en 各 4 个台账键；覆盖率/构建单测更新；README 更新。
+   - i18n zh/en 各 4 个业务组键；覆盖率/构建单测更新；README 与 `docs/dev/navigation.md` 更新。
 2. `feat/order-hub-aggregate-paging` — 服务端聚合列表与真实分页（D9）
    - `order_hub/lib/mergeOrders.ts`（纯函数：跨源归并/去重/切片/合计/行映射）。
    - `order_hub/api/orders/route.ts`：手写守卫路由，转调各模块自己的列表处理器（不跨模块解密），
@@ -52,6 +54,8 @@ Owner review 六个问题：入口已归集到公司订单，但菜单仍按旧�
 - [x] 1.3 i18n zh/en 4 个台账键（删 5 个退役键，zh/en 各 19 键）
 - [x] 1.4 覆盖率/构建单测更新 + README
 - [ ] 1.5 验证：nav_shell jest 绿、故意删条必须红、浏览器侧边栏与直链 200 → 门禁与 PR
+- [x] 1.6 owner 复审（D11）：公司订单下四个二级业务组（采购/出口销售/合同与单据/发运与装箱）、取消台账节点、供应商三页回到「采购」、报价单回树；i18n 与单测跟进；`docs/dev/navigation.md` 同步
+- [ ] 1.7 复审后重跑验证：nav_shell jest、浏览器二级/三级展开、门禁复跑（PR #144 追加提交）
 
 ### Phase 2：服务端聚合列表与真实分页（`feat/order-hub-aggregate-paging`）
 
