@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
@@ -79,8 +79,7 @@ function hrefsFor(row: WorkbenchRow): {
       money: `/backend/export-finance/orders/${encodeURIComponent(row.id)}`,
     }
   }
-  const entry = row.kind === 'external_sales' ? 'external-sales' : 'internal-sales'
-  const detail = `/backend/${entry}/orders/${encodeURIComponent(row.id)}`
+  const detail = `/backend/orders/${encodeURIComponent(row.id)}`
   return {
     detail,
     procurement: `${detail}#purchasing`,
@@ -130,6 +129,9 @@ type OrdersResponse = {
 export default function OrderWorkbench() {
   const t = useT()
   const router = useRouter()
+  // The retired per-trade-type list URLs redirect here with `?type=`, so the workbench opens
+  // pre-filtered; anything else (or no token) falls back to `all`.
+  const searchParams = useSearchParams()
   const scopeVersion = useOrganizationScopeVersion()
   const { payload: chromePayload } = useBackendChrome()
   const { hasAll: hasChannels, missingMessage } = useTradeTypeChannels('order')
@@ -139,7 +141,10 @@ export default function OrderWorkbench() {
     [salesStatusEntries],
   )
 
-  const [typeFilter, setTypeFilter] = React.useState<TypeFilter>('all')
+  const [typeFilter, setTypeFilter] = React.useState<TypeFilter>(() => {
+    const token = searchParams?.get('type')
+    return isTypeFilter(token) ? token : 'all'
+  })
   const [statusFilter, setStatusFilter] = React.useState('all')
   const [search, setSearch] = React.useState('')
   const [pendingOnly, setPendingOnly] = React.useState(false)

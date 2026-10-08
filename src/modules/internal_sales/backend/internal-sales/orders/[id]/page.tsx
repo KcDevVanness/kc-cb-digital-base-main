@@ -1,23 +1,11 @@
-import { Page, PageBody } from '@open-mercato/ui/backend/Page'
-import OrderDetail from '../../../../components/OrderDetail'
+import { redirect } from 'next/navigation'
 
 /**
- * The sales order hub: the order's own facts plus one section per downstream module, each with a
- * prefilled create entry.
- *
- * One implementation serves both entries (`/backend/internal-sales/**` and the external re-export):
- * the component derives the trade type from the pathname, so every link it emits stays inside the
- * entry the operator opened.
+ * The order hub now lives in `order_hub` at `/backend/orders/<id>`, the one filling surface for the
+ * order. This URL stays resolvable for stored notification and bookmark links.
  */
 export default function InternalSalesOrderDetailPage({ params }: { params?: { id?: string } }) {
   const orderId = params?.id
   if (!orderId) return null
-
-  return (
-    <Page>
-      <PageBody>
-        <OrderDetail orderId={orderId} />
-      </PageBody>
-    </Page>
-  )
+  redirect(`/backend/orders/${encodeURIComponent(orderId)}`)
 }

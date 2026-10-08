@@ -11,10 +11,11 @@ app 自有模块。**以公司订单为根的一屏总览**：三类订单（对
 
 | 层 | 内容 |
 |---|---|
-| 页面 | `/backend/orders`（`navHidden`：入口只走导航树「公司订单 → 订单工作台」，路由仍可直达） |
+| 页面 | `/backend/orders`（工作台，`navHidden`：入口只走导航树「公司订单 → 订单工作台」，路由仍可直达） |
+| 页面 | `/backend/orders/<id>`（订单详情 hub，`navHidden`：由工作台行、采购单来源链接与旧详情 URL 的 301/307 进入） |
 | API | `GET /api/order_hub/orders`（聚合列表，见下） |
 | API | `GET /api/order_hub/stages?ids=<uuid,…>`（1–200 个，超限 400；`order_hub.view`） |
-| 权限 | `order_hub.view`（`setup.ts` 默认授予 `superadmin`/`admin`；既有租户用 `yarn mercato auth sync-role-acls` 补授） |
+| 权限 | 工作台 `order_hub.view`；订单 hub `sales.order.view`（与其读的 `/api/sales/orders`、`/api/sales/order-lines` 同门禁）。`setup.ts` 默认授予 `superadmin`/`admin`；既有租户用 `yarn mercato auth sync-role-acls` 补授 `order_hub.view` |
 | 共用件 | `@/lib/orders/purchaseOrderStatus`（采购状态徽章与文案映射，`purchasing` 的列表/详情与工作台共用；词条仍在 `purchasing` 的 i18n） |
 | 单元 | `lib/__tests__/orderPending.test.ts`（待补判定 × 三类订单 × 终态；合并排序）、`lib/__tests__/mergeOrders.test.ts`（跨源归并、去重、截断、分页切片、合计、两个行映射） |
 | 集成 | `__integration__/order-hub-stages.spec.ts`（阶段投影）与 `__integration__/order-hub-aggregate.spec.ts`（聚合列表分页、合计、筛选、跨组织） |
@@ -82,6 +83,26 @@ id 直接不出现**——响应不确认外部记录是否存在。
   分三组（订单 / 单证与文件 / 财务），每组标题右侧「去填写」链、页脚「在订单档案中打开」；销售行 = 抬头 +
   四分支计数，页脚「打开订单详情」。该组无权限（403）→ 组内无权限文案，其余组照常；读失败 → 抽屉内错误 +
   重试，列表不受影响。**不新增聚合 API**：35 个字段的口径只有 `export_finance` 一处。
+
+## 订单详情 hub（`components/OrderDetail.tsx`，页面 `/backend/orders/<id>`）
+
+订单为根的**唯一填写面**：抬头 + 明细行 + 五个后续分区（采购订单 / 发运单 / 购销合同 / 单据 /
+收汇·退税），每个分区自带预填新建入口与「查看全部」台账链接。它是 `internal_sales` 旧 hub 的原样迁移
+（共用件仍 `import` 自 `internal_sales/lib`，不复制）。
+
+- **贸易类型来自单据数据，不来自路径**：读抬头（`GET /api/sales/orders?id=<id>&pageSize=1`）的
+  `channelId`，用 `useTradeTypeChannels('order')` 的通道映射经 `tradeTypeFromChannelId` 判定；标记缺失或
+  无法识别时按 `internal` 渲染（块内合同 kind 用 `internal_sales_order`）——与工作台同一口径。抬头读或
+  通道映射未就绪时保持 loading，链接不会在首帧后翻转。
+- **块锚点**：分区 `<section id>` 为 `purchasing` / `shipments` / `contracts` / `documents` / `money`，
+  工作台行内的深链（`/backend/orders/<id>#purchasing` 等）因此可解析。
+- **台账链接**：「查看全部」指向该分支的只读列表——采购 `/backend/purchasing/orders`、发运
+  `/backend/cross_border/shipments`、合同 `/backend/trade-docs/contracts`、单据 `/backend/trade-docs/proformas`、
+  收汇·退税 `/backend/export-finance/orders`。
+- **写路径**：只写订单自己的状态（确认 / 作废），走 `internal_sales/lib/salesStatusWrite.ts`——与列表同一个
+  写实现；其余一律交给各自模块的命令。
+- **失败隔离**：每个分区独立 react-query，某分区读失败只在该分区显示错误 + 重试，其余照常。
+- **门禁**：`sales.order.view`（与旧 hub 相同）；页面 `navHidden`，不进树。
 
 ## 规则（有意为之）
 
