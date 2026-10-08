@@ -5,18 +5,48 @@ app 自有模块。**以公司订单为根的一屏总览**：三类订单（对
 [`.ai/specs/2026-10-08-order-centric-entry.md`](../../../../.ai/specs/2026-10-08-order-centric-entry.md)
 （Phase 4 / REQ-001、REQ-009、REQ-010）。
 
-无实体、无迁移、无写路径：读四个来源并在浏览器合并，行操作只是跳转（详情 / hub / 全字段抽屉）。
+无实体、无迁移、无写路径：一个聚合路由在服务端读三个来源并合并分页，行操作只是跳转（详情 / hub / 全字段抽屉）。
 
 ## 表面
 
 | 层 | 内容 |
 |---|---|
 | 页面 | `/backend/orders`（`navHidden`：入口只走导航树「公司订单 → 订单工作台」，路由仍可直达） |
+| API | `GET /api/order_hub/orders`（聚合列表，见下） |
 | API | `GET /api/order_hub/stages?ids=<uuid,…>`（1–200 个，超限 400；`order_hub.view`） |
 | 权限 | `order_hub.view`（`setup.ts` 默认授予 `superadmin`/`admin`；既有租户用 `yarn mercato auth sync-role-acls` 补授） |
 | 共用件 | `@/lib/orders/purchaseOrderStatus`（采购状态徽章与文案映射，`purchasing` 的列表/详情与工作台共用；词条仍在 `purchasing` 的 i18n） |
-| 单元 | `lib/__tests__/orderPending.test.ts`（待补判定 × 三类订单 × 终态；合并排序） |
-| 集成 | `__integration__/stages.spec.ts`（构造两类订单 + 分摊 + 合同 + 单据 + 收汇 + 退税 → 断言计数/勾选；未知 id 与跨组织不出现；超限 400） |
+| 单元 | `lib/__tests__/orderPending.test.ts`（待补判定 × 三类订单 × 终态；合并排序）、`lib/__tests__/mergeOrders.test.ts`（跨源归并、去重、截断、分页切片、合计、两个行映射） |
+| 集成 | `__integration__/order-hub-stages.spec.ts`（阶段投影）与 `__integration__/order-hub-aggregate.spec.ts`（聚合列表分页、合计、筛选、跨组织） |
+
+## 聚合列表（`api/orders/route.ts` → 客户端 `lib/mergeOrders.ts`）
+
+工作台不再在浏览器合并：**一个请求**打到聚合路由，路由把调用方的凭证原样转发给每个来源自己的列表路由——
+`GET /api/sales/orders`（按贸易类型通道各一次）与 `GET /api/purchasing/purchase-orders`。解密因此留在拥有它的模块里
+（买方名是加密列，只有 sales 的路由解密），本路由既不读对方表也不复制对方的过滤逻辑。
+
+| 参数 | 口径 |
+|---|---|
+| `page` / `pageSize` | 页码 ≥1（默认 1）、每页 1–100（默认 20）；非法值 400 |
+| `type` | `all`（默认）/ `internal` / `external` / `purchase`；只读选中的来源 |
+| `status` | 可选，精确匹配合并行的 `status`（安装层销售列表没有状态过滤，故在窗口内过滤） |
+| `search` | 可选，透传给各来源的列表路由 |
+| `pending` | 可选布尔 token（`true/false/1/0`）；`true` 只保留有缺口的单，`false` 关闭该过滤 |
+
+**扫描窗口**：每个来源按 `pageSize=100`、`created_at desc` 从第 1 页向上取，直到累计行数 ≥ `page * pageSize`、
+该来源 `total` 用尽，或达到 `MAX_SCAN_PER_SOURCE = 500`。合并 = 按来源顺序展平 → 同 id 去重（保留先出现者）→
+按 `createdAt desc` 排序 → 取前 `page * pageSize` 行；随后批量接一次阶段投影，再做 `status` / `pending` 过滤，
+最后 `slicePage`。**来源顺序是去重与同时间戳的稳定 tiebreak**，改动它会改变分页。
+
+**`total` 口径（重要）**：不加 `status` / `pending=true` 时是三个来源 `total` 的精确和；
+加了任一过滤时只统计**扫描窗口内**命中的行数，是下界，需配合 `totalIsCapped`
+（任一来源在自己的 `total` 前停下，或对端自己报了 `OM_LIST_COUNT_CAP`）——UI 用它提示「收窄筛选」。
+
+**降级**：某个来源调用方无权读取（例如没有 `purchasing.orders.view`）或读取失败时，**不让整个响应失败**——
+该来源不出行，名字进 `unavailableSources`，工作台在工具栏提示「部分来源不可用」；对端 401 则原样返回。
+
+**ACL**：本路由 `order_hub.view`；每个来源是否可见由对端自己的功能位裁决（`sales.orders.view` /
+`purchasing.orders.view`），本路由不代替它们授权。
 
 ## 阶段投影（`lib/orderStages.ts`）
 
@@ -31,26 +61,23 @@ id 直接不出现**——响应不确认外部记录是否存在。
 | `collected` | 销售行：任一关联采购单的收汇档案 `collection_status = 'received'`；采购行：本单自己的 |
 | `refunded` | 任一关联发运单存在退税档案 |
 
-跨模块读用**一次性 cast + 注释**声明投影表（`.ai/lessons/kysely-bare-handle-types-tables-away.md`），
+跨模块读用**一次性 cast + 注释**声明投影表（`.ai/lessons/kysely-bare-handles-tables-away.md`），
 不引入别的模块的实体。
 
 ## 工作台（`components/OrderWorkbench.tsx`）
 
-- **四个来源**：对内销售 `GET /api/sales/orders?channelIds=<internal>`、对外销售（同理）、
-  `GET /api/purchasing/purchase-orders`、`GET /api/order_hub/stages?ids=`；每源 `pageSize=50`、
-  按 `created_at desc`，**在浏览器合并**（买方名是加密列，只有官方 API 能解密——服务端合并要么把密文
-  发到前端，要么把解密搬进一个没人拥有的聚合路由）。
-- **单源失败不影响其余**：每个来源独立 react-query；行内错误 + 重试。
-- **合并与分页**：按 `createdAt desc` 排序、同 id 去重；「加载更多」取当前屏最旧那行所属来源的下一页；
-  累计 300 行后改为提示收窄筛选。
-- **筛选**：类型（全部/对内/对外/采购，经 DataTable 的筛选条）、状态（选项由当前已加载行派生，经同一套
-  文案渲染）、单号搜索（服务端）、「只看待补」（`lib/orderPending.ts`：对内 = 未取消且
-  `采购|发运|单证` 有 0 或未收汇；对外 = 未取消且 `发运|单证` 有 0；采购 = 非取消/已关闭且
-  `发运|单证` 有 0 或未收汇或未退税）。
+- **一个取数**：`useQuery(['order-hub-orders', page, pageSize, type, status, search, pendingOnly, scopeVersion])`
+  打 `/api/order_hub/orders`；类型 / 状态 / 搜索 /「只看待补」都是请求参数，任一变更都会把页码重置为 1。
+- **单源失败不影响其余**：由聚合路由的 `unavailableSources` 表达，行内错误 + 重试只重取这一个请求。
+- **分页**：`DataTable` 用服务端的 `page / pageSize / total / totalPages`，页码可选 20 / 50 / 100；
+  `totalIsCapped` 时工具栏展示「已到扫描上限」提示。
+- **状态筛选选项**：租户的 `sales.order_status` 字典条目与采购状态枚举（`PURCHASE_ORDER_STATUSES`）的并集——
+  不再由当前页的行派生（服务端分页后一页并不持有全部状态）。
 - **阶段单元格**：计数 > 0 → 链到 hub 对应分区 / 采购单详情；= 0 且有写权限 → 直达预填新建
   （`?orderKind=&orderId=`）；采购行的「采购」列恒 `—`。
-- **新建入口**：按 `sales.orders.manage` / `purchasing.orders.manage` 显隐；chrome payload 未就绪时不隐藏
-  （宁可多显示一个页面门禁本就会拦的按钮，也不隐藏调用方可能拥有的入口）。
+- **新建入口**：只有一个「新建订单」按钮，按 `sales.orders.manage` 显隐（chrome payload 未就绪时不隐藏，
+  宁可多显示一个页面门禁本就会拦的按钮）；点击弹窗选贸易类型 → 对内 / 对外销售建单页。**采购单的建单入口
+  在采购台账页与订单详情的采购分区，不在这里**（D7）。
 - **「全字段」抽屉**：采购行读既有投影 `GET /api/export_finance/order-files?purchaseOrderId=&pageSize=1`
   分三组（订单 / 单证与文件 / 财务），每组标题右侧「去填写」链、页脚「在订单档案中打开」；销售行 = 抬头 +
   四分支计数，页脚「打开订单详情」。该组无权限（403）→ 组内无权限文案，其余组照常；读失败 → 抽屉内错误 +
@@ -58,7 +85,9 @@ id 直接不出现**——响应不确认外部记录是否存在。
 
 ## 规则（有意为之）
 
-- **不在服务端合并列表**：见上（解密边界）。工作台只做展示与跳转，不复制任何模块的写路径。
+- **服务端合并，凭证转发**：聚合路由调用各来源自己的列表路由（而非读它们的表），买方名始终在 sales 模块内解密，
+  加密列不会以密文形态跨到前端或本模块；来源的过滤逻辑只有一份。
+- **`total` 是精确时精确、过滤时是下界**：见上表；UI 用 `totalIsCapped` 说明何时该收窄筛选。
 - **落地页不变**：`/backend` 仍是仪表盘；工作台是导航树里的一个一级入口。
 - **未标记贸易类型的历史销售单不列出**：与两个入口列表同口径，用
   `yarn mercato internal_sales backfill-trade-type --apply` 归类。
@@ -69,13 +98,15 @@ id 直接不出现**——响应不确认外部记录是否存在。
 ```bash
 yarn jest --config jest.config.cjs src/modules/order_hub
 yarn mercato test:integration order_hub-stages
+yarn mercato test:integration order_hub-aggregate
 yarn mercato auth sync-role-acls   # 既有租户补授 order_hub.view
 ```
 
-浏览器：树里「公司订单 → 订单工作台」可进入；三类订单都列出且阶段列与订单 hub 一致；「只看待补」只剩有缺口
-且未取消的订单；阶段为 0 的格子点击直达预填新建；新建按钮按 manage 功能位显隐；采购行「全字段」三组与
-`/backend/export-finance/orders/<id>` 同值、无 `export_finance.orders.view` 时该组显示无权限文案；`/backend`
-仍是仪表盘。
+浏览器：树里「公司订单 → 订单工作台」可进入；底部是页码控件、翻页内容变化、`共 N 条` 与接口 `total` 一致；
+「只看待补」勾选后请求带 `pending=true` 且只有一次聚合请求；三类订单都列出且阶段列与订单 hub 一致；
+阶段为 0 的格子点击直达预填新建；「新建订单」按 manage 功能位显隐、弹窗选贸易类型后进入对应建单页；
+采购行「全字段」三组与 `/backend/export-finance/orders/<id>` 同值、无 `export_finance.orders.view` 时该组显示
+无权限文案；`/backend` 仍是仪表盘。
 
 ## 回滚
 
