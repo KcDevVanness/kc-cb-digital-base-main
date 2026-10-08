@@ -5,6 +5,7 @@ import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern
 import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
 import { PurchasingPurchaseOrder } from '../../data/entities'
 import { purchaseOrderCreateSchema, purchaseOrderUpdateSchema, ORDER_STATUSES } from '../../commands/orders'
+import { SOURCE_SALES_ORDER_KINDS } from '../../lib/sourceSalesOrder'
 import { derivePaymentState, type PaymentRow } from '../../lib/orderTotals'
 import { createPurchasingCrudOpenApi, purchasingCreatedSchema, purchasingOkSchema } from '../openapi'
 
@@ -22,6 +23,10 @@ const purchaseOrderListItemSchema = z
     ownerName: z.string().nullable().optional(),
     customerId: z.string().uuid().nullable().optional(),
     customerName: z.string().nullable().optional(),
+    /** The sales order this purchase order was raised for; null when it stands on its own. */
+    sourceSalesOrderId: z.string().uuid().nullable().optional(),
+    sourceSalesOrderKind: z.enum(SOURCE_SALES_ORDER_KINDS).nullable().optional(),
+    sourceSalesOrderNumber: z.string().nullable().optional(),
     status: z.enum(ORDER_STATUSES),
     currencyCode: z.string(),
     subtotal: z.string(),
@@ -50,6 +55,8 @@ export const purchaseOrderListSchema = z.object({
   businessNumber: z.string().max(64).optional(),
   ownerUserId: z.string().uuid().optional(),
   customerId: z.string().uuid().optional(),
+  /** Lists the purchase orders raised for one sales order — the order hub's 采购订单 section. */
+  sourceSalesOrderId: z.string().uuid().optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(100).default(50),
   sortField: z.enum(['id', 'number', 'status', 'total', 'created_at', 'updated_at']).optional().default('created_at'),
@@ -84,6 +91,9 @@ const listFields = [
   'owner_snapshot',
   'customer_id',
   'customer_snapshot',
+  'source_sales_order_id',
+  'source_sales_order_kind',
+  'source_sales_order_number',
   'status',
   'currency_code',
   'subtotal',
@@ -135,6 +145,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       if (query.supplierId) filters.supplier_id = query.supplierId
       if (query.ownerUserId) filters.owner_user_id = query.ownerUserId
       if (query.customerId) filters.customer_id = query.customerId
+      if (query.sourceSalesOrderId) filters.source_sales_order_id = query.sourceSalesOrderId
       if (query.businessNumber) {
         filters.business_number = { $ilike: `%${escapeLikePattern(query.businessNumber.trim())}%` }
       }
@@ -157,6 +168,9 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       ownerName: snapshotNameFrom(item.owner_snapshot),
       customerId: (item.customer_id ?? null) as string | null,
       customerName: snapshotNameFrom(item.customer_snapshot),
+      sourceSalesOrderId: (item.source_sales_order_id ?? null) as string | null,
+      sourceSalesOrderKind: (item.source_sales_order_kind ?? null) as string | null,
+      sourceSalesOrderNumber: (item.source_sales_order_number ?? null) as string | null,
       status: String(item.status ?? 'draft'),
       currencyCode: String(item.currency_code ?? 'CNY'),
       subtotal: String(item.subtotal ?? '0'),

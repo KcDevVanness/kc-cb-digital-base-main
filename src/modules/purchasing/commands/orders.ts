@@ -36,6 +36,7 @@ import {
 } from '../lib/orderTotals'
 import { AMOUNT_SCALE, PRICE_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
 import { loadSupplierProducts } from '../lib/supplierProductReads'
+import { requireSourceSalesOrder } from '../lib/sourceSalesOrderReads'
 import { eventsConfig } from '../events'
 
 const ORDER_ENTITY_ID = 'purchasing:purchasing_purchase_order' as const
@@ -62,6 +63,9 @@ const POST_PLACEMENT_UPDATE_FIELDS = [
   'customerSnapshot',
   'expectedShipAt',
   'notes',
+  // The source anchor is a link, not a commercial term: correcting a mis-linked purchase order must
+  // not require cancelling it, so it stays editable in every status.
+  'sourceSalesOrderId',
 ] as const
 
 /** Allowed transitions; everything else is rejected with the state unchanged. */
@@ -123,6 +127,12 @@ export const purchaseOrderCreateSchema = z.object({
   depositAmount: nullableExactDecimalSchema(AMOUNT_SCALE, { min: '0' }),
   expectedShipAt: z.string().min(1).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  /**
+   * The sales order this purchase order is raised for. Only the id is accepted: the kind and the
+   * number are derived and frozen server-side from the sales order itself. `null` clears the anchor
+   * on update; an omitted key never touches it.
+   */
+  sourceSalesOrderId: z.string().uuid().nullable().optional(),
   lines: z.array(lineInputSchema).min(1),
 })
 
@@ -501,6 +511,9 @@ const createOrderCommand: CommandHandler<Record<string, unknown>, PurchasingPurc
 
     await assertCurrencyInDictionary(em, scope, parsed.currencyCode)
     const supplierSnapshot = await supplierSnapshotFor(em, scope, parsed.supplierId)
+    const sourceAnchor = parsed.sourceSalesOrderId
+      ? await requireSourceSalesOrder(em, scope, parsed.sourceSalesOrderId)
+      : null
     const { lines, totals } = await resolveOrderLines(em, scope, parsed.supplierId, parsed.lines)
 
     const order = await de.createOrmEntity({
@@ -516,6 +529,9 @@ const createOrderCommand: CommandHandler<Record<string, unknown>, PurchasingPurc
         ownerSnapshot: parsed.ownerSnapshot ?? null,
         customerId: parsed.customerId ?? null,
         customerSnapshot: parsed.customerSnapshot ?? null,
+        sourceSalesOrderId: sourceAnchor?.id ?? null,
+        sourceSalesOrderKind: sourceAnchor?.kind ?? null,
+        sourceSalesOrderNumber: sourceAnchor?.number ?? null,
         status: 'draft',
         currencyCode: parsed.currencyCode,
         subtotal: totals.subtotal,
@@ -609,6 +625,12 @@ const updateOrderCommand: CommandHandler<Record<string, unknown>, PurchasingPurc
 
     if (parsed.currencyCode) await assertCurrencyInDictionary(em, scope, parsed.currencyCode)
 
+    // Resolved before the mutation: `apply` runs synchronously inside the data engine, and a named
+    // source order that does not resolve must refuse the whole update rather than store a dangling id.
+    const sourceAnchor = parsed.sourceSalesOrderId
+      ? await requireSourceSalesOrder(em, scope, parsed.sourceSalesOrderId)
+      : null
+
     const supplierSnapshot = headerOnly || !parsed.supplierId ? null : await supplierSnapshotFor(em, scope, parsed.supplierId)
     const resolved = headerOnly || !parsed.lines
       ? null
@@ -627,6 +649,13 @@ const updateOrderCommand: CommandHandler<Record<string, unknown>, PurchasingPurc
         if (parsed.customerSnapshot !== undefined) entity.customerSnapshot = parsed.customerSnapshot
         if (parsed.expectedShipAt !== undefined) entity.expectedShipAt = parsed.expectedShipAt ? new Date(parsed.expectedShipAt) : null
         if (parsed.notes !== undefined) entity.notes = parsed.notes
+        // Omitted → untouched; explicit null → cleared; a resolvable id → the anchor and its frozen
+        // kind/number move together, so the three columns can never disagree.
+        if (parsed.sourceSalesOrderId !== undefined) {
+          entity.sourceSalesOrderId = sourceAnchor ? sourceAnchor.id : null
+          entity.sourceSalesOrderKind = sourceAnchor ? sourceAnchor.kind : null
+          entity.sourceSalesOrderNumber = sourceAnchor ? sourceAnchor.number : null
+        }
         // Commercial terms freeze at `place`; the gate above already rejected them on a non-draft
         // order, so this branch only ever runs for a draft.
         if (headerOnly) return

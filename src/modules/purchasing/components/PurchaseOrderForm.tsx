@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Trash2 } from 'lucide-react'
 import {
   CrudForm,
@@ -34,6 +34,12 @@ import {
   type SupplierProductOption,
 } from './orderFormOptions'
 import {
+  isSourceSalesOrderKind,
+  parseSourceOrderParams,
+  salesOrderLinesToPurchaseLines,
+  type SourceSalesOrderKind,
+} from '../lib/sourceSalesOrder'
+import {
   applyLinePickerValue,
   linePickerValue,
   toProductPickerValue,
@@ -48,6 +54,10 @@ export const ORDERS_LIST_HREF = '/backend/purchasing/orders'
 
 const SUPPLIERS_API_PATH = '/api/purchasing/suppliers'
 const CURRENCY_DICTIONARY_URL = '/api/currency_policy/currencies'
+/** The supplier product library, read for one supplier + product to prefill a copied line's price. */
+const SUPPLIER_PRODUCTS_API_PATH = '/api/purchasing/supplier-products'
+/** The installed sales module's order lines — what a `?orderId=` prefill copies from. */
+const SALES_ORDER_LINES_API_PATH = '/api/sales/order-lines'
 const OPTION_PAGE_SIZE = 50
 
 /**
@@ -105,6 +115,10 @@ export type PurchaseOrderRecord = {
   customerId: string | null
   customerSnapshot: Record<string, unknown> | null
   customerName: string | null
+  /** The sales order this purchase order was raised for; null when it stands on its own. */
+  sourceSalesOrderId: string | null
+  sourceSalesOrderKind: SourceSalesOrderKind | null
+  sourceSalesOrderNumber: string | null
   status: OrderStatus
   currencyCode: string
   /** Stored as a fixed-scale decimal string; the form edits it as a number. */
@@ -164,6 +178,12 @@ export function toPurchaseOrderRecord(item: Record<string, unknown>): PurchaseOr
     customerId: readOptionalText(item, 'customerId', 'customer_id'),
     customerSnapshot: readOptionalRecord(item, 'customerSnapshot', 'customer_snapshot'),
     customerName: readOptionalText(item, 'customerName', 'customer_name'),
+    sourceSalesOrderId: readOptionalText(item, 'sourceSalesOrderId', 'source_sales_order_id'),
+    sourceSalesOrderKind: (() => {
+      const kind = readOptionalText(item, 'sourceSalesOrderKind', 'source_sales_order_kind')
+      return isSourceSalesOrderKind(kind) ? kind : null
+    })(),
+    sourceSalesOrderNumber: readOptionalText(item, 'sourceSalesOrderNumber', 'source_sales_order_number'),
     status: ORDER_STATUSES.includes(item.status as OrderStatus) ? (item.status as OrderStatus) : 'draft',
     currencyCode: readText(item, 'currencyCode', 'currency_code') || 'CNY',
     depositPercent: readOptionalText(item, 'depositPercent', 'deposit_percent'),
@@ -348,6 +368,11 @@ export type PurchaseOrderFormValues = {
   depositAmount: number | string
   expectedShipAt: string
   notes: string
+  /**
+   * The sales order this purchase order is raised for (`?orderKind=&orderId=`), sent as the id only:
+   * the kind and the number are derived and frozen server-side.
+   */
+  sourceSalesOrderId: string
   lines: PurchaseOrderLineValues[]
 }
 
@@ -364,6 +389,7 @@ export const EMPTY_ORDER_VALUES: PurchaseOrderFormValues = {
   depositAmount: '',
   expectedShipAt: '',
   notes: '',
+  sourceSalesOrderId: '',
   lines: [],
 }
 
@@ -450,6 +476,7 @@ export function buildPurchaseOrderPayload(values: PurchaseOrderFormValues): Reco
     depositAmount: toOptionalNumber(values.depositAmount),
     expectedShipAt: toOptionalText(values.expectedShipAt),
     notes: toOptionalText(values.notes),
+    sourceSalesOrderId: toOptionalText(values.sourceSalesOrderId),
     lines: values.lines.map((line) => {
       // A library line carries exactly one reference and the command rejects a mix, so both master
       // references are dropped the moment the operator picks from the library.
@@ -524,6 +551,68 @@ export function PurchaseOrderLinesEditor({
   const addLine = React.useCallback(() => {
     setValue('lines', [...lines, createEmptyLine()])
   }, [lines, setValue])
+
+  /**
+   * Fills the supplier's own 供货价 into lines that carry no price yet.
+   *
+   * Lines copied from a sales order arrive with a product and a quantity but no price on purpose —
+   * the sales price is what the customer pays. Once the operator names the supplier, the price that
+   * supplier quoted for that product is the number this order actually needs, so it is looked up from
+   * the library (one request per distinct product, the discount already applied) and written into the
+   * empty cells only. A price the operator typed is never touched, and a product with no library
+   * price simply stays empty for them to fill in.
+   *
+   * The ref keeps a line from being re-filled after the operator clears it deliberately.
+   */
+  const autoPricedLineKeys = React.useRef<Set<string>>(new Set())
+
+  React.useEffect(() => {
+    if (!supplierId) return
+    const targets = lines.filter(
+      (line) => line.productId.trim().length > 0 && line.unitPrice.trim().length === 0 && !autoPricedLineKeys.current.has(line.key),
+    )
+    if (targets.length === 0) return
+    let cancelled = false
+    const productIds = Array.from(new Set(targets.map((line) => line.productId.trim())))
+    const load = async () => {
+      const prices: Record<string, string> = {}
+      await Promise.all(
+        productIds.map(async (productId) => {
+          const params = new URLSearchParams({ supplierId, productId, page: '1', pageSize: '1' })
+          try {
+            const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
+              `${SUPPLIER_PRODUCTS_API_PATH}?${params.toString()}`,
+              undefined,
+              { fallback: { items: [] }, errorMessage: t('purchasing.orders.form.lines.priceLoadFailed') },
+            )
+            const cell = payload.items?.[0]?.supplierCostPrice
+            if (!cell || typeof cell !== 'object') return
+            const record = cell as Record<string, unknown>
+            const price = record.netUnitPrice ?? record.unitPrice
+            if (typeof price === 'string' && price.length > 0) prices[productId] = price
+          } catch {
+            // A supplier without a price for this product is normal: leave the cell empty.
+          }
+        }),
+      )
+      if (cancelled) return
+      let changed = false
+      const next = lines.map((line) => {
+        const productId = line.productId.trim()
+        if (!productId || line.unitPrice.trim().length > 0) return line
+        const price = prices[productId]
+        if (!price) return line
+        autoPricedLineKeys.current.add(line.key)
+        changed = true
+        return { ...line, unitPrice: price }
+      })
+      if (changed) setValue('lines', next)
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [lines, setValue, supplierId, t])
 
   return (
     <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
@@ -773,8 +862,67 @@ function useOrderFields(
 export default function PurchaseOrderForm() {
   const t = useT()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const pickerOptionsRef = React.useRef<Record<string, CrudFieldOption[]>>({})
   const fields = useOrderFields(t, pickerOptionsRef)
+
+  /**
+   * `?orderKind=&orderId=` — the order hub and the workbench hand the operator here with the sales
+   * order already known, so the source anchor and the order's lines arrive filled in.
+   *
+   * The prefill resolves before the form mounts (`initialValues === null` renders the loading state
+   * instead), which is why there is no "overwrite what you typed" confirmation: there is nothing to
+   * overwrite yet, and a half-applied prefill would be worse than a short wait. An unusable parameter
+   * pair is reported inline and the form opens empty — a mistyped link must not block the page.
+   */
+  const sourceParam = React.useMemo(() => parseSourceOrderParams(searchParams), [searchParams])
+  const [prefillState, setPrefillState] = React.useState<
+    { status: 'idle' } | { status: 'loading' } | { status: 'ready'; values: PurchaseOrderFormValues; skipped: number }
+  >(sourceParam.status === 'ok' ? { status: 'loading' } : { status: 'idle' })
+
+  React.useEffect(() => {
+    if (sourceParam.status !== 'ok') return
+    let cancelled = false
+    const load = async () => {
+      const params = new URLSearchParams({ orderId: sourceParam.id, pageSize: '500' })
+      try {
+        const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
+          `${SALES_ORDER_LINES_API_PATH}?${params.toString()}`,
+          undefined,
+          { fallback: { items: [] }, errorMessage: t('purchasing.orders.form.sourceOrder.loadFailed') },
+        )
+        if (cancelled) return
+        const copy = salesOrderLinesToPurchaseLines(payload.items ?? [])
+        setPrefillState({
+          status: 'ready',
+          skipped: copy.skipped,
+          values: {
+            ...EMPTY_ORDER_VALUES,
+            sourceSalesOrderId: sourceParam.id,
+            lines: copy.lines.map((seed) => ({
+              ...createEmptyLine(),
+              productId: seed.productId ?? '',
+              catalogProductId: seed.catalogProductId ?? '',
+              quantity: seed.quantity,
+            })),
+          },
+        })
+      } catch {
+        if (cancelled) return
+        // The anchor is still valid even when the lines could not be read: keep it and let the
+        // operator add the lines by hand rather than dropping the link they arrived with.
+        setPrefillState({
+          status: 'ready',
+          skipped: 0,
+          values: { ...EMPTY_ORDER_VALUES, sourceSalesOrderId: sourceParam.id },
+        })
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [sourceParam, t])
 
   const groups = React.useMemo<CrudFormGroup[]>(() => [
     {
@@ -837,18 +985,36 @@ export default function PurchaseOrderForm() {
     }
   }, [router, t])
 
+  if (prefillState.status === 'loading') {
+    return <p className="text-sm text-muted-foreground">{t('purchasing.orders.form.sourceOrder.loading')}</p>
+  }
+
+  const invalidSourceParam = sourceParam.status === 'invalid'
+
   return (
+    <>
+      {invalidSourceParam ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('purchasing.orders.create.sourceOrder.invalid')}
+        </p>
+      ) : null}
+      {prefillState.status === 'ready' && prefillState.skipped > 0 ? (
+        <p className="mb-3 text-xs text-muted-foreground">
+          {t('purchasing.orders.form.sourceOrder.skipped', { count: prefillState.skipped })}
+        </p>
+      ) : null}
     <CrudForm<PurchaseOrderFormValues>
       title={t('purchasing.orders.form.createTitle')}
       titleHeadingLevel={1}
       backHref={ORDERS_LIST_HREF}
       fields={fields}
       groups={groups}
-      initialValues={EMPTY_ORDER_VALUES}
+      initialValues={prefillState.status === 'ready' ? prefillState.values : EMPTY_ORDER_VALUES}
       submitLabel={t('purchasing.orders.form.save')}
       cancelHref={ORDERS_LIST_HREF}
       onSubmit={handleSubmit}
     />
+    </>
   )
 }
 

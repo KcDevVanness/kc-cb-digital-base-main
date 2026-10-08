@@ -144,6 +144,12 @@ export class PurchasingSupplierBankAccount {
  */
 @Entity({ tableName: 'purchasing_purchase_orders' })
 @Unique({ name: 'purchasing_purchase_orders_scope_number_uniq', properties: ['tenantId', 'organizationId', 'number'] })
+// The order hub and the workbench both ask "which purchase orders belong to this sales order", always
+// inside one organization — the index leads with the scope columns and ends on the anchor.
+@Index({
+  name: 'purchasing_purchase_orders_source_sales_order_idx',
+  properties: ['organizationId', 'tenantId', 'sourceSalesOrderId'],
+})
 export class PurchasingPurchaseOrder {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -192,6 +198,25 @@ export class PurchasingPurchaseOrder {
 
   @Property({ name: 'customer_snapshot', type: 'jsonb', nullable: true })
   customerSnapshot?: Record<string, unknown> | null
+
+  /**
+   * The sales order this purchase order was raised for — the source anchor.
+   *
+   * The id is what reads join on (the order hub lists a sales order's purchase orders by it, and the
+   * workbench counts them), and the number is a frozen copy so a list row names its source without a
+   * second cross-module read, exactly like `supplierSnapshot` beside it. The kind is derived from the
+   * sales order's channel at write time and never accepted from a client: a purchase order cannot
+   * claim a kind its source contradicts. All three are null for a purchase order raised on its own.
+   */
+  @Property({ name: 'source_sales_order_id', type: 'uuid', nullable: true })
+  sourceSalesOrderId?: string | null
+
+  /** `internal_sales_order` or `external_sales_order`; see `lib/sourceSalesOrder.ts`. */
+  @Property({ name: 'source_sales_order_kind', type: 'text', nullable: true })
+  sourceSalesOrderKind?: string | null
+
+  @Property({ name: 'source_sales_order_number', type: 'text', nullable: true })
+  sourceSalesOrderNumber?: string | null
 
   @Property({ type: 'text', default: 'draft' })
   status: string = 'draft'

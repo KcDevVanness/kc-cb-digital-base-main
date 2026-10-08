@@ -1311,6 +1311,10 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
   const transitionActions = TRANSITIONS_BY_STATUS[order.status]
   const ownerName = order.ownerName ?? (typeof order.ownerSnapshot?.name === 'string' ? order.ownerSnapshot.name : null)
   const customerName = order.customerName ?? (typeof order.customerSnapshot?.name === 'string' ? order.customerSnapshot.name : null)
+  const sourceSalesOrderHref = (kind: string | null, id: string): string => {
+    const prefix = kind === 'external_sales_order' ? '/backend/external-sales' : '/backend/internal-sales'
+    return `${prefix}/orders/${encodeURIComponent(id)}`
+  }
   const productCategoryLabel = order.productCategory
     ? categoryOptions.find((option) => option.value === order.productCategory)?.label ?? order.productCategory
     : null
@@ -1362,6 +1366,18 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
         </SummaryField>
         <SummaryField label={t('purchasing.orders.detail.owner')}>{ownerName ?? EMPTY_CELL}</SummaryField>
         <SummaryField label={t('purchasing.orders.detail.customer')}>{customerName ?? EMPTY_CELL}</SummaryField>
+        {order.sourceSalesOrderId ? (
+          // Read-only: the anchor is written by the create flow (or cleared on edit), never typed here.
+          // The link opens the order hub, which is where the rest of that order's work is listed.
+          <SummaryField label={t('purchasing.orders.form.sourceOrder.label')}>
+            <Link
+              href={sourceSalesOrderHref(order.sourceSalesOrderKind, order.sourceSalesOrderId)}
+              className="underline"
+            >
+              {order.sourceSalesOrderNumber ?? order.sourceSalesOrderId}
+            </Link>
+          </SummaryField>
+        ) : null}
         <SummaryField label={t('purchasing.orders.form.field.currency')}>{order.currencyCode}</SummaryField>
         <SummaryField label={t('purchasing.orders.list.columns.total')}>
           <MoneyAmount currencyCode={order.currencyCode} amount={order.total} />
