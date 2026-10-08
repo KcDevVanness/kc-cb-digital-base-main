@@ -53,6 +53,11 @@
   "internal_sales.list.columns.validUntil": "有效至",
   "internal_sales.list.columns.createdAt": "创建时间",
   "internal_sales.list.quoteExpired": "已过期",
+  "internal_sales.list.columns.type": "类型",
+  "internal_sales.list.filters.type.all": "全部",
+  "internal_sales.list.filters.type.internal": "对内销售",
+  "internal_sales.list.filters.type.external": "对外销售",
+  "internal_sales.list.unmarkedType": "未标记",
   "internal_sales.list.actions.edit": "编辑",
   "internal_sales.form.linePrecision": "第 {line} 行：数量与单价最多 4 位小数。",
   "internal_sales.list.actions.convert": "转为订单",
@@ -126,5 +131,10 @@
   "internal_sales.form.quoteLoad.notOrderable": "这张报价还没有发出或已作废，不能下单。",
   "internal_sales.form.sentQuoteHint": "这是一张已发出的报价：保存会把状态退回草稿并作废已发链接，需要时请重新发出。",
   "internal_sales.form.statusDictionaryFailed": "读取本组织的销售状态字典失败，请刷新重试；若持续失败请联系管理员。",
-  "internal_sales.hub.title": "销售订单详情"
+  "internal_sales.hub.title": "销售订单详情",
+  "internal_sales.quotes.workbench.title": "销售报价单",
+  "internal_sales.quotes.workbench.description": "对内 / 对外销售报价单合并成一条列表：类型列标出每张报价单的贸易类型，类型筛选把列表收敛到一类。行内动作跟随该行自己的类型（编辑、转为订单、按此报价新建订单）。不是对外收款依据的形式发票（PI）。",
+  "internal_sales.quotes.workbench.empty": "还没有销售报价单，点这里新建一张。",
+  "internal_sales.quotes.actions.create": "新建报价单",
+  "internal_sales.quotes.createDialog.title": "选择报价单的贸易类型"
 }

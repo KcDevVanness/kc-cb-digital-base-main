@@ -136,9 +136,29 @@ describe('nav_shell tree registration', () => {
     ).toBe(true)
   })
 
-  it('registers the retired order lists in TREE_EXCLUDED so re-adding one fails loudly', () => {
+  it('registers the retired order and quote lists in TREE_EXCLUDED so re-adding one fails loudly', () => {
     expect(EXCLUDED_HREFS).toEqual(
-      expect.arrayContaining(['/backend/internal-sales/orders', '/backend/external-sales/orders']),
+      expect.arrayContaining([
+        '/backend/internal-sales/orders',
+        '/backend/external-sales/orders',
+        '/backend/internal-sales/quotes',
+        '/backend/external-sales/quotes',
+      ]),
     )
+  })
+
+  it('points the export-sales group at the one sales-quote workbench', () => {
+    const orders = NAV_TREE.find((node) => node.id === 'tree:orders')!
+    const workbench = orders.children[0]
+    if (!isNavTreeBranch(workbench)) throw new Error('the orders domain leads with the workbench node')
+
+    const exportSales = workbench.children.find(
+      (child) => isNavTreeBranch(child) && child.id === 'tree:module:export-sales',
+    )
+    if (!exportSales || !isNavTreeBranch(exportSales)) throw new Error('the export-sales group is missing')
+
+    expect(exportSales.children.map((child) => (isNavTreeBranch(child) ? child.id : child.href))).toEqual([
+      '/backend/quotes',
+    ])
   })
 })

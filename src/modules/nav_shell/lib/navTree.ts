@@ -97,8 +97,9 @@ export const NAV_TREE: NavTreeNode[] = [
             labelKey: 'nav_shell.tree.module.exportSales',
             iconName: 'globe',
             children: [
-              { href: '/backend/internal-sales/quotes' },
-              { href: '/backend/external-sales/quotes' },
+              // One entry for both trade types: the workbench carries the type column and the type
+              // filter, and the retired per-type URLs redirect into it with `?type=`.
+              { href: '/backend/quotes' },
             ],
           },
           {
@@ -229,9 +230,9 @@ export const NAV_TREE: NavTreeNode[] = [
  *   kept resolvable (stored notification links and bookmarks still open) but out of the new
  *   information architecture;
  * - settings-context admin pages that are not `navHidden` but live in the settings sidebar;
- * - work surfaces retired into the order-centric entry: the per-trade-type order *lists* only — the
- *   company-order workbench is the only order entry, so these pages stay reachable as filling
- *   surfaces but out of the tree.
+ * - work surfaces retired into the order-centric entry: the per-trade-type order *lists* (the
+ *   company-order workbench is the only order entry) and the per-trade-type quote *lists* (the
+ *   sales-quote workbench lists both types) — the pages stay reachable, out of the tree.
  */
 export const TREE_EXCLUDED: ReadonlyArray<{ href: string; reason: string }> = [
   // Create forms — always entered from the list page that owns the action.
@@ -292,5 +293,18 @@ export const TREE_EXCLUDED: ReadonlyArray<{ href: string; reason: string }> = [
     href: '/backend/external-sales/orders',
     reason:
       'list entry retired: the company-order workbench is the only entry, and the page stays reachable as a filling surface',
+  },
+
+  // Per-trade-type quote lists retired into the sales-quote workbench (`/backend/quotes`): one list
+  // with a type column replaces the two menus, and these URLs redirect into it with `?type=`.
+  {
+    href: '/backend/internal-sales/quotes',
+    reason:
+      'list entry retired: the sales-quote workbench lists both types, and this URL redirects into it filtered to internal sales',
+  },
+  {
+    href: '/backend/external-sales/quotes',
+    reason:
+      'list entry retired: the sales-quote workbench lists both types, and this URL redirects into it filtered to external sales',
   },
 ]

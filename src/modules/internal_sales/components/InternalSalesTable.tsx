@@ -27,7 +27,7 @@ import { writeSalesStatus } from '../lib/salesStatusWrite'
 import { toDocumentRecord, type DocumentRecord } from '../lib/salesDocumentRecord'
 import { formatDate } from '@open-mercato/ui/utils/format'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { hasFeature } from '@open-mercato/shared/security/features'
 import { useBackendChrome } from '@open-mercato/ui/backend/BackendChromeProvider'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
@@ -44,9 +44,11 @@ import { useSalesStatusEntries } from '../lib/salesStatusEntries'
 import type { InternalSalesKind } from './InternalSalesForm'
 import { useTradeTypeChannels } from '../lib/tradeTypeChannels'
 import {
-  channelIdForTradeType,
+  resolveRowTradeType,
   tradeTypeFromPathname,
+  type SalesTradeType,
 } from '../lib/tradeType'
+import { isQuoteListType, quoteListRequest, type QuoteListType } from '../lib/quoteListParams'
 import { documentEditHrefForTradeType, listHrefForTradeType } from './InternalSalesForm'
 
 /**
@@ -55,12 +57,27 @@ import { documentEditHrefForTradeType, listHrefForTradeType } from './InternalSa
  * The installed lists are the platform's own view; this one belongs to the module so the whole
  * flow — list, create, edit — stays inside the app-owned surface. It reads the installed list API,
  * which already projects the document head (number, currency, totals, customer snapshot), and its
- * row action opens this module's own edit page. The entry (internal or external) is its trade type:
- * the list is always filtered by that type's channel, so every row carries the same marker and no
- * Type column is needed.
+ * row action opens this module's own edit page.
+ *
+ * One implementation, three entries: the two legacy menus each own one trade type through their
+ * route prefix, and `/backend/quotes` (`tradeType="both"`) lists both behind a type column and a
+ * type filter, with every row action following the row's own trade type.
  */
 
 const PAGE_SIZE = 50
+
+/** One list row plus the trade type its own channel marker implies; only the merged list fills it. */
+type ListRow = DocumentRecord & { tradeType: SalesTradeType | null }
+
+/**
+ * The type's display name. One key per trade type serves the filter option, the Type column and the
+ * create dialog's two choices — they are the same words for the same concept.
+ */
+function tradeTypeLabelKey(tradeType: SalesTradeType): string {
+  return tradeType === 'external'
+    ? 'internal_sales.list.filters.type.external'
+    : 'internal_sales.list.filters.type.internal'
+}
 
 
 function readText(source: Record<string, unknown>, ...keys: string[]): string {
@@ -100,8 +117,21 @@ function buildColumns(
   locale: string,
   kind: InternalSalesKind,
   statusMap: DictionaryMap | null,
-): ColumnDef<DocumentRecord>[] {
+  options: { showTradeType: boolean },
+): ColumnDef<ListRow>[] {
   return [
+    ...(options.showTradeType
+      ? [
+          {
+            id: 'tradeType',
+            header: t('internal_sales.list.columns.type'),
+            enableSorting: false,
+            cell: ({ row }: { row: { original: ListRow } }) => (row.original.tradeType
+              ? <span>{t(tradeTypeLabelKey(row.original.tradeType))}</span>
+              : <span className="text-xs text-muted-foreground">{t('internal_sales.list.unmarkedType')}</span>),
+          },
+        ]
+      : []),
     {
       accessorKey: 'number',
       header: t(kind === 'quote' ? 'internal_sales.list.columns.quoteNumber' : 'internal_sales.list.columns.orderNumber'),
@@ -161,26 +191,36 @@ function buildColumns(
   ]
 }
 
-export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }) {
+export default function InternalSalesTable({ kind, tradeType }: {
+  kind: InternalSalesKind
+  /** `both` = the merged workbench (`/backend/quotes`); omitted = the entry its route prefix owns. */
+  tradeType?: SalesTradeType | 'both'
+}) {
   const t = useT()
   const locale = useLocale()
   const router = useRouter()
   const pathname = usePathname()
-  // One implementation, two menus: the route prefix decides which trade type this entry owns, so
-  // the external pages can be plain re-exports of the internal ones. An entry lists its own type
-  // only — the server-side `channelId` filter is what keeps the other type, and every document
-  // written before the marker existed, out of it.
+  const searchParams = useSearchParams()
+  // One implementation, three entries: the route prefix decides which trade type a legacy menu owns,
+  // so the external pages can be plain re-exports of the internal ones, while the merged workbench
+  // lists both behind a type filter. The retired per-type quote URLs redirect here with `?type=`,
+  // so the filter opens preselected; anything else (or no token) falls back to `all`.
+  const merged = tradeType === 'both'
   const entryTradeType = tradeTypeFromPathname(pathname)
+  const [typeFilter, setTypeFilter] = React.useState<QuoteListType>(() => {
+    const token = searchParams?.get('type')
+    return merged && isQuoteListType(token) ? token : entryTradeType
+  })
   const external = entryTradeType === 'external'
   const { channels, isLoading: channelsLoading, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
-  const entryChannelId = channelIdForTradeType(entryTradeType, channels)
   const scopeVersion = useOrganizationScopeVersion()
   const [search, setSearch] = React.useState('')
   const [page, setPage] = React.useState(1)
   /** The quote awaiting the "send" dialog, and the validity the operator picked (platform caps 1–365). */
-  const [sendTarget, setSendTarget] = React.useState<DocumentRecord | null>(null)
+  const [sendTarget, setSendTarget] = React.useState<ListRow | null>(null)
   const [sendValidDays, setSendValidDays] = React.useState(14)
   const [sendBusy, setSendBusy] = React.useState(false)
+  const [createOpen, setCreateOpen] = React.useState(false)
   // Create/edit are gated server-side by the document's manage feature; hide the controls from a
   // read-only operator (same pattern as the products list and the purchasing supplier library).
   // Nothing is hidden while the chrome payload loads, so a permitted operator never sees flicker.
@@ -195,48 +235,71 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
     && (!chromeReady || hasFeature(chromePayload?.grantedFeatures, 'sales.orders.manage'))
 
   const listHref = listHrefForTradeType(kind, entryTradeType)
-  const ordersCreateHref = `${listHrefForTradeType('order', entryTradeType)}/create`
   const apiPath = kind === 'quote' ? 'sales/quotes' : 'sales/orders'
 
+  // Every list request — the merged page and both legacy entries — comes from one pure function:
+  // it decides how the type selection becomes a channel filter (the two ways the engine accepts it)
+  // and whether the selection can be listed at all.
+  const listRequest = React.useMemo(
+    () => quoteListRequest({ type: typeFilter, channels, page, pageSize: PAGE_SIZE, search }),
+    [channels, page, search, typeFilter],
+  )
+
   const queryKey = React.useMemo(
-    () => [`internal-sales-${kind}`, entryTradeType, entryChannelId ?? '', page, search, scopeVersion],
-    [entryChannelId, entryTradeType, kind, page, scopeVersion, search],
+    () => [
+      `internal-sales-${kind}`,
+      typeFilter,
+      listRequest.params.channelIds ?? '',
+      page,
+      search,
+      scopeVersion,
+    ],
+    [kind, listRequest.params.channelIds, page, search, scopeVersion, typeFilter],
   )
 
   const { data, isLoading, error } = useQuery({
     queryKey,
     // No channel, no list: without the marker the filter cannot be expressed, and showing every
-    // document instead would mix the two types in a type-specific entry (and there is nothing to
-    // tell them apart with, since the Type column is gone). The unseeded state is reported below
-    // with the command that fixes it, exactly like the form blocks its save.
-    enabled: entryChannelId !== null,
+    // document instead would mix the trade types (and every unmarked legacy document) into a screen
+    // that cannot tell them apart. The unseeded state is reported below with the command that fixes
+    // it, exactly like the form blocks its save.
+    enabled: !listRequest.missingChannel,
     queryFn: async () => {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE), sortField: 'created_at', sortDir: 'desc' })
-      const term = search.trim()
-      if (term) params.set('search', term)
-      // The engine's own server-side filter: the other trade type never appears here.
-      if (entryChannelId) params.set('channelId', entryChannelId)
-      // Documents that predate the marker carry no channel at all: neither entry lists them, so the
-      // hint above the table reports how many the backfill still has to classify.
-      const probe = await fetchCrudList<Record<string, unknown>>(apiPath, {
-        channelIdsEmpty: 'true',
-        pageSize: 1,
-      })
-      const unmarkedCount = Number.isFinite(probe.total) ? probe.total : 0
-      const payload = await fetchCrudList<Record<string, unknown>>(apiPath, Object.fromEntries(params))
+      // Documents that predate the marker carry no channel at all: no entry lists them, so the hint
+      // above the table reports how many the backfill still has to classify.
+      const probe = listRequest.channelIdsEmptyProbe
+        ? await fetchCrudList<Record<string, unknown>>(apiPath, { channelIdsEmpty: 'true', pageSize: 1 })
+        : null
+      const unmarkedCount = probe && Number.isFinite(probe.total) ? probe.total : 0
+      const payload = await fetchCrudList<Record<string, unknown>>(apiPath, listRequest.params)
       return {
         ...payload,
         unmarkedCount,
-        items: (payload.items ?? []).map((item) => toDocumentRecord(item, kind)),
+        items: (payload.items ?? []).map((item): ListRow => ({
+          ...toDocumentRecord(item, kind),
+          // The row's own marker — the same channel ids the request filtered by. Only the merged list
+          // needs it (a legacy entry's rows are its type by construction); the snapshot fallback still
+          // answers for a document whose marker was never written.
+          tradeType: merged ? resolveRowTradeType(item, channels) : null,
+        })),
       }
     },
   })
 
-  const rows = data?.items ?? []
+  const rows: ListRow[] = data?.items ?? []
+  /**
+   * The trade type a row's links belong to. The merged list holds both, so its links follow the row
+   * — an unresolvable marker falls back to this page's default — while a legacy entry's rows are its
+   * own type by construction.
+   */
+  const rowTradeType = React.useCallback(
+    (row: ListRow): SalesTradeType => (merged ? row.tradeType ?? entryTradeType : entryTradeType),
+    [entryTradeType, merged],
+  )
   const listError = error
     ? (error instanceof Error && error.message ? error.message : t('internal_sales.form.loadFailed'))
     : null
-  const channelError = !channelsLoading && entryChannelId === null ? missingChannelMessage : null
+  const channelError = !channelsLoading && listRequest.missingChannel ? missingChannelMessage : null
   const queryClient = useQueryClient()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
 
@@ -249,7 +312,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
    * would otherwise still be listed as a quote), and why the redirect goes to this module's *order*
    * edit page for the returned id.
    */
-  const handleConvertToOrder = React.useCallback(async (row: DocumentRecord) => {
+  const handleConvertToOrder = React.useCallback(async (row: ListRow) => {
     const confirmed = await confirm({
       title: t('internal_sales.list.actions.convertConfirmTitle'),
       description: t('internal_sales.list.actions.convertConfirmBody'),
@@ -272,14 +335,14 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
       await queryClient.invalidateQueries({ queryKey })
       // The converted document is an order now, so it opens on this module's order edit page —
       // built from the shared helper rather than by hand, so a route move cannot drift here.
-      router.push(documentEditHrefForTradeType('order', orderId, entryTradeType))
+      router.push(documentEditHrefForTradeType('order', orderId, rowTradeType(row)))
     } catch (conversionError) {
       const message = conversionError instanceof Error && conversionError.message
         ? conversionError.message
         : t('internal_sales.list.actions.convertFailed')
       flash(message, 'error')
     }
-  }, [confirm, entryTradeType, queryClient, queryKey, router, t])
+  }, [confirm, queryClient, queryKey, router, rowTradeType, t])
   // Statuses are the tenant's own dictionary, so the column resolves labels from it rather than
   // hard-coding the seeded values, and every status write resolves its entry id here. An
   // unreadable dictionary degrades to a dash / raw code and leaves the status actions disabled.
@@ -418,21 +481,32 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
 
   const unmarkedCount = data?.unmarkedCount ?? 0
   const columns = React.useMemo(
-    () => buildColumns(t, locale, kind, statusMap),
-    [kind, locale, statusMap, t],
+    () => buildColumns(t, locale, kind, statusMap, { showTradeType: merged }),
+    [kind, locale, merged, statusMap, t],
   )
-  const titleKey = kind === 'quote'
-    ? (external ? 'internal_sales.list.externalQuote.title' : 'internal_sales.list.quote.title')
-    : (external ? 'internal_sales.list.externalOrder.title' : 'internal_sales.list.order.title')
-  const descriptionKey = kind === 'quote'
-    ? (external ? 'internal_sales.list.externalQuote.description' : 'internal_sales.list.quote.description')
-    : (external ? 'internal_sales.list.externalOrder.description' : 'internal_sales.list.order.description')
-  const createTitleKey = kind === 'quote'
-    ? (external ? 'internal_sales.form.externalQuote.createTitle' : 'internal_sales.form.quote.createTitle')
-    : (external ? 'internal_sales.form.externalOrder.createTitle' : 'internal_sales.form.order.createTitle')
-  const emptyKey = kind === 'quote'
-    ? (external ? 'internal_sales.list.externalQuote.empty' : 'internal_sales.list.quote.empty')
-    : (external ? 'internal_sales.list.externalOrder.empty' : 'internal_sales.list.order.empty')
+  // The merged workbench has its own title/empty copy; each legacy entry keeps its type-specific
+  // one. `internal_sales.list.filters.type.*` doubles as the type names in the column and the
+  // create dialog (see `tradeTypeLabelKey`).
+  const titleKey = merged
+    ? 'internal_sales.quotes.workbench.title'
+    : kind === 'quote'
+      ? (external ? 'internal_sales.list.externalQuote.title' : 'internal_sales.list.quote.title')
+      : (external ? 'internal_sales.list.externalOrder.title' : 'internal_sales.list.order.title')
+  const descriptionKey = merged
+    ? 'internal_sales.quotes.workbench.description'
+    : kind === 'quote'
+      ? (external ? 'internal_sales.list.externalQuote.description' : 'internal_sales.list.quote.description')
+      : (external ? 'internal_sales.list.externalOrder.description' : 'internal_sales.list.order.description')
+  const createTitleKey = merged
+    ? 'internal_sales.quotes.actions.create'
+    : kind === 'quote'
+      ? (external ? 'internal_sales.form.externalQuote.createTitle' : 'internal_sales.form.quote.createTitle')
+      : (external ? 'internal_sales.form.externalOrder.createTitle' : 'internal_sales.form.order.createTitle')
+  const emptyKey = merged
+    ? 'internal_sales.quotes.workbench.empty'
+    : kind === 'quote'
+      ? (external ? 'internal_sales.list.externalQuote.empty' : 'internal_sales.list.quote.empty')
+      : (external ? 'internal_sales.list.externalOrder.empty' : 'internal_sales.list.order.empty')
 
   return (
     <>
@@ -445,7 +519,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
           )}
         </p>
       ) : null}
-      <DataTable<DocumentRecord>
+      <DataTable<ListRow>
         title={(
           <div className="flex flex-col gap-1">
             <h1 className="text-base font-semibold leading-tight">
@@ -460,11 +534,19 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
         data={rows}
         actions={(
           canManage ? (
-            <Button asChild>
-              <Link href={`${listHref}/create`}>
+            merged ? (
+              // Two create forms, one entry: the dialog asks which trade type the quote belongs to
+              // and opens that type's own create page.
+              <Button type="button" onClick={() => setCreateOpen(true)}>
                 {t(createTitleKey)}
-              </Link>
-            </Button>
+              </Button>
+            ) : (
+              <Button asChild>
+                <Link href={`${listHref}/create`}>
+                  {t(createTitleKey)}
+                </Link>
+              </Button>
+            )
           ) : null
         )}
         searchValue={search}
@@ -474,14 +556,38 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
         }}
         searchPlaceholder={t('internal_sales.list.searchPlaceholder')}
         searchAlign="right"
+        {...(merged
+          ? {
+              filters: [
+                {
+                  id: 'type',
+                  label: t('internal_sales.list.columns.type'),
+                  type: 'select' as const,
+                  options: [
+                    { value: 'all', label: t('internal_sales.list.filters.type.all') },
+                    { value: 'internal', label: t('internal_sales.list.filters.type.internal') },
+                    { value: 'external', label: t('internal_sales.list.filters.type.external') },
+                  ],
+                },
+              ],
+              filterValues: { type: typeFilter },
+              onFiltersApply: (values: Record<string, unknown>) => {
+                setTypeFilter(isQuoteListType(values.type) ? values.type : 'all')
+                setPage(1)
+              },
+              onFiltersClear: () => {
+                setTypeFilter('all')
+                setPage(1)
+              },
+            }
+          : {})}
         emptyState={(
           <ListEmptyState
             title={t(emptyKey)}
             {...(canManage
-              ? {
-                  createHref: `${listHref}/create`,
-                  createLabel: t(createTitleKey),
-                }
+              ? merged
+                ? { onCreate: () => setCreateOpen(true), createLabel: t(createTitleKey) }
+                : { createHref: `${listHref}/create`, createLabel: t(createTitleKey) }
               : {})}
           />
       )}
@@ -495,7 +601,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
           <RowActions
             items={[
               ...(canManage && allowed.canEdit
-                ? [{ id: 'edit', label: t('internal_sales.list.actions.edit'), href: `${listHref}/${row.id}/edit` }]
+                ? [{ id: 'edit', label: t('internal_sales.list.actions.edit'), href: documentEditHrefForTradeType(kind, row.id, rowTradeType(row)) }]
                 : []),
               ...(canManage && kind === 'quote' && allowed.canSend
                 ? [{
@@ -518,7 +624,7 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
                     {
                       id: 'new-order-from-quote',
                       label: t('internal_sales.list.actions.newOrderFromQuote'),
-                      href: `${ordersCreateHref}?fromQuote=${row.id}`,
+                      href: `${listHrefForTradeType('order', rowTradeType(row))}/create?fromQuote=${row.id}`,
                     },
                     {
                       id: 'convert-to-order',
@@ -548,9 +654,42 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
       }}
         isLoading={isLoading || channelsLoading}
         error={listError ?? channelError}
-        onRowClick={(row) => router.push(`${listHref}/${row.id}/edit`)}
+        onRowClick={(row) => router.push(documentEditHrefForTradeType(kind, row.id, rowTradeType(row)))}
       />
       {ConfirmDialogElement}
+      {/* One create entry, two trade types: each opens the create page that owns the type, so the
+          document is written with the right channel marker and the right buyer source. */}
+      {merged ? (
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogContent aria-describedby={undefined}>
+            <DialogHeader>
+              <DialogTitle>{t('internal_sales.quotes.createDialog.title')}</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCreateOpen(false)
+                  router.push('/backend/internal-sales/quotes/create')
+                }}
+              >
+                {t('internal_sales.list.filters.type.internal')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCreateOpen(false)
+                  router.push('/backend/external-sales/quotes/create')
+                }}
+              >
+                {t('internal_sales.list.filters.type.external')}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
       {/* Sending is the engine's own quote route: it stamps `sent`, writes the validity deadline,
           mints the acceptance link and mails it to the buyer — the dialog only asks how long the
           offer stands. */}
