@@ -1,7 +1,7 @@
 # 公司订单为中心的入口改造（订单工作台 + 填入式补充 + 自绘多级导航树）
 
 **Date**: 2026-10-08
-**Status**: Delivered — Phases 1–5 implemented and verified (2026-10-08)
+**Status**: Delivered — Phases 1–5 implemented and verified (2026-10-08). Entry rework delivered (2026-10-08): the tree collapses the order entries onto one domain plus four read-only ledgers, the workbench pages server-side through `GET /api/order_hub/orders`, and the order hub moved to `/backend/orders/<id>` (the old list/detail URLs redirect there)
 
 ## TLDR
 
@@ -199,57 +199,57 @@
 
 | Role | Navigation groups in order | Dashboard / injected widgets | Login-to-primary-task flow |
 |---|---|---|---|
-| 全部角色（树按有效功能位裁剪） | 公司订单 → 业务办理 → 财务 → 经营概览 → 仓储与库存 → 平台运营 → 数据同步 → 基础数据 → 系统 | 落地页保持现有仪表盘（含 `boss_cockpit` 四个 widget）；树本身是注入件 | 登录 → 落地页 → 侧栏「订单工作台」（1 次点击）→ 「只看待补」（2 次）→ 目标订单 hub（3 次） |
+| 全部角色（树按有效功能位裁剪） | 公司订单（订单工作台 + 采购 / 出口销售 / 合同与单据 / 发运与装箱 四个二级组）→ 财务 → 经营概览 → 仓储与库存 → 平台运营 → 数据同步 → 基础数据 → 系统（8 域；「业务办理」域已撤销——它的页面作为「公司订单」下的四个业务组继续在树里） | 落地页保持现有仪表盘（含 `boss_cockpit` 四个 widget）；树本身是注入件 | 登录 → 落地页 → 侧栏「订单工作台」（1 次点击）→ 「只看待补」（2 次）→ 目标订单 hub（3 次） |
 
 | Surface / widget | Empty state guidance and action | Responsive behavior | Keyboard / focus behavior |
 |---|---|---|---|
 | 导航树 | 某域无可见条目 → 整域不渲染；全部为空 → 空态文案 | ≤420px 时在移动抽屉内渲染同一棵树（`mobileSidebarSlot`）；折叠态只画图标 | 每个域按钮 `aria-expanded`；`Enter/Space` 折叠展开；Tab 顺序 = 视觉顺序；过滤框输入后焦点留在框内 |
-| 订单工作台 | 无订单 → 空态 + 「新建对内订单/对外订单/采购单」入口 | 窄屏横向滚动，阶段列固定在最右（`DataTable` 既有行为）；抽屉全屏 | 行操作按钮可 Tab 到达；抽屉 `Esc` 关闭并把焦点还给触发行 |
-| 订单 hub | 分区为空 → 该区空态 + 「新增」；读失败 → 该区错误 + 重试，其余区照常 | 窄屏分区纵向堆叠 | 分区内的表格沿用 `DataTable` 键盘行为 |
+| 订单工作台 | 无订单 → 空态 + 单个「新建订单」（打开选择贸易类型的弹窗；采购单从台账页或订单采购分区建） | 窄屏横向滚动，阶段列固定在最右（`DataTable` 既有行为）；抽屉全屏 | 行操作按钮可 Tab 到达；抽屉 `Esc` 关闭并把焦点还给触发行 |
+| 订单 hub | 分区为空 → 该区空态「还没有…，点这里补一张」；读失败 → 该区错误 + 重试，其余区照常 | 窄屏分区纵向堆叠 | 分区内的表格沿用 `DataTable` 键盘行为 |
 | 「全字段」抽屉 | 组无权限 → 组内无权限文案；读失败 → 抽屉内错误 + 重试 | 窄屏全屏抽屉 | 与 `SourcePreviewDrawer` 同款 |
 
 ### `/backend/orders` — 订单工作台
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ 订单工作台                              [新建对内订单][新建对外订单][新建采购单] │
+│ 订单工作台                                              [新建订单]（选贸易类型）│
 │ [类型▾] [状态▾] [关键词____] [☑ 只看待补]                                     │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │ 类型 | 单号      | 对方   | 币种 | 金额 | 状态 | 采购 | 发运 | 单证 | 收汇·退税 | 下单日期 │
 │ 对内 | ORD-…-08 ↘| 甲方   | USD  | 1.2万| 已确认| 2   | 1   | 3   | ✓        | 09-30  │
 │ 采购 | PO-…-31  ↘| 供甲   | CNY  | 8千  | 待收  | —   | 0 → | 1   | ✓/待退税  | 10-01  │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ [加载更多]                                                    共 47 行（累计） │
+│ 显示第 1 至 20 条，共 47 条结果            [‹] 1 2 3 [›]        20 每页       │
 └──────────────────────────────────────────────────────────────────────────────┘
 行操作：全字段（抽屉） | 打开详情
 ```
 
-- **Behavior:** 四个数据源各自分页（`pageSize=50`、`sortField=created_at`、`sortDir=desc`），客户端 k 路合并 + 本地分页；「加载更多」取尾行最旧那个源的下一页，累计 300 行后提示收窄；阶段单元格点击 → 计数 > 0 时进对应分区/详情，= 0 且有写权限时直达预填新建。
+- **Behavior:** 一屏一次 `GET /api/order_hub/orders`（手写守卫，`order_hub.view`）在服务端合并三类订单并按 `createdAt desc` 分页：路由把调用者的凭据转给各模块自己的列表路由（每个贸易类型渠道一次 `/api/sales/orders` + 一次 `/api/purchasing/purchase-orders`），因此每个源的作用域、功能位与解密仍归其所有者（买方名不在 `order_hub` 解密）。每源按 100/页向下扫，直到「够填当前页 / 该源取尽 / 500 行扫描上限」；`type`/`status`/`search`/`pending` 全部是请求参数（`status` 与 `pending` 在扫描窗口内过滤，因为安装层销售列表没有 `status` 过滤）。`total` 口径：无筛选 = 各源 `total` 之和（精确）；带筛选 = 窗口内命中数（下限，同时置 `totalIsCapped`），工作台据此提示收窄。工具栏只有一个「新建订单」（弹窗选对内/对外贸易类型）；采购单在采购台账页与订单的采购分区建（无来源订单的采购单合法）。阶段单元格点击 → 计数 > 0 时进对应分区/详情（销售行进 `/backend/orders/<id>` 并带 `#purchasing|#shipments|#documents|#money` 锚点），= 0 且有写权限时直达预填新建。
 - **Responsive and accessibility:** 见上表；阶段列的 `0` 用 `—` 之外的显式 `0` 表示缺口并带 `aria-label`（「发运单 0 张，点击新建」）。
-- **Localization:** 全部经 `t()`，命名空间 `order_hub.*`；状态标签复用 `sales.order_status` 字典与采购状态映射。
+- **Localization:** 全部经 `t()`，命名空间 `order_hub.*`；状态标签复用 `sales.order_status` 字典与采购状态映射（工作台的状态选项取字典与采购状态枚举的并集，不再由当前页行派生）。
 - **Design-system and theming:** `Page`/`PageBody`/`DataTable`/`MoneyAmount`/共享徽章 + 语义 token；明暗两态与窄屏实测。
 
-### `/backend/internal-sales/orders/[id]` — 订单详情 hub
+### `/backend/orders/[id]` — 订单详情 hub
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ ← 返回对内销售订单            单号 ORD-20261001-00008   [已确认]  [编辑][作废] │
+│ ← 返回订单工作台              单号 ORD-20261001-00008   [已确认]  [编辑][作废] │
 │ 买方 甲方 · 币种 USD · 金额 12,340.00 · 下单 2026-10-01 · 明细 6 行            │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │ 明细行（DataTable）                                                           │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ 采购订单 (2)          [新增采购订单]                                          │
+│ 采购订单 (2)          [去填写采购] [查看全部]                                  │
 │   PO-20261002-00031 · 供甲 · CNY 8,000.00 · 已收汇 → 采购单详情                │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ 发运单 (1)            [新增发运单]                                            │
-│ 单据（PI/CI/税务发票）(3)  [新增单据]                                          │
-│ 购销合同 (1)          [新增合同]                                              │
+│ 发运单 (1)            [去填写发运] [查看全部]                                  │
+│ 单据（PI/CI/税务发票）(3)  [去填写单据] [查看全部]                              │
+│ 购销合同 (1)          [去填写合同] [查看全部]                                  │
 │ 收汇·退税         收款 1 笔（已收） · 退税 1 档（办理中）→ 订单档案 / 柜档案      │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Behavior:** 每区独立 `react-query` 读、独立 loading/empty/error + 重试；抬头动作复用列表同款写路径（`lib/salesStatus.ts` 的 `salesStatusActions`）；返回链接 = 该贸易类型列表（**绝不指向自身**）。
-- **Localization:** 复用 `sales.*` / `purchasing.*` / `cross_border.*` 既有 key，新增 key 在 `internal_sales` 命名空间下。
+- **Behavior:** 贸易类型由**数据**判定，不再由路径判定：抬头（`GET /api/sales/orders?id=`）的 `channelId` 对两个贸易类型渠道 id 反查得出类型，缺失或未标记时按 `internal` 渲染、块内合同 kind 用 `internal_sales_order`（与工作台同口径），因此同一个 URL 服务两类订单。每区独立 `react-query` 读、独立 loading/empty/error + 重试，每区带 `id` 锚点（`purchasing`/`shipments`/`contracts`/`documents`/`money`，工作台的阶段单元格深链到这里）与「去填写 X」+「查看全部」（后者进对应台账列表）；抬头动作复用列表同款写路径（`lib/salesStatus.ts` 的 `salesStatusActions`）；返回链接 = 订单工作台（**绝不指向自身**）。旧 URL `/backend/{internal,external}-sales/orders/[id]` 由服务端 `redirect()` 301/307 到此。
+- **Localization:** 复用 `sales.*` / `purchasing.*` / `cross_border.*` 既有 key；hub 自己的 key 已随组件迁到 `order_hub.detail.*`（`internal_sales` 只留 `internal_sales.hub.title` 给两个仍可解析的旧 `page.meta.ts`）。
 - **Design-system:** 复用 `trade_docs` 的 `RelatedSection` 结构与 `FormHeader`，语义 token。
 
 ### `/backend/sidebar-customization`（遮蔽安装层页面）
@@ -302,6 +302,7 @@
 | `GET` | `/api/nav_shell/chrome` | `requireAuth: true` | — | 安装层 chrome payload 原样，`groups: []` | 401 透传安装层 | REQ-003 |
 | `GET` | `/api/nav_shell/tree` | `requireAuth: true` | — | `{ groups: BackendChromeNavGroup[] }`（偏好 + 有效功能位过滤后） | 401 | REQ-003, REQ-004, REQ-005 |
 | `GET` | `/api/order_hub/stages` | auth + `order_hub.view` | `ids` 1–200 个 uuid | `200 { items: StageItem[] }` | 400（参数/超限）、401、403 | REQ-009 |
+| `GET` | `/api/order_hub/orders` | auth + `order_hub.view` | `page`≥1、`pageSize` 1–100、`type ∈ {all,internal,external,purchase}`、可选 `status`/`search`/`pending` | `200 { items: OrderRow[], total, page, pageSize, totalIsCapped?, unavailableSources? }` | 400（非法参数）、401、403；某源读不了 → 该源不出行并列入 `unavailableSources`（对端 401 原样透传） | REQ-001, REQ-009 |
 | `GET` | `/api/purchasing/purchase-orders`（既有，扩展） | auth + `purchasing.orders.view` | 新增可选 `sourceSalesOrderId` | 既有列表 + 新增三列 | 既有行为不变 | REQ-006 |
 | `POST`/`PUT` | `/api/purchasing/purchase-orders`（既有，扩展） | auth + `purchasing.orders.manage` | 新增可选 `sourceSalesOrderId`（update 语义：缺省不改、`null` 清空） | 既有 201/200 + 冻结的来源三列 | 422 `source_sales_order_not_found`；既有 409 乐观锁不变 | REQ-006 |
 | `GET` | `/api/cross_border/shipments`（既有，扩展） | auth + `cross_border.shipments.view` | 新增可选 `salesOrderId` | 既有列表（空集 → 空列表） | 既有行为不变 | REQ-007 |
@@ -309,6 +310,7 @@
 | `StageItem` | 形状 | — | — | `{ id, source: 'sales_order'\|'purchase_order', procurementCount, shipmentCount, documentCount, collected, refunded }` | 未知/跨组织 id 不出现在 `items` | REQ-009 |
 
 - `/api/order_hub/stages` 是**手写守卫路由**（照 `src/modules/example/api/organizations/route.ts` 与 `boss_cockpit/api/summary/route.ts`）：`export const metadata = { GET: { requireAuth: true, requireFeatures: ['order_hub.view'] } }` + `export const openApi`。分页/搜索不适用；无缓存（阶段会立刻变化）。
+- `/api/order_hub/orders` 同样是手写守卫路由，且**不读任何对端表**：它把调用者的请求头转给 `/api/sales/orders`（每个贸易类型渠道一次）与 `/api/purchasing/purchase-orders`，因此每个源的作用域、功能位与解密仍由各模块裁决（`order_hub` 不解密买方名，也不复制过滤逻辑）。`total`/`totalIsCapped` 的口径写在 `openApi` 描述与 `order_hub/README.md`：无 `status`/`pending` 时为三源 `total` 之和（精确），带筛选时为扫描窗口内命中数（下限，窗口被截断即置 `totalIsCapped`）。
 - `/api/nav_shell/tree` 同样手写守卫 + `openApi`，不透出任何跨组织数据（只回结构，不回记录）。
 - `purchasing` 的既有 CRUD 路由继续用 `makeCrudRoute`；新增的都是**可选入参**与**追加出参字段**（BC 允许）。
 - 无新增命令 id、无新增事件、无幂等键变更；采购单来源解析在既有 create/update 命令的事务作用域内完成。
@@ -511,7 +513,7 @@
 | 清空 `chromePayload.groups` 影响未知的第三消费者 | 某个注入件/第三方扩展读 `groups` 会拿到空数组 | 全仓 grep `groups` 消费者（已知仅两处：内置渲染器 + 自定义编辑器）；改动只发生在 app 路由，安装层未动，回滚即恢复 | 第三方扩展不在本仓，无法穷举；披露在本节与 README |
 | 组级偏好一次性错位 | 个别用户的侧栏顺序变化一次 | 明确写进 spec/README 与 PR 描述；偏好在自定义页一键重设；条目级偏好不受影响 | 用户需要自己重排一次 |
 | 自绘树与框架侧栏行为漂移（折叠状态、活跃高亮、紧凑态） | 观感不一致或某状态缺失 | 用 `useSidebarCollapse()` 与平台同样的活跃判定；TEST-104 逐项覆盖紧凑/移动/暗色 | 框架升级引入新的侧栏状态时需同步 |
-| 工作台四源合并的一致性问题（分页/排序/去重） | 行重复或漏行 | k 路合并按 `createdAt desc` + 同 id 去重；300 行上限提示收窄；TEST-303 覆盖 | 极端数据量下用户需收窄筛选 |
+| 工作台聚合读的一致性问题（分页/排序/去重） | 行重复或漏行；带筛选时的 `total` 是窗口内的下限 | 按 `createdAt desc` + 同 id 去重；每源 500 行扫描上限，窗口被截断时置 `totalIsCapped` 并在工作台提示收窄；口径写进路由 `openApi` 与 README；单元 `mergeOrders`（12 例）+ TEST-303 覆盖 | 极端数据量下用户需收窄筛选；精确全量 total 需另立单元（缓存/无上限扫描） |
 | 阶段投影的跨模块列名/软删假设错误 | 计数为 0 或 SQL 报错 | `order_hub/lib/orderStages.ts` 单点实现 + TEST-302 用真实构造数据断言；列名以安装源码实体定义为准（`unverified` 处在实现时逐条核对） | 安装层列名变化需同步该文件 |
 | 采购来源解析引入跨模块读 | 事务内多一次读；解析到已删/跨组织订单的风险 | 解析在同一事务作用域内、scoped 读、失败 422 回滚；TEST-202 覆盖跨组织与不存在两种失败 | 无（失败路径已显式覆盖） |
 | `sales.orders.create` 可能不接受零行 | REQ-011 的草稿项无法交付 | TEST-306 先核实；不接受则放弃该项并在 Resolved decisions 记录 | 用户仍需先加一行 |
@@ -522,8 +524,8 @@
 ## Acceptance Criteria
 
 - [ ] **AC-001** — 登录后从侧边栏「订单工作台」进入 `/backend/orders`，一屏看到三类订单，且每行的采购/发运/单证/收汇·退税四列与 `GET /api/order_hub/stages` 的返回逐行一致；「只看待补」只留有缺口且未取消的订单（≤3 次点击到达任一待补订单的 hub）。
-- [ ] **AC-002** — `/backend/internal-sales/orders/<id>` 显示抬头、明细行与五个分区；每区在有数据时列出对应单据并可点入，无数据时为空态 + 分区内新建入口；某区读失败时该区显示错误与重试而其余区照常。
-- [ ] **AC-003** — 侧边栏渲染 9 个域并可逐级折叠，活跃项高亮，无内置平铺列表重复；桌面/紧凑态/移动抽屉（≤420px）三态均可用；顶部过滤框输入关键词只剩命中项。
+- [ ] **AC-002** — `/backend/orders/<id>`（旧 `/backend/{internal,external}-sales/orders/<id>` 服务端重定向到此）显示抬头、明细行与五个分区；每区在有数据时列出对应单据并可点入，无数据时为空态 + 分区内「去填写」入口；某区读失败时该区显示错误与重试而其余区照常。
+- [ ] **AC-003** — 侧边栏渲染 8 个域并可逐级折叠，活跃项高亮，无内置平铺列表重复；桌面/紧凑态/移动抽屉（≤420px）三态均可用；顶部过滤框输入关键词只剩命中项。
 - [ ] **AC-004** — `/backend/sidebar-customization` 上隐藏一条目、调整同组顺序、改一个显示名后保存，刷新后树生效；`applyToRoles` 生效于该角色用户，而该用户自己的偏好优先于角色偏好；历史条目级（href）偏好仍生效。
 - [ ] **AC-005** — 只授 `cross_border.shipments.view` 的用户：树里只出现命中条目（服务端不返回无权条目，客户端二次过滤），直接访问 `/backend/finance/payables` 被页面门禁拒绝。
 - [ ] **AC-006** — `POST /api/purchasing/purchase-orders {sourceSalesOrderId}` → 201 且三列冻结（`_number` = 订单号）；跨组织或不存在 → 422 `source_sales_order_not_found`；`GET …?sourceSalesOrderId=<id>` 只回该单；显式清空后读回 `null`；从 `?orderKind=internal_sales_order&orderId=<id>` 进表单：来源已填、行已复制且**单价为空**。
@@ -572,6 +574,7 @@
 
 | Date | Change |
 |---|---|
+| 2026-10-08 | **入口重构（菜单收敛 + 服务端分页 + 订单为根的填写面）已交付并实测**（PRs #144 / #145 / #146，均 off `dev`；追踪计划 `.ai/runs/2026-10-08-order-centric-entry-rework.md`）。三条分支的门禁各自全绿（`yarn generate` / `typecheck` / `lint` 0 error / `check-lessons` / `ds:check` / `test` / `build`）。**单元**：`nav_shell` 覆盖率与构建 21 tests、`order_hub` 23 tests（`mergeOrders` 12 例）、三模块合并 99 tests。**集成**：新 `order_hub/__integration__/order-hub-aggregate.spec.ts` **6 passed**（页不重叠且 `createdAt desc`、无筛选 `total` = 三源 total 之和、`type=purchase` 只回采购单、`pending=true` 全为有缺口的单、跨组织看不到夹具订单、`pageSize=101` → 400）；回归 `shipment-sales-order-filter` **4 passed**、`order-source-link` **4 passed**。**真机**：聚合 API `page=1\|2\|3&pageSize=5` → 5/5/2 行不重叠且 `createdAt desc`、`total=12`；`total`(17) = 1+1+15（三源各自 total）；`pending=true` 13 行全命中；`pageSize=101`/`page=0`/`type=bogus`/`pending=maybe` 各 400。**浏览器**：侧栏 8 域（公司订单 = 工作台 + 采购 / 出口销售 / 合同与单据 / 发运与装箱，二级组展开到三级页面；两个订单列表不进树）、系统域 7 条各带图标；工作台每页只发一次聚合请求且底部是页码（点「下一页」发 `page=2`，无「加载更多」）；工具栏只有一个「新建订单」，弹窗选类型；建单 `POST /api/sales/orders` 201 后落到 `/backend/orders/<新 id>` 的 hub（抬头/明细/五分区/锚点/去填写/查看全部/空态），四个旧 URL 307 重定向。**落地口径**（D11 取代 D1–D4）：菜单分组在公司订单域内；`?type=` 由工作台内的 `useSearchParams()` 读取（后端 catch-all `src/app/(backend)/backend/[...slug]/page.tsx` 不向模块页转发 `searchParams`，服务端 prop 方案实测无效）；带 `status`/`pending` 筛选时 `total` 为扫描窗口内下限（`totalIsCapped` 标记，精确全量合计另立单元）；聚合路由把调用者凭据转给各模块列表路由，某源不可读降级为 `unavailableSources` 而非整单失败 |
 | 2026-10-08 | Initial draft — 由已批准的计划（订单工作台 + 填入式补充 + 自绘多级导航树）落成规格；Phase 1–5 与 REQ-001…REQ-012、TEST-101…TEST-306、AC-001…AC-012 建立追溯关系 |
 | 2026-10-08 | **Phase 5 已交付并实测**（PR `feat/order-entry-friction`，off `dev`）。证据：单元 `src/lib/parties/__tests__/customerQuickCreate.test.ts`（随共享件搬迁）+ `src/modules/internal_sales/lib/__tests__/currencyDefault.test.ts`（键构造与 `resolveInitialCurrency` 优先级）→ `yarn jest` 全绿（69 suites · 571 tests）；`yarn typecheck` / `yarn lint`（0 error）/ `yarn ds:check`（998 files）/ `yarn build` 全绿；浏览器实测：对外订单新建页出现「新建客户」按钮且点开即既有快速建档对话框（客户编码/名称/国家/联系人/电话/邮箱/银行，保存并选用）；把 `om:internalSales:currency:<orgId>:external` 置为 `USD` 后重新打开新建页，币种字段预选 **USD**（币种记忆读路径）；行内数量输 `1.23456` 后 blur → 行内出现「数量与单价最多 4 位小数」且输入框 `aria-invalid=true`（提交拦截未改）。**未在浏览器单独复现**：采购单「选中供应商后币种默认」——实现为无头观察分组（读 `GET /api/purchasing/suppliers/<id>` 的 `defaultCurrencyCode`，仅在操作员未手改币种时写入），typecheck/lint 通过但选择器交互未打通，按「已实现未实测」记录。搬迁：`CustomerQuickCreateDialog.tsx` + `lib/customerQuickCreate.ts`（含其单测）→ `src/lib/parties/`，`trade_docs` 的 `CounterpartyPicker` 改 import，行为不变；词条仍留在 `trade_docs` 的 i18n（共享件可读模块词表，与 `@/lib/orders/purchaseOrderStatus` 同例） |
 | 2026-10-08 | **Phase 4 已交付并实测**（PR `feat/order-workbench`，**stack 在 Phase 3 之上并合并了 Phase 1 的 `feat/sidebar-nav-tree`**——工作台入口要加进 P1 的 `NAV_TREE`；两个父 PR 合入后 retarget 到 `dev`）。证据：单元 `src/modules/order_hub/lib/__tests__/orderPending.test.ts` **9 passed**（待补判定 × 三类订单 × 终态 + 合并排序）；集成 `__integration__/order-hub-stages.spec.ts` → `yarn mercato test:integration order-hub-stages` **5 passed**（① 两类订单的计数/勾选：销售行采购 1 / 发运 1 / 单证 2（PI + 税务发票）/ 已收汇 / 已退税，采购行采购 0 / 发运 1 / 单证 0；② 取消的采购单不再计入采购数；③ 未知 id 不出现；④ 跨组织不出现；⑤ 超过 200 个 id → 400）；`yarn typecheck` / `yarn lint`（0 error）/ `yarn ds:check`（1032 files）/ `yarn test` 全绿；浏览器实测（真实订单）：树「公司订单 → 订单工作台」可进入 `/backend/orders`，三类订单列出且类型/金额/状态/四个阶段列正确（采购行「采购」列 `—`），「只看待补」只留有缺口且未取消的订单，阶段为 0 的格子直达预填新建，采购行「全字段」抽屉三组与 `/backend/export-finance/orders/<id>` 同值且页脚可达，销售行抽屉 = 抬头 + 四分支计数；受限账号（只有 `order_hub.view` + `purchasing.orders.view` + `sales.order.view`）**看不到新建按钮**（manage 功能位显隐生效）且列表/树照常；`/backend` 落地页仍是仪表盘。实现中修正自身三处：类型列文案键（snake_case kind → camelCase key）、金额列要读数字型（销售列表的 `grandTotalNetAmount` 是 number）、hub 明细行 `pageSize` 上限 100；集成夹具踩到三处既有契约（发票 `direction` 是 inbound/outbound 且行用 `description` + 必填 `amount`；收汇/退税是 PUT upsert；取消采购单必须带 reason），均已按实装修正并断言。已知：`/backend/orders` 无权限组的抽屉文案由实现覆盖（lint/typecheck 通过），未在浏览器单独复现 |
