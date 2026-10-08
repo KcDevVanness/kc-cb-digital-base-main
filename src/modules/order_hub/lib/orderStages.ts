@@ -72,6 +72,14 @@ type OrderStageReadTables = {
     organization_id: string
     deleted_at: Date | null
   }
+  trade_docs_order_documents: {
+    order_kind: string
+    order_id: string
+    document_kind: string
+    document_id: string
+    tenant_id: string
+    organization_id: string
+  }
   export_finance_collections: {
     purchase_order_id: string
     collection_status: string | null
@@ -99,7 +107,11 @@ export type OrderStageItem = {
   procurementCount: number
   /** Distinct shipments carrying goods from this order (sales allocations) or this purchase order. */
   shipmentCount: number
-  /** PI/CI + tax invoices of its contracts, plus the export documents of its shipments. */
+  /**
+   * Sales rows: the order's own document links (`trade_docs_order_documents`) plus the export
+   * documents of its shipments. Purchase rows: the PI/CI and tax invoices of its contracts, plus the
+   * export documents of its shipments.
+   */
   documentCount: number
   /** Sales rows: any linked purchase order has a received collection. Purchase rows: its own. */
   collected: boolean
@@ -284,6 +296,23 @@ export async function loadOrderStages(
     for (const row of counts) exportDocsByShipment.set(String(row.key), toNumber(row.count))
   }
 
+  // A sales order's documents are its **own** link rows. The contract-derived count below stays the
+  // purchase order's caliber: a purchase order has no documents block of its own (its invoices are
+  // the contract's), while a sales order can carry a document with no contract at all — which is
+  // exactly what the link table exists for.
+  const orderDocumentCounts = new Map<string, number>()
+  if (salesIds.length > 0) {
+    const counts = (await kysely
+      .selectFrom('trade_docs_order_documents')
+      .select((builder) => [builder.ref('order_id').as('key'), builder.fn.countAll().as('count')])
+      .where('order_id', 'in', salesIds)
+      .where('tenant_id', '=', scope.tenantId)
+      .where('organization_id', 'in', organizationIds)
+      .groupBy('order_id')
+      .execute()) as CountDbRow[]
+    for (const row of counts) orderDocumentCounts.set(String(row.key), toNumber(row.count))
+  }
+
   const collectionStatusByPurchaseOrder = new Map<string, string[]>()
   if (purchaseOrderIds.length > 0) {
     const rows = (await kysely
@@ -315,11 +344,21 @@ export async function loadOrderStages(
     for (const row of rows) refundedShipments.add(String(row.key))
   }
 
-  const documentCountFor = (orderId: string, shipmentIdsOfOrder: Iterable<string>): number => {
+  /** Purchase orders: the documents their contracts carry, plus their shipments' export documents. */
+  const contractDocumentCountFor = (orderId: string, shipmentIdsOfOrder: Iterable<string>): number => {
     let total = 0
     for (const contractId of contractsByOrder.get(orderId) ?? []) {
       total += documentsByContract.get(contractId) ?? 0
     }
+    for (const shipmentId of shipmentIdsOfOrder) {
+      total += exportDocsByShipment.get(shipmentId) ?? 0
+    }
+    return total
+  }
+
+  /** Sales orders: their own link rows, plus their shipments' export documents. */
+  const linkedDocumentCountFor = (orderId: string, shipmentIdsOfOrder: Iterable<string>): number => {
+    let total = orderDocumentCounts.get(orderId) ?? 0
     for (const shipmentId of shipmentIdsOfOrder) {
       total += exportDocsByShipment.get(shipmentId) ?? 0
     }
@@ -346,7 +385,7 @@ export async function loadOrderStages(
       source: 'sales_order',
       procurementCount: purchaseOrders.filter((row) => row.status !== PURCHASE_ORDER_CANCELLED).length,
       shipmentCount: shipments.size,
-      documentCount: documentCountFor(salesOrderId, shipments),
+      documentCount: linkedDocumentCountFor(salesOrderId, shipments),
       collected: collectedFor(purchaseOrders),
       refunded: refundedFor(shipments),
     })
@@ -363,7 +402,7 @@ export async function loadOrderStages(
       source: 'purchase_order',
       procurementCount: 0,
       shipmentCount: shipments.size,
-      documentCount: documentCountFor(purchaseOrderId, shipments),
+      documentCount: contractDocumentCountFor(purchaseOrderId, shipments),
       collected: collectedFor([row]),
       refunded: refundedFor(shipments),
     })

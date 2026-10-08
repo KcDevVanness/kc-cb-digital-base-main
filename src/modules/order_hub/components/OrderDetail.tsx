@@ -23,6 +23,7 @@ import { useSalesStatusEntries } from '../../internal_sales/lib/salesStatusEntri
 import { writeSalesStatus } from '../../internal_sales/lib/salesStatusWrite'
 import { toDocumentRecord, type DocumentRecord } from '../../internal_sales/lib/salesDocumentRecord'
 import { apiPathFor, documentEditHrefForTradeType } from '../../internal_sales/components/InternalSalesForm'
+import { OrderDocumentsDialog } from '../../trade_docs/components/OrderDocumentsDialog'
 
 /**
  * The sales order hub: everything that follows an order, in one place.
@@ -66,7 +67,18 @@ type ShipmentRow = {
 
 type ContractLinkRow = { contractId: string; orderKind: string; orderId: string }
 type ContractRow = { id: string; number: string | null; status: string; currencyCode: string; total: string }
-type DocumentRow = { id: string; number: string | null; kind: string; status: string; total: string; contractId: string | null }
+/**
+ * One row of the order's documents block: the **link** the order owns, resolved against the live
+ * document, so the row shows the document's current number, status and amount.
+ */
+type DocumentRow = {
+  id: string
+  kind: 'proforma' | 'commercial' | 'tax_invoice'
+  number: string | null
+  status: string
+  total: string
+  currencyCode: string
+}
 type CollectionRow = { purchaseOrderId: string; purchaseOrderNumber: string | null; collectionStatus: string; amount: string | null; currencyCode: string }
 type RefundRow = { shipmentId: string; shipmentNumber: string | null; taxRefundStatus: string; taxRefundAmount: string | null; currencyCode: string }
 
@@ -98,6 +110,20 @@ function readSingleItem(payload: unknown): Record<string, unknown> | null {
 
 function orderKindForTradeType(tradeType: SalesTradeType): 'internal_sales_order' | 'external_sales_order' {
   return tradeType === 'external' ? 'external_sales_order' : 'internal_sales_order'
+}
+
+/**
+ * Where a linked document opens for editing. The two heavy kinds live under their own ledgers
+ * (`documentListHref` in `trade_docs/components/DocumentsTable.tsx` names the same paths) and the
+ * tax invoice under the invoices ledger.
+ */
+function documentEditHref(kind: DocumentRow['kind'], id: string): string {
+  const listHref = kind === 'tax_invoice'
+    ? '/backend/trade-docs/invoices'
+    : kind === 'commercial'
+      ? '/backend/trade-docs/commercial-invoices'
+      : '/backend/trade-docs/proformas'
+  return `${listHref}/${encodeURIComponent(id)}/edit`
 }
 
 /**
@@ -155,6 +181,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const { entryIdFor } = useSalesStatusEntries()
   const [pendingStatus, setPendingStatus] = React.useState<string | null>(null)
+  const [documentsDialogOpen, setDocumentsDialogOpen] = React.useState(false)
 
   // The trade type is the document's own, not the entry's: the hub lives at one URL
   // (`/backend/orders/<id>`) for both types, so it reads the head's channel marker and falls back
@@ -263,42 +290,62 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   })
 
   /**
-   * PI / CI / 税务发票 of every contract linked to this order. One read per contract, merged here:
-   * the documents route filters by a single contract, and an order normally carries one or two.
+   * The order's own documents dimension: its link rows (`trade_docs_order_documents`) resolved
+   * against the live documents and tax invoices.
+   *
+   * The link carries only ids plus the number it froze at link time, so the live read is what makes
+   * a row show the document's **current** number, status and amount — and it is also the filter: a
+   * link whose document was deleted resolves to nothing and simply does not render. Two reads, not
+   * one per row: the link set names the ids, each table answers them in a single call.
    */
   const documentsQuery = useQuery({
     queryKey: ['order-hub-detail-documents', orderId, orderKind, scopeVersion],
-    enabled: (contractsQuery.data?.contracts.length ?? 0) > 0,
     queryFn: async () => {
-      const contracts = contractsQuery.data?.contracts ?? []
-      const rows: DocumentRow[] = []
-      for (const contract of contracts) {
-        const [documents, invoices] = await Promise.all([
-          fetchCrudList<Record<string, unknown>>('trade_docs/documents', { contractId: contract.id, pageSize: PAGE_SIZE }),
-          fetchCrudList<Record<string, unknown>>('trade_docs/invoices', { contractId: contract.id, pageSize: PAGE_SIZE }),
-        ])
-        for (const item of documents.items ?? []) {
-          rows.push({
-            id: String(item.id),
-            number: (item.number ?? null) as string | null,
-            kind: String(item.kind ?? 'proforma'),
-            status: String(item.status ?? 'draft'),
-            total: String(item.total ?? '0'),
-            contractId: contract.id,
-          })
-        }
-        for (const item of invoices.items ?? []) {
-          rows.push({
-            id: String(item.id),
-            number: (item.number ?? null) as string | null,
-            kind: 'tax_invoice',
-            status: String(item.status ?? 'draft'),
-            total: String(item.total ?? '0'),
-            contractId: contract.id,
-          })
-        }
+      const links = await fetchCrudList<Record<string, unknown>>('trade_docs/orders/documents', {
+        orderKind,
+        orderId,
+        pageSize: PAGE_SIZE,
+      })
+      const linkRows = links.items ?? []
+      const documentKindOf = (item: Record<string, unknown>) =>
+        readText(item, 'documentKind', 'document_kind')
+      const documentIdOf = (item: Record<string, unknown>) => readText(item, 'documentId', 'document_id')
+      const idsFor = (kind: string) =>
+        linkRows.filter((item) => documentKindOf(item) === kind).map(documentIdOf).filter((id) => id.length > 0)
+      const documentIds = [...idsFor('proforma'), ...idsFor('commercial')]
+      const invoiceIds = idsFor('tax_invoice')
+      const [documents, invoices] = await Promise.all([
+        documentIds.length > 0
+          ? fetchCrudList<Record<string, unknown>>('trade_docs/documents', { ids: documentIds.join(','), pageSize: PAGE_SIZE })
+          : Promise.resolve({ items: [] as Record<string, unknown>[] }),
+        invoiceIds.length > 0
+          ? fetchCrudList<Record<string, unknown>>('trade_docs/invoices', { ids: invoiceIds.join(','), pageSize: PAGE_SIZE })
+          : Promise.resolve({ items: [] as Record<string, unknown>[] }),
+      ])
+      const live = new Map<string, DocumentRow>()
+      for (const item of documents.items ?? []) {
+        live.set(String(item.id), {
+          id: String(item.id),
+          kind: readText(item, 'kind') === 'commercial' ? 'commercial' : 'proforma',
+          number: (item.number ?? null) as string | null,
+          status: String(item.status ?? 'draft'),
+          total: String(item.total ?? '0'),
+          currencyCode: String(item.currencyCode ?? 'CNY'),
+        })
       }
-      return rows
+      for (const item of invoices.items ?? []) {
+        live.set(String(item.id), {
+          id: String(item.id),
+          kind: 'tax_invoice',
+          number: (item.number ?? item.ourNumber ?? null) as string | null,
+          status: String(item.status ?? 'draft'),
+          total: String(item.total ?? '0'),
+          currencyCode: String(item.currencyCode ?? 'CNY'),
+        })
+      }
+      return linkRows
+        .map((link) => live.get(documentIdOf(link)))
+        .filter((row): row is DocumentRow => row !== undefined)
     },
   })
 
@@ -644,12 +691,15 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
                 {t('order_hub.detail.section.add.documents')}
               </Link>
             </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setDocumentsDialogOpen(true)}>
+              {t('order_hub.detail.documents.manage')}
+            </Button>
             <Button asChild variant="ghost" size="sm">
               <Link href="/backend/trade-docs/proformas">{t('order_hub.detail.section.viewAll')}</Link>
             </Button>
           </div>
         )}
-        isLoading={contractsQuery.isLoading || documentsQuery.isLoading}
+        isLoading={documentsQuery.isLoading}
         failed={documentsQuery.isError}
         isEmpty={documents.length === 0}
         emptyLabel={t('order_hub.detail.section.empty.documents')}
@@ -661,8 +711,10 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
               <span className="text-muted-foreground">
                 {t(row.kind === 'tax_invoice' ? 'order_hub.detail.documents.kind.taxInvoice' : `trade_docs.documents.kind.${row.kind}`)}
               </span>
-              <span className="font-medium">{row.number ?? row.id.slice(0, 8)}</span>
-              <MoneyAmount currencyCode={order.currencyCode} amount={row.total} />
+              <Link className="font-medium underline" href={documentEditHref(row.kind, row.id)}>
+                {row.number ?? row.id.slice(0, 8)}
+              </Link>
+              <MoneyAmount currencyCode={row.currencyCode} amount={row.total} />
               <StatusBadge variant="neutral">{row.status}</StatusBadge>
             </li>
           ))}
@@ -709,6 +761,15 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           ))}
         </ul>
       </RelatedSection>
+
+      <OrderDocumentsDialog
+        open={documentsDialogOpen}
+        onOpenChange={setDocumentsDialogOpen}
+        orderKind={orderKind}
+        orderId={order.id}
+        orderUpdatedAt={order.updatedAt}
+        onSaved={() => void documentsQuery.refetch()}
+      />
 
       {ConfirmDialogElement}
     </>

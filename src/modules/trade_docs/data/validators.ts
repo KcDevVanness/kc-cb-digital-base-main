@@ -1,4 +1,8 @@
 import { z } from 'zod'
+// The `?orderKind=&orderId=` pair has one vocabulary app-wide (`src/lib/orders/sourceOrderParams`):
+// the create pages that carry the pair, the link command and the hub's links all read the same two
+// kinds, so a form cannot accept a kind its own link writer would reject.
+import { SOURCE_SALES_ORDER_KINDS } from '@/lib/orders/sourceOrderParams'
 // One-way dependency on the product master's vocabulary: `trade_docs` lines always come from a
 // `products` product and quote one of its tiers, so the three codes stay defined in exactly one
 // place. The dependency never points back — `products` knows nothing about contracts.
@@ -327,15 +331,43 @@ const invoiceBase = {
   lines: z.array(invoiceLineInputSchema).max(500),
 }
 
-export const invoiceCreateSchema = withCounterpartyKindRule(
+/**
+ * The order a create payload is being raised for (`?orderKind=&orderId=` on the create page).
+ *
+ * Create-only on purpose: the link is written once, by the create command, in the same transaction
+ * as the document — updating it afterwards goes through
+ * `trade_docs.orders.documents.replace` (the order hub's own dialog), so an update payload cannot
+ * silently re-point or drop a link. Both fields or neither: a half pair would have to guess the
+ * side, so `withOrderLinkRule` rejects it.
+ */
+function withOrderLinkRule<T extends z.ZodObject<z.ZodRawShape>>(schema: T) {
+  return schema.superRefine((value, ctx) => {
+    const kind = (value as { orderKind?: unknown }).orderKind
+    const id = (value as { orderId?: unknown }).orderId
+    if ((kind === undefined) === (id === undefined)) return
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['orderKind'],
+      message: 'orderKind and orderId go together',
+    })
+  })
+}
+
+const orderLinkFields = {
+  orderKind: z.enum(SOURCE_SALES_ORDER_KINDS).optional(),
+  orderId: z.string().uuid().optional(),
+}
+
+export const invoiceCreateSchema = withOrderLinkRule(withCounterpartyKindRule(
   z.object({
     ...invoiceBase,
     direction: invoiceBase.direction.default('inbound'),
     currencyCode: invoiceBase.currencyCode.default('CNY'),
     lines: invoiceBase.lines.default([]),
+    ...orderLinkFields,
   }),
   COUNTERPARTY_KIND_BY_INVOICE_DIRECTION,
-)
+))
 
 export const invoiceUpdateSchema = withCounterpartyKindRule(
   z.object(invoiceBase).partial().extend({
@@ -443,16 +475,17 @@ const documentBase = {
   lines: z.array(documentLineInputSchema).max(500),
 }
 
-export const documentCreateSchema = withCounterpartyKindRule(
+export const documentCreateSchema = withOrderLinkRule(withCounterpartyKindRule(
   z.object({
     ...documentBase,
     kind: documentBase.kind.default('proforma'),
     direction: documentBase.direction.default('sales'),
     currencyCode: documentBase.currencyCode.default('CNY'),
     lines: documentBase.lines.default([]),
+    ...orderLinkFields,
   }),
   COUNTERPARTY_KIND_BY_DIRECTION,
-)
+))
 
 export const documentUpdateSchema = withCounterpartyKindRule(
   z.object(documentBase).partial().extend({
@@ -568,6 +601,37 @@ export const contractOrderListSchema = z.object({
   pageSize: z.coerce.number().min(1).max(200).default(100),
 })
 
+/**
+ * The document kinds a sales order can carry — the link's own vocabulary, because the two heavy
+ * kinds live in `trade_docs_documents.kind` and the tax invoice in `trade_docs_invoices`.
+ */
+export const ORDER_DOCUMENT_KINDS = ['proforma', 'commercial', 'tax_invoice'] as const
+
+/**
+ * The whole document set of one sales order, replaced in one call — the same replace-all shape the
+ * contract's order set uses. Only `(documentKind, documentId)` travel; the document's number and a
+ * display snapshot are resolved server-side from the owning table and frozen on the row.
+ */
+export const orderDocumentsReplaceSchema = z.object({
+  orderKind: z.enum(SOURCE_SALES_ORDER_KINDS),
+  orderId: z.string().uuid(),
+  rows: z
+    .array(z.object({ documentKind: z.enum(ORDER_DOCUMENT_KINDS), documentId: z.string().uuid() }))
+    .max(200),
+  /** The order version the caller rendered the dialog with; the aggregate lock uses it. */
+  orderUpdatedAt: z.string().trim().min(1).optional(),
+})
+
+export const orderDocumentListSchema = z.object({
+  id: z.string().uuid().optional(),
+  orderKind: z.enum(SOURCE_SALES_ORDER_KINDS).optional(),
+  orderId: z.string().uuid().optional(),
+  documentKind: z.enum(ORDER_DOCUMENT_KINDS).optional(),
+  documentId: z.string().uuid().optional(),
+  page: z.coerce.number().min(1).default(1),
+  pageSize: z.coerce.number().min(1).max(200).default(100),
+})
+
 export type ContractCreateInput = z.infer<typeof contractCreateSchema>
 export type ContractUpdateInput = z.infer<typeof contractUpdateSchema>
 export type ContractLineInput = z.infer<typeof contractLineInputSchema>
@@ -575,6 +639,8 @@ export type ContractTransitionInput = z.infer<typeof contractTransitionSchema>
 export type ContractListQuery = z.infer<typeof contractListSchema>
 export type ContractOrdersReplaceInput = z.infer<typeof contractOrdersReplaceSchema>
 export type ContractOrderListQuery = z.infer<typeof contractOrderListSchema>
+export type OrderDocumentsReplaceInput = z.infer<typeof orderDocumentsReplaceSchema>
+export type OrderDocumentListQuery = z.infer<typeof orderDocumentListSchema>
 export type InvoiceCreateInput = z.infer<typeof invoiceCreateSchema>
 export type InvoiceUpdateInput = z.infer<typeof invoiceUpdateSchema>
 export type InvoiceLineInput = z.infer<typeof invoiceLineInputSchema>

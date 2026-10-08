@@ -701,3 +701,80 @@ export class TradeDocsContractOrder {
   @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
   updatedAt: Date = new Date()
 }
+
+/**
+ * One trade document (PI/CI) or tax invoice a sales order carries.
+ *
+ * The order's own documents dimension: a sales order is filled in through purchase orders,
+ * shipments, contracts **and documents**, and until this table existed the documents block was
+ * derived from the contracts the order is linked to (`trade_docs_contract_orders` → the contract's
+ * `contract_id` on each document). That derivation cannot express a document raised for an order
+ * without a contract, nor a proforma that belongs to the order but not to the contract's set — so
+ * the link is its own row, mirroring `TradeDocsContractOrder` (`order_kind`/`order_id` plus the
+ * frozen number and snapshot).
+ *
+ * `document_kind` is this row's own vocabulary rather than the document's `kind` column, because the
+ * two live in different tables: `proforma` and `commercial` are `trade_docs_documents.kind`, while
+ * `tax_invoice` is a row in `trade_docs_invoices`. There is deliberately **no foreign key** to
+ * either table (a polymorphic link cannot have one): `document_id` is a durable reference kept
+ * honest by its writers (`trade_docs.orders.documents.replace` and the two create commands all
+ * resolve the document inside the caller's scope before persisting the row), and readers hide a row
+ * whose document no longer exists instead of showing a bare id.
+ *
+ * The set is replaced wholesale by `trade_docs.orders.documents.replace`, exactly like the
+ * contract's order set, so a stale dialog cannot drop a link someone else added (the order's
+ * `updated_at` is the aggregate lock).
+ */
+@Entity({ tableName: 'trade_docs_order_documents' })
+@Index({ name: 'trade_docs_order_documents_scope_idx', properties: ['organizationId', 'tenantId'] })
+@Index({
+  name: 'trade_docs_order_documents_order_idx',
+  properties: ['organizationId', 'tenantId', 'orderKind', 'orderId'],
+})
+@Unique({
+  name: 'trade_docs_order_documents_order_document_uniq',
+  properties: ['orderKind', 'orderId', 'documentKind', 'documentId'],
+})
+export class TradeDocsOrderDocument {
+  [OptionalProps]?: 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  /** `internal_sales_order` (总部 → 分公司) | `external_sales_order` (分公司 → 当地客户). */
+  @Property({ name: 'order_kind', type: 'text' })
+  orderKind!: string
+
+  @Property({ name: 'order_id', type: 'uuid' })
+  orderId!: string
+
+  /** The order's business number, frozen at link time (the id itself never reaches the UI). */
+  @Property({ name: 'order_number', type: 'text', nullable: true })
+  orderNumber?: string | null
+
+  /** `proforma` | `commercial` | `tax_invoice` — which table `documentId` points at. */
+  @Property({ name: 'document_kind', type: 'text' })
+  documentKind!: string
+
+  @Property({ name: 'document_id', type: 'uuid' })
+  documentId!: string
+
+  /** The document's number, frozen at link time. */
+  @Property({ name: 'document_number', type: 'text', nullable: true })
+  documentNumber?: string | null
+
+  @Property({ name: 'document_snapshot', type: 'jsonb', nullable: true })
+  documentSnapshot?: Record<string, unknown> | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}
