@@ -10,51 +10,42 @@ import { ListEmptyState } from '@open-mercato/ui/backend/filters/ListEmptyState'
 import { RowActions } from '@open-mercato/ui/backend/RowActions'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
-import { Input } from '@open-mercato/ui/primitives/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@open-mercato/ui/primitives/select'
-import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { useBackendChrome } from '@open-mercato/ui/backend/BackendChromeProvider'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@open-mercato/ui/primitives/dialog'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { createDictionaryMap, type DictionaryMap } from '@open-mercato/core/modules/dictionaries/components/dictionaryAppearance'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
-import { isPurchaseOrderStatus, purchaseOrderStatusLabel } from '@/lib/orders/purchaseOrderStatus'
+import { PURCHASE_ORDER_STATUSES, isPurchaseOrderStatus, purchaseOrderStatusLabel } from '@/lib/orders/purchaseOrderStatus'
 import { useTradeTypeChannels } from '../../internal_sales/lib/tradeTypeChannels'
 import { useSalesStatusEntries } from '../../internal_sales/lib/salesStatusEntries'
-import type { OrderStageItem } from '../lib/orderStages'
-import { compareByCreatedAtDesc, isOrderPending } from '../lib/orderPending'
+import type { OrderRow, OrderRowSource } from '../lib/mergeOrders'
 import OrderFieldsDrawer, { type OrderFieldsTarget } from './OrderFieldsDrawer'
 
 /**
  * The order workbench: the three company-order kinds on one screen, each with how far it has been
  * filled in (采购 / 发运 / 单证 / 收汇·退税).
  *
- * The merge happens **here**, in the browser, on purpose: the buyer name is encrypted and only the
- * sales API decrypts it, so a server-side merge would either hand the browser ciphertext or move
- * decryption into an aggregation route that no module owns. Four sources are read independently —
- * the internal and external sales lists (each already narrowed to its trade-type channel), the
- * purchase order list, and the stage projection — and one of them failing leaves the others on
- * screen.
+ * One read, not three: the aggregate route (`/api/order_hub/orders`) forwards the caller's
+ * credentials to each module's own list route, so the buyer name is decrypted where it is owned and
+ * never reaches this component as ciphertext, and the merge, the stage projection and the total all
+ * happen server-side on real pages.
  *
  * Stage cells are links: a count opens the branch that holds the records, a zero opens the prefilled
  * create entry for that branch when the caller may write it.
  */
 
 type WorkbenchKind = 'internal_sales' | 'external_sales' | 'purchase'
-type TypeFilter = 'all' | WorkbenchKind
+type TypeFilter = 'all' | 'internal' | 'external' | 'purchase'
 
-type WorkbenchRow = {
-  id: string
-  kind: WorkbenchKind
-  number: string | null
-  counterparty: string | null
-  currencyCode: string
-  total: string
-  status: string | null
-  createdAt: string | null
-  lineCount: number
-  stages: OrderStageItem | null
+/** A merged row plus the kind the columns branch on; the route's `source` maps onto it. */
+type WorkbenchRow = OrderRow & { kind: WorkbenchKind }
+
+const KIND_BY_SOURCE: Record<OrderRowSource, WorkbenchKind> = {
+  internal_sales: 'internal_sales',
+  external_sales: 'external_sales',
+  purchase_order: 'purchase',
 }
 
 /** The label key of each kind: the i18n keys are camelCase, the row kind is snake_case. */
@@ -64,40 +55,11 @@ const TYPE_LABEL_KEYS: Record<WorkbenchKind, string> = {
   purchase: 'order_hub.workbench.type.purchase',
 }
 
-const PAGE_SIZE = 50
-/** Past this the operator is told to narrow the filters instead of scrolling forever. */
-const ROW_CAP = 300
+const PAGE_SIZE_OPTIONS = [20, 50, 100]
+const DEFAULT_PAGE_SIZE = 20
 
-function readText(source: Record<string, unknown>, ...keys: string[]): string {
-  for (const key of keys) {
-    const value = source[key]
-    if (typeof value === 'string' && value.length > 0) return value
-  }
-  return ''
-}
-
-/** A money column may arrive as a string or a number depending on the route; both read the same. */
-function readAmount(source: Record<string, unknown>, ...keys: string[]): string {
-  for (const key of keys) {
-    const value = source[key]
-    if (typeof value === 'string' && value.length > 0) return value
-    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
-  }
-  return '0'
-}
-
-function readNumber(source: Record<string, unknown>, ...keys: string[]): number {
-  for (const key of keys) {
-    const value = source[key]
-    if (typeof value === 'number' && Number.isFinite(value)) return value
-  }
-  return 0
-}
-
-function snapshotName(snapshot: unknown): string | null {
-  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return null
-  const name = (snapshot as Record<string, unknown>).name
-  return typeof name === 'string' && name.length > 0 ? name : null
+function isTypeFilter(value: unknown): value is TypeFilter {
+  return value === 'all' || value === 'internal' || value === 'external' || value === 'purchase'
 }
 
 /** The kinds a row's branch links point at. */
@@ -118,7 +80,6 @@ function hrefsFor(row: WorkbenchRow): {
     }
   }
   const entry = row.kind === 'external_sales' ? 'external-sales' : 'internal-sales'
-  const orderKind = row.kind === 'external_sales' ? 'external_sales_order' : 'internal_sales_order'
   const detail = `/backend/${entry}/orders/${encodeURIComponent(row.id)}`
   return {
     detail,
@@ -144,8 +105,6 @@ function createHrefFor(row: WorkbenchRow, branch: 'procurement' | 'shipment' | '
   return `${base}?orderKind=${orderKind}&orderId=${encodeURIComponent(row.id)}`
 }
 
-
-
 function statusLabelFor(
   t: TranslateFn,
   row: WorkbenchRow,
@@ -158,12 +117,22 @@ function statusLabelFor(
   return dictionary?.[row.status]?.label ?? row.status
 }
 
+/** The aggregate route's response, as this screen reads it. */
+type OrdersResponse = {
+  items: OrderRow[]
+  total: number
+  page: number
+  pageSize: number
+  totalIsCapped?: boolean
+  unavailableSources?: OrderRowSource[]
+}
+
 export default function OrderWorkbench() {
   const t = useT()
   const router = useRouter()
   const scopeVersion = useOrganizationScopeVersion()
   const { payload: chromePayload } = useBackendChrome()
-  const { channels, hasAll: hasChannels, missingMessage } = useTradeTypeChannels('order')
+  const { hasAll: hasChannels, missingMessage } = useTradeTypeChannels('order')
   const { entries: salesStatusEntries } = useSalesStatusEntries()
   const statusDictionary = React.useMemo<DictionaryMap | null>(
     () => (salesStatusEntries.length > 0 ? createDictionaryMap(salesStatusEntries) : null),
@@ -175,11 +144,8 @@ export default function OrderWorkbench() {
   const [search, setSearch] = React.useState('')
   const [pendingOnly, setPendingOnly] = React.useState(false)
   const [page, setPage] = React.useState(1)
-  const [sourcePages, setSourcePages] = React.useState<Record<WorkbenchKind, number>>({
-    internal_sales: 1,
-    external_sales: 1,
-    purchase: 1,
-  })
+  const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE)
+  const [createOpen, setCreateOpen] = React.useState(false)
   const [fieldsTarget, setFieldsTarget] = React.useState<OrderFieldsTarget | null>(null)
   const [fieldsOpen, setFieldsOpen] = React.useState(false)
 
@@ -188,125 +154,49 @@ export default function OrderWorkbench() {
   // is worse than showing one the page gate would refuse anyway.
   const chromeReady = Boolean(chromePayload)
   const canWriteSales = !chromeReady || granted.has('sales.orders.manage')
-  const canWritePurchase = !chromeReady || granted.has('purchasing.orders.manage')
   const canSeeOrderFile = !chromeReady || granted.has('export_finance.orders.view')
 
-  const sourceEnabled = (kind: WorkbenchKind): boolean => typeFilter === 'all' || typeFilter === kind
-
-  const salesQuery = (kind: 'internal_sales' | 'external_sales') => {
-    const channelId = kind === 'internal_sales' ? channels.internal : channels.external
-    return {
-      queryKey: ['order-hub', kind, channelId ?? null, sourcePages[kind], search, statusFilter, scopeVersion],
-      enabled: sourceEnabled(kind) && Boolean(channelId) && (typeFilter === 'all' || typeFilter === kind),
-      queryFn: async () => {
-        const payload = await fetchCrudList<Record<string, unknown>>('sales/orders', {
-          channelIds: channelId,
-          page: String(sourcePages[kind]),
-          pageSize: String(PAGE_SIZE),
-          sortField: 'created_at',
-          sortDir: 'desc',
-          ...(search.trim() ? { search: search.trim() } : {}),
-          ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
-        })
-        return (payload.items ?? []).map((item) => ({
-          id: String(item.id),
-          kind,
-          number: readText(item, 'orderNumber', 'order_number') || null,
-          counterparty: snapshotName(item.customerSnapshot ?? item.customer_snapshot),
-          currencyCode: readText(item, 'currencyCode', 'currency_code') || 'CNY',
-          total: readAmount(item, 'grandTotalNetAmount', 'grand_total_net_amount', 'grandTotalGrossAmount'),
-          status: readText(item, 'status') || null,
-          createdAt: readText(item, 'createdAt', 'created_at') || null,
-          lineCount: readNumber(item, 'lineItemCount', 'line_item_count'),
-          stages: null,
-        })) satisfies WorkbenchRow[]
-      },
-    }
-  }
-
-  const internal = useQuery(salesQuery('internal_sales'))
-  const external = useQuery(salesQuery('external_sales'))
-
-  const purchase = useQuery({
-    queryKey: ['order-hub', 'purchase', sourcePages.purchase, search, statusFilter, scopeVersion],
-    enabled: sourceEnabled('purchase'),
+  const orders = useQuery({
+    queryKey: ['order-hub-orders', page, pageSize, typeFilter, statusFilter, search, pendingOnly, scopeVersion],
     queryFn: async () => {
-      const payload = await fetchCrudList<Record<string, unknown>>('purchasing/purchase-orders', {
-        page: String(sourcePages.purchase),
-        pageSize: String(PAGE_SIZE),
-        sortField: 'created_at',
-        sortDir: 'desc',
-        ...(search.trim() ? { search: search.trim() } : {}),
-        ...(statusFilter !== 'all' && isPurchaseOrderStatus(statusFilter) ? { status: statusFilter } : {}),
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+        type: typeFilter,
       })
-      return (payload.items ?? []).map((item) => ({
-        id: String(item.id),
-        kind: 'purchase' as const,
-        number: readText(item, 'number') || null,
-        counterparty: readText(item, 'supplierName', 'supplier_name') || null,
-        currencyCode: readText(item, 'currencyCode', 'currency_code') || 'CNY',
-        total: readAmount(item, 'total'),
-        status: readText(item, 'status') || null,
-        createdAt: readText(item, 'createdAt', 'created_at') || null,
-        lineCount: 0,
-        stages: null,
-      })) satisfies WorkbenchRow[]
+      if (statusFilter !== 'all') params.set('status', statusFilter)
+      const term = search.trim()
+      if (term) params.set('search', term)
+      if (pendingOnly) params.set('pending', 'true')
+      return readApiResultOrThrow<OrdersResponse>(
+        `/api/order_hub/orders?${params.toString()}`,
+        undefined,
+        { errorMessage: 'order_hub.workbench.loadFailed' },
+      )
     },
   })
 
-  const mergedRows = React.useMemo(() => {
-    const byId = new Map<string, WorkbenchRow>()
-    for (const row of [...(internal.data ?? []), ...(external.data ?? []), ...(purchase.data ?? [])]) {
-      if (!byId.has(row.id)) byId.set(row.id, row)
-    }
-    return [...byId.values()].sort(compareByCreatedAtDesc)
-  }, [external.data, internal.data, purchase.data])
-
-  const stageIds = React.useMemo(() => mergedRows.map((row) => row.id).slice(0, ROW_CAP), [mergedRows])
-  const stages = useQuery({
-    queryKey: ['order-hub', 'stages', stageIds.join(','), scopeVersion],
-    enabled: stageIds.length > 0,
-    queryFn: async () => {
-      // The route caps a batch at 200 ids; the workbench never asks for more than the row cap.
-      const chunks: string[][] = []
-      for (let index = 0; index < stageIds.length; index += 200) chunks.push(stageIds.slice(index, index + 200))
-      const collected: OrderStageItem[] = []
-      for (const chunk of chunks) {
-        const payload = await readApiResultOrThrow<{ items?: OrderStageItem[] }>(
-          `/api/order_hub/stages?ids=${encodeURIComponent(chunk.join(','))}`,
-          undefined,
-          { fallback: { items: [] }, errorMessage: 'order_hub.workbench.loadFailed' },
-        )
-        collected.push(...(payload.items ?? []))
-      }
-      return collected
-    },
-  })
-
-  const stageById = React.useMemo(() => {
-    const map = new Map<string, OrderStageItem>()
-    for (const item of stages.data ?? []) map.set(item.id, item)
-    return map
-  }, [stages.data])
-
-  const rows = React.useMemo(
-    () => mergedRows.map((row) => ({ ...row, stages: stageById.get(row.id) ?? null })),
-    [mergedRows, stageById],
+  const rows = React.useMemo<WorkbenchRow[]>(
+    () => (orders.data?.items ?? []).map((row) => ({ ...row, kind: KIND_BY_SOURCE[row.source] })),
+    [orders.data],
   )
 
+  const total = orders.data?.total ?? 0
+  const totalIsCapped = orders.data?.totalIsCapped === true
+  const unavailableSources = orders.data?.unavailableSources ?? []
+
+  // The page no longer holds every status, so the options are the tenant's dictionary plus the fixed
+  // purchase vocabulary — not the values this page happens to contain.
   const statusOptions = React.useMemo(() => {
     const seen = new Map<string, string>()
-    for (const row of rows) {
-      if (!row.status || seen.has(row.status)) continue
-      seen.set(row.status, statusLabelFor(t, row, statusDictionary))
+    for (const entry of salesStatusEntries) {
+      if (!seen.has(entry.value)) seen.set(entry.value, entry.label)
+    }
+    for (const status of PURCHASE_ORDER_STATUSES) {
+      if (!seen.has(status)) seen.set(status, purchaseOrderStatusLabel(t, status))
     }
     return [...seen.entries()].map(([value, label]) => ({ value, label }))
-  }, [rows, statusDictionary, t])
-
-  const visibleRows = React.useMemo(
-    () => (pendingOnly ? rows.filter(isOrderPending) : rows),
-    [pendingOnly, rows],
-  )
+  }, [salesStatusEntries, t])
 
   const columns = React.useMemo<ColumnDef<WorkbenchRow>[]>(() => {
     const stageCell = (branch: 'procurement' | 'shipment' | 'documents') => ({ row }: { row: { original: WorkbenchRow } }) => {
@@ -415,25 +305,12 @@ export default function OrderWorkbench() {
     ]
   }, [statusDictionary, t])
 
-  const listError = internal.isError || external.isError || purchase.isError
-  const isLoading = internal.isLoading || external.isLoading || purchase.isLoading
-  const atCap = mergedRows.length >= ROW_CAP
-
-  const loadMore = React.useCallback(() => {
-    if (atCap) return
-    // The oldest tail decides which source is asked for its next page: merging is newest-first, so the
-    // last row on screen is the oldest thing loaded.
-    const tail = mergedRows[mergedRows.length - 1]
-    const nextKind: WorkbenchKind = tail?.kind ?? 'purchase'
-    setSourcePages((prev) => ({ ...prev, [nextKind]: prev[nextKind] + 1 }))
-  }, [atCap, mergedRows])
+  const listError = orders.isError
+  const isLoading = orders.isLoading
 
   const retryAll = React.useCallback(() => {
-    void internal.refetch()
-    void external.refetch()
-    void purchase.refetch()
-    void stages.refetch()
-  }, [external, internal, purchase, stages])
+    void orders.refetch()
+  }, [orders])
 
   return (
     <>
@@ -442,20 +319,20 @@ export default function OrderWorkbench() {
           <Checkbox checked={pendingOnly} onCheckedChange={(checked) => { setPendingOnly(checked === true); setPage(1) }} />
           {t('order_hub.workbench.filters.pendingOnly')}
         </label>
-        {!atCap ? (
-          <Button type="button" variant="outline" size="sm" onClick={loadMore}>
-            {t('order_hub.workbench.loadMore')}
-          </Button>
-        ) : null}
-        <span className="text-xs text-muted-foreground">
-          {atCap ? t('order_hub.workbench.capReached') : t('order_hub.workbench.rowsLoaded', { count: mergedRows.length })}
-        </span>
-        {listError || stages.isError ? (
+        {totalIsCapped ? <span className="text-xs text-muted-foreground">{t('order_hub.workbench.capReached')}</span> : null}
+        {listError ? (
           <Button type="button" variant="ghost" size="sm" onClick={retryAll}>
             {t('order_hub.workbench.retry')}
           </Button>
         ) : null}
         {hasChannels ? null : <span className="text-xs text-muted-foreground">{missingMessage}</span>}
+        {unavailableSources.length > 0 ? (
+          <span className="text-xs text-muted-foreground">
+            {t('order_hub.workbench.sourceUnavailable', {
+              sources: unavailableSources.map((source) => t(TYPE_LABEL_KEYS[KIND_BY_SOURCE[source]])).join(' / '),
+            })}
+          </span>
+        ) : null}
       </div>
       <DataTable<WorkbenchRow>
         title={(
@@ -465,22 +342,12 @@ export default function OrderWorkbench() {
           </div>
         )}
         columns={columns}
-        data={visibleRows}
+        data={rows}
         actions={(
           <div className="flex flex-wrap items-center gap-2">
             {canWriteSales ? (
-              <>
-                <Button asChild variant="outline">
-                  <Link href="/backend/internal-sales/orders/create">{t('order_hub.workbench.actions.createInternal')}</Link>
-                </Button>
-                <Button asChild variant="outline">
-                  <Link href="/backend/external-sales/orders/create">{t('order_hub.workbench.actions.createExternal')}</Link>
-                </Button>
-              </>
-            ) : null}
-            {canWritePurchase ? (
-              <Button asChild variant="outline">
-                <Link href="/backend/purchasing/orders/create">{t('order_hub.workbench.actions.createPurchase')}</Link>
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(true)}>
+                {t('order_hub.workbench.actions.createOrder')}
               </Button>
             ) : null}
           </div>
@@ -499,8 +366,8 @@ export default function OrderWorkbench() {
             type: 'select',
             options: [
               { value: 'all', label: t('order_hub.workbench.filters.all') },
-              { value: 'internal_sales', label: t('order_hub.workbench.type.internalSales') },
-              { value: 'external_sales', label: t('order_hub.workbench.type.externalSales') },
+              { value: 'internal', label: t('order_hub.workbench.type.internalSales') },
+              { value: 'external', label: t('order_hub.workbench.type.externalSales') },
               { value: 'purchase', label: t('order_hub.workbench.type.purchase') },
             ],
           },
@@ -513,7 +380,7 @@ export default function OrderWorkbench() {
         ]}
         filterValues={{ type: typeFilter, status: statusFilter }}
         onFiltersApply={(values) => {
-          const nextType = typeof values.type === 'string' && values.type.length > 0 ? (values.type as TypeFilter) : 'all'
+          const nextType = isTypeFilter(values.type) ? values.type : 'all'
           const nextStatus = typeof values.status === 'string' && values.status.length > 0 ? values.status : 'all'
           if (nextType !== typeFilter) setStatusFilter('all')
           else setStatusFilter(nextStatus)
@@ -564,21 +431,59 @@ export default function OrderWorkbench() {
         )}
         pagination={{
           page,
-          pageSize: PAGE_SIZE,
-          total: visibleRows.length,
-          totalPages: Math.max(1, Math.ceil(visibleRows.length / PAGE_SIZE)),
+          pageSize,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / pageSize)),
+          totalIsCapped,
           onPageChange: setPage,
+          onPageSizeChange: (next) => {
+            setPageSize(next)
+            setPage(1)
+          },
+          pageSizeOptions: PAGE_SIZE_OPTIONS,
         }}
         isLoading={isLoading}
         error={listError ? t('order_hub.workbench.loadFailed') : null}
         emptyState={(
           <ListEmptyState
             title={t('order_hub.workbench.empty')}
-            createHref={canWriteSales ? '/backend/internal-sales/orders/create' : undefined}
-            createLabel={canWriteSales ? t('order_hub.workbench.actions.createInternal') : undefined}
+            onCreate={canWriteSales ? () => setCreateOpen(true) : undefined}
+            createLabel={canWriteSales ? t('order_hub.workbench.actions.createOrder') : undefined}
           />
         )}
       />
+
+      {/* One create entry, two trade types: a purchase order is raised from the purchase ledger page
+          or from an order's procurement block, not from here (D7). */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>{t('order_hub.workbench.createDialog.title')}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setCreateOpen(false)
+                router.push('/backend/internal-sales/orders/create')
+              }}
+            >
+              {t('order_hub.workbench.type.internalSales')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setCreateOpen(false)
+                router.push('/backend/external-sales/orders/create')
+              }}
+            >
+              {t('order_hub.workbench.type.externalSales')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {canSeeOrderFile || fieldsTarget?.kind === 'sales' ? (
         <OrderFieldsDrawer target={fieldsTarget} open={fieldsOpen} onOpenChange={setFieldsOpen} />
