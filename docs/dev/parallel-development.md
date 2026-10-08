@@ -89,6 +89,24 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 - 注：`.ai/skills/**` 的 override 文档仍写 `baseBranch` 是 `"auto"`（harness 生成，不手改）；以
   `.ai/agentic.config.json` 为准。
 
+### 本地 review 检出（主目录常驻 `dev`）
+
+**所有者要求：功能代码必须在主目录 `yarn dev` 里就能 review，而不是只存在别的 worktree 里。** 因此主目录
+`/Users/vanness/Developer/kc-cb-digital-base-min` 的检出分支是**本地 `dev`**（跟踪 `origin/dev`），而不是
+`main`：单元在自己的 worktree 里开发、开 PR 到 `origin/dev`，同时把该分支**本地合并进主目录的 `dev`**，
+于是 `yarn dev` 立刻能看到在飞的全部改动。
+
+| 事项 | 口径 |
+|---|---|
+| 主目录分支 | 本地 `dev`（`git branch --set-upstream-to=origin/dev dev`），不切回 `main` |
+| 合并进本地 dev | `git merge --no-ff <feat-branch>`（解决冲突：同一锚点的两段新增取并集，竞争同一行的改动必须选边并说明理由） |
+| 合并后验证 | 主目录跑一次 `yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test && yarn build`——合并树是新组合，各单元自己绿过不算数 |
+| **绝不 push 本地 dev** | 内容进 trunk 只能走 PR；本地 `dev` 领先 `origin/dev` 是预期状态（`git status -sb` 显示 `ahead N`） |
+| PR 合并后对齐 | `git fetch origin && git reset --hard origin/dev`（本地合并提交被丢弃，内容已在 trunk） |
+| worktree 清理 | 单元合并后用 `yarn branches:cleanup --apply`；主目录的 `dev` 不在候选里 |
+
+主目录的 `.env` 与 worktree 各自独立（端口块、凭据）；集成测试与生产模式启动需要非占位 `JWT_SECRET`。
+
 ## 分支生命周期与清理
 
 一条分支只在"内容还没进 `main`"的这段时间里是资产；内容一落地，它就只剩删除这一步。
