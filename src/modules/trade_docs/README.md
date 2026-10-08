@@ -260,3 +260,9 @@ PI，也表达不了「属于这张订单但不属于合同那一套」的单据
 **界面入口**：`/backend/trade-docs/proformas/create?orderKind=&orderId=`（订单恰好只有一张关联合同时再带
 `&contractId=`）= 建单即关联；订单 hub 的「单据」区块 = 「新建单据」（同上链接）+「管理单据关联」+
 「查看全部」（口径见 `order_hub` README）。
+
+**区块内就地编辑（2026-10-08）**：订单 hub 的区块行可以就地改记录的**头部字段**，走各模块自己的 `PUT` +
+行版本乐观锁（通用件 `src/lib/quick-edit/QuickEditDialog.tsx`）。本模块提供三个字段工厂：
+`lib/documentQuickEdit.ts`（有效至 / 交期 / 付款条件 / 贸易条款 / 备注）、`lib/invoiceQuickEdit.ts`
+（票种 / 开票日期 / 备注）、`lib/contractQuickEdit.ts`（签订日期 / 交期 / 贸易条款 / 运输方式 / 目的地 /
+备注）——字段名与各自 update schema 一一对应，行集合、状态、金额与关联关系都不在其中（那些归各自页面）。

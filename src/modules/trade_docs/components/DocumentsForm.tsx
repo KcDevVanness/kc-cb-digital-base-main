@@ -1575,7 +1575,7 @@ function DocumentCreateForm({ kind, listHref, fields, groups }: FormWiring) {
         throw error
       }
     },
-    [kind, listHref, router, t],
+    [kind, listHref, router, sourceParam, t],
   )
 
   if (prefillState.status === 'loading') {

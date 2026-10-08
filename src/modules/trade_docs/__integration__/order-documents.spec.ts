@@ -72,9 +72,12 @@ test.describe.serial('trade_docs — order document links', () => {
       {
         kind: 'proforma',
         direction: 'sales',
+        counterpartyKind: 'customer',
         counterpartySnapshot: { name: `Order docs buyer ${stamp}` },
         currencyCode: 'CNY',
-        lines: [],
+        // A line, because an empty document is not issuable and the fixture issues this one to get
+        // the number the link then freezes.
+        lines: [{ name: `Order docs line ${stamp}`, quantity: '1', unitPrice: '5' }],
         ...payload,
       },
       orgId,
