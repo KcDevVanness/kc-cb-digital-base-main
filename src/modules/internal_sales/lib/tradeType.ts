@@ -101,13 +101,12 @@ export function resolveRowTradeType(
 }
 
 /**
- * Which menu entry a route belongs to. One implementation serves two entries: `/backend/internal-sales/**`
- * (the sales entry — it owns the documents of **both** trade types and lists them together) and
- * `/backend/external-sales/**` (the external-only view of the same documents). The pages under the
- * two prefixes are re-exports, so this is what tells them apart.
+ * The trade type a route entry owns. One implementation serves two entries: `/backend/internal-sales/**`
+ * for documents of the internal type (head office → branch) and `/backend/external-sales/**` for the
+ * external one (branch → local customer). The pages under the two prefixes are re-exports, so this is
+ * what tells them apart: an entry is its trade type — it filters its list by that type's channel and
+ * stamps it on every document written from there.
  */
-export type SalesEntry = 'sales' | 'external'
-
-export function salesEntryFromPathname(pathname: string | null | undefined): SalesEntry {
-  return typeof pathname === 'string' && pathname.includes('/external-sales/') ? 'external' : 'sales'
+export function tradeTypeFromPathname(pathname: string | null | undefined): SalesTradeType {
+  return typeof pathname === 'string' && pathname.includes('/external-sales/') ? 'external' : 'internal'
 }

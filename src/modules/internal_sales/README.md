@@ -1,7 +1,9 @@
 # `internal_sales` — 销售单据（自建界面，官方 sales 引擎）
 
 app 自有**界面层**模块：为**对内（总部 → 分公司）与对外（分公司 → 当地客户）两种贸易类型**的销售提供自建的
-报价单/订单**列表、新建与编辑**页，**行引用自建商品主数据**（`products_products.id`）。单据本体仍由官方
+报价单/订单**列表、新建与编辑**页——**每种类型一个专属入口**（对内 `/backend/internal-sales/**`、对外
+`/backend/external-sales/**`），入口即类型，菜单名与列表口径都只覆盖自己那一半。**行引用自建商品主数据**
+（`products_products.id`）。单据本体仍由官方
 `sales` 链承载（编号、状态、金额引擎、发货、发票、退货、收款），本模块只通过其公开 API 驱动，不重写引擎。
 
 需求与证据见 [`.ai/specs/2026-09-22-products-and-trade-docs.md`](../../../.ai/specs/2026-09-22-products-and-trade-docs.md) 的 Phase 6。
@@ -10,13 +12,14 @@ app 自有**界面层**模块：为**对内（总部 → 分公司）与对外�
 
 | 层 | 内容 |
 |---|---|
-| 页面 | `/backend/internal-sales/quotes`、`/quotes/create`、`/quotes/[id]/edit`；`/backend/internal-sales/orders`、`/orders/create`、`/orders/[id]/edit`（六个页面的 `pageGroupKey` 是 `cross_border.nav.group.sales`（侧边栏「出口业务-销售」组，菜单项「销售报价单」/「销售订单（PO）」）；对外入口的六个页面是同批 `page.tsx` 的 re-export，`pageGroupKey` 是 `cross_border.nav.group.externalSales`（「出口业务-对外销售」组，菜单项「对外销售报价单」/「对外销售订单」）。2026-09-29 之前这两组叫「出口业务-内部销售」与 `cross_border.nav.group`（后者没有字典键，中文界面渲染出英文裸串「Cross-Border」、也不在 `nav.groupOrder` 里）。订单页标题带业务缩写「销售订单（PO）」（N-1）：**2026-09-29 起真正落到界面**——`internal_sales.list.order.title` 与 `form.order.{create,edit}Title` 两个语言的字典都带「（PO）」/「(PO)」，`backend/internal-sales/orders/**/page.meta.ts` 的 `pageTitle` 兜底串同步（此前只有 page.meta 的兜底串带 PO，字典仍是「内部销售订单」，而侧边栏/页面标题取的是 `pageTitleKey` → 字典值）。报价单按 N-1 **不挂缩写**，改由页面描述说明它不是 PI（`internal_sales.list.quote.description`：「总部对分公司的报价单据，不是对外收款依据的形式发票（PI）…」） |
-| 列表状态列（2026-09-28；表头文案 2026-09-29 补齐） | 列表新增「状态」列：读官方 `GET /api/sales/{quotes,orders}` 的 `status`（字典**值**，可为 null），经租户字典 `sales.order_status`（`loadDictionaryEntriesByKey` + `createDictionaryMap` + `DictionaryValue`）渲染标签与字典色点；无状态渲染 `—`，字典读不到时保留原值。报价与订单共用该字典（引擎口径）。**表头字段的 i18n key 当时漏了 zh/en 两份字典**（`internal_sales.list.columns.status`），列头渲染出裸 key；2026-09-29 已补「状态」/「Status」 |
-| 组件 | `components/InternalSalesTable.tsx`（列表）、`components/InternalSalesForm.tsx`（抬头 + 行编辑器 + 买方选择器 + 报价载入面板挂载，一次提交整单）、`components/QuoteLoadPanel.tsx`（从报价单载入的按钮/对话框/来源行 + 来源报价预览抽屉）、`lib/buyer.ts`（买方值协议与快照编解码）、`lib/documentValues.ts`（单据 ↔ 表单值编解码，纯函数）、`lib/quoteLoad.ts`（报价载入 loader，纯函数 + 两次读请求；预览映射 `sourceQuotePreviewFromDraft`）、`lib/salesStatus.ts`（列表状态列与预览抽屉共用的状态字典键） |
+| 页面 | `/backend/internal-sales/quotes`、`/quotes/create`、`/quotes/[id]/edit`；`/backend/internal-sales/orders`、`/orders/create`、`/orders/[id]/edit`（六个页面的 `pageGroupKey` 是 `cross_border.nav.group.sales`（侧边栏「出口业务-对内销售」组，菜单项「对内销售报价单」/「对内销售订单（PO）」；**2026-09-30 起**：只改 label、key 不变，入口本身固定对内——类型控件只读、列表按 `channelId=<INTERNAL_SALES>` 过滤）；对外入口的六个页面是同批 `page.tsx` 的 re-export，`pageGroupKey` 是 `cross_border.nav.group.externalSales`（「出口业务-对外销售」组，菜单项「对外销售报价单」/「对外销售订单（PO）」）。2026-09-29 之前这两组叫「出口业务-内部销售」与 `cross_border.nav.group`（后者没有字典键，中文界面渲染出英文裸串「Cross-Border」、也不在 `nav.groupOrder` 里）；2026-09-29 到 09-30 之间那组曾叫「出口业务-销售」（当时两种类型同表）。订单页标题带业务缩写「对内销售订单（PO）」（N-1）：**2026-09-29 起真正落到界面**——`internal_sales.list.order.title` 与 `form.order.{create,edit}Title` 两个语言的字典都带「（PO）」/「(PO)」，`backend/internal-sales/orders/**/page.meta.ts` 的 `pageTitle` 兜底串同步（此前只有 page.meta 的兜底串带 PO，字典仍是「内部销售订单」，而侧边栏/页面标题取的是 `pageTitleKey` → 字典值）。报价单按 N-1 **不挂缩写**，改由页面描述说明它不是 PI（`internal_sales.list.quote.description`：「总部对分公司的报价单据，不是对外收款依据的形式发票（PI）…」） |
+| 列表状态列（2026-09-28；表头文案 2026-09-29 补齐） | 列表新增「状态」列：读官方 `GET /api/sales/{quotes,orders}` 的 `status`（字典**值**，可为 null），经租户字典 `sales.order_status`（`loadDictionaryEntriesByKey` + `createDictionaryMap` + `DictionaryValue`）渲染标签与字典色点；无状态渲染 `—`，字典读不到时保留原值。报价与订单共用该字典（引擎口径）。**表头字段的 i18n key 当时漏了 zh/en 两份字典**（`internal_sales.list.columns.status`），列头渲染出裸 key；2026-09-29 已补「状态」/「Status」。**2026-09-30**：入口即类型，列表不再有「类型」列——`internal_sales.list.columns.tradeType` 与 `list.unmarkedHint`（「类型列显示为 —」那句）一并删除 |
+| 组件 | `components/InternalSalesTable.tsx`（列表 + 状态行操作：发出/重新发出、确认、作废，以及按状态门禁的下单动作）、`components/InternalSalesForm.tsx`（抬头 + 行编辑器 + 买方选择器 + 买方邮箱 + 报价载入面板挂载，一次提交整单；新建写 `statusEntryId=draft`）、`components/QuoteLoadPanel.tsx`（从报价单载入的按钮/对话框/来源行 + 来源报价预览抽屉）、`lib/buyer.ts`（买方值协议与快照编解码，含买方邮箱 `contact.email`）、`lib/documentValues.ts`（单据 ↔ 表单值编解码，纯函数）、`lib/quoteLoad.ts`（报价载入 loader，纯函数 + 两次读请求；预览映射 `sourceQuotePreviewFromDraft`）、`lib/salesStatus.ts`（状态常量 + 动作策略，纯函数）、`lib/salesStatusEntries.ts`（租户状态字典 → `value → entryId`，供列表与表单共用）、`lib/salesStatus.ts` 的字典键也供预览抽屉共用 |
 | 买方选项 | 关联组织：`GET /api/directory/organization-switcher`（requireAuth，无额外功能位）；外部客户：`GET /api/parties/options?roles=buyer` 与 `GET /api/parties/{id}`（均需 `parties.view`） |
 | 读 | 官方 `GET /api/sales/{quotes,orders}`（抬头）与 `GET /api/sales/{quote,order}-lines?quoteId\|orderId=`（行，**snake_case** 列名，`pageSize` 上限 **100**） |
 | 新建写 | 官方 `POST /api/sales/{quotes,orders}`（抬头 + 行一次提交；命令 `sales.quotes\|orders.create`） |
 | 编辑写 | 抬头 `PUT /api/sales/{quotes,orders}`（**只写抬头标量字段**）+ 行 `PUT/DELETE /api/sales/{quote,order}-lines`（`PUT` → `…lines.upsert`，`DELETE` → `…lines.delete`） |
+| 报价转化（已移除） | **2026-09-30 按要求移除**：`/backend/internal-sales/quote-conversion` 页面、`GET /api/internal_sales/quote-conversion` 只读接口与 `lib/quoteConversion.ts` 全部删除（owner：「暂时不需要」）。曾经的实现读订单冻结的 `metadata.internalSales.sourceQuote` 做纯读侧聚合；如需恢复，按本行描述重建即可（无迁移、无数据依赖） |
 | 权限 | 列表页声明读功能位 `sales.quote.view` / `sales.order.view`，新建/编辑页声明 `sales.quotes.manage` / `sales.orders.manage`（本模块不新造功能位：写入的门禁在官方 API 上）。**列表上的「新建」与行操作「编辑」按复数的 manage 功能位渲染**（`hasFeature(chrome payload)`，与 `products` 列表同一写法；chrome payload 未就绪时不隐藏），只读账号只看到只读列表 |
 | 事件 | **无**（本模块不声明 `events.ts`；单据的 `sales.*` 事件由官方命令发出） |
 | 实体/迁移 | **无**（不新增表；单据写在官方 `sales_*` 表里） |
@@ -69,16 +72,51 @@ app 自有**界面层**模块：为**对内（总部 → 分公司）与对外�
 - **权限与失败**：读报价要安装层复数功能位 `sales.quotes.view`；缺位/读失败 → 面板行内提示（+ 自动载入时 flash），
   表单内容不变，**载入不发任何写请求**。
 
-## 贸易类型：对内 / 对外（2026-09-29）
+## 状态与生命周期：报价 / 订单（2026-09-30，spec `.ai/specs/2026-09-30-document-status-lifecycle.md`）
 
-- **类型由买方来源决定，不单独选**：贸易类型控件（`internal` 对内＝总部→分公司；`external` 对外＝分公司→当地客户）决定买方选择器给哪一半（关联组织 vs 外部客户），切换类型会清空已选买方；`lib/tradeType.ts` 是纯函数单点（`tradeTypeFromBuyerKind` / `tradeTypeFromSnapshot` / `resolveRowTradeType`）。界面上的类型标签是「对内」/「对外」；两条系统通道行本身的显示名仍是「内部销售」/「对外销售」（已落库的数据，改了会与新组织不一致）。
+状态不是本模块造的标签，而是引擎字段 `status` + 租户字典 `sales.order_status` 的**条目**：写入一律用
+`statusEntryId`（`lib/salesStatusEntries.ts` 的 `useSalesStatusEntries` 把字典 value 解析成条目 id），引擎自己
+解析出值、写 `status_entry_id`、留痕，并在订单跳到 `confirmed`/`canceled` 时发 `sales.order.confirmed` /
+`sales.order.cancelled`。策略是纯函数（`lib/salesStatus.ts`）：**行操作按状态推导**，界面不提供自由改状态的下拉。
+
+| 单据 | 状态与动作 | 门禁 |
+|---|---|---|
+| 报价 | 新建即 `draft`；「发出报价」走引擎 `POST /api/sales/quotes/send`（写 `validUntil`/`sentAt`/接受令牌 + 发信）→ `sent`；「作废」→ `canceled`（终态） | **未 `sent`/`confirmed` 的报价不显示「转为订单 / 按此报价新建订单」**（「从报价单载入」的选择器同样只列可下单的报价，`?fromQuote=` 指向不可下单的报价时行内拒绝）；`canceled` 之后三个动作全消失（平台 `send` 也拒绝 canceled） |
+| 订单 | 新建即 `draft`；「确认订单」→ `confirmed`；「作废」→ `canceled` | 发运单的销售分摊选择器只列**已确认及之后**的状态（`confirmed`/`in_fulfillment`/`fulfilled`，Phase 1 只写得到 `confirmed`）；`draft`/`canceled` 不出现 |
+| 历史单据 | `status` 为空（本模块启用前写入的单据） | 显示「—」；报价照旧可下单、订单照旧可分摊，选择器行内标注「未标记状态」——不追溯、不锁存量数据 |
+
+- **买方邮箱**：报价发出需要收件地址，引擎按 `customerSnapshot.contact.email` → `customer.displayName` 之外的第二顺位
+  `customer.primaryEmail` → `metadata.customerEmail` 解析；本模块把它做成表单字段「买方邮箱」写进**快照**
+  （`lib/buyer.ts` 的 `buildBuyerSnapshot({ email })`），选外部客户时会用 `GET /api/parties/{id}` 的 `email` 预填
+  （已有输入不覆盖）。快照每次保存整体重写，所以没有 metadata 合并/覆盖的风险。
+- **发出后编辑会被打回草稿**：平台行为——**任何**对 `sent` 报价的更新都会清 `acceptanceToken`/`sentAt` 并把状态复位 `draft`
+  （引擎在应用完载荷之后无条件执行，载荷里的 `statusEntryId` 会被它覆盖），所以本模块：
+  ① 编辑页在单据仍是 `sent` 时显示横幅「保存会把状态退回草稿并作废已发链接」；
+  ② **作废一张已发出的报价要写两次**——先做一次无字段变更的更新（触发引擎自己的「撤回」），再用返回的新版本把状态置 `canceled`；
+  ③ 每次状态写入后**回读单据核对落库值**，不一致就如实报错，不谎报成功。
+- **转换出来的订单仍可确认**：`sent` 报价被「转为订单」时引擎把**报价状态复制给订单**（`status: snapshot.quote.status`），得到的是 `sent` 订单；
+  本模块的 `canConfirm` 对「未作废且未过确认」开放，所以这类订单能确认、能发运（否则转换会产出一张永远发不出去的订单）。
+- **列表新列**：报价多一列「有效至」（`validUntil`）——只有状态仍是 `sent` 的报价显示日期（引擎撤回后 `valid_until` 会留在库里），`sent` 且已过期时红字 + 「已过期」；「行数」列改名
+  「明细行数」/“Line items”（它就是 `line_item_count` = 单据明细行数）。对外入口的订单标题与对内一样带业务缩写
+  「对外销售订单（PO）」（N-1 缩写口径，2026-09-30 补齐）。
+- **本地开发发信**：本仓 dev 没有配置发信 provider，`sendEmail` 会抛 `EMAIL_TRANSPORT_NOT_CONFIGURED`——但引擎的
+  send 路由**先提交事务再发信**，所以状态会照样变 `sent`、界面只看到失败提示。本地联调请设
+  `OM_DISABLE_EMAIL_DELIVERY=true`（`.env.example` 有注释说明），让 send 直接跳过外发。
+- **字典标签目前是英文**（Draft/Sent/Confirmed/Canceled 由平台播种）：本 Phase 没有改租户数据；要中文可在
+  `/backend/dictionaries`（字典维护）把 `sales.order_status` 的 10 个标签改成中文词表（草稿/已发出/已接受/已履行/已作废…），
+  代码只认 value，改标签不影响任何判断。
+
+## 贸易类型：对内 / 对外（2026-09-29；入口口径 2026-09-30 定稿）
+
+- **一个入口 = 一种贸易类型，类型不单独选**：`/backend/internal-sales/**` 是对内入口、`/backend/external-sales/**` 是对外入口，`lib/tradeType.ts` 的 `tradeTypeFromPathname` 直接按 pathname 返回 `SalesTradeType`（`salesEntryFromPathname` 已删）。类型决定买方选择器给哪一半（关联组织 vs 外部客户）、决定单据打在哪个通道上，也是列表的服务端过滤键；`lib/tradeType.ts` 是纯函数单点（`tradeTypeFromBuyerKind` / `tradeTypeFromSnapshot` / `resolveRowTradeType`）。界面上的类型标签是「对内」/「对外」；两条系统通道行本身的显示名仍是「内部销售」/「对外销售」（已落库的数据，改了会与新组织不一致）。
 - **写入引擎原生标记**：单据的 `channel_id` 指向本组织的两条系统通道 `INTERNAL_SALES` / `EXTERNAL_SALES`（`setup.ts` 的 `onTenantCreated` + `seedDefaults` 幂等播种；已有组织跑 `yarn mercato seed:defaults --module internal_sales`）。`sales_channels.code` 上 `(organization, tenant, code)` 唯一，重复播种不会产生第二条。通道缺失时**保存被拦截**并给出可执行提示——不带标记的单据会从两个筛选列表里同时消失。
 - **解析通道不走官方渠道页**：本模块自带 `GET /api/internal_sales/trade-type-channels/{quotes,orders}`（门禁是单据自己的 `sales.quotes.view` / `sales.orders.view`），因为分公司业务员通常没有 `sales.channels.view`；该路由只读，写入只发生在播种与回填。
-- **两个入口，一套实现（2026-09-29 定稿口径）**：`/backend/internal-sales/**`（「出口业务-销售」）与 `/backend/external-sales/**`（「出口业务-对外销售」）是同一批页面（后者 re-export 前者的 `page.tsx`，只换 `page.meta.ts`）；`lib/tradeType.ts` 的 `salesEntryFromPathname` 让组件知道自己在哪个入口。
-  - **销售入口 = 两种类型同表**：列表**不按类型过滤**（既不传 `channelId`，也不按快照筛行），一屏列出对内与对外，靠常显的「类型」列区分；这也是「类型」列不再按需出现的原因（此前只在有未标记历史单据时才显示）。
-  - **对外入口 = 只看对外**：列表固定传 `channelId=<EXTERNAL_SALES>`，对内单据永不出现；贸易类型控件锁定为「对外」（只读展示，不是单选项下拉）。
-  - **未标记的历史单据**：早于通道标记、`channel_id` 为空且买方没有链接的单据，销售入口照常列出（类型列显示「—」）并在表头给出归类提示；对外入口无法把它们归到对外，因此不列出，只提示「本组织有 N 张单据早于贸易类型标记」（`internal_sales.list.unmarkedHintFiltered`）——回填命令把 N 变成 0。
-  - **报价载入跟着类型走**：订单新建页「从报价单载入」的选择器按**表单当前类型**过滤（`loadQuoteOptions(query, channelId)`）；载入时订单**继承报价的类型**（`applyQuoteDraftToForm` 的 `adoptQuoteType`），只有锁定入口传 `false`——否则一份对外报价能载进一张对内订单，买方链接与通道互相矛盾。
+- **两个入口，一套实现（2026-09-30 定稿口径）**：`/backend/internal-sales/**`（「出口业务-对内销售」，菜单项「对内销售报价单」/「对内销售订单（PO）」）与 `/backend/external-sales/**`（「出口业务-对外销售」，「对外销售报价单」/「对外销售订单」）是同一批页面（后者 re-export 前者的 `page.tsx`，只换 `page.meta.ts`）。
+  - **列表只列自己的类型**：服务端固定传 `channelId=<入口通道>`（`InternalSalesTable` 的 `entryChannelId`），另一类型永不出现；因此「类型」列被删除（每行都是入口的类型）。**入口通道未播种时列表不发请求**，在表格位置显示与保存拦截同一句可执行提示（`internal_sales.form.tradeType.channelsMissing`）——不会退化成「不过滤」把两种类型混在一起。
+  - **表单的类型是只读值**：`useFields` 只保留「显示为值」的分支（`internal_sales.form.field.tradeTypeFixed` 带 `{{type}}` 占位），入口不再提供可切换的类型下拉；买方选择器由类型推导，只有该类型的来源。
+  - **未标记的历史单据**：`channel_id` 为空的单据（早于通道标记，买方可能也没有链接）**两个入口都不列出**——没法把它们归到任一类；表头计数就是官方列表 `channelIdsEmpty=true` 的 total（对**全部**「无通道」单据计数）。归类只有两条路：**带买方链接**（`customerSnapshot.internalSales.organizationId|partyId`）的用 `yarn mercato internal_sales backfill-trade-type --apply` **批量**打标；**没有链接**的回填会跳过（dry-run 报 `without a buyer link`），只能逐单在要归的那类入口的编辑页打开并保存——保存按入口类型打通道（见下条）。所以**计数不保证被命令清零**（本机 dev 库 2026-09-30 实测：扫描 8 单 → 4 已标记 · 4 无买家链接，`--apply` 没有可写项）。installed 列表页（`navHidden`，URL 可用）仍能读到它们。
+  - **编辑跨类型单据会跳入口**：编辑页加载后比对单据自己的类型（通道优先、快照兜底），不一致即 `router.replace` 到该类型入口的编辑页；两者都没有（真·未标记）时按**所在入口**归类，保存即打该入口的通道。
+  - **报价载入跟着入口类型走**：订单新建页「从报价单载入」的选择器按入口类型过滤（`loadQuoteOptions(query, channelId)`）；载入只填抬头与行，**不动类型**（入口固定，`adoptQuoteType` 已删）——选择器本就只列同类型的报价单，买方链接与通道不会互相矛盾。
 - **回填历史单据**：`yarn mercato internal_sales backfill-trade-type`（默认 dry-run，`--apply` 才写，需 owner 批准）。分类规则＝快照链接（`internalSales.organizationId` → internal；`partyId` → external），**不做猜测**：没有链接的单据只报数（`skipped`），不会被打标。`customer_snapshot` 是加密列，所以 CLI 走官方实体 + 解密读取助手，而不是裸 SQL。
 - **下游**：发运单的销售分摊选择器只列**对内**订单（`cross_border/components/shipmentFormOptions.ts` 传 `channelId=<internal>`）；对外订单不进出口分摊链。
 
@@ -187,7 +225,7 @@ customerSnapshot = {
 
 ```bash
 yarn generate && yarn typecheck && yarn lint && yarn ds:check
-npx jest src/modules/internal_sales                     # 买方值协议 / 快照 / 组织选项装配 / 报价载入的单元测试（2 suites / 27 tests）
+npx jest src/modules/internal_sales                     # 买方值协议 / 快照 / 组织选项装配 / 报价载入 / 贸易类型 的单元测试（3 suites / 38 tests）
 # 冒烟（dev server 在跑时）：
 #  UI 新建报价/订单（选自建商品 + 数量 + 未税单价）→ 201；落库行 productId=products_products.id、
 #  有官方目录链接的商品 productVariantId 自动填默认变体、catalogSnapshot 有 sku/name/spec；
@@ -220,6 +258,38 @@ npx jest src/modules/internal_sales                     # 买方值协议 / 快�
 #  → 右侧抽屉显示 报价单号/买方/币种/状态（—）/金额（未税）（—）/行数 1 + 明细行，**页面 URL 与表单值不变**（表单值对照
 #  「Preview probe buyer」仍在）；抽屉页脚「打开报价单」在干净表单上直接跳到 /quotes/<id>/edit；中英文两版抽屉均已核对
 #  （标题复用 `internal_sales.form.sourceQuote.label`）。探针报价与探针订单验后已删（`GET /api/sales/quotes` total 回到 2）。
+#  入口 = 贸易类型（2026-09-30 真机，dev server 4100 + 独立 .env 端口块；数据为 dev 库现值）：
+#  zh 侧边栏：「出口业务-对内销售」（对内销售报价单 / 新建对内销售报价单 / 对内销售订单（PO））与
+#  「出口业务-对外销售」（对外销售报价单 / 对外销售订单）；切 en 同一屏为 “EXPORT OPERATIONS — INTERNAL SALES”
+#  （Internal sales quotes / Internal sales orders (PO)）——无裸 key、无英文兜底串混进中文界面。
+#  列表：`/backend/internal-sales/quotes` 2 行（= API `channelId=<internal>` 的 2 张 QUOTE-20260929-00023/00024），
+#  列头无「类型」（报价单号/买方/状态/金额（未税）/行数/创建时间）；
+#  `/backend/internal-sales/orders` 1 行（ORDER-20260929-00007）+ 提示「本组织有 4 张单据早于贸易类型标记…两个入口都不列出」
+#  （API `channelIdsEmpty=true` total=4），`/backend/external-sales/orders` 1 行（ORDER-20260929-00011）+ 同一条提示，
+#  两列表互不出现对方的单据；对外页描述指向「出口业务-对内销售」组。
+#  表单：`/backend/internal-sales/quotes/create` 贸易类型只读「对内」+「本入口固定为「对内」…」（`{{type}}` 插值），
+#  买方选择器只列「关联组织：俄罗斯 AB 有限公司 / 东南亚 AB 有限公司」；`/backend/external-sales/quotes/create`
+#  同理只列「外部客户：E2E-CUST-474336 — …」；订单新建页「从报价单载入」选择器只列 2 张对内报价。
+#  跨入口跳转：`/backend/internal-sales/orders/<对外单 id>/edit` → 落到 `/backend/external-sales/.../edit`；
+#  反向亦然（内部单从对外入口进入会跳到对内入口的编辑页，标题「编辑对内销售订单（PO）」、类型只读「对内」）。
+#  420px 窄屏 + 深色模式：列表无横向溢出（scrollWidth = innerWidth）。
+#  状态生命周期（2026-09-30 真机，dev server + 本工作树 .env：OM_DISABLE_EMAIL_DELIVERY=true）：
+#  ① 建单即草稿：`POST /api/sales/quotes`（带 `statusEntryId=<draft 条目>` + 快照 `contact.email`）→ 201，
+#     读回 `status='draft'`、`statusEntryId` 指向本组织 draft 条目、快照含 contact.email；列表徽章显示 Draft、有效至 —。
+#  ② 行操作门禁：draft 报价只有「编辑 / 发出报价 / 作废」——**没有**「转为订单 / 按此报价新建订单」。
+#  ③ 发出报价：对话框（有效期默认 14 天）→ 引擎 `POST /api/sales/quotes/send` → 读回 `status='sent'`、
+#     `valid_until` = 14 天后；列表该行显示 Sent + 「有效至 2026年10月14日」；
+#     行操作变为「编辑 / 重新发出 / 按此报价新建订单 / 转为订单 / 作废」——**门禁随状态打开**。
+#  ④ 订单确认/作废：draft 订单行操作「确认订单」→ 读回 `status='confirmed'`；「作废」→ `canceled`。
+#  ⑤ 发运分摊门禁：`/backend/cross_border/shipments/create` 的「对内销售订单」选择器只出现
+#     `ORDER-20260930-00029`（confirmed）与 `ORDER-20260929-00007 (未标记状态)`（历史 NULL）；
+#     被作废的订单**不出现**（同一页面对照）。探针单据验后已删（列表回到 2 张报价 / 6 张订单）。
+#  评审修订后的复验（2026-09-30，同一 dev server）：
+#  ⑥ 作废一张 **sent** 报价（两步写入：引擎撤回 + 置 canceled）→ 读回 `status='canceled'`（此前一次 PUT 会被引擎复位成 draft）；
+#  ⑦ 「转为订单」一张 sent 报价 → 生成的订单 `status='sent'`，订单列表出现「确认订单」→ 确认后 `status='confirmed'`；
+#  ⑧ 「从报价单载入」选择器只列可下单的报价（draft 报价不出现），`/orders/create?fromQuote=<draft id>` 行内提示「这张报价还没有发出或已作废，不能下单。」且不填单；
+#  ⑨ 编辑一张 sent 报价 → 表单顶部出现横幅「保存会把状态退回草稿并作废已发链接，需要时请重新发出。」；
+#  ⑩ 「有效至」只对仍为 `sent` 的报价显示（撤回成 draft 的报价显示 —）。探针单据验后已删（回到 2 张报价 / 6 张订单）。
 ```
 
 ## 回滚

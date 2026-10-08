@@ -67,6 +67,7 @@ const SHIPMENT_STATUS_VARIANTS: StatusMap<ShipmentStatus> = {
   draft: 'neutral',
   in_transit: 'info',
   received: 'success',
+  closed: 'neutral',
   cancelled: 'error',
 }
 
@@ -263,6 +264,19 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<ContainerFileRo
           </StatusBadge>
         )
       },
+    },
+    {
+      accessorKey: 'refundOverdue',
+      header: t('export_finance.cabinets.columns.refundOverdue'),
+      enableSorting: false,
+      meta: { priority: 12 },
+      cell: ({ row }) => (row.original.refundOverdue
+        ? (
+            <span className="inline-flex items-center rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive">
+              {t('export_finance.cabinets.overdue')}
+            </span>
+          )
+        : <EmptyCell />),
     },
     {
       accessorKey: 'taxRefundAmount',

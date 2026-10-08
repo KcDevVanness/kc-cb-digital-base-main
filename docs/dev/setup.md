@@ -75,8 +75,10 @@ JSON 体会被解析成空表单并返回 400：
 ```bash
 curl -s -X POST http://localhost:3100/api/auth/login \
   -H 'Content-Type: application/x-www-form-urlencoded' \
-  --data-urlencode 'email=superadmin@acme.com' --data-urlencode 'password=secret'   # → {"ok":true,…}
+  --data-urlencode 'email=admin@acme.com' --data-urlencode 'password=secret'
 ```
+
+（`superadmin@acme.com` 的密码取自 `.env` 的 `OM_INIT_SUPERADMIN_PASSWORD`，不是固定串——见上表；这里用密码固定为 `secret` 的 `admin@acme.com`。）
 
 ## 日常命令
 
@@ -92,15 +94,23 @@ yarn db:generate  # 改了实体后生成迁移，先 review SQL 再 apply
 **以日志为准，不要照抄旧文档里的端口**。生产/其他环境同理：`APP_URL` 必须与实际访问地址一致，
 否则同源检查（`shared:origin-check`）会拒绝浏览器请求——本机实测过 `APP_URL=3100` 但访问 `3000`
 时 `POST /api/auth/session/refresh` 被拒（日志 WARN，`allowedOrigins=["http://localhost:3100"]`）。
-端口块见 [`.env.example`](../../.env.example) 顶部注释与 [`parallel-development.md`](./parallel-development.md)。
+端口块见本机 `.env` 顶部的 `PROJECT-LOCAL PORT ALLOCATION` 注释（`.env.example` 不含此块）与 [`parallel-development.md`](./parallel-development.md)。
+
+**发信（邮件）**：本仓 dev 没有配置发信 provider，平台的 `sendEmail` 会抛 `EMAIL_TRANSPORT_NOT_CONFIGURED`。
+而引擎的报价发出路由（`POST /api/sales/quotes/send`）**先提交状态再发信**，于是「状态已变 `sent`、界面报失败」同时出现。
+本地联调请在该工作树的 `.env` 里设 `OM_DISABLE_EMAIL_DELIVERY=true`（`sendEmail` 直接返回，不外发）；
+想连接受链接一起验证可再加 `OM_TEST_MODE=true`，每封邮件（含链接）会追加到 `/tmp/open-mercato-email-capture.jsonl`。
+**生产不要设这两个变量**（`.env.example` 里同样有注释）。
 
 ## 验证命令
 
 提交前跑整套：
 
 ```bash
-yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test && yarn build
+yarn generate && yarn typecheck && yarn lint && node scripts/check-lessons.mjs && yarn ds:check && yarn test && yarn build
 ```
+
+`node scripts/check-lessons.mjs` 是 app 与 harness 共用的门禁（校验 `.ai/lessons/`），`.ai/agentic.config.json` 与 `.github/workflows/validate.yml` 都跑它。
 
 **`yarn dev` 不做类型检查**——Turbopack dev 只转译，不改类型。`yarn build`
 的 `Running TypeScript` 阶段才会跑 `tsc`。所以本地改动必须显式跑 `yarn typecheck`，

@@ -2,7 +2,7 @@
 title: "A PR whose base is a feature branch runs no CI at all"
 modules: ["platform"]
 areas: ["spec-pr"]
-topics: ["ci", "gate", "branch-protection", "pull-request", "worktree", "parallel-development"]
+topics: ["ci", "gate", "branch-protection", "pull-request", "local-gate", "release-gate"]
 ---
 
 # A PR whose base is a feature branch runs no CI at all
@@ -30,14 +30,33 @@ that never reports leaves the PR stuck on "Expected — Waiting" forever. Restru
 it from a third direction: a fan-in job that treats a skipped slice as success (or that renames the
 reported job) turns a broken slice into a green check, or into a PR that can never merge.
 
-**Rule**: the gate runs on every PR target, not only `main` (`on.pull_request` carries no branch
-filter; the docs/deploy scope step keeps doc-only PRs cheap). Required checks always report — filter
-inside the job, never with `paths-ignore`. The *name* of the job that reports it is part of that
-contract: a fan-out keeps one aggregate job named exactly the required context (`validate`), it runs
-with `if: always()`, it fails on any slice that did not pass, and it accepts `skipped` only when the
-scope decision sent that slice home (`needed=false`). Direct pushes to `main` or `production` are not
-a delivery channel: `production` is a deploy trigger (`deploy.yml` runs on its push) and accepts only
-PRs too.
+2026-09-30 — the *coverage* half of the rule below was deliberately reversed, by repo-owner decision:
+unit PRs into the integration trunk `dev` merge on their author's local gate instead of waiting ~3
+minutes (measured 2.6–3.4 min per PR run) for CI to re-prove it. The structural half was not: the
+check still reports on every PR, from inside the job. Both halves are stated below because they fail
+differently — a wrong coverage decision costs a red trunk, an unreported required check costs a stuck
+PR (or, in the other direction, a silent hole).
 
-**Applies to**: `.github/workflows/validate.yml`, `.ai/agentic.config.json` (`validation.commands`),
-`main`/`production` branch protection, `docs/dev/parallel-development.md`.
+**Rule** (current, 2026-09-30):
+
+1. **Structural — never relaxed.** The required check always *reports* on every PR: no `paths-ignore`
+   and no branch filter on `on.pull_request` (a required context that never reports is a PR that can
+   never merge). The reporting job keeps the exact name branch protection matches (`validate`), runs
+   with `if: always()`, fails on any slice that did not pass, and accepts `skipped` only when the
+   scope decision sent that slice home (`needed=false`). Skipping is a `scope` decision, never a
+   trigger filter.
+2. **Coverage — a policy, currently: release targets only.** The gate's *commands* run when the PR's
+   base is `main` / `production` (the wave PR, the production sync) and on every push to `main`
+   (plus the docs / deploy-side allow-list for those). A PR whose base is the integration branch
+   `dev` — or another unit branch — reports the check green in seconds as out of scope; its
+   verification is the author's local run of `validation.commands`, which `AGENTS.md` → Validation
+   and `om-auto-create-pr` step 8 require before `gh pr ready`, and the wave PR is the release stop
+   before `main`.
+
+Consequence to keep in mind, in both directions: a green `validate` on a `dev` PR means "nothing to
+run here", never "the code was checked" — and a red one on the wave PR is the *first* machine proof
+of that wave, so it is fixed there, not routed around.
+
+**Applies to**: `.github/workflows/validate.yml` (scope job, required check name), `.ai/agentic.config.json`
+(`validation.commands`, `baseBranch`), `dev` / `main` / `production` branch protection,
+`docs/dev/parallel-development.md`, `docs/deploy/cicd.md`, `AGENTS.md` (Validation).

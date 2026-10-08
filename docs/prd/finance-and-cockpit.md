@@ -6,7 +6,7 @@
 
 ## 背景与问题
 
-现系统三条链（采购 `purchasing` / 外贸 `cross_border` + `trade_docs` / 收汇退税 `export_finance`）只到"单据"为止，钱只算到采购单：付款状态是派生值（`purchasing/lib/orderTotals.ts:93`）且没有统一出口；柜级运费/报关/保险/关税没有金额化落点；收货只动数量（`cross_border/commands/shipments.ts:703-726`），库存没有成本层，资金占用算不出来；收汇只有状态没有金额（`export_finance/data/entities.ts:44-45`）；没有损益；俄罗斯 PETKIT 的 16 个数据端点完全没有接。结果是老板六类数据（赚多少 / 货转不转 / 卖得好不好 / 花钱值不值 / 钱回不回来 / SKU 对齐）没有单一可验收定义，俄方页数字与中方账本各说各话。
+**立项前（2026-09-28）状态**：现系统三条链（采购 `purchasing` / 外贸 `cross_border` + `trade_docs` / 收汇退税 `export_finance`）只到"单据"为止，钱只算到采购单：付款状态是派生值（`purchasing/lib/orderTotals.ts:199`）且没有统一出口；柜级运费/报关/保险/关税没有金额化落点；收货只动数量（`cross_border/commands/shipments.ts:746-805`），库存没有成本层，资金占用算不出来；收汇只有状态没有金额（`export_finance/data/entities.ts:44-45`）；没有损益；俄罗斯 PETKIT 的 17 个数据端点完全没有接。结果是老板六类数据（赚多少 / 货转不转 / 卖得好不好 / 花钱值不值 / 钱回不回来 / SKU 对齐）没有单一可验收定义，俄方页数字与中方账本各说各话。
 
 为什么现在做：业务已把采购、发运、收货、收汇跑通并在系统内留痕（见 [`./cross-border-erp.md`](./cross-border-erp.md)），缺的是把它们变成钱的口径；且俄方接口契约已冻结（`docs/ru-petkit/supply-sync-tech.md`），第一阶段 8 端点可先联调。
 

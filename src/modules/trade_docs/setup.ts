@@ -30,26 +30,6 @@ export const SHIPPING_METHOD_SEEDS = [
 
 export const PAYMENT_TERM_DICTIONARY_KEY = 'payment_terms'
 export const SHIPPING_METHOD_DICTIONARY_KEY = 'shipping_method'
-export const INCOTERM_DICTIONARY_KEY = 'incoterms'
-
-/**
- * International commercial terms a contract, PI or CI can print (贸易术语). `value` is the code
- * (`EXW`, `FOB`, `CIF`, …) and `label` is **only** the Chinese name — the picker renders
- * `CODE — name` itself, so a label that repeated the code would print it twice. Like the payment
- * terms, the code is what the document shows and free text is still allowed.
- */
-export const INCOTERM_SEEDS = [
-  { value: 'EXW', label: '工厂交货', position: 10 },
-  { value: 'FCA', label: '货交承运人', position: 20 },
-  { value: 'FOB', label: '装运港船上交货', position: 30 },
-  { value: 'CFR', label: '成本加运费', position: 40 },
-  { value: 'CIF', label: '成本、保险费加运费', position: 50 },
-  { value: 'CPT', label: '运费付至', position: 60 },
-  { value: 'CIP', label: '运费和保险费付至', position: 70 },
-  { value: 'DAP', label: '目的地交货', position: 80 },
-  { value: 'DPU', label: '卸货地交货', position: 90 },
-  { value: 'DDP', label: '完税后交货', position: 100 },
-] as const
 
 type DictionarySeedEntry = { value: string; label: string; position: number }
 type DictionarySeed = {
@@ -71,12 +51,6 @@ const DICTIONARY_SEEDS: readonly DictionarySeed[] = [
     name: 'Shipping methods',
     description: 'Modes of transport offered on contracts',
     entries: SHIPPING_METHOD_SEEDS,
-  },
-  {
-    key: INCOTERM_DICTIONARY_KEY,
-    name: 'Incoterms',
-    description: 'International commercial terms printed on contracts, PI and CI',
-    entries: INCOTERM_SEEDS,
   },
 ]
 

@@ -1,5 +1,5 @@
 {
-  "cross_border.nav.group.sales": "Export operations — Sales",
+  "cross_border.nav.group.sales": "Export operations — Internal sales",
   "cross_border.nav.group.externalSales": "Export operations — External sales",
   "cross_border.nav.group.contracts": "Export operations — Contracts",
   "cross_border.nav.group.shipping": "Export operations — Shipping",
@@ -103,7 +103,10 @@
   "cross_border.shipments.salesAllocations.title": "Sales allocations",
   "cross_border.shipments.salesAllocations.add": "Add",
   "cross_border.shipments.salesAllocations.remove": "Remove",
-  "cross_border.shipments.salesAllocations.salesOrder": "Internal sales order",
+  "cross_border.shipments.salesAllocations.salesOrder": "Sales order",
+  "cross_border.shipments.salesAllocations.tradeType.internal": "Internal",
+  "cross_border.shipments.salesAllocations.tradeType.external": "External",
+  "cross_border.shipments.salesAllocations.unmarkedStatus": "status not marked",
   "cross_border.shipments.salesAllocations.line": "Line",
   "cross_border.shipments.salesAllocations.product": "Product",
   "cross_border.shipments.salesAllocations.ordered": "Ordered",
@@ -198,5 +201,9 @@
   "cross_border.packingLists.detail.loading": "Loading the packing list…",
   "cross_border.packingLists.detail.loadFailed": "Failed to load the packing list",
   "cross_border.packingLists.detail.notFound": "This packing list could not be found.",
-  "cross_border.packingLists.detail.untitled": "Unnumbered packing list"
+  "cross_border.packingLists.detail.untitled": "Unnumbered packing list",
+  "cross_border.shipments.status.closed": "Closed",
+  "cross_border.shipments.actions.close": "Close",
+  "cross_border.shipments.closeConfirmTitle": "Close this shipment?",
+  "cross_border.shipments.closeConfirmBody": "Closing is terminal: the shipment can no longer be edited, cancelled or given milestones. Confirm its paperwork and settlement are done."
 }

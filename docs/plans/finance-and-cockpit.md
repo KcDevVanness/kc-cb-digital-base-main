@@ -23,7 +23,7 @@
 | 项 | 说明 |
 |---|---|
 | 依赖模块 | 已启用 `purchasing`/`cross_border`/`trade_docs`/`export_finance`/`platform_ops`/`products`/`parties`/`wms`/`sales`/`integrations`/`data_sync`/`notifications`/`dashboards`/`dictionaries`/`attachments`/`currencies`/`currency_policy` |
-| 外部依赖 | 俄方 token 与联调窗口（Q-010）；`A.4` 四项敏感确认（成本毛利/ФБО 只读/增量粒度/币种混用）——未勾选前阶段三用 mock 夹具，阶段六的 `cost` 行由中方到岸成本单边提供并标来源 |
+| 外部依赖 | 俄方 token 与联调窗口（Q-010）；`A.4` 敏感确认（成本毛利/ФБО 只读/增量粒度/币种混用）——2/4 已勾选（成本毛利、币种混用），ФБО `data_updated_at` 与 `updated_since` 待俄方；阶段三按当时状态用 mock 夹具，阶段六的 `cost` 行由中方到岸成本单边提供并标来源 |
 | 数据库 | 迁移一律 `yarn db:generate` → 审阅（只允许建表/加列/索引/外键、确认无 drop）→ **批准后** `yarn db:migrate`。阶段一 `finance_shipment_costs`；阶段二 `finance_expenses` + `export_finance_collections` 两列；阶段三 三张 `ru_sync_*` |
 | 风险：汇率缺失 | 行标 `unconvertible`/`rateMissing`，不进 CNY 合计、页面标红；永不按 1 摊、永不填 0 |
 | 风险：SKU 映射覆盖不满 | 未映射禁生成 PO + 派生异常清单 + 覆盖率可见；不静默合并 |
@@ -33,7 +33,7 @@
 
 ## 进度
 
-> 2026-09-28 实拉与页面复核（dev）：17 个端点全量拉取（8 supply + 9 ads）行数与 fixture 相符、同 `as_of` 重放 `created=0`；四预警各触发一次且重放不新增通知；`finance due-reminders` 三条规则各触发一次；11 个页面（驾驶舱 / RU 健康 / RU 映射 / 应付 / 应收 / 期间费用 / 柜费用 / 到岸成本 / 库存资金占用 / 月损益 / SKU 毛利）与 4 个仪表盘 widget 渲染真实数据。这一轮查出并修掉四个真实缺陷（通知 uuid 列、跨模块缓存失效、金额卡 `value=null` 丢 footer、ДРР widget 占位符），逐条记在 spec 的 Changelog。2026-09-28 菜单按受众拆组（后续 UI 调整，非阶段交付）：「经营概览」（驾驶舱 / 月损益 / SKU 毛利 / 库存资金占用）、「财务」（单证档案 / 发票台账 / 柜费用 / 到岸成本 / 期间费用 / 应付 / 应收）、「数据同步」（RU 映射 / 健康）三组；dev 实测侧边栏顺序与成员如预期，四页逐页点开正常（spec Changelog 有完整证据）。
+> 2026-09-28 实拉与页面复核（dev）：17 个端点全量拉取（8 supply + 9 ads）行数与 fixture 相符、同 `as_of` 重放 `created=0`；四预警各触发一次且重放不新增通知；`finance due-reminders` 三条规则各触发一次；11 个页面（驾驶舱 / RU 健康 / RU 映射 / 应付 / 应收 / 期间费用 / 柜费用 / 到岸成本 / 库存资金占用 / 月损益 / SKU 毛利）与 4 个仪表盘 widget 渲染真实数据。这一轮查出并修掉四个真实缺陷（通知 uuid 列、跨模块缓存失效、金额卡 `value=null` 丢 footer、ДРР widget 占位符），逐条记在 spec 的 Changelog。2026-09-28 菜单按受众拆组（后续 UI 调整，非阶段交付）：「经营概览」（驾驶舱 / 月损益 / SKU 毛利 / 库存资金占用）、「财务」（订单档案 / 柜档案 / 税务发票台账 / 柜费用 / 到岸成本 / 期间费用 / 应付台账 / 应收台账）、「数据同步」（RU 映射 / 健康）三组；dev 实测侧边栏顺序与成员如预期，四页逐页点开正常（spec Changelog 有完整证据）。
 
 | 阶段 | 状态 | 证据 |
 | --- | --- | --- |

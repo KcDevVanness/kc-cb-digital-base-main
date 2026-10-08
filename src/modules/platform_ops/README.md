@@ -14,7 +14,7 @@ app 自有模块。跨境电商的平台侧作业面：渠道主数据 → 平�
 | 后台页面 | `/backend/platform_ops/channels`（列表/新建/编辑）、`/orders`（镜像列表）、`/settlements`（列表/详情）、`/reconciliation`（队列） |
 | 事件 | `platform_ops.channel.{created,updated,deleted}`、`platform_ops.orders.ingested`、`platform_ops.settlement.imported`、`platform_ops.reconciliation.{raised,resolved}` |
 | 权限 | `platform_ops.channels.view|manage`、`platform_ops.settlements.view|manage`、`platform_ops.reconciliation.view|manage` |
-| 迁移 | `migrations/Migration20260921094226_platform_ops.ts` |
+| 迁移 | `migrations/Migration20260921094226_platform_ops.ts`（五张表）、`Migration20260928073630_platform_ops.ts`（金额列收窄为 `numeric(18,2)`） |
 
 ## 规则（有意为之）
 

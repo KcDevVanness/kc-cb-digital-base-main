@@ -15,10 +15,11 @@
 | 目录 | 放什么 | 现有文档 |
 |---|---|---|
 | `dev/` | 怎么搭、怎么跑、架构与关键机制的实现方式 | [setup](./dev/setup.md)、[architecture](./dev/architecture.md)、[i18n](./dev/i18n.md)、[currency-policy](./dev/currency-policy.md)、[multi-company-org-model](./dev/multi-company-org-model.md)、[business-architecture](./dev/business-architecture.md)、[parallel-development](./dev/parallel-development.md) |
-| `deploy/` | 怎么构建、怎么上线、环境变量契约、运维动作 | [runtime](./deploy/runtime.md) |
+| `deploy/` | 怎么构建、怎么上线、环境变量契约、运维动作 | [runtime](./deploy/runtime.md)、[storage](./deploy/storage.md)、[storage-cutover-runbook](./deploy/storage-cutover-runbook.md)、[cicd](./deploy/cicd.md)、[host-access](./deploy/host-access.md)（索引见 [deploy/README](./deploy/README.md)） |
+| `pitfalls/` | 线上/开发踩坑的长篇复盘：现象、时间线、证据、根因、处置 | [agent-sandbox-scripts-break-the-build](./pitfalls/agent-sandbox-scripts-break-the-build.md)、[dev-runtime-stale-incident](./pitfalls/dev-runtime-stale-incident.md)、[dictionary-delete-is-not-locale-removal](./pitfalls/dictionary-delete-is-not-locale-removal.md)、[ephemeral-integration-needs-a-real-jwt-secret](./pitfalls/ephemeral-integration-needs-a-real-jwt-secret.md)、[radix-popover-spins-jsdom-event-loop](./pitfalls/radix-popover-spins-jsdom-event-loop.md)（索引见 [pitfalls/README](./pitfalls/README.md)） |
 | `prd/` | 产品需求：解决什么问题、给谁用、验收标准 | [lookup-field-dropdown](./prd/lookup-field-dropdown.md)、[cross-border-erp](./prd/cross-border-erp.md)、[finance-and-cockpit](./prd/finance-and-cockpit.md) |
 | `plans/` | 计划开发需求：分阶段、任务拆解、依赖与排期 | [lookup-field-dropdown](./plans/lookup-field-dropdown.md)、[cross-border-erp](./plans/cross-border-erp.md)、[finance-and-cockpit](./plans/finance-and-cockpit.md) |
-| `ru-petkit/` | 俄罗斯 PETKIT 外部系统调研（非本项目系统）：取证、功能 PRD（中文为准）、字段清单、对接 brief | [PRD](./ru-petkit/prd.md)、[功能分析](./ru-petkit/system-analysis.md)、[字段映射](./ru-petkit/field-mapping.md)、[对接 brief](./ru-petkit/integration-brief.md)、[证据包](./ru-petkit/evidence.md) |
+| `ru-petkit/` | 俄罗斯 PETKIT 外部系统调研（非本项目系统）：取证、功能 PRD（中文为准）、字段清单、对接 brief | [PRD](./ru-petkit/prd.md)、[功能分析](./ru-petkit/system-analysis.md)、[字段映射](./ru-petkit/field-mapping.md)、[对接 brief](./ru-petkit/integration-brief.md)、[供应链同步技术](./ru-petkit/supply-sync-tech.md)、[证据包](./ru-petkit/evidence.md)、[导出样本](./ru-petkit/export-sample-pk44.csv)、[截图](./ru-petkit/shots/) |
 | `reports/` | 给管理层 / 业务的进度汇报：总体状态、逐项需求进展、待决事项与下一步计划（单份维护、按时间线更新） | [progress](./reports/progress.md) |
 
 每个目录的 `README.md` 是该目录的契约：放什么、不放什么、索引。

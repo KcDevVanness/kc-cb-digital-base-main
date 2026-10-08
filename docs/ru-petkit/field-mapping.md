@@ -66,6 +66,8 @@
 
 ### 域3 库存供应 (→ `cross_border` 收货 + `purchasing` 采购单)
 
+> **2026-09-28 落地勘误**：本节"在途"的中方落地目标（`cross_border` 分摊）为对接目标语义；截至 2026-09-28 实际落地为 `ru_sync_snapshots` 快照投影（`src/modules/ru_sync`，`in_transit` 端点），在途不进 `cross_border_shipment_allocations`。
+
 | 字段 (中 / EN / RU 原文) | 类型 | 粒度 | 必填 | 映射到中方 | 快照 | 备注 |
 |---|---|---|---|---|---|---|
 | SKU / sku / артикул (含 `склад/фабрика` 后缀变体) | string | SKU | R | `products.sku` → 采购行 `productId` | ✓ (`PK39_2PK39склад` 等) | 后缀变体映射规则需俄方确认 |
@@ -79,6 +81,8 @@
 需要档: 日 (缺口+ETA) / 周 (例会) / 月 (计划) — 三档全要.
 
 ### 域4 价格成本 (→ `products` 三档价 + `trade_docs` 双口径)
+
+> **2026-09-28 落地勘误**：本节成本/价格的中方落地目标（`products_prices`）为对接目标语义；截至 2026-09-28 实际落地为 `ru_sync_snapshots` 快照投影（`ads_prices` / `ads_costs` 在 `src/modules/ru_sync/lib/adsIngest.ts` 的 `ADS_WRITE_THROUGH` 中均为 `snapshot`）。
 
 | 字段 (中 / EN / RU 原文) | 类型 | 粒度 | 必填 | 映射到中方 | 快照 | 备注 |
 |---|---|---|---|---|---|---|
@@ -105,6 +109,8 @@
 需要档: 日 (ДРР>20% 报警) / 周 (类型复盘) — 月可无.
 
 ### 域6 财务汇总 (→ `export_finance` + `trade_docs` 发票; 月 ОПИУ行项)
+
+> **2026-09-28 落地勘误**：本节 ОПИУ 的中方落地目标（`export_finance` + `trade_docs`）为对接目标语义；截至 2026-09-28 实际由 `finance` 读 `ru_sync_snapshots`（`ads_summary` 快照）计算（`src/modules/finance/lib/profitLoss.ts`）。
 
 | 字段 (中 / EN / RU 原文) | 类型 | 粒度 | 必填 | 映射到中方 | 快照 | 备注 |
 |---|---|---|---|---|---|---|

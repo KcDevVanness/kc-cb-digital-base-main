@@ -148,7 +148,7 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 - 迁移只允许加表 / 加列；**禁止**在别人可能运行期间执行破坏性迁移、`yarn db:greenfield`、`yarn dev:reset`（后者只清 dev 构建缓存，但会打断别人正在跑的 dev）。仓里**没有** `yarn db:reset` 这个脚本。
 - 需要破坏性改动时另起一套栈：`docker-compose.yml` 的基础服务端口已参数化
   （`POSTGRES_PORT` / `REDIS_PORT` / `MEILISEARCH_PORT` / `MINIO_PORT` / `MERCATO_STACK`；
-  `docker-compose.fullapp.dev.yml` 只发布了 `MINIO_PORT`），复制 `.env` 并把端口块换一组即可。
+  `docker-compose.fullapp.dev.yml` 另外发布了 `APP_PORT`、`DOCUMENTS_COLLAB_PORT`、`OPENCODE_PORT`、`MCP_PORT` 与两个 MinIO 端口 `MINIO_PORT`/`MINIO_CONSOLE_PORT`），复制 `.env` 并把端口块换一组即可。
 - **每个工作树一份端口块**：`.env` 顶部的 "PROJECT-LOCAL PORT ALLOCATION" 就是为此设计的
   （app 3100 / splash 4100 / postgres 5532 / redis 6479 / meilisearch 7800）。新开工作树时整块 +1000，
   否则第二个 dev server 起不来、UI 冒烟也无法同时跑。
@@ -165,8 +165,9 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 ## PR 与合并
 
 1. 一个工作单元一个 PR，**base 一律 `dev`**（紧急修复/自举走 `main`；堆叠例外见"分支生命周期与清理"），**先以 draft 打开**
-   （第一次 push 就有 PR，进度可见），标题 `feat(<area>): …` / `fix(<area>): …`；门禁全绿且 Progress
-   全勾后 `gh pr ready` 转 ready。
+   （第一次 push 就有 PR，进度可见），标题 `feat(<area>): …` / `fix(<area>): …`；**本地**门禁
+   （`.ai/agentic.config.json` 的 `validation.commands`）全绿且 Progress 全勾后 `gh pr ready` 转 ready
+   ——单元 PR 的 CI 不再复跑这套命令（见第 5 点），本地这一跑就是它的验证证据。
 2. **PR body 必含**：`Tracking plan:` + `Source doc:`（本仓没有 issue 体系，spec / run 路径就是需求单；
    tracker 开了 issue 之后补 `Closes #N` / `Refs #N`）、`## Goal`（问题 + 根因）、`## What Changed`、
    `## Assumptions`、`## 🧪 Tests`（命令 + 结果计数）、`## 💥 Breaking Changes`、`## Rollback`
@@ -175,18 +176,32 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
 3. 合并前：rebase 到最新 `main`，门禁全绿（`.ai/agentic.config.json` 的 `validation.commands`）。
 4. **squash 合并**，保持 `main` 线性；合并后删除远端分支（仓库 `delete_branch_on_merge=true` 自动做），
    本地分支与工作树紧接着 `yarn branches:cleanup --apply` 收尾。
-5. **CI**：`.github/workflows/validate.yml` 在**所有 PR**（不限目标分支）与 `main` 上跑同一组门禁命令
-   （`generate` / `typecheck` / `lint` / `lessons` / `ds:check` / `test` / `build`），检查名 **`validate`**。
+5. **CI**：`.github/workflows/validate.yml` 在**所有 PR**（触发不带分支过滤，必需检查必须上报）与
+   `main` 推送上报同一个检查名 **`validate`**，但**只对发布目标真跑命令**（2026-09-30 的取舍）：
+
+   - base 是 `main` / `production` 的 PR（波次 PR、生产同步 PR）与 `main` 的推送 → 跑全套
+     （`generate` / `typecheck` / `lint` / `lessons` / `ds:check` / `test` / `build`，再按 docs/部署侧
+     白名单跳过）；
+   - base 是集成分支的 PR（`dev`，以及堆叠在别的单元分支上的子 PR）→ `scope` 判定 `needed=false`，
+     `checks` / `build` 直接 skipped，汇总 job 秒级报绿。**这类 PR 的实际验证是作者本地那一跑**，
+     CI 只是转发结论、不再花三分钟复证——`om-auto-create-pr` 第 8 步和 `AGENTS.md` 的 Validation
+     一节把本地门禁定为硬要求，就是为了让这条成立。
+
    结构是「先判定、再并行两半、最后汇总」：
 
-   - `scope`：从 diff 判定这套命令是否**可能**失败（白名单，见下）；
+   - `scope`：先看 PR 的 base 是不是发布目标，再按 diff 白名单判定这套命令是否**可能**失败；
    - `checks`：install → generate → typecheck → lint → lessons → ds:check → test；
    - `build`：install → build（`yarn build` 本身就是 `yarn generate && next build`，不重复 generate）；
    - `validate`：汇总 job，**名字就是分支保护要求的那个检查名**，只在两半都通过（或按范围跳过）时报绿。
 
+   代价写在这里：单元 PR 合进 `dev` 时 CI 不证明它绿，红只能等到波次 PR（`dev → main`）或 `main`
+   推送才暴露，届时修的是已经落地的代码。换来的是每个单元 PR 的合并不再等 3 分钟（实测 2.6–3.4
+   分钟/次；`main` 推送、发布目标 PR 的成本不变）。
+
    `checks` 与 `build` 同时起跑，所以 app 源码改动的墙钟时间约等于 `install + build` 这条最长路径，
    而不是所有步骤相加（2026-09-29 之前是单 job 串行：每次 4:49–6:06）。**必需检查按 job 名匹配**，
-   所以汇总 job 不能改名、也不能换成 matrix——名字一旦不存在，每个 PR 会永久卡在 "Expected — Waiting"。
+   所以汇总 job 不能改名、也不能换成 matrix——名字一旦不存在，每个 PR 会永久卡在 "Expected — Waiting"；
+   同理触发不能改成 `paths-ignore` 或分支过滤，跳过只能发生在 `scope` 里。
    docs / 部署侧改动的 PR 由 `scope` 判定 `needed=false`：两个 job 直接 skipped，汇总 job 照常上报成功。
    跨运行复用的缓存三份：yarn 缓存、`tsconfig.tsbuildinfo`、`next build` 自己那份
    `.mercato/next/cache/.tsbuildinfo`（`next build` 内部还会再做一次类型检查，只是记录文件不同）。
@@ -209,6 +224,8 @@ cd ../kc-cb-digital-base-min-<slug> && yarn install && yarn generate
    不会把自己锁死），`enforce_admins=false`（管理员可应急绕过，`docs/deploy/cicd.md` 的 force push
    回滚路径因此仍然可用）。`dev`（集成分支）同样要求走 PR、要求同样两个必需检查、要求线性历史、
    禁止删除分支，但**允许 force push**——只为落地后的重置，不是给单元分支用的。
+   注意这两条必需检查在两个目标上的含义不同：`guard-tree` 每次都真跑（6 秒级），而 base 是 `dev`
+   的 PR 里 `validate` 只是「这里没有要跑的东西」的秒级结论——不阻塞、也不证明代码绿（第 5 点）。
    仓库只允许 **squash** 合并，合并后自动删远端分支。**直推 `main` / `production` / `dev` 一律禁止**：
    `main` 的 admin bypass 是应急口子、不是日常通道，`production` 是部署分支（`deploy.yml` 由它的
    push 触发），`dev` 只收 PR、只在波次落地后被重置。

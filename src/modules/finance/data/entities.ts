@@ -57,6 +57,7 @@ export class FinanceShipmentCost {
   @Property({ name: 'incurred_at', type: 'date', nullable: true })
   incurredAt?: Date | null
 
+
   /** Scalar id into `parties` (forwarder / customs broker) plus its display snapshot. */
   @Property({ name: 'party_id', type: 'uuid', nullable: true })
   partyId?: string | null
@@ -115,6 +116,7 @@ export class FinanceExpense {
   /** Last day of the period, inclusive; earlier than `period_start` is rejected. */
   @Property({ name: 'period_end', type: 'date' })
   periodEnd!: Date
+
 
   @Property({ type: 'numeric', precision: 18, scale: 2 })
   amount!: string

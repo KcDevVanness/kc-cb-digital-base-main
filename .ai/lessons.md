@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 56 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 58 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -75,7 +75,8 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [A cross-organization copy needs an explicit field whitelist and a source link](lessons/cross-org-copy-needs-whitelist-and-source-link.md) — area:module-data,architecture; module:products,internal_sales,parties; topic:cross-organization,master-data,distribution,idempotency,data-scoping
 - [A fixture organization has no seeded dictionaries, and the write contracts validate against them](lessons/fixture-org-has-no-seeded-dictionaries.md) — area:testing,module-data; module:finance,purchasing,platform,dictionaries; topic:integration-harness,fixtures,dictionary,seed-defaults,acl-feature-ids,assertion-scale
 - [A combobox that re-fires onChange with the same value must not clear derived state first](lessons/combobox-same-value-refire-must-not-clear-derived-state.md) — area:backend-ui,module-data; module:internal_sales; topic:combobox-input,async-derivation,save-race,data-loss,sales-lines,variant-bridge
-- [A PR whose base is a feature branch runs no CI at all](lessons/gate-must-cover-every-pr-target.md) — area:spec-pr; module:platform; topic:ci,gate,branch-protection,pull-request,worktree,parallel-development
+- [A picker loader that stores its result in the parent's state reloads forever](lessons/combobox-loader-must-be-referentially-stable.md) — area:backend-ui,framework-context; module:cross_border; topic:combobox-input,suggestions-loader,react-effect,render-loop,option-sources
+- [A PR whose base is a feature branch runs no CI at all](lessons/gate-must-cover-every-pr-target.md) — area:spec-pr; module:platform; topic:ci,gate,branch-protection,pull-request,local-gate,release-gate
 - [An evidence branch is cut from its target branch and only adds files](lessons/evidence-branch-is-cut-from-its-target.md) — area:spec-pr; module:platform; topic:git,worktree,branch-hygiene,ci,repo-wipe,screenshots
 - [A branch that keeps taking PRs after its squash merge strands that work](lessons/squash-merged-base-strands-later-prs.md) — area:spec-pr; module:platform; topic:branch-hygiene,squash-merge,stacked-pull-requests,integration-branch,catch-up,worktree
 - [A squash-promoted release branch lags main, and its PR to main misreports the size](lessons/squash-promoted-release-branch-lags-main.md) — area:spec-pr; module:platform; topic:branch-hygiene,squash-merge,release-branch,merge-conflicts,branch-protection
@@ -84,3 +85,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [An installed sales single-document read returns metadata only for `id`, never for `ids`](lessons/sales-single-doc-read-id-vs-ids-projection.md) — area:framework-context,module-data,backend-ui; module:internal_sales,sales; topic:sales-documents,list-projection,metadata,single-document-read,read-after-write,field-vs-projection
 - [A picker whose value comes from a record needs resolveLabel, not the component's fallback](lessons/preselected-picker-value-needs-a-label-resolver.md) — area:backend-ui,debugging,framework-context; module:platform,internal_sales,products; topic:combobox-input,preselected-value,resolve-label,strict-mode,effect-cancellation,raw-uuid
 - [Dev UI only hydrates on an allowed dev origin; a fallback port browsed as 127.0.0.1 serves 403 chunks](lessons/dev-origin-must-match-allowed-dev-origins.md) — area:backend-ui,testing,debugging; module:platform; topic:dev-server,allowed-dev-origins,hydration,playwright,verification,beforeall-timeout
+- [A dictionary-backed status is written by entry id, never by value — and its labels are tenant data](lessons/dictionary-status-writes-need-entry-ids.md) — area:module-data,backend-ui; module:internal_sales,cross_border; topic:dictionary,status-lifecycle,engine-contract,event-emission,i18n-labels

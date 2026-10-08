@@ -8,7 +8,7 @@ import { PRICE_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
  */
 export const ALLOCATION_QUANTITY_SCALE = 4
 
-export const SHIPMENT_STATUSES = ['draft', 'in_transit', 'received', 'cancelled'] as const
+export const SHIPMENT_STATUSES = ['draft', 'in_transit', 'received', 'closed', 'cancelled'] as const
 export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number]
 
 /** Ordered transit stages: a lower stage may never follow a higher one. */
@@ -216,6 +216,9 @@ export const shipmentListSchema = z.object({
 })
 
 export const shipmentDepartSchema = z.object({ id: uuid() })
+
+/** Archival: a received shipment is closed once its paperwork and settlement are done. */
+export const shipmentCloseSchema = z.object({ id: uuid() })
 
 export const shipmentReceiveSchema = z.object({
   id: uuid(),

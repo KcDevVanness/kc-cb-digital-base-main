@@ -49,6 +49,35 @@ export function relatedOrganizationEntries(
 }
 
 /**
+ * Every organization the switcher payload carries — the caller's own company, its ancestors as
+ * context, and everything below it.
+ *
+ * This is the set a picker offers when a record is *about* one of our own companies rather than
+ * addressed to a counterparty (the 我方主体 block on contracts/PI/CI): a branch operator may name the
+ * group company above them, and the group operator may name any subsidiary. Names are used as they
+ * come; a non-selectable ancestor is still a real organization to print.
+ */
+export function organizationChainEntries(
+  nodes: readonly RelatedOrganizationNode[],
+  options: { selectableOnly?: boolean } = {},
+): Array<{ id: string; name: string }> {
+  const entries: Array<{ id: string; name: string }> = []
+  const walk = (list: readonly RelatedOrganizationNode[]) => {
+    for (const node of list) {
+      if (!node || typeof node.id !== 'string' || node.id.length === 0) continue
+      const name = typeof node.name === 'string' && node.name.trim().length > 0 ? node.name : node.id
+      // `selectableOnly` is for forms that *write against* an organization (the picker behind it
+      // refuses a node the caller cannot act in); the document picker keeps the ancestors because a
+      // branch may print the group company even though it cannot administer it.
+      if (!options.selectableOnly || node.selectable !== false) entries.push({ id: node.id, name })
+      if (Array.isArray(node.children) && node.children.length > 0) walk(node.children)
+    }
+  }
+  walk(nodes)
+  return entries
+}
+
+/**
  * Depth-first name lookup for one organization id, regardless of `selectable` — a stored record may
  * already reference an organization the caller can no longer *write* to, and its label must still
  * render instead of the raw id.
