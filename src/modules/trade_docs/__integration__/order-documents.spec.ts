@@ -72,7 +72,6 @@ test.describe.serial('trade_docs — order document links', () => {
       {
         kind: 'proforma',
         direction: 'sales',
-        counterpartyKind: 'party',
         counterpartySnapshot: { name: `Order docs buyer ${stamp}` },
         currencyCode: 'CNY',
         lines: [],
@@ -164,7 +163,6 @@ test.describe.serial('trade_docs — order document links', () => {
     const invoice = await apiCall('POST', '/api/trade_docs/invoices', {
       number: `TI-E2E-${stamp}`.toUpperCase(),
       direction: 'inbound',
-      counterpartyKind: 'supplier',
       counterpartySnapshot: { name: `Order docs supplier ${stamp}` },
       currencyCode: 'CNY',
       lines: [],
