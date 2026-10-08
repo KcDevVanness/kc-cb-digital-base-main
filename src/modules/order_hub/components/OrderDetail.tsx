@@ -16,6 +16,7 @@ import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { RelatedSection } from '@/lib/related/RelatedSection'
 import { SALES_STATUS_CANCELED, SALES_STATUS_CONFIRMED, salesStatusActions } from '../../internal_sales/lib/salesStatus'
 import { readChannelId, tradeTypeFromChannelId, type SalesTradeType } from '../../internal_sales/lib/tradeType'
 import { useTradeTypeChannels } from '../../internal_sales/lib/tradeTypeChannels'
@@ -34,7 +35,9 @@ import { OrderDocumentsDialog } from '../../trade_docs/components/OrderDocuments
  * the order: the hub lists the branches (采购订单 / 发运单 / 购销合同 / 单据 / 收汇·退税), anchors each block
  * for the workbench's deep links, and hands the operator a prefilled create entry plus a 查看全部 link
  * into that branch's ledger. Every section reads its own source and fails on its own: one module
- * being down, slow or unauthorized must not blank the rest of the order.
+ * being down, slow or unauthorized must not blank the rest of the order. The block shell itself —
+ * header, the four loading/error/empty/rows states and the card framing — is the shared
+ * `@/lib/related/RelatedSection`, the same component behind the contract detail page's blocks.
  *
  * It never writes anything but the order's own status (confirm / cancel) — the branches keep their
  * own commands, reached through their own pages.
@@ -126,54 +129,6 @@ function documentEditHref(kind: DocumentRow['kind'], id: string): string {
   return `${listHref}/${encodeURIComponent(id)}/edit`
 }
 
-/**
- * One hub section: a header with its action, then exactly one of loading, error, empty or rows.
- * Mirrors `trade_docs/components/ContractDetail.tsx`'s `RelatedSection` so the two hubs read the
- * same, including the "this section failed, the rest did not" behaviour.
- */
-function RelatedSection({
-  id,
-  title,
-  action,
-  isLoading,
-  failed,
-  isEmpty,
-  emptyLabel,
-  onRetry,
-  children,
-}: {
-  id?: string
-  title: string
-  action?: React.ReactNode
-  isLoading: boolean
-  failed: boolean
-  isEmpty: boolean
-  emptyLabel: string
-  onRetry: () => void
-  children: React.ReactNode
-}) {
-  const t = useT()
-  return (
-    <section id={id} className="space-y-3 rounded-lg border bg-card px-4 py-3">
-      <SectionHeader title={title} action={action} />
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">{t('order_hub.detail.section.loading')}</p>
-      ) : failed ? (
-        <div className="flex items-center gap-2">
-          <p className="text-sm text-destructive">{t('order_hub.detail.section.loadFailed')}</p>
-          <Button type="button" variant="ghost" size="sm" onClick={onRetry}>
-            {t('order_hub.detail.section.retry')}
-          </Button>
-        </div>
-      ) : isEmpty ? (
-        <p className="text-sm text-muted-foreground">{emptyLabel}</p>
-      ) : (
-        children
-      )}
-    </section>
-  )
-}
-
 export default function OrderDetail({ orderId }: { orderId: string }) {
   const t = useT()
   const queryClient = useQueryClient()
@@ -182,6 +137,14 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   const { entryIdFor } = useSalesStatusEntries()
   const [pendingStatus, setPendingStatus] = React.useState<string | null>(null)
   const [documentsDialogOpen, setDocumentsDialogOpen] = React.useState(false)
+
+  // The shared section is translation-agnostic, so the hub keeps its own keys for the states it
+  // renders; every section here passes `onRetry`, so a failed one offers the retry button.
+  const relatedSectionMessages = {
+    loading: t('order_hub.detail.section.loading'),
+    loadFailed: t('order_hub.detail.section.loadFailed'),
+    retry: t('order_hub.detail.section.retry'),
+  }
 
   // The trade type is the document's own, not the entry's: the hub lives at one URL
   // (`/backend/orders/<id>`) for both types, so it reads the head's channel marker and falls back
@@ -594,6 +557,8 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         isEmpty={purchaseOrders.length === 0}
         emptyLabel={t('order_hub.detail.section.empty.purchase')}
         onRetry={() => void purchaseOrdersQuery.refetch()}
+        framed
+        messages={relatedSectionMessages}
       >
         <ul className="flex flex-col gap-2">
           {purchaseOrders.map((row) => (
@@ -629,6 +594,8 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         isEmpty={shipments.length === 0}
         emptyLabel={t('order_hub.detail.section.empty.shipment')}
         onRetry={() => void shipmentsQuery.refetch()}
+        framed
+        messages={relatedSectionMessages}
       >
         <ul className="flex flex-col gap-2">
           {shipments.map((row) => (
@@ -663,6 +630,8 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         isEmpty={contracts.length === 0}
         emptyLabel={t('order_hub.detail.section.empty.contracts')}
         onRetry={() => void contractsQuery.refetch()}
+        framed
+        messages={relatedSectionMessages}
       >
         <ul className="flex flex-col gap-2">
           {contracts.map((row) => (
@@ -704,6 +673,8 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         isEmpty={documents.length === 0}
         emptyLabel={t('order_hub.detail.section.empty.documents')}
         onRetry={() => void documentsQuery.refetch()}
+        framed
+        messages={relatedSectionMessages}
       >
         <ul className="flex flex-col gap-2">
           {documents.map((row) => (
@@ -737,6 +708,8 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           void collectionsQuery.refetch()
           void refundsQuery.refetch()
         }}
+        framed
+        messages={relatedSectionMessages}
       >
         <ul className="flex flex-col gap-2">
           {collections.map((row) => (
