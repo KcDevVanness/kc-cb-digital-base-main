@@ -32,7 +32,7 @@
 ## Goals
 
 - **REQ-001** — 新增「订单工作台」`/backend/orders`：一屏合并列出对内销售订单 / 对外销售订单 / 采购订单，带类型/状态/关键词筛选与四个填充阶段列。
-- **REQ-002** — 销售订单详情 hub `/backend/internal-sales/orders/[id]`（对外复用同一实现）：抬头 + 明细行 + 五个分区（采购订单 / 发运单 / 购销合同 / 单据 / 收汇·退税），每区独立读取、独立失败、带分区内新建入口。
+- **REQ-002** — 销售订单详情 hub `/backend/orders/<id>`（对内外同一实现）：抬头 + 明细行 + 六个分区（采购单 / 购销合同 / 单据 / 发运单 / 装箱单 / 收汇·退税），每区独立读取、独立失败、带分区内新建入口，**关联行可区块内就地编辑**（弹窗改头部字段，走各模块既有 PUT + 乐观锁）。
 - **REQ-003** — 侧边栏换成 app 自绘的可折叠多级导航树（域 → 模块 → 页面，配置支持任意层级），桌面挂在注入位 `backend:sidebar:nav`，移动抽屉挂在 `AppShell` 的 `mobileSidebarSlot`；内置平铺列表不再渲染。
 - **REQ-004** — 导航树接入平台既有的侧边栏偏好契约：角色偏好 → 用户偏好，隐藏/改名/排序、变体、乐观锁、`auth.sidebar.manage` 门禁全部照旧可用；`/backend/sidebar-customization` 编辑对象换成新树。
 - **REQ-005** — 导航树是**显示层**：树的服务端过滤按「有效功能位」，客户端再按 `grantedFeatures` 过滤；页面 `requireFeatures` 仍是唯一授权闸门；隐藏条目不授予、也不剥夺任何页面访问权。
@@ -271,7 +271,7 @@
 | 侧边栏树（注入 `backend:sidebar:nav` + `mobileSidebarSlot`） | 多级导航、折叠、活跃高亮、过滤 | `GET /api/nav_shell/tree` | 安装层 `AppShell` 侧栏分组 + `src/modules/example/widgets/injection/customer-priority-detail/widget.ts`（注入件） | 注入件 + 语义 token + `aria-expanded` | loading、empty、error(+重试)、hidden 跳过、紧凑态只画图标、窄屏抽屉 | REQ-003, REQ-005 |
 | `/backend/sidebar-customization`（app 遮蔽） | 角色/个人布局编辑 | 既有偏好 API | 安装层同路径页面 | `SidebarCustomizationEditor`（`groups` prop） | 继承安装层 | REQ-004 |
 | `/backend/orders` | 三类订单合并列表 + 阶段列 + 全字段抽屉 | `GET /api/sales/orders`、`GET /api/purchasing/purchase-orders`、`GET /api/order_hub/stages`、`GET /api/export_finance/order-files` | `src/modules/boss_cockpit/components/CockpitView.tsx`（app 级只读组合页） + `src/modules/example/components/TodosTable.tsx`（DataTable） | `Page`、`PageBody`、`DataTable`、`MoneyAmount`、`SourcePreviewDrawer` 外壳 | loading、empty、error(逐源)、permission denied(组)、conflict 不适用、narrow/dark | REQ-001, REQ-009, REQ-010 |
-| `/backend/internal-sales/orders/[id]`、`/backend/external-sales/orders/[id]` | 订单详情 hub + 分区新建入口 | 见 Architecture 的 API 列表 | `src/modules/trade_docs/components/ContractDetail.tsx` 的 `RelatedSection` | `Page`、`PageBody`、`FormHeader`、`DataTable` | 每区 loading/empty/error(+重试)、403 | REQ-002, REQ-007, REQ-008 |
+| `/backend/orders/<id>` | 订单详情 hub + 六分区新建入口 + 区块内就地编辑 | 见 Architecture 的 API 列表 | `src/modules/trade_docs/components/ContractDetail.tsx` 的 `RelatedSection`（现为共享件 `src/lib/related/RelatedSection.tsx`） | `Page`、`PageBody`、`FormHeader`、`DataTable`、`QuickEditDialog` | 每区 loading/empty/error(+重试)、403、就地编辑冲突 409 | REQ-002, REQ-007, REQ-008 |
 | `/backend/purchasing/orders/create?orderKind=&orderId=` | 预填建采购单（行复制、来源锚） | `GET /api/sales/order-lines`、`POST /api/purchasing/purchase-orders` | `src/modules/example/backend/todos/create/page.tsx` + `src/modules/example/components/TodoForm.tsx` | `CrudForm` | 参数非法行内提示、覆盖确认、脏表单冲突、必填收敛 | REQ-006 |
 | 发运单/合同/PI-CI 新建（新增预填参数） | 从订单带入事实 | 既有 create 页 | `src/modules/example/components/TodoForm.tsx` | 既有表单 | 同上 + 缺目录链接提示 | REQ-008 |
 | 采购单列表（`?sourceSalesOrderId=` 横幅） | 单张订单的采购单 | `GET /api/purchasing/purchase-orders` | `src/modules/example/components/TodosTable.tsx`（列/筛选） | `DataTable` + 可清除横幅 | loading、empty、error、清除横幅 | REQ-006 |
@@ -342,7 +342,7 @@
 | TEST-202 | integration | 租户 A（对内/对外订单各一张）+ 租户 B 同形订单 | `POST /api/purchasing/purchase-orders {sourceSalesOrderId}`；跨组织 id；`?sourceSalesOrderId=` 过滤；清空后再读 | 201 且三列冻结（单号 = 订单号）；跨组织/不存在 → 422 `source_sales_order_not_found`；过滤只回该单；清空读回 null | REQ-006 |
 | TEST-203 | unit | 纯函数：预填参数解析 + 行映射 | `orderKind/orderId` 解析、非法值拒绝、行复制字段集合 | 只复制 `productId`/`productSnapshot`/`quantity`（**不复制销售单价**）；非法 `orderKind` 拒绝 | REQ-006, REQ-008 |
 | TEST-204 | integration | 发运单 + 两组织 | `GET /api/cross_border/shipments?salesOrderId=` 命中/空集/跨组织 | 命中只回该订单的发运单；未知 id → 空列表；跨组织不泄露 | REQ-007 |
-| TEST-205 | UI | 浏览器：一张对内订单 + 一张已有来源采购单 | hub 五分区渲染；四个预填新建（发运/合同/PI/税务发票）；收汇/退税行可达 | 分摊已预填、缺目录链接被跳过并提示、行已复制、合同单选时已预选、链接可达 | REQ-002, REQ-007, REQ-008 |
+| TEST-205 | UI | 浏览器：一张对内订单 + 一张已有来源采购单 | hub 六分区渲染；四个预填新建（发运/合同/PI/税务发票）+ 装箱单入口；收汇/退税行可达；任一区块行「编辑」→ 弹窗预填 → 保存后行内刷新，旧版本重放 → 409 | 分摊已预填、缺目录链接被跳过并提示、行已复制、合同单选时已预选、链接可达、冲突不丢输入 | REQ-002, REQ-007, REQ-008 |
 | TEST-301 | unit | 纯函数：`orderStages` 口径 | 计数映射（三类订单） | 各计数与构造一致；采购行 `procurementCount` 恒 0 | REQ-009, REQ-001 |
 | TEST-302 | integration | 一张销售单 + 来源采购单 + 发运分摊 + 合同 + PI/CI + 收汇 + 退税 + 第二租户同 id | `GET /api/order_hub/stages?ids=` | 各计数与勾选符合构造；未知 id 不出现；跨组织 id 不出现 | REQ-009 |
 | TEST-303 | UI | 浏览器：三类订单各若干 + 非超管角色（无 `export_finance.orders.view`） | 工作台四源渲染、类型/状态筛选、阶段 0 直达预填、抽屉三组、权限组文案、`/backend` 落地页 | 一致计数、抽屉与 `/backend/export-finance/orders/<id>` 同值、无权限组文案且其余组照常、落地页仍是仪表盘 | REQ-001, REQ-010 |
@@ -523,7 +523,7 @@
 ## Acceptance Criteria
 
 - [ ] **AC-001** — 登录后从侧边栏「订单工作台」进入 `/backend/orders`，一屏看到三类订单，且每行的采购/发运/单证/收汇·退税四列与 `GET /api/order_hub/stages` 的返回逐行一致（≤2 次点击到达任一订单的 hub）。
-- [ ] **AC-002** — `/backend/orders/<id>`（旧 `/backend/{internal,external}-sales/orders/<id>` 服务端重定向到此）显示抬头、明细行与五个分区；每区在有数据时列出对应单据并可点入，无数据时为空态 + 分区内「去填写」入口；某区读失败时该区显示错误与重试而其余区照常。
+- [ ] **AC-002** — `/backend/orders/<id>`（旧 `/backend/{internal,external}-sales/orders/<id>` 服务端重定向到此）显示抬头、明细行与六个分区；每区在有数据时列出对应单据并可点入、可就地编辑头部字段，无数据时为空态 + 分区内「去填写」入口；某区读失败时该区显示错误与重试而其余区照常。
 - [ ] **AC-003** — 侧边栏渲染 8 个域并可逐级折叠，活跃项高亮，无内置平铺列表重复；桌面/紧凑态/移动抽屉（≤420px）三态均可用；顶部过滤框输入关键词只剩命中项。
 - [ ] **AC-004** — `/backend/sidebar-customization` 上隐藏一条目、调整同组顺序、改一个显示名后保存，刷新后树生效；`applyToRoles` 生效于该角色用户，而该用户自己的偏好优先于角色偏好；历史条目级（href）偏好仍生效。
 - [ ] **AC-005** — 只授 `cross_border.shipments.view` 的用户：树里只出现命中条目（服务端不返回无权条目，客户端二次过滤），直接访问 `/backend/finance/payables` 被页面门禁拒绝。
