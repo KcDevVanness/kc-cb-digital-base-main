@@ -1,5 +1,5 @@
 import type { AwilixContainer } from 'awilix'
-import { invalidateCrudCache } from '@open-mercato/shared/lib/crud/cache'
+import { deriveResourceFromCommandId, invalidateCrudCache } from '@open-mercato/shared/lib/crud/cache'
 import { runWithCacheTenant } from '@open-mercato/cache'
 
 /**
@@ -26,6 +26,16 @@ const INVOICE = 'trade_docs.invoice'
 const INVOICE_LINE = 'trade_docs.invoice.line'
 const DOCUMENT = 'trade_docs.document'
 const DOCUMENT_LINE = 'trade_docs.document.line'
+
+/**
+ * The order ↔ document link collection, named the way its route names it: the factory derives the
+ * cache resource from the route's own command id (`trade_docs.orders.documents.replace` →
+ * `trade_docs.order`), so deriving it here the same way keeps the two in step — a hand-written
+ * string would stop matching the day the command id changed, and the invalidation would silently
+ * become a no-op.
+ */
+const ORDER_DOCUMENT =
+  deriveResourceFromCommandId('trade_docs.orders.documents.replace') ?? 'trade_docs.order'
 
 export type CacheScope = {
   container: AwilixContainer
@@ -88,4 +98,17 @@ export async function invalidateDocumentCaches(
   reason: string,
 ): Promise<void> {
   await invalidate(scope, [DOCUMENT, DOCUMENT_LINE], identifiers, reason)
+}
+
+/**
+ * The order's document links — its own collection, so the factory's same-resource invalidation never
+ * covers it: a document created with `?orderKind=&orderId=` and a document or invoice deleted from
+ * under a link both move this list, and every writer therefore names it explicitly.
+ */
+export async function invalidateOrderDocumentLinkCaches(
+  scope: CacheScope,
+  identifiers: CacheIdentifiers,
+  reason: string,
+): Promise<void> {
+  await invalidate(scope, [ORDER_DOCUMENT], identifiers, reason)
 }

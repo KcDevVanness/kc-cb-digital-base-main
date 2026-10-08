@@ -238,6 +238,7 @@ PI，也表达不了「属于这张订单但不属于合同那一套」的单据
 | 关联词表 | `ORDER_DOCUMENT_KINDS = ['proforma','commercial','tax_invoice']`（`data/validators.ts`）——关联行自己的词表，因为三个 kind 分居两张表 |
 | 创建即关联 | `documentCreateSchema` / `invoiceCreateSchema` 增可选 `orderKind`/`orderId`（**同生同灭**，半对是校验错误 `orderKind and orderId go together`），两个 create 命令在**同一事务**写一条关联行（`commands/documents.ts` / `commands/invoices.ts`）；建单页把这对参数放进 payload（`components/DocumentsForm.tsx`、`components/InvoiceForm.tsx`，提交前经 `src/lib/orders/sourceOrderParams.ts` 的 `sourceOrderPayload`） |
 | 删除即解绑 | 两个 delete 命令先 `nativeDelete` 掉该单据的关联行再软删单据（无外键即无级联，见 `commands/documents.ts` delete 分支注释）——被删单据因此不留悬空行，可重新关联 |
+| 列表缓存 | 关联集合是**自己的缓存资源**（`lib/cacheInvalidation.ts` 的 `invalidateOrderDocumentLinkCaches`，资源名由命令 id 反推为 `trade_docs.order`）。开启 `ENABLE_CRUD_API_CACHE` 的部署里，替换命令、带 `?orderKind=&orderId=` 的建单、以及单据/税票删除都会显式失效它——只靠工厂「同资源失效」看不到这张表，hub 的「单据」区块会继续回旧集合（本机 dev 把该开关设为 `false`，所以本地手测不暴露这类陈旧；集成用例在生产模式下跑，正是它抓到的） |
 | 迁移 | `migrations/Migration20261008095745_trade_docs.ts`（只建新表 + 三个索引，已应用） |
 
 **口径**

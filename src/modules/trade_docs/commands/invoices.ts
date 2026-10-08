@@ -28,7 +28,7 @@ import {
   resolveCounterpartyKind,
   assertCounterpartyReference,
 } from '../lib/counterpartyRefs'
-import { invalidateInvoiceCaches } from '../lib/cacheInvalidation'
+import { invalidateInvoiceCaches, invalidateOrderDocumentLinkCaches } from '../lib/cacheInvalidation'
 import { ensureScope, invoiceFilter, loadContract, loadDocument, loadInvoice, type TradeDocsScope } from '../lib/scope'
 import { loadSalesOrderRef } from '../lib/orderDocumentReads'
 import { recomputeContractHead } from '../lib/contractRecalc'
@@ -380,6 +380,14 @@ const createInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
       { id: String(invoice.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
       'created',
     )
+    // A create that recorded an order link moved that collection too (its own cache resource).
+    if (orderLink) {
+      await invalidateOrderDocumentLinkCaches(
+        { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+        { id: orderLink.id, tenantId: scope.tenantId, organizationId: scope.organizationId },
+        'order-document-linked',
+      )
+    }
 
     return invoice
   },
@@ -579,7 +587,7 @@ const deleteInvoiceCommand: CommandHandler<
 
     // The link has no foreign key (it is polymorphic), so nothing cascades: the rows pointing at
     // this invoice go first, so a deleted invoice leaves no dangling link behind.
-    await em.nativeDelete(TradeDocsOrderDocument, {
+    const removedLinks = await em.nativeDelete(TradeDocsOrderDocument, {
       tenantId: scope.tenantId,
       organizationId: scope.organizationId,
       documentKind: 'tax_invoice',
@@ -609,6 +617,13 @@ const deleteInvoiceCommand: CommandHandler<
       { id: String(removed.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
       'deleted',
     )
+    if (removedLinks > 0) {
+      await invalidateOrderDocumentLinkCaches(
+        { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+        { id: String(removed.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+        'order-document-unlinked',
+      )
+    }
 
     return removed
   },
