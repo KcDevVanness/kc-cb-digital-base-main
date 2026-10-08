@@ -53,9 +53,9 @@ Owner review 六个问题：入口已归集到公司订单，但菜单仍按旧�
 - [x] 1.2 leaf `iconName` + `buildLeaf` 解析优先级 + 系统域 7 个图标
 - [x] 1.3 i18n zh/en 4 个台账键（删 5 个退役键，zh/en 各 19 键）
 - [x] 1.4 覆盖率/构建单测更新 + README
-- [ ] 1.5 验证：nav_shell jest 绿、故意删条必须红、浏览器侧边栏与直链 200 → 门禁与 PR
+- [x] 1.5 验证：nav_shell jest 绿、故意删条必须红、浏览器侧边栏与直链 200 → 门禁与 PR（commit `c25f773`；门禁 `EXIT=0`）
 - [x] 1.6 owner 复审（D11）：公司订单下四个二级业务组（采购/出口销售/合同与单据/发运与装箱）、取消台账节点、供应商三页回到「采购」、报价单回树；i18n 与单测跟进；`docs/dev/navigation.md` 同步
-- [ ] 1.7 复审后重跑验证：nav_shell jest、浏览器二级/三级展开、门禁复跑（PR #144 追加提交）
+- [x] 1.7 复审后重跑验证：nav_shell jest、浏览器二级/三级展开、门禁复跑（commit `c96d775`，PR #144 追加提交；门禁 `EXIT=0`）
 
 ### Phase 2：服务端聚合列表与真实分页（`feat/order-hub-aggregate-paging`）
 
@@ -63,15 +63,15 @@ Owner review 六个问题：入口已归集到公司订单，但菜单仍按旧�
 - [x] 2.2 `api/orders/route.ts` 聚合路由（窗口扫描、total 语义、openApi）
 - [x] 2.3 `OrderWorkbench` 取数层重写（单查询、服务端分页、单个新建订单弹窗、i18n 清理）
 - [x] 2.4 集成用例 `__integration__/order-hub-aggregate.spec.ts` + README/openApi total 定义
-- [ ] 2.5 验证：order_hub jest、curl 分页/total/pending/400、集成用例、浏览器分页
+- [x] 2.5 验证：order_hub jest、真机分页/total/pending/400、集成用例 **6 passed**、浏览器分页（commit `4afc8a8`；门禁 `EXIT=0`）
 
 ### Phase 3：订单为根的填写面（`feat/order-detail-root`）
 
-- [ ] 3.1 hub 迁移到 `order_hub` + `/backend/orders/[id]` 页与 `page.meta.ts`
-- [ ] 3.2 交易类型由数据判定；链接改为工作台/编辑/预填新建
-- [ ] 3.3 旧列表与详情 URL 重定向；工作台读 `?type=`
-- [ ] 3.4 建单保存落到 hub；分区文案（去填写 X / 空态）
-- [ ] 3.5 验证：浏览器建单→hub、重定向 3xx、回归集成用例
+- [x] 3.1 hub 迁移到 `order_hub` + `/backend/orders/[id]` 页与 `page.meta.ts`
+- [x] 3.2 交易类型由数据判定；链接改为工作台/编辑/预填新建
+- [x] 3.3 旧列表与详情 URL 重定向；工作台读 `?type=`（改用组件内 `useSearchParams()`：后端 catch-all 不转发 `searchParams`）
+- [x] 3.4 建单保存落到 hub；分区文案（去填写 X / 空态）
+- [x] 3.5 验证：浏览器建单→hub（`POST /api/sales/orders` 201 → `/backend/orders/<新 id>`）、四个旧 URL 307、回归 `shipment-sales-order-filter` **4 passed** / `order-source-link` **4 passed**（commit `61376a0`；门禁 `EXIT=0`）
 
 ## Verification（每阶段 PR 前 / 合并 dev 后）
 

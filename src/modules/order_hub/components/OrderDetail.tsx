@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
@@ -17,20 +16,24 @@ import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
-import { SALES_STATUS_CANCELED, SALES_STATUS_CONFIRMED, salesStatusActions } from '../lib/salesStatus'
-import { tradeTypeFromPathname, type SalesTradeType } from '../lib/tradeType'
-import { useSalesStatusEntries } from '../lib/salesStatusEntries'
-import { writeSalesStatus } from '../lib/salesStatusWrite'
-import { toDocumentRecord, type DocumentRecord } from '../lib/salesDocumentRecord'
-import { apiPathFor, listHrefForTradeType } from './InternalSalesForm'
+import { SALES_STATUS_CANCELED, SALES_STATUS_CONFIRMED, salesStatusActions } from '../../internal_sales/lib/salesStatus'
+import { readChannelId, tradeTypeFromChannelId, type SalesTradeType } from '../../internal_sales/lib/tradeType'
+import { useTradeTypeChannels } from '../../internal_sales/lib/tradeTypeChannels'
+import { useSalesStatusEntries } from '../../internal_sales/lib/salesStatusEntries'
+import { writeSalesStatus } from '../../internal_sales/lib/salesStatusWrite'
+import { toDocumentRecord, type DocumentRecord } from '../../internal_sales/lib/salesDocumentRecord'
+import { apiPathFor, documentEditHrefForTradeType } from '../../internal_sales/components/InternalSalesForm'
 
 /**
  * The sales order hub: everything that follows an order, in one place.
  *
- * The order is the root of the business, and each downstream module is a branch off it — so the hub
- * lists the branches (采购订单 / 发运单 / 购销合同 / 单据 / 收汇·退税) and hands the operator a prefilled
- * create entry for each. Every section reads its own source and fails on its own: one module being
- * down, slow or unauthorized must not blank the rest of the order.
+ * The hub lives in `order_hub` at `/backend/orders/<id>` — the one filling surface for a company
+ * order — and reads its trade type from the document's own channel marker (falling back to
+ * `internal`), so both sales types render on the same URL. Each downstream module is a branch off
+ * the order: the hub lists the branches (采购订单 / 发运单 / 购销合同 / 单据 / 收汇·退税), anchors each block
+ * for the workbench's deep links, and hands the operator a prefilled create entry plus a 查看全部 link
+ * into that branch's ledger. Every section reads its own source and fails on its own: one module
+ * being down, slow or unauthorized must not blank the rest of the order.
  *
  * It never writes anything but the order's own status (confirm / cancel) — the branches keep their
  * own commands, reached through their own pages.
@@ -103,6 +106,7 @@ function orderKindForTradeType(tradeType: SalesTradeType): 'internal_sales_order
  * same, including the "this section failed, the rest did not" behaviour.
  */
 function RelatedSection({
+  id,
   title,
   action,
   isLoading,
@@ -112,6 +116,7 @@ function RelatedSection({
   onRetry,
   children,
 }: {
+  id?: string
   title: string
   action?: React.ReactNode
   isLoading: boolean
@@ -123,15 +128,15 @@ function RelatedSection({
 }) {
   const t = useT()
   return (
-    <section className="space-y-3 rounded-lg border bg-card px-4 py-3">
+    <section id={id} className="space-y-3 rounded-lg border bg-card px-4 py-3">
       <SectionHeader title={title} action={action} />
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">{t('internal_sales.hub.section.loading')}</p>
+        <p className="text-sm text-muted-foreground">{t('order_hub.detail.section.loading')}</p>
       ) : failed ? (
         <div className="flex items-center gap-2">
-          <p className="text-sm text-destructive">{t('internal_sales.hub.section.loadFailed')}</p>
+          <p className="text-sm text-destructive">{t('order_hub.detail.section.loadFailed')}</p>
           <Button type="button" variant="ghost" size="sm" onClick={onRetry}>
-            {t('internal_sales.hub.section.retry')}
+            {t('order_hub.detail.section.retry')}
           </Button>
         </div>
       ) : isEmpty ? (
@@ -145,32 +150,36 @@ function RelatedSection({
 
 export default function OrderDetail({ orderId }: { orderId: string }) {
   const t = useT()
-  const pathname = usePathname()
-  // One component, two entries: the pathname decides the trade type, so the hub opened from the
-  // external list keeps its links, prefills and contract kind on the external side.
-  const tradeType = tradeTypeFromPathname(pathname)
   const queryClient = useQueryClient()
   const scopeVersion = useOrganizationScopeVersion()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const { entryIdFor } = useSalesStatusEntries()
   const [pendingStatus, setPendingStatus] = React.useState<string | null>(null)
 
-  const listHref = listHrefForTradeType('order', tradeType)
+  // The trade type is the document's own, not the entry's: the hub lives at one URL
+  // (`/backend/orders/<id>`) for both types, so it reads the head's channel marker and falls back
+  // to `internal` when the marker is missing or unrecognised — the same convention the workbench
+  // uses. While the head read or the channel map is still in flight the loading state below holds
+  // the links still, so they never flip after paint.
+  const { channels, isLoading: channelsLoading } = useTradeTypeChannels('order')
   const ordersApiPath = apiPathFor('order')
-  const orderKind = orderKindForTradeType(tradeType)
 
   const orderQuery = useQuery({
-    queryKey: ['internal-sales-hub-order', orderId, scopeVersion],
+    queryKey: ['order-hub-detail-order', orderId, scopeVersion],
     queryFn: async () => {
       const payload = await fetchCrudList<Record<string, unknown>>(ordersApiPath, { id: orderId, pageSize: 1 })
       const item = payload.items?.[0]
-      return item ? toDocumentRecord(item, 'order') : null
+      return item ? { record: toDocumentRecord(item, 'order'), raw: item } : null
     },
   })
-  const order = orderQuery.data ?? null
+  const orderHead = orderQuery.data ?? null
+  const order = orderHead?.record ?? null
+  const tradeType: SalesTradeType = tradeTypeFromChannelId(readChannelId(orderHead?.raw ?? {}), channels) ?? 'internal'
+
+  const orderKind = orderKindForTradeType(tradeType)
 
   const linesQuery = useQuery({
-    queryKey: ['internal-sales-hub-lines', orderId, scopeVersion],
+    queryKey: ['order-hub-detail-lines', orderId, scopeVersion],
     queryFn: async () => {
       const payload = await fetchCrudList<Record<string, unknown>>('sales/order-lines', {
         orderId,
@@ -181,7 +190,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   })
 
   const purchaseOrdersQuery = useQuery({
-    queryKey: ['internal-sales-hub-purchase-orders', orderId, scopeVersion],
+    queryKey: ['order-hub-detail-purchase-orders', orderId, scopeVersion],
     queryFn: async () => {
       const payload = await fetchCrudList<Record<string, unknown>>('purchasing/purchase-orders', {
         sourceSalesOrderId: orderId,
@@ -202,7 +211,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   })
 
   const shipmentsQuery = useQuery({
-    queryKey: ['internal-sales-hub-shipments', orderId, scopeVersion],
+    queryKey: ['order-hub-detail-shipments', orderId, scopeVersion],
     queryFn: async () => {
       const payload = await fetchCrudList<Record<string, unknown>>('cross_border/shipments', {
         salesOrderId: orderId,
@@ -221,7 +230,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   })
 
   const contractsQuery = useQuery({
-    queryKey: ['internal-sales-hub-contracts', orderId, orderKind, scopeVersion],
+    queryKey: ['order-hub-detail-contracts', orderId, orderKind, scopeVersion],
     queryFn: async () => {
       const links = await fetchCrudList<Record<string, unknown>>('trade_docs/contracts/orders', {
         orderKind,
@@ -258,7 +267,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
    * the documents route filters by a single contract, and an order normally carries one or two.
    */
   const documentsQuery = useQuery({
-    queryKey: ['internal-sales-hub-documents', orderId, orderKind, scopeVersion],
+    queryKey: ['order-hub-detail-documents', orderId, orderKind, scopeVersion],
     enabled: (contractsQuery.data?.contracts.length ?? 0) > 0,
     queryFn: async () => {
       const contracts = contractsQuery.data?.contracts ?? []
@@ -294,7 +303,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   })
 
   const collectionsQuery = useQuery({
-    queryKey: ['internal-sales-hub-collections', orderId, scopeVersion],
+    queryKey: ['order-hub-detail-collections', orderId, scopeVersion],
     enabled: (purchaseOrdersQuery.data?.length ?? 0) > 0,
     queryFn: async () => {
       const rows: CollectionRow[] = []
@@ -318,7 +327,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   })
 
   const refundsQuery = useQuery({
-    queryKey: ['internal-sales-hub-refunds', orderId, scopeVersion],
+    queryKey: ['order-hub-detail-refunds', orderId, scopeVersion],
     enabled: (shipmentsQuery.data?.length ?? 0) > 0,
     queryFn: async () => {
       const rows: RefundRow[] = []
@@ -345,17 +354,17 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
     () => [
       {
         accessorKey: 'name',
-        header: t('internal_sales.hub.lines.name'),
+        header: t('order_hub.detail.lines.name'),
         cell: ({ row }) => readText(row.original, 'name', 'productName', 'sku') || '—',
       },
       {
         accessorKey: 'quantity',
-        header: t('internal_sales.hub.lines.quantity'),
+        header: t('order_hub.detail.lines.quantity'),
         cell: ({ row }) => String(row.original.quantity ?? '—'),
       },
       {
         accessorKey: 'unit_price_net',
-        header: t('internal_sales.hub.lines.unitPrice'),
+        header: t('order_hub.detail.lines.unitPrice'),
         cell: ({ row }) => {
           // The installed line route projects numbers (`unit_price_net`), a camelCase variant would be
           // a string — both are read so the column survives either shape.
@@ -387,11 +396,11 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           updatedAt: order.updatedAt,
           errorMessage: t('internal_sales.list.actions.statusFailed', 'Could not change the status.'),
         })
-        await queryClient.invalidateQueries({ queryKey: ['internal-sales-hub-order', orderId] })
+        await queryClient.invalidateQueries({ queryKey: ['order-hub-detail-order', orderId] })
         return true
       } catch (error) {
         if (surfaceRecordConflict(error, t)) {
-          await queryClient.invalidateQueries({ queryKey: ['internal-sales-hub-order', orderId] })
+          await queryClient.invalidateQueries({ queryKey: ['order-hub-detail-order', orderId] })
           return false
         }
         flash(error instanceof Error && error.message ? error.message : t('internal_sales.list.actions.statusFailed'), 'error')
@@ -423,16 +432,16 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
     if (await applyStatus(SALES_STATUS_CANCELED)) flash(t('internal_sales.list.actions.cancelDone'), 'success')
   }, [applyStatus, confirm, t])
 
-  if (orderQuery.isLoading) {
-    return <p className="text-sm text-muted-foreground">{t('internal_sales.hub.loading')}</p>
+  if (orderQuery.isLoading || channelsLoading) {
+    return <p className="text-sm text-muted-foreground">{t('order_hub.detail.loading')}</p>
   }
 
   if (!order) {
     return (
       <div className="flex flex-col items-start gap-2">
-        <p className="text-sm text-destructive">{t('internal_sales.hub.loadFailed')}</p>
+        <p className="text-sm text-destructive">{t('order_hub.detail.loadFailed')}</p>
         <Button type="button" variant="outline" onClick={() => void orderQuery.refetch()}>
-          {t('internal_sales.hub.section.retry')}
+          {t('order_hub.detail.section.retry')}
         </Button>
       </div>
     )
@@ -450,16 +459,16 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
     <>
       <FormHeader
         mode="detail"
-        backHref={listHref}
+        backHref="/backend/orders"
         entityTypeLabel={t(tradeType === 'external' ? 'internal_sales.list.externalOrder.title' : 'internal_sales.list.order.title')}
-        title={order.number ?? t('internal_sales.hub.untitled')}
+        title={order.number ?? t('order_hub.detail.untitled')}
         subtitle={order.customerName ?? undefined}
         statusBadge={order.status ? <StatusBadge variant={ORDER_STATUS_MAP[order.status] ?? 'neutral'} dot>{order.status}</StatusBadge> : undefined}
         actionsContent={(
           <div className="flex flex-wrap items-center gap-2">
             {actions.canEdit ? (
               <Button asChild variant="outline">
-                <Link href={`${listHref}/${encodeURIComponent(order.id)}/edit`}>{t('internal_sales.list.actions.edit')}</Link>
+                <Link href={documentEditHrefForTradeType('order', order.id, tradeType)}>{t('internal_sales.list.actions.edit')}</Link>
               </Button>
             ) : null}
             {actions.canConfirm ? (
@@ -488,24 +497,24 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           </p>
         </div>
         <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">{t('internal_sales.hub.lines.title')}</p>
+          <p className="text-xs text-muted-foreground">{t('order_hub.detail.lines.title')}</p>
           <p className="text-sm font-medium">{order.lineItemCount}</p>
         </div>
         <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">{t('internal_sales.hub.orderedAt')}</p>
+          <p className="text-xs text-muted-foreground">{t('order_hub.detail.orderedAt')}</p>
           <p className="text-sm font-medium">{order.createdAt ? order.createdAt.slice(0, 10) : '—'}</p>
         </div>
       </div>
 
       <section className="space-y-3 rounded-lg border bg-card px-4 py-3">
-        <SectionHeader title={t('internal_sales.hub.lines.title')} count={linesQuery.data?.length ?? 0} />
+        <SectionHeader title={t('order_hub.detail.lines.title')} count={linesQuery.data?.length ?? 0} />
         {linesQuery.isLoading ? (
-          <p className="text-sm text-muted-foreground">{t('internal_sales.hub.section.loading')}</p>
+          <p className="text-sm text-muted-foreground">{t('order_hub.detail.section.loading')}</p>
         ) : linesQuery.isError ? (
           <div className="flex items-center gap-2">
-            <p className="text-sm text-destructive">{t('internal_sales.hub.section.loadFailed')}</p>
+            <p className="text-sm text-destructive">{t('order_hub.detail.section.loadFailed')}</p>
             <Button type="button" variant="ghost" size="sm" onClick={() => void linesQuery.refetch()}>
-              {t('internal_sales.hub.section.retry')}
+              {t('order_hub.detail.section.retry')}
             </Button>
           </div>
         ) : (
@@ -519,18 +528,24 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
       </section>
 
       <RelatedSection
-        title={t('internal_sales.hub.purchaseOrders.title')}
+        id="purchasing"
+        title={t('order_hub.detail.purchaseOrders.title')}
         action={(
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/backend/purchasing/orders/create?orderKind=${orderKind}&orderId=${encodeURIComponent(order.id)}`}>
-              {t('internal_sales.hub.purchaseOrders.add')}
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/backend/purchasing/orders/create?orderKind=${orderKind}&orderId=${encodeURIComponent(order.id)}`}>
+                {t('order_hub.detail.section.add.purchase')}
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/backend/purchasing/orders">{t('order_hub.detail.section.viewAll')}</Link>
+            </Button>
+          </div>
         )}
         isLoading={purchaseOrdersQuery.isLoading}
         failed={purchaseOrdersQuery.isError}
         isEmpty={purchaseOrders.length === 0}
-        emptyLabel={t('internal_sales.hub.purchaseOrders.empty')}
+        emptyLabel={t('order_hub.detail.section.empty.purchase')}
         onRetry={() => void purchaseOrdersQuery.refetch()}
       >
         <ul className="flex flex-col gap-2">
@@ -548,18 +563,24 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
       </RelatedSection>
 
       <RelatedSection
-        title={t('internal_sales.hub.shipments.title')}
+        id="shipments"
+        title={t('order_hub.detail.shipments.title')}
         action={(
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/backend/cross_border/shipments/create?orderKind=${orderKind}&orderId=${encodeURIComponent(order.id)}`}>
-              {t('internal_sales.hub.shipments.add')}
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/backend/cross_border/shipments/create?orderKind=${orderKind}&orderId=${encodeURIComponent(order.id)}`}>
+                {t('order_hub.detail.section.add.shipment')}
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/backend/cross_border/shipments">{t('order_hub.detail.section.viewAll')}</Link>
+            </Button>
+          </div>
         )}
         isLoading={shipmentsQuery.isLoading}
         failed={shipmentsQuery.isError}
         isEmpty={shipments.length === 0}
-        emptyLabel={t('internal_sales.hub.shipments.empty')}
+        emptyLabel={t('order_hub.detail.section.empty.shipment')}
         onRetry={() => void shipmentsQuery.refetch()}
       >
         <ul className="flex flex-col gap-2">
@@ -576,18 +597,24 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
       </RelatedSection>
 
       <RelatedSection
-        title={t('internal_sales.hub.contracts.title')}
+        id="contracts"
+        title={t('order_hub.detail.contracts.title')}
         action={(
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/backend/trade-docs/contracts/create?orderKind=${orderKind}&orderId=${encodeURIComponent(order.id)}`}>
-              {t('internal_sales.hub.contracts.add')}
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/backend/trade-docs/contracts/create?orderKind=${orderKind}&orderId=${encodeURIComponent(order.id)}`}>
+                {t('order_hub.detail.section.add.contracts')}
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/backend/trade-docs/contracts">{t('order_hub.detail.section.viewAll')}</Link>
+            </Button>
+          </div>
         )}
         isLoading={contractsQuery.isLoading}
         failed={contractsQuery.isError}
         isEmpty={contracts.length === 0}
-        emptyLabel={t('internal_sales.hub.contracts.empty')}
+        emptyLabel={t('order_hub.detail.section.empty.contracts')}
         onRetry={() => void contractsQuery.refetch()}
       >
         <ul className="flex flex-col gap-2">
@@ -604,29 +631,35 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
       </RelatedSection>
 
       <RelatedSection
-        title={t('internal_sales.hub.documents.title')}
+        id="documents"
+        title={t('order_hub.detail.documents.title')}
         action={(
-          <Button asChild variant="outline" size="sm">
-            <Link
-              href={`/backend/trade-docs/proformas/create?orderKind=${orderKind}&orderId=${encodeURIComponent(order.id)}${
-                soleContract ? `&contractId=${encodeURIComponent(soleContract)}` : ''
-              }`}
-            >
-              {t('internal_sales.hub.documents.add')}
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link
+                href={`/backend/trade-docs/proformas/create?orderKind=${orderKind}&orderId=${encodeURIComponent(order.id)}${
+                  soleContract ? `&contractId=${encodeURIComponent(soleContract)}` : ''
+                }`}
+              >
+                {t('order_hub.detail.section.add.documents')}
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/backend/trade-docs/proformas">{t('order_hub.detail.section.viewAll')}</Link>
+            </Button>
+          </div>
         )}
         isLoading={contractsQuery.isLoading || documentsQuery.isLoading}
         failed={documentsQuery.isError}
         isEmpty={documents.length === 0}
-        emptyLabel={t('internal_sales.hub.documents.empty')}
+        emptyLabel={t('order_hub.detail.section.empty.documents')}
         onRetry={() => void documentsQuery.refetch()}
       >
         <ul className="flex flex-col gap-2">
           {documents.map((row) => (
             <li key={`${row.kind}-${row.id}`} className="flex flex-wrap items-center gap-3 text-sm">
               <span className="text-muted-foreground">
-                {t(row.kind === 'tax_invoice' ? 'internal_sales.hub.documents.kind.taxInvoice' : `trade_docs.documents.kind.${row.kind}`)}
+                {t(row.kind === 'tax_invoice' ? 'order_hub.detail.documents.kind.taxInvoice' : `trade_docs.documents.kind.${row.kind}`)}
               </span>
               <span className="font-medium">{row.number ?? row.id.slice(0, 8)}</span>
               <MoneyAmount currencyCode={order.currencyCode} amount={row.total} />
@@ -637,11 +670,17 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
       </RelatedSection>
 
       <RelatedSection
-        title={t('internal_sales.hub.money.title')}
+        id="money"
+        title={t('order_hub.detail.money.title')}
+        action={(
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/backend/export-finance/orders">{t('order_hub.detail.section.viewAll')}</Link>
+          </Button>
+        )}
         isLoading={collectionsQuery.isLoading || refundsQuery.isLoading}
         failed={collectionsQuery.isError || refundsQuery.isError}
         isEmpty={collections.length === 0 && refunds.length === 0}
-        emptyLabel={t('internal_sales.hub.money.empty')}
+        emptyLabel={t('order_hub.detail.section.empty.money')}
         onRetry={() => {
           void collectionsQuery.refetch()
           void refundsQuery.refetch()
@@ -650,7 +689,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         <ul className="flex flex-col gap-2">
           {collections.map((row) => (
             <li key={`collection-${row.purchaseOrderId}`} className="flex flex-wrap items-center gap-3 text-sm">
-              <span className="text-muted-foreground">{t('internal_sales.hub.money.collection')}</span>
+              <span className="text-muted-foreground">{t('order_hub.detail.money.collection')}</span>
               <Link className="font-medium underline" href={`/backend/export-finance/orders/${encodeURIComponent(row.purchaseOrderId)}`}>
                 {row.purchaseOrderNumber ?? row.purchaseOrderId.slice(0, 8)}
               </Link>
@@ -660,7 +699,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           ))}
           {refunds.map((row) => (
             <li key={`refund-${row.shipmentId}`} className="flex flex-wrap items-center gap-3 text-sm">
-              <span className="text-muted-foreground">{t('internal_sales.hub.money.refund')}</span>
+              <span className="text-muted-foreground">{t('order_hub.detail.money.refund')}</span>
               <Link className="font-medium underline" href={`/backend/export-finance/containers/${encodeURIComponent(row.shipmentId)}`}>
                 {row.shipmentNumber ?? row.shipmentId.slice(0, 8)}
               </Link>

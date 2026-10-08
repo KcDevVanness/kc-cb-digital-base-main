@@ -1139,12 +1139,14 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       const id = typeof created.result?.id === 'string' ? created.result.id : null
       // Remember what was used: the next document in this organization + trade type starts here.
       writeStoredCurrency(currencyStorageKey(organizationId, entryTradeType), values.currencyCode)
-      pushWithFlash(
-        router,
-        id ? documentEditHrefForTradeType(kind, id, values.tradeType) : entryHref,
-        t('internal_sales.form.saved'),
-        'success',
-      )
+      // A new order lands on its hub (the one filling surface, `/backend/orders/<id>`); a quote keeps
+      // the edit page it has always landed on, and a create without an id keeps the list fallback.
+      const landingHref = id
+        ? (kind === 'order'
+            ? `/backend/orders/${encodeURIComponent(id)}`
+            : documentEditHrefForTradeType(kind, id, values.tradeType))
+        : entryHref
+      pushWithFlash(router, landingHref, t('internal_sales.form.saved'), 'success')
     } catch (error) {
       flash(t('internal_sales.form.saveFailed'), 'error')
       throw error
