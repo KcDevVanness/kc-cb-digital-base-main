@@ -57,7 +57,7 @@ id 直接不出现**——响应不确认外部记录是否存在。
 |---|---|
 | `procurementCount` | 销售行：`source_sales_order_id = id` 且状态非 `cancelled` 的采购单数；采购行恒 0 |
 | `shipmentCount` | 经销售分摊（销售行）或采购分摊（采购行）关联的**去重**发运单数，软删发运单不计 |
-| `documentCount` | 该订单关联合同的 PI/CI + 税务发票数 + 其发运单的出口单证数 |
+| `documentCount` | **销售行**：本单自己的关联行数（`trade_docs_order_documents`）+ 其发运单的出口单证数；**采购行**：其关联合同的 PI/CI + 税务发票数 + 其发运单的出口单证数（采购单没有自己的单据区块，其发票就是合同的） |
 | `collected` | 销售行：任一关联采购单的收汇档案 `collection_status = 'received'`；采购行：本单自己的 |
 | `refunded` | 任一关联发运单存在退税档案 |
 
@@ -100,6 +100,12 @@ id 直接不出现**——响应不确认外部记录是否存在。
   收汇·退税 `/backend/export-finance/orders`。
 - **写路径**：只写订单自己的状态（确认 / 作废），走 `internal_sales/lib/salesStatusWrite.ts`——与列表同一个
   写实现；其余一律交给各自模块的命令。
+- **「单据」区块读法（2026-10-08）**：不再靠合同推导，改读 `trade_docs/orders/documents?orderKind=&orderId=`，
+  再用 `ids=` 一次读活单据（`trade_docs/documents`）与税票（`trade_docs/invoices`）拿到**当前**单号/状态/金额；
+  关联行对应的单据已被删时不渲染该行（活数据自然过滤）。区块动作 =「新建单据」（带 `?orderKind=&orderId=`，
+  订单恰好只有一张合同时再带 `&contractId=`）+「管理单据关联」（`trade_docs/components/OrderDocumentsDialog.tsx`，
+  成套替换、每次打开重读、携带订单版本，过期 409）+「查看全部」。阶段投影的 `documentCount` 与它同源
+  （`lib/orderStages.ts` 的 `linkedDocumentCountFor`）。
 - **失败隔离**：每个分区独立 react-query，某分区读失败只在该分区显示错误 + 重试，其余照常。
 - **门禁**：`sales.order.view`（与旧 hub 相同）；页面 `navHidden`，不进树。
 
@@ -127,6 +133,11 @@ yarn mercato auth sync-role-acls   # 既有租户补授 order_hub.view
 阶段为 0 的格子点击直达预填新建；「新建订单」按 manage 功能位显隐、弹窗选贸易类型后进入对应建单页；
 采购行「全字段」三组与 `/backend/export-finance/orders/<id>` 同值、无 `export_finance.orders.view` 时该组显示
 无权限文案；`/backend` 仍是仪表盘。
+
+订单 hub「单据」区块（2026-10-08）：打开一张订单，区块只列 `trade_docs_order_documents` 里的关联单据
+（行显示当前状态/金额，已删单据的关联行不出现）；「管理单据关联」加一张、删一张 → 区块行数随之变化
+（过期订单版本保存 → 409 且不丢输入）；带 `?orderKind=&orderId=` 的新建单据页建一张 → 刷新后自动出现在区块里；
+工作台该行「单证」列数值 = 关联数 + 其发运单的出口单证数。
 
 ## 回滚
 
