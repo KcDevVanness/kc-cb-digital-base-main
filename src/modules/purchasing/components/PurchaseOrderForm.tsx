@@ -260,6 +260,24 @@ export async function loadCurrencyOptions(errorMessage: string): Promise<CrudFie
 }
 
 /**
+ * A supplier's own default currency, for prefilling the order's currency (`''` when it has none or
+ * the read fails — a missing prefill must never block the form).
+ */
+async function fetchSupplierDefaultCurrency(supplierId: string): Promise<string> {
+  try {
+    const payload = await readApiResultOrThrow<{ item?: { defaultCurrencyCode?: string | null } }>(
+      `${SUPPLIERS_API_PATH}/${encodeURIComponent(supplierId)}`,
+      undefined,
+      { fallback: {}, errorMessage: '' },
+    )
+    const code = payload.item?.defaultCurrencyCode
+    return typeof code === 'string' ? code.trim().toUpperCase() : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
  * One editable order line. `key` keeps React (and the picker's resolved label) anchored to a
  * line while lines are added and removed; `productLabel` only ever seeds the picker's display
  * for a product that is not on the first page of options, and is never submitted.
@@ -760,6 +778,44 @@ function resolvePickerSnapshot(
   return findOptionSnapshot(store.current[fieldId] ?? [], id)
 }
 
+/**
+ * Prefills the order's currency from the supplier the operator just picked, and never overrides a
+ * currency they changed by hand.
+ *
+ * Headless (renders nothing): the supplier and currency controls are built-in fields, so there is no
+ * field of its own to render into — it watches the form's values through a bare group instead. A
+ * hand edit is inferred from the currency moving away from the value this component last wrote, so
+ * its own write is never mistaken for one.
+ */
+function SupplierCurrencyDefault({ values, setValue }: CrudFormGroupComponentProps) {
+  const supplierId = typeof values?.supplierId === 'string' ? values.supplierId.trim() : ''
+  const currencyCode = typeof values?.currencyCode === 'string' ? values.currencyCode : ''
+  const handEditedRef = React.useRef(false)
+  const appliedRef = React.useRef('')
+  const seenCurrencyRef = React.useRef(currencyCode)
+
+  React.useEffect(() => {
+    if (seenCurrencyRef.current === currencyCode) return
+    if (currencyCode !== appliedRef.current) handEditedRef.current = true
+    seenCurrencyRef.current = currencyCode
+  }, [currencyCode])
+
+  React.useEffect(() => {
+    if (!supplierId || handEditedRef.current) return
+    let cancelled = false
+    void fetchSupplierDefaultCurrency(supplierId).then((code) => {
+      if (cancelled || !code || handEditedRef.current) return
+      appliedRef.current = code
+      setValue('currencyCode', code)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [setValue, supplierId])
+
+  return null
+}
+
 function useOrderFields(
   t: TranslateFn,
   pickerOptions: React.RefObject<Record<string, CrudFieldOption[]>>,
@@ -931,6 +987,13 @@ export default function PurchaseOrderForm() {
       column: 1,
       bare: true,
       component: (context) => <PurchaseOrderLinesEditor {...context} t={t} />,
+    },
+    {
+      // Headless: watches the picked supplier to prefill the currency; renders nothing.
+      id: 'supplier-currency-default',
+      column: 1,
+      bare: true,
+      component: (context) => <SupplierCurrencyDefault {...context} />,
     },
   ], [t])
 

@@ -19,10 +19,16 @@ import {
   customerQuickCreateSchema,
   EMPTY_CUSTOMER_QUICK_CREATE,
   type CustomerQuickCreateValues,
-} from '../lib/customerQuickCreate'
+} from '@/lib/parties/customerQuickCreate'
 
 /**
- * Quick-create of an external customer from a trade-document form.
+ * Quick-create of an external customer, shared by every app surface that picks a `parties` record.
+ *
+ * Lives at app level (moved out of `trade_docs`) so the internal-sales order form — and any later
+ * host — can offer the same dialog without importing a sibling module's component. It still reads
+ * the `trade_docs` catalog for its labels (`trade_docs.counterparty.create.*`): a shared component
+ * may render words a module owns, exactly as `@/lib/orders/purchaseOrderStatus` reads the
+ * `purchasing` catalog for its labels.
  *
  * The customer master lives in `parties` (角色 `buyer`), the app's counterparty module; this dialog
  * only collects the identity the printed document needs and calls the parties create route, so ACL,

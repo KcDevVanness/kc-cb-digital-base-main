@@ -207,3 +207,10 @@ yarn jest --config jest.config.cjs src/modules/trade_docs
 - PI/CI：预填方向与币种，并自动执行既有「从订单复制行」；订单只有一张关联合同时预填 `contractId`。
 - 三态：参数不可用 → 行内提示（`trade_docs.form.sourceOrder.invalid`）并按新建处理；读取中 → 只显示
   载入提示（表单未挂载，不会覆盖已输入内容）；读失败 → 行内提示 + 空表单，仍可手工新建。
+
+## 客户快速建档件已提升为 app 级（2026-10-08）
+
+`CustomerQuickCreateDialog.tsx` 与 `lib/customerQuickCreate.ts`（含其单测）移到 `src/lib/parties/`，供
+本模块的交易对手选择器与 `internal_sales` 的买方选择器共用；词条仍留在 `trade_docs.counterparty.create.*`
+（共享件可读模块词表，与 `@/lib/orders/purchaseOrderStatus` 同例）。`CounterpartyPicker.tsx` 只改了 import，
+行为不变。
