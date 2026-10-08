@@ -1,7 +1,7 @@
 # 公司订单为中心的入口改造（订单工作台 + 填入式补充 + 自绘多级导航树）
 
 **Date**: 2026-10-08
-**Status**: Phase 1 delivered and verified (2026-10-08); Phases 2–5 pending
+**Status**: Phases 1–2 delivered and verified (2026-10-08); Phases 3–5 pending
 
 ## TLDR
 
@@ -573,4 +573,5 @@
 | Date | Change |
 |---|---|
 | 2026-10-08 | Initial draft — 由已批准的计划（订单工作台 + 填入式补充 + 自绘多级导航树）落成规格；Phase 1–5 与 REQ-001…REQ-012、TEST-101…TEST-306、AC-001…AC-012 建立追溯关系 |
+| 2026-10-08 | **Phase 2 已交付并实测**（PR `feat/order-to-purchase-order-link`）。证据：单元 `src/modules/purchasing/lib/__tests__/sourceSalesOrder.test.ts` **12 passed**（参数解析：none/ok/未知 kind/非 uuid/半对；行映射：只复制商品引用与数量、主数据优先、catalog 兜底、缺引用与缺数量计数、snake_case 读法）；集成 `__integration__/order-source-link.spec.ts` → `yarn mercato test:integration order-source-link` **4 passed**（① 建单 201 且三列冻结、单号 = 销售订单号；② 422 `source_sales_order_not_found` 三种情形——不存在、无贸易类型通道、跨组织；③ `?sourceSalesOrderId=` 只回该单且不含未挂来源的单；④ 显式 `null` 清空三列）；`yarn typecheck` / `yarn lint`（0 error）/ `yarn ds:check`（1000 files）/ `yarn test`（69 suites · 573 tests）/ `yarn build` 全绿；迁移 `Migration20261008042809_purchasing.ts` 审阅通过（3 列 + 1 索引，无回填）。实现中修正两处自身缺陷：`Scope` 类型应取自 `commands/shared.ts`（无 `lib/scope.ts`）；编辑表单的 `initialValues` 必须带上 `sourceSalesOrderId`。已知前提（非本次引入）：`/api/sales/order-lines` 与 `/api/sales/orders` 的门禁是复数 `sales.orders.view`，而页面声明单数 `sales.order.view`——非超管角色需同时授予复数 id，行复制失败时表单保留来源锚并提示手动补行 |
 | 2026-10-08 | **Phase 1 已交付并实测**（PR `feat/sidebar-nav-tree`）。证据：单元 `src/modules/nav_shell/lib/__tests__/buildNavTree.test.ts` + 覆盖测试 `navTree.coverage.test.ts` → `yarn jest --config jest.config.cjs src/modules/nav_shell` **16 passed**；`yarn typecheck` 0 error、`yarn lint` 0 error、`yarn ds:check` 1008 files passed；浏览器实测：9 个域且无内置平铺重复、逐级折叠、活跃高亮（仅命中页有标记）、搜索「发运」只剩命中项、折叠态只显示图标、≤420px 抽屉内 `mobileSidebarSlot` 渲染并可跳转；RBAC：只授 `cross_border.shipments.view` 的账号树里只有「业务办理 → 发运与装箱（发运单/装箱单）」，直接访问 `/backend/finance/payables` 仍被页面门禁拒绝；偏好：角色布局（`applyToRoles`）生效、用户偏好覆盖角色、href 级 `hiddenItems`/改名/`itemOrder` 全部生效（`itemOrder` 由本模块应用，安装层只存不读）。实测中修掉两处自身缺陷：app 遮蔽页漏带 `page.meta.ts` 会丢掉 `auth.sidebar.manage` 门禁（覆盖测试拦下）；设计系统检查拦下 `max-h-[68dvh]` 与内联 `paddingLeft`。已知限制：框架自带侧栏搜索框因分组置空而失效（本树自带可用搜索框），记录在模块 README 与 `docs/dev/navigation.md` |
