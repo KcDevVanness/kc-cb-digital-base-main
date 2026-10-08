@@ -334,6 +334,13 @@ enabledModules.push({ id: 'our_parties', from: '@app' })
 // Phase 1). It is enabled unconditionally because it only reads/writes when an operator runs it.
 enabledModules.push({ id: 'storage_ops', from: '@app' })
 
+// App-owned navigation shell — the sidebar tree (域 → 模块 → 页面) drawn from the route manifest,
+// mounted into the shell's `backend:sidebar:nav` spot and its mobile slot, plus the chrome wrapper
+// that blanks the built-in flat list. No entity, no ACL feature: it is a display layer over pages
+// that keep their own `requireFeatures` gate.
+// See .ai/specs/2026-10-08-order-centric-entry.md (Phase 1) and src/modules/nav_shell/README.md
+enabledModules.push({ id: 'nav_shell', from: '@app' })
+
 // Optional S3-compatible object storage provider, gated by the flag the shipped `.env` block
 // documents ("When true, `storage_s3` is added to enabledModules in modules.ts"). Phase 0 of
 // .ai/specs/2026-09-23-local-to-s3-storage-migration.md installs and credentials it while both

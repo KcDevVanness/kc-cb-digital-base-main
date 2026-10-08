@@ -14,6 +14,7 @@ import { parseBooleanWithDefault } from '@open-mercato/shared/lib/boolean'
 import { PageInjectionBoundary } from '@open-mercato/ui/backend/injection/PageInjectionBoundary'
 import { DemoFeedbackWidget } from '@/components/DemoFeedbackWidget'
 import { BackendHeaderChrome } from '@/components/BackendHeaderChrome'
+import SidebarNavTree from '@/modules/nav_shell/components/SidebarNavTree'
 
 function collectStaticSettingsPathPrefixes(): string[] {
   const prefixes = new Set<string>()
@@ -127,9 +128,10 @@ export default async function BackendLayout({
             organizationId={auth?.orgId ?? null}
           />
         )}
-        adminNavApi="/api/auth/admin/nav"
+        adminNavApi="/api/nav_shell/chrome"
         version={APP_VERSION}
         hideFooter={hideBackendFooter}
+        mobileSidebarSlot={<SidebarNavTree variant="mobile" />}
         settingsPathPrefixes={collectStaticSettingsPathPrefixes()}
         settingsSections={[]}
         settingsSectionTitle={translate('backend.nav.settings', 'Settings')}
