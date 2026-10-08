@@ -197,3 +197,13 @@ yarn jest --config jest.config.cjs src/modules/trade_docs
 （迁移是**向前-only** 的，`yarn mercato db` 只有 `generate` / `migrate` / `greenfield`，没有 `down`：
 回滚数据只能从备份恢复，或用 `yarn db:greenfield` 重建库——后者是破坏性的，需所有者批准）。
 合同 Excel 生成的附件仍留在存储驱动中（不随模块回滚删除）。
+
+## 从销售订单预填（2026-10-08）
+
+合同与 PI/CI 的新建页支持 `?orderKind=&orderId=`（来源 = 销售订单）：
+
+- 合同：预填 `direction='sales'`、订单币种、商品行（复用既有「从订单复制行」的 loader 与行映射，
+  不写第二套），对方仅在订单快照带 `internalSales.partyId` 且该主体可解析时预填。
+- PI/CI：预填方向与币种，并自动执行既有「从订单复制行」；订单只有一张关联合同时预填 `contractId`。
+- 三态：参数不可用 → 行内提示（`trade_docs.form.sourceOrder.invalid`）并按新建处理；读取中 → 只显示
+  载入提示（表单未挂载，不会覆盖已输入内容）；读失败 → 行内提示 + 空表单，仍可手工新建。

@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Trash2, X } from 'lucide-react'
 import {
   CrudForm,
@@ -31,11 +31,17 @@ import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import {
   appendContractLines,
   buildContractSourceAnchorPayload,
+  CONTRACT_LINE_SOURCE_ROUTES,
+  hasContractLineContent,
+  readOrderSourceHeadFacts,
+  sourceLineToContractLine,
   type ContractLineDraft,
 } from '../lib/contractLineSource'
+import { parseSourceOrderParams } from '@/lib/orders/sourceOrderParams'
 import { CONTRACT_DIRECTIONS, CONTRACT_STATUSES, directionLabel } from './contractLabels'
 import { ContractLineSourceDialog, type ContractLineSourceHead } from './ContractLineSourceDialog'
 import {
+  loadCounterpartyDetail,
   loadCurrencyOptions,
   loadOurPartyProfile,
   loadPartyDetail,
@@ -47,6 +53,7 @@ import {
   readText,
   useUnitOptions,
   withCurrentUnit,
+  type CounterpartyDetail,
   type OurPartyProfileDetail,
   type ProductOption,
 } from './formOptions'
@@ -169,6 +176,19 @@ function snapshotText(snapshot: unknown, key: string): string {
   if (!snapshot || typeof snapshot !== 'object') return ''
   const value = (snapshot as Record<string, unknown>)[key]
   return typeof value === 'string' ? value : ''
+}
+
+/**
+ * Reads `<snapshot>.internalSales.partyId` off a sales order's frozen buyer snapshot — the link an
+ * **external** sale carries; an internal sale links an organization instead and has no party to
+ * resolve, so it prefills no counterparty.
+ */
+function readBuyerPartyId(snapshot: unknown): string {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return ''
+  const link = (snapshot as Record<string, unknown>).internalSales
+  if (!link || typeof link !== 'object' || Array.isArray(link)) return ''
+  const partyId = (link as Record<string, unknown>).partyId
+  return typeof partyId === 'string' ? partyId.trim() : ''
 }
 
 export function toContractFormValues(
@@ -1005,9 +1025,104 @@ export default function ContractForm({ mode, contractId }: { mode: 'create' | 'e
 
 type FormWiring = { fields: CrudField[]; groups: CrudFormGroup[] }
 
+/**
+ * `?orderKind=&orderId=` — the order hub hands the operator here with the sales order already
+ * known, so a sales contract opens with its direction, currency, product lines and (for an external
+ * sale) the buyer already filled in. The lines go through the **same** read and row mapping the
+ * 「从订单/报价单复制行」 dialog uses, so a prefilled contract and a copied one cannot drift.
+ *
+ * The prefill resolves before the form mounts (`initialValues === null` renders the loading state),
+ * which is why there is no "overwrite what you typed" confirmation: there is nothing to overwrite
+ * yet. An unusable parameter pair is reported inline and the form opens empty — a mistyped link
+ * must not block the page — and a failed read keeps the form usable with a notice.
+ */
+type ContractPrefillState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; values: ContractFormValues; skipped: number }
+  | { status: 'failed' }
+
 function ContractCreateForm({ fields, groups }: FormWiring) {
   const t = useT()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const sourceParam = React.useMemo(() => parseSourceOrderParams(searchParams), [searchParams])
+  const [prefillState, setPrefillState] = React.useState<ContractPrefillState>(
+    sourceParam.status === 'ok' ? { status: 'loading' } : { status: 'idle' },
+  )
+
+  React.useEffect(() => {
+    if (sourceParam.status !== 'ok') return
+    let cancelled = false
+    const loadError = t('trade_docs.form.sourceOrder.loadFailed')
+    const route = CONTRACT_LINE_SOURCE_ROUTES[sourceParam.kind]
+    const load = async () => {
+      // The head and its lines are the source dialog's own reads, so the prefill sees exactly the
+      // projection (and scope) an operator copying by hand would.
+      const [headPayload, linePayload] = await Promise.all([
+        fetchCrudList<Record<string, unknown>>(route.headApiPath, { ids: sourceParam.id, pageSize: 1 }),
+        fetchCrudList<Record<string, unknown>>(route.lineApiPath, {
+          [route.lineParentParam]: sourceParam.id,
+          pageSize: 100,
+        }),
+      ])
+      const head = headPayload.items?.[0] ?? null
+      const facts = head ? readOrderSourceHeadFacts(head, 'sales', route.headNumberKey) : null
+      const copiedAt = new Date().toISOString()
+      const mapped = (linePayload.items ?? []).map((item) =>
+        sourceLineToContractLine(item, sourceParam.kind, copiedAt),
+      )
+      const lines = mapped.filter(hasContractLineContent)
+      const skipped = mapped.length - lines.length
+
+      // The buyer only when the order's snapshot names a party the picker can resolve: an internal
+      // sale links an organization, and a party the caller cannot read stays for the operator.
+      let counterparty: CounterpartyDetail | null = null
+      const partyId = readBuyerPartyId(head?.customerSnapshot ?? head?.customer_snapshot)
+      if (partyId) {
+        counterparty = await loadCounterpartyDetail(
+          t('trade_docs.contracts.form.counterpartyLoadFailed'),
+          'customer',
+          partyId,
+        ).catch(() => null)
+      }
+      const preferredAccount = counterparty
+        ? (counterparty.bankAccounts.find((account) => account.isDefault) ?? counterparty.bankAccounts[0])
+        : undefined
+
+      if (cancelled) return
+      setPrefillState({
+        status: 'ready',
+        skipped,
+        values: {
+          ...EMPTY_CONTRACT_VALUES,
+          direction: 'sales',
+          currencyCode: head ? readText(head, 'currencyCode', 'currency_code') : '',
+          sourceKind: route.headSourceKind,
+          sourceId: sourceParam.id,
+          sourceNumber: facts?.number ?? '',
+          sourceCounterparty: facts?.counterparty ?? '',
+          lines: lines.length > 0 ? lines : [{ ...EMPTY_LINE }],
+          counterpartyId: counterparty ? partyId : '',
+          counterpartyName: counterparty?.name ?? '',
+          counterpartyAddress: counterparty?.address ?? '',
+          counterpartyContact: counterparty?.contact ?? '',
+          counterpartyBankAccountId: preferredAccount?.id ?? '',
+          counterpartyBank: preferredAccount
+            ? [preferredAccount.beneficiaryBank, preferredAccount.accountNumber, preferredAccount.swiftCode]
+                .filter((part) => part.length > 0)
+                .join(' ')
+            : '',
+        },
+      })
+    }
+    load().catch(() => {
+      if (!cancelled) setPrefillState({ status: 'failed' })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [sourceParam, t])
 
   const handleSubmit = React.useCallback(async (values: ContractFormValues) => {
     try {
@@ -1031,18 +1146,46 @@ function ContractCreateForm({ fields, groups }: FormWiring) {
     }
   }, [router, t])
 
+  if (prefillState.status === 'loading') {
+    return <p className="text-sm text-muted-foreground">{t('trade_docs.form.sourceOrder.loading')}</p>
+  }
+
+  const invalidSourceParam = sourceParam.status === 'invalid'
+
   return (
-    <CrudForm<ContractFormValues>
-      title={t('trade_docs.contracts.form.createTitle')}
-      titleHeadingLevel={1}
-      backHref={LIST_HREF}
-      fields={fields}
-      groups={groups}
-      initialValues={{ ...EMPTY_CONTRACT_VALUES, lines: [{ ...EMPTY_LINE }] }}
-      submitLabel={t('trade_docs.contracts.form.save')}
-      cancelHref={LIST_HREF}
-      onSubmit={handleSubmit}
-    />
+    <>
+      {invalidSourceParam ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('trade_docs.form.sourceOrder.invalid')}
+        </p>
+      ) : null}
+      {prefillState.status === 'failed' ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('trade_docs.form.sourceOrder.loadFailed')}
+        </p>
+      ) : null}
+      {prefillState.status === 'ready' ? (
+        <p className="mb-3 text-xs text-muted-foreground">{t('trade_docs.form.sourceOrder.applied')}</p>
+      ) : null}
+      {prefillState.status === 'ready' && prefillState.skipped > 0 ? (
+        <p className="mb-3 text-xs text-muted-foreground">
+          {t('trade_docs.form.sourceOrder.skipped', { count: prefillState.skipped })}
+        </p>
+      ) : null}
+      <CrudForm<ContractFormValues>
+        title={t('trade_docs.contracts.form.createTitle')}
+        titleHeadingLevel={1}
+        backHref={LIST_HREF}
+        fields={fields}
+        groups={groups}
+        initialValues={prefillState.status === 'ready'
+          ? prefillState.values
+          : { ...EMPTY_CONTRACT_VALUES, lines: [{ ...EMPTY_LINE }] }}
+        submitLabel={t('trade_docs.contracts.form.save')}
+        cancelHref={LIST_HREF}
+        onSubmit={handleSubmit}
+      />
+    </>
   )
 }
 

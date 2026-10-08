@@ -118,7 +118,7 @@ const QUOTES_HREF = '/backend/internal-sales/quotes'
 const LINES_PAGE_SIZE = 100
 const ORDERS_HREF = '/backend/internal-sales/orders'
 
-function apiPathFor(kind: InternalSalesKind): string {
+export function apiPathFor(kind: InternalSalesKind): string {
   return kind === 'quote' ? 'sales/quotes' : 'sales/orders'
 }
 

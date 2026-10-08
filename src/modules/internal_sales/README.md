@@ -8,6 +8,25 @@ app 自有**界面层**模块：为**对内（总部 → 分公司）与对外�
 
 需求与证据见 [`.ai/specs/2026-09-22-products-and-trade-docs.md`](../../../.ai/specs/2026-09-22-products-and-trade-docs.md) 的 Phase 6。
 
+## 订单详情 hub（2026-10-08）
+
+`/backend/internal-sales/orders/<id>`（对外入口同页，`external-sales/orders/[id]` 直接 re-export）把
+「一张订单的后续填写」收在一页：抬头 + 明细行 + 五个分区（采购订单 / 发运单 / 购销合同 / 单据 /
+收汇·退税），每个分区自带预填的新建入口。
+
+| 事项 | 口径 |
+|---|---|
+| 门禁 | `sales.order.view`（与列表同一条）；页面 `navHidden`，只从列表与采购单的来源链接进入 |
+| 贸易类型 | 由路径判定（`tradeTypeFromPathname`），因此同一组件服务两个入口，链接/预填/合同 kind 都跟着入口走 |
+| 分区数据源 | 采购订单 `?sourceSalesOrderId=`；发运单 `?salesOrderId=`；合同 `contracts/orders?orderKind=&orderId=` → `contracts?ids=`；单据 `documents?contractId=` + `invoices?contractId=`（每张关联合同各读一次后合并）；收汇/退税 `collections?purchaseOrderId=` / `refunds?shipmentId=`（单条读，逐采购单/发运单各一次） |
+| 失败隔离 | 每个分区独立 react-query：某分区读失败只在该分区显示错误 + 重试，其余分区照常 |
+| 写路径 | 只写订单自己的状态（确认 / 作废），走 `lib/salesStatusWrite.ts` —— 与列表**同一个**写实现（同一个乐观锁头、同一套引擎语义）；其余一律交给各自模块的命令 |
+| 分页上限 | 各分区一次读 `pageSize=100`：`/api/sales/order-lines` 的上限就是 100，超过是 400 |
+| 预填链接 | `/backend/purchasing/orders/create?orderKind=&orderId=`、`/backend/cross_border/shipments/create?…`、`/backend/trade-docs/contracts/create?…`、`/backend/trade-docs/proformas/create?…`（订单只有一张关联合同时附 `&contractId=`） |
+
+共用件：`lib/salesDocumentRecord.ts`（列表行投影，列表与 hub 共用）、`lib/salesStatusWrite.ts`
+（状态写）、`lib/tradeType.ts`（贸易类型）。
+
 ## 表面
 
 | 层 | 内容 |

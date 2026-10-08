@@ -86,3 +86,16 @@ yarn mercato test:integration shipment-contracts   # __integration__/shipment-co
 ## 相关知识（`.ai/lessons/`）
 
 - `installed-inputs-have-no-component-override.md` — 详情页里复用安装组件时的边界。
+
+## 按来源销售订单筛选发运单（2026-10-08）
+
+- 列表支持 `GET /api/cross_border/shipments?salesOrderId=<uuid>`：经本模块的销售分摊表
+  （`cross_border_shipment_sales_allocations.sales_order_id`）解析去重的发运单 id，再窄化分页；
+  列表页顶部给可清除的筛选横幅。
+- `lib/shipmentSalesReads.ts` 的 `loadShipmentIdsForSalesOrder` 是同一套 scoped 只读（读作用域 =
+  可见组织集，软删发运单不计）。
+- **空结果不再是 500**：`lib/linkIdFilter.ts` 把「链接表解析出空集」表达成匹配不到任何行的过滤器。
+  此前 `{ $in: [] }` 会以 `in ()` 到达 Postgres 并抛语法错误——`?contractId=`（发运单列表与装箱单列表）
+  与新的 `?salesOrderId=` 三个入口都受影响，现在都返回空页。
+- 新建页支持 `?orderKind=&orderId=`：预填销售分摊（缺官方目录链接的行跳过并计数提示）与来源采购单的
+  采购分摊（只取可分摊状态的采购单），`allocations.min(1)` 不变；`?contractId=` 预填仍照旧，两者可同时出现。
