@@ -1,5 +1,7 @@
 /**
- * The app's sidebar information architecture: 域 → 模块 → 页面, in the order the business reads it.
+ * The app's sidebar information architecture: 域 → 模块 → 组 → 页面, in the order the business reads
+ * it (the company-order domain is four levels deep: 公司订单 → 订单工作台 → 采购 / 出口销售 /
+ * 合同与单据 / 发运与装箱 → 页面).
  *
  * Single source of truth for `SidebarNavTree` (the rendered tree) and for
  * `/api/nav_shell/tree` (the payload it renders). A page entry names only its `href`: its label,
@@ -8,13 +10,14 @@
  * installed `requireFeatures` value stays the only gate. `lib/__tests__/navTree.coverage.test.ts`
  * fails when a navigable page is registered neither in `NAV_TREE` nor in `TREE_EXCLUDED`.
  *
- * Domains become chrome *groups* (their id is the preference key for group order/label). Module
- * nodes become chrome *items with children*: the chrome item contract requires an `href`, so such a
- * node carries the href of its first page and the renderer treats it as an expand/collapse toggle
- * rather than a link. These nodes therefore need an explicit `id` (`tree:module:*` for a business
- * area) — with the href as the key they would collide with the first child page's preference key.
+ * Domains become chrome *groups* (their id is the preference key for group order/label). Module and
+ * group nodes become chrome *items with children*: the chrome item contract requires an `href`, so
+ * such a node carries its own page (`href`, e.g. the workbench) or the href of its first page, and
+ * the renderer draws the title as a link to it next to an expand/collapse toggle. These nodes
+ * therefore need an explicit `id` (`tree:module:*` for a business area) — with the href as the key
+ * they would collide with the first child page's preference key.
  *
- * Labels for domains and module nodes live in this module's catalogs (`nav_shell.tree.*`); page
+ * Labels for domains and branch nodes live in this module's catalogs (`nav_shell.tree.*`); page
  * entries use the page's own `titleKey` (zh + en already ship for every page in the tree).
  */
 
@@ -34,6 +37,12 @@ export type NavTreeBranch = {
   id: string
   labelKey: string
   iconName?: string
+  /**
+   * The node's own page, when it has one: the renderer makes the row title a link to it. Without an
+   * `href` a branch opens its first surviving child instead ( `buildBranch` falls back to
+   * `children[0].href`), which is what makes a group title behave like "go to the group".
+   */
+  href?: string
   children: NavTreeChild[]
 }
 
@@ -53,57 +62,65 @@ export function isNavTreeBranch(child: NavTreeChild): child is NavTreeBranch {
 
 export const NAV_TREE: NavTreeNode[] = [
   {
-    // The company-order domain is the single entry for order work: the workbench creates and lists
-    // orders, and the four groups below it are where each order's blocks are filled in and looked
-    // up — 采购 (purchase orders, suppliers, supplier products, supplier quotes), 出口销售 (the
-    // internal/external sales quote lists), 合同与单据 (contracts, proformas, commercial and tax
-    // invoices) and 发运与装箱 (shipments, packing lists). The per-trade-type *order* lists stay out
-    // of the tree because the workbench is their only entry, while the quote lists live under
-    // 出口销售.
+    // The company-order domain is the single entry for order work, in four levels: the domain holds
+    // one node — the workbench (订单工作台, whose title opens `/backend/orders` and whose children
+    // are the four business groups) — and each group holds the pages where an order's blocks are
+    // filled in and looked up: 采购 (purchase orders, suppliers, supplier products, supplier
+    // quotes), 出口销售 (the sales quote workbench), 合同与单据 (contracts, proformas, commercial
+    // and tax invoices) and 发运与装箱 (shipments, packing lists). The per-trade-type *order* lists
+    // stay out of the tree because the workbench is their only entry.
     id: 'tree:orders',
     labelKey: 'nav_shell.tree.domain.orders',
     iconName: 'clipboard-list',
     children: [
-      // The workbench leads the domain: it is the screen the operator opens first.
-      { href: '/backend/orders' },
       {
-        id: 'tree:module:purchasing',
-        labelKey: 'nav_shell.tree.module.purchasing',
-        iconName: 'package',
+        // The workbench leads the domain: it is the screen the operator opens first, and the
+        // second level exists so the four groups below it sit one level under the order entry.
+        id: 'tree:module:order-workbench',
+        labelKey: 'nav_shell.tree.module.orderWorkbench',
+        iconName: 'clipboard-list',
+        href: '/backend/orders',
         children: [
-          { href: '/backend/purchasing/orders' },
-          { href: '/backend/purchasing/suppliers' },
-          { href: '/backend/purchasing/supplier-products' },
-          { href: '/backend/sourcing/quotes' },
-        ],
-      },
-      {
-        id: 'tree:module:export-sales',
-        labelKey: 'nav_shell.tree.module.exportSales',
-        iconName: 'globe',
-        children: [
-          { href: '/backend/internal-sales/quotes' },
-          { href: '/backend/external-sales/quotes' },
-        ],
-      },
-      {
-        id: 'tree:module:contracts',
-        labelKey: 'nav_shell.tree.module.contracts',
-        iconName: 'file-text',
-        children: [
-          { href: '/backend/trade-docs/contracts' },
-          { href: '/backend/trade-docs/proformas' },
-          { href: '/backend/trade-docs/commercial-invoices' },
-          { href: '/backend/trade-docs/invoices' },
-        ],
-      },
-      {
-        id: 'tree:module:shipping',
-        labelKey: 'nav_shell.tree.module.shipping',
-        iconName: 'truck',
-        children: [
-          { href: '/backend/cross_border/shipments' },
-          { href: '/backend/cross_border/packing-lists' },
+          {
+            id: 'tree:module:purchasing',
+            labelKey: 'nav_shell.tree.module.purchasing',
+            iconName: 'package',
+            children: [
+              { href: '/backend/purchasing/orders' },
+              { href: '/backend/purchasing/suppliers' },
+              { href: '/backend/purchasing/supplier-products' },
+              { href: '/backend/sourcing/quotes' },
+            ],
+          },
+          {
+            id: 'tree:module:export-sales',
+            labelKey: 'nav_shell.tree.module.exportSales',
+            iconName: 'globe',
+            children: [
+              { href: '/backend/internal-sales/quotes' },
+              { href: '/backend/external-sales/quotes' },
+            ],
+          },
+          {
+            id: 'tree:module:contracts',
+            labelKey: 'nav_shell.tree.module.contracts',
+            iconName: 'file-text',
+            children: [
+              { href: '/backend/trade-docs/contracts' },
+              { href: '/backend/trade-docs/proformas' },
+              { href: '/backend/trade-docs/commercial-invoices' },
+              { href: '/backend/trade-docs/invoices' },
+            ],
+          },
+          {
+            id: 'tree:module:shipping',
+            labelKey: 'nav_shell.tree.module.shipping',
+            iconName: 'truck',
+            children: [
+              { href: '/backend/cross_border/shipments' },
+              { href: '/backend/cross_border/packing-lists' },
+            ],
+          },
         ],
       },
     ],

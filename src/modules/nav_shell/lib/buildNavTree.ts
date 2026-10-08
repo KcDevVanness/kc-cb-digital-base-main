@@ -176,11 +176,17 @@ export function buildNavTree(input: BuildNavTreeInput): NavTreeGroup[] {
       .filter((item): item is TreeItem => item !== null)
     if (children.length === 0) return null
     const title = label(branch.labelKey, branch.labelKey)
+    // The chrome item contract requires an href and the renderer makes the row title a link to it. A
+    // node with a page of its own names it (`branch.href`, e.g. the order workbench); a node without
+    // one opens its first surviving child, so a group title reads as "go to the group". The node's
+    // own page is resolved through the same manifest + feature gate as a leaf: a title never links at
+    // a page the manifest does not publish or the caller may not open — it degrades to the first
+    // child instead.
+    const ownFacts = branch.href ? byHref[branch.href] : undefined
+    const ownVisible = Boolean(ownFacts) && (!ownFacts?.requireFeatures?.length || allowed(ownFacts.requireFeatures))
     return {
       id: branch.id,
-      // The chrome item contract requires an href; a module node opens its first page when the
-      // renderer treats it as a link (the tree renders it as an expand toggle instead).
-      href: children[0].href,
+      href: branch.href && ownVisible ? branch.href : children[0].href,
       title,
       defaultTitle: title,
       iconName: branch.iconName,

@@ -35,7 +35,8 @@ type TreeRow = { item: NavTreeItem; depth: number }
 
 /**
  * Indentation by depth, as classes rather than a computed `paddingLeft`: the design-system check
- * rejects inline styles, and the tree is at most three levels deep (域 → 模块 → 页面).
+ * rejects inline styles, and the tree is four levels deep in the widest branch (域 → 订单工作台 →
+ * 业务组 → 页面); deeper nesting saturates at the last step.
  */
 const DEPTH_PADDING = ['pl-2', 'pl-5', 'pl-8', 'pl-11'] as const
 
@@ -166,16 +167,29 @@ export default function SidebarNavTree({ variant = 'desktop' }: SidebarNavTreePr
       return (
         <div key={key} className="flex flex-col items-center gap-1">
           {hasChildren ? (
-            <button
-              type="button"
-              title={item.title}
-              aria-label={item.title}
-              aria-expanded={open}
-              onClick={() => toggle(key, open)}
-              className={`flex h-10 w-10 items-center justify-center rounded-lg ${active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-            >
-              {renderIcon(item, 'size-4')}
-            </button>
+            <>
+              <Link
+                href={item.href}
+                title={item.title}
+                aria-label={item.title}
+                className={`flex h-10 w-10 items-center justify-center rounded-lg ${active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              >
+                {renderIcon(item, 'size-4')}
+              </Link>
+              <button
+                type="button"
+                title={item.title}
+                aria-label={item.title}
+                aria-expanded={open}
+                onClick={() => toggle(key, open)}
+                className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-muted"
+              >
+                <ChevronDown
+                  aria-hidden
+                  className={`size-3 transition-transform ${open ? '' : '-rotate-90'}`}
+                />
+              </button>
+            </>
           ) : (
             <Link
               href={item.href}
@@ -198,21 +212,29 @@ export default function SidebarNavTree({ variant = 'desktop' }: SidebarNavTreePr
     return (
       <div key={key} className="flex flex-col gap-1">
         {hasChildren ? (
-          <button
-            type="button"
-            onClick={() => toggle(key, open)}
-            aria-expanded={open}
-            className={`relative flex w-full items-center justify-between gap-2 rounded-lg py-2 pr-3 text-left text-sm font-medium ${padding} ${active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+          <div
+            className={`relative flex w-full items-center rounded-lg text-sm font-medium ${padding} ${active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
           >
-            <span className="flex min-w-0 items-center gap-2">
+            {active ? (
+              <span aria-hidden className="absolute left-0 top-2 h-5 w-1 rounded-r bg-foreground" />
+            ) : null}
+            <Link href={item.href} className="flex min-w-0 flex-1 items-center gap-2 py-2 pr-2">
               {renderIcon(item, 'size-4')}
               <span className="truncate">{item.title}</span>
-            </span>
-            <ChevronDown
-              aria-hidden
-              className={`size-3.5 shrink-0 transition-transform ${open ? '' : '-rotate-90'}`}
-            />
-          </button>
+            </Link>
+            <button
+              type="button"
+              onClick={() => toggle(key, open)}
+              aria-expanded={open}
+              aria-label={item.title}
+              className="flex shrink-0 items-center self-stretch pl-1 pr-3"
+            >
+              <ChevronDown
+                aria-hidden
+                className={`size-3.5 shrink-0 transition-transform ${open ? '' : '-rotate-90'}`}
+              />
+            </button>
+          </div>
         ) : (
           <Link
             href={item.href}

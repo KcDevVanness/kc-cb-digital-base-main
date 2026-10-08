@@ -84,7 +84,7 @@
 | 来源销售订单 | 采购单上的不可编辑三元组：`source_sales_order_id`（可空）、`_kind`（`internal_sales_order` \| `external_sales_order`）、`_number`（建单时冻结的快照） | `purchasing` | 解析不到 / 跨组织 → 422 `source_sales_order_not_found`；`kind`/`number` 不接受客户端直写 |
 | 填充式补充 | 从订单 hub 或工作台发起下游新建时，用查询参数把已知事实（订单、方向、币种、商品行）一次性带过去 | 各表单的预填读取 | 参数非法 → 行内提示并忽略该参数（不阻断），空表单仍可正常新建 |
 | 贸易类型 | `internal_sales_order` / `external_sales_order` 两个取值，由销售渠道推导 | `internal_sales/lib/tradeTypeChannels` | 其它取值 → 行内拒绝 `purchasing.orders.create.sourceOrder.invalid` |
-| 导航树节点 | 域（L1）→ 模块（L2）→ 页面（L3+），配置可继续嵌套；节点 id 形如 `tree:orders` | `nav_shell/lib/navTree.ts` | 子项全被功能位过滤 → 该节点一起消失 |
+| 导航树节点 | 域（L1）→ 分支节点（L2+）→ 页面（L3+），配置可继续嵌套；节点 id 形如 `tree:orders` / `tree:module:order-workbench`。分支行的标题是链接：节点自带页面（`href`，如订单工作台）就链到它，否则链到第一个子页；右侧箭头按钮只做展开/收起 | `nav_shell/lib/navTree.ts` | 子项全被功能位过滤 → 该节点一起消失 |
 | 显示层隐藏 | `hiddenItems` 是显示开关，与页面 `requireFeatures` 无关 | `sidebarPreferencesService` | 隐藏条目不改变任何授权结果 |
 
 ## Users, Permissions, and Scope

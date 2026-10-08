@@ -14,8 +14,11 @@ import type { NavTreeGroup } from '../treeTypes'
 
 function collectHrefs(children: NavTreeChild[], into: string[] = []): string[] {
   for (const child of children) {
-    if (isNavTreeBranch(child)) collectHrefs(child.children, into)
-    else into.push(child.href)
+    if (isNavTreeBranch(child)) {
+      // A node that names its own page (the workbench node) links at it, so its href needs facts too.
+      if (child.href) into.push(child.href)
+      collectHrefs(child.children, into)
+    } else into.push(child.href)
   }
   return into
 }
@@ -56,15 +59,21 @@ describe('buildNavTree', () => {
 
     const orders = groups.find((group) => group.id === 'tree:orders')!
     expect(orders.items.map((item) => item.id)).toEqual([
-      // The workbench leads the domain, then the four business groups.
-      '/backend/orders',
+      // The workbench node leads the domain; the four business groups hang under it.
+      'tree:module:order-workbench',
+    ])
+
+    const workbench = orders.items[0]
+    // The one branch in the tree with a page of its own: the row title links at it.
+    expect(workbench.href).toBe('/backend/orders')
+    expect(workbench.children?.map((child) => child.id)).toEqual([
       'tree:module:purchasing',
       'tree:module:export-sales',
       'tree:module:contracts',
       'tree:module:shipping',
     ])
 
-    const purchasing = orders.items.find((item) => item.id === 'tree:module:purchasing')!
+    const purchasing = workbench.children!.find((item) => item.id === 'tree:module:purchasing')!
     // A module node has no page of its own: the chrome item contract requires an href, so it points
     // at its first page while its preference key stays the explicit node id.
     expect(purchasing.href).toBe('/backend/purchasing/orders')
@@ -124,6 +133,28 @@ describe('buildNavTree', () => {
 
     expect(findLeaf(groups, '/backend/dictionaries')).toBeUndefined()
     expect(groups.find((group) => group.id === 'tree:master_data')).toBeDefined()
+  })
+
+  it('falls back to the first child when a node\'s own page is not linkable', () => {
+    // The node's own page is resolved through the same gate as a leaf: when the manifest does not
+    // publish it, or the caller may not open it, the title links at the group instead of offering a
+    // page that would refuse the caller.
+    const unpublished = buildNavTree({
+      entries: facts().filter((entry) => entry.pattern !== '/backend/orders'),
+      translate,
+    })
+    expect(unpublished.find((group) => group.id === 'tree:orders')?.items[0]?.href).toBe(
+      '/backend/purchasing/orders',
+    )
+
+    const forbidden = buildNavTree({
+      entries: facts({ '/backend/orders': { requireFeatures: ['feature.orders'] } }),
+      translate,
+      isAllowed: (features) => !features?.includes('feature.orders'),
+    })
+    expect(forbidden.find((group) => group.id === 'tree:orders')?.items[0]?.href).toBe(
+      '/backend/purchasing/orders',
+    )
   })
 
   it('applies role labels, then user labels over them', () => {
@@ -188,16 +219,20 @@ describe('buildNavTree', () => {
       translate,
       userPreference: {
         version: 2,
-        itemOrder: { 'tree:orders': ['tree:module:shipping', 'tree:module:contracts'] },
+        // The keys are the depth-0 items of the group: with the company-order domain now four levels
+        // deep, `tree:orders` holds a single node and the flat finance domain is where a page-level
+        // order still reads.
+        itemOrder: { 'tree:finance': ['/backend/finance/receivables', '/backend/finance/payables'] },
       },
     })
 
-    const orders = groups.find((group) => group.id === 'tree:orders')!
-    expect(orders.items.map((item) => item.href).slice(0, 2)).toEqual([
-      '/backend/cross_border/shipments',
-      '/backend/trade-docs/contracts',
+    const finance = groups.find((group) => group.id === 'tree:finance')!
+    expect(finance.items.map((item) => item.href).slice(0, 2)).toEqual([
+      '/backend/finance/receivables',
+      '/backend/finance/payables',
     ])
-    expect(orders.items.map((item) => item.href)).toContain('/backend/orders')
+    // A page the order does not name keeps the config position, after the ranked ones.
+    expect(finance.items.map((item) => item.href)).toContain('/backend/finance/expenses')
   })
 
   it('lets the user itemOrder win over the role itemOrder per group', () => {
@@ -206,16 +241,16 @@ describe('buildNavTree', () => {
       translate,
       rolePreference: {
         version: 2,
-        itemOrder: { 'tree:orders': ['tree:module:shipping', 'tree:module:contracts'] },
+        itemOrder: { 'tree:finance': ['/backend/finance/receivables', '/backend/finance/payables'] },
       },
       userPreference: {
         version: 2,
-        itemOrder: { 'tree:orders': ['tree:module:contracts', 'tree:module:purchasing'] },
+        itemOrder: { 'tree:finance': ['/backend/finance/payables', '/backend/finance/receivables'] },
       },
     })
 
-    const orders = groups.find((group) => group.id === 'tree:orders')!
-    expect(orders.items[0].href).toBe('/backend/trade-docs/contracts')
+    const finance = groups.find((group) => group.id === 'tree:finance')!
+    expect(finance.items[0].href).toBe('/backend/finance/payables')
   })
 
   it('renders a config iconName when the page manifest icon is a ReactNode, not a name', () => {
