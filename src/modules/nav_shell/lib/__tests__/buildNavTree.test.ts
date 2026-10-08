@@ -56,22 +56,20 @@ describe('buildNavTree', () => {
 
     const orders = groups.find((group) => group.id === 'tree:orders')!
     expect(orders.items.map((item) => item.id)).toEqual([
-      // The workbench leads the domain, then the three per-kind lists.
+      // The workbench leads the domain, then the four read-only ledgers.
       '/backend/orders',
-      '/backend/internal-sales/orders',
-      '/backend/external-sales/orders',
-      '/backend/purchasing/orders',
+      'tree:ledger:purchase-orders',
+      'tree:ledger:contracts',
+      'tree:ledger:documents',
+      'tree:ledger:shipments',
     ])
 
-    const operations = groups.find((group) => group.id === 'tree:operations')!
-    const purchasing = operations.items.find((item) => item.id === 'tree:module:purchasing')!
-    // A module node has no page of its own: the chrome item contract requires an href, so it points
+    const purchaseLedger = orders.items.find((item) => item.id === 'tree:ledger:purchase-orders')!
+    // A ledger node has no page of its own: the chrome item contract requires an href, so it points
     // at its first page while its preference key stays the explicit node id.
-    expect(purchasing.href).toBe('/backend/purchasing/suppliers')
-    expect(purchasing.children?.map((child) => child.href)).toEqual([
-      '/backend/purchasing/suppliers',
-      '/backend/purchasing/supplier-products',
-      '/backend/sourcing/quotes',
+    expect(purchaseLedger.href).toBe('/backend/purchasing/orders')
+    expect(purchaseLedger.children?.map((child) => child.href)).toEqual([
+      '/backend/purchasing/orders',
     ])
 
     const leaf = findLeaf(groups, '/backend/wms/inventory')!
@@ -187,16 +185,16 @@ describe('buildNavTree', () => {
       translate,
       userPreference: {
         version: 2,
-        itemOrder: { 'tree:orders': ['/backend/purchasing/orders', '/backend/internal-sales/orders'] },
+        itemOrder: { 'tree:orders': ['tree:ledger:shipments', 'tree:ledger:contracts'] },
       },
     })
 
     const orders = groups.find((group) => group.id === 'tree:orders')!
     expect(orders.items.map((item) => item.href).slice(0, 2)).toEqual([
-      '/backend/purchasing/orders',
-      '/backend/internal-sales/orders',
+      '/backend/cross_border/shipments',
+      '/backend/trade-docs/contracts',
     ])
-    expect(orders.items.map((item) => item.href)).toContain('/backend/external-sales/orders')
+    expect(orders.items.map((item) => item.href)).toContain('/backend/orders')
   })
 
   it('lets the user itemOrder win over the role itemOrder per group', () => {
@@ -205,15 +203,35 @@ describe('buildNavTree', () => {
       translate,
       rolePreference: {
         version: 2,
-        itemOrder: { 'tree:orders': ['/backend/external-sales/orders', '/backend/internal-sales/orders'] },
+        itemOrder: { 'tree:orders': ['tree:ledger:shipments', 'tree:ledger:contracts'] },
       },
       userPreference: {
         version: 2,
-        itemOrder: { 'tree:orders': ['/backend/purchasing/orders', '/backend/internal-sales/orders'] },
+        itemOrder: { 'tree:orders': ['tree:ledger:documents', 'tree:ledger:purchase-orders'] },
       },
     })
 
     const orders = groups.find((group) => group.id === 'tree:orders')!
-    expect(orders.items[0].href).toBe('/backend/purchasing/orders')
+    expect(orders.items[0].href).toBe('/backend/trade-docs/proformas')
+  })
+
+  it('renders a config iconName when the page manifest icon is a ReactNode, not a name', () => {
+    // Installed pages export their icon as a ReactNode, so the manifest yields no icon name and the
+    // config's `iconName` is what makes the leaf icon-bearing.
+    const groups = buildNavTree({
+      entries: facts({ '/backend/users': { icon: {} } }),
+      translate,
+    })
+
+    expect(findLeaf(groups, '/backend/users')?.iconName).toBe('users')
+  })
+
+  it('lets a page manifest icon string win over the config iconName', () => {
+    const groups = buildNavTree({
+      entries: facts({ '/backend/users': { icon: 'target' } }),
+      translate,
+    })
+
+    expect(findLeaf(groups, '/backend/users')?.iconName).toBe('target')
   })
 })

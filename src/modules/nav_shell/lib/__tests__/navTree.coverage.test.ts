@@ -72,7 +72,7 @@ describe('nav_shell tree registration', () => {
     expect(new Set(TREE_HREFS).size).toBe(TREE_HREFS.length)
   })
 
-  it('uses domain ids and explicit module-node ids as preference keys', () => {
+  it('uses domain ids and explicit node ids as preference keys', () => {
     const ids = NAV_TREE.map((node) => node.id)
     expect(ids.every((id) => id.startsWith('tree:'))).toBe(true)
     expect(new Set(ids).size).toBe(ids.length)
@@ -88,10 +88,50 @@ describe('nav_shell tree registration', () => {
     }
     for (const node of NAV_TREE) walk(node.children)
 
-    // A module node without an explicit id would key itself by its href and collide with the first
-    // child page's preference key.
-    expect(branchIds.every((id) => id.startsWith('tree:module:'))).toBe(true)
+    // The tree has two kinds of app-owned nodes — module nodes (`tree:module:*`) and ledger nodes
+    // (`tree:ledger:*`) — and both need an explicit id: without one a node would key itself by its
+    // href and collide with the first child page's preference key.
+    expect(
+      branchIds.every((id) => id.startsWith('tree:module:') || id.startsWith('tree:ledger:')),
+    ).toBe(true)
     expect(new Set(branchIds).size).toBe(branchIds.length)
     expect(branchIds.filter((id) => TREE_HREFS.includes(id))).toEqual([])
+  })
+
+  it('leads the orders domain with the workbench and follows with the four ledger nodes', () => {
+    const orders = NAV_TREE.find((node) => node.id === 'tree:orders')!
+
+    // A future edit that reorders a ledger or drops one fails here: the workbench is the only entry
+    // for creating an order and the ledgers are the read-only lookups that follow it.
+    expect(orders.children.map((child) => (isNavTreeBranch(child) ? child.id : child.href))).toEqual([
+      '/backend/orders',
+      'tree:ledger:purchase-orders',
+      'tree:ledger:contracts',
+      'tree:ledger:documents',
+      'tree:ledger:shipments',
+    ])
+  })
+
+  it('gives every system entry an icon, since their page metadata carries a ReactNode', () => {
+    const system = NAV_TREE.find((node) => node.id === 'tree:system')!
+
+    // These installed pages export a ReactNode icon, so a leaf without a config `iconName` would
+    // render with no icon at all — the regression these names exist to prevent.
+    expect(
+      system.children.every(
+        (child) => !isNavTreeBranch(child) && (child.iconName ?? '').length > 0,
+      ),
+    ).toBe(true)
+  })
+
+  it('registers the retired work surfaces in TREE_EXCLUDED so re-adding one fails loudly', () => {
+    expect(EXCLUDED_HREFS).toEqual(
+      expect.arrayContaining([
+        '/backend/internal-sales/orders',
+        '/backend/external-sales/orders',
+        '/backend/internal-sales/quotes',
+        '/backend/external-sales/quotes',
+      ]),
+    )
   })
 })
