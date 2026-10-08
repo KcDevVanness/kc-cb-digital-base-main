@@ -197,3 +197,10 @@ yarn jest --config jest.config.cjs src/modules/trade_docs
 （迁移是**向前-only** 的，`yarn mercato db` 只有 `generate` / `migrate` / `greenfield`，没有 `down`：
 回滚数据只能从备份恢复，或用 `yarn db:greenfield` 重建库——后者是破坏性的，需所有者批准）。
 合同 Excel 生成的附件仍留在存储驱动中（不随模块回滚删除）。
+
+## 客户快速建档件已提升为 app 级（2026-10-08）
+
+`CustomerQuickCreateDialog.tsx` 与 `lib/customerQuickCreate.ts`（含其单测）移到 `src/lib/parties/`，供
+本模块的交易对手选择器与 `internal_sales` 的买方选择器共用；词条仍留在 `trade_docs.counterparty.create.*`
+（共享件可读模块词表，与 `@/lib/orders/purchaseOrderStatus` 同例）。`CounterpartyPicker.tsx` 只改了 import，
+行为不变。

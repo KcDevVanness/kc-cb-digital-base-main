@@ -13,6 +13,7 @@ import {
 } from '@open-mercato/ui/backend/CrudForm'
 import { ComboboxInput, type ComboboxOption } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { ErrorMessage, RecordNotFoundState } from '@open-mercato/ui/backend/detail'
+import { useBackendChrome } from '@open-mercato/ui/backend/BackendChromeProvider'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { apiCall, readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
@@ -29,6 +30,7 @@ import {
   useOrganizationScopeVersion,
 } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { hasFeature } from '@open-mercato/shared/security/features'
 import { loadProductOption, loadProductOptions, type ProductOption } from '../../products/components/formOptions'
 import {
   parseOrganizationSwitcherScope,
@@ -38,6 +40,7 @@ import {
   relatedOrganizationEntries,
   type RelatedOrganizationNode,
 } from '@/lib/orgs/organizationOptions'
+import { CustomerQuickCreateDialog } from '@/lib/parties/CustomerQuickCreateDialog'
 import {
   EXTERNAL_BUYER_ROLES,
   buildPartyOptionsUrl,
@@ -47,6 +50,12 @@ import {
   isUuid,
 } from '../lib/buyer'
 import { useTradeTypeChannels, type TradeTypeChannelMap } from '../lib/tradeTypeChannels'
+import {
+  currencyStorageKey,
+  readStoredCurrency,
+  resolveInitialCurrency,
+  writeStoredCurrency,
+} from '../lib/currencyDefault'
 import { SALES_STATUS_DRAFT, SALES_STATUS_SENT } from '../lib/salesStatus'
 import { useSalesStatusEntries } from '../lib/salesStatusEntries'
 import {
@@ -211,6 +220,24 @@ export function lineScaleViolation(
     if (!LINE_DECIMAL_PATTERN.test(line.unitPriceNet.trim() || '0')) return { line: index + 1, field: 'unitPriceNet' }
   }
   return null
+}
+
+/**
+ * Whether a single quantity/unit-price value breaks the same rule, for the input's inline error on
+ * blur. The sibling field is neutralised so one offending value never flags the other input; the
+ * rule itself is not restated — `lineScaleViolation` stays the one definition, also used at submit.
+ */
+function lineFieldScaleViolation(
+  line: InternalSalesLineValues,
+  field: 'quantity' | 'unitPriceNet',
+  value: string,
+): boolean {
+  const probe: InternalSalesLineValues = {
+    ...line,
+    quantity: field === 'quantity' ? value : '1',
+    unitPriceNet: field === 'unitPriceNet' ? value : '1',
+  }
+  return lineScaleViolation([probe]) !== null
 }
 
 /**
@@ -410,6 +437,11 @@ function BuyerPickerField({
   t,
 }: CrudCustomFieldRenderProps & { t: TranslateFn }) {
   const { organizationId } = useOrganizationScopeDetail()
+  // The quick-create writes to `parties`; the button hides only once the payload says the caller
+  // lacks `parties.manage` — while it loads, keep it visible (same fail-open pattern as the lists).
+  const { payload: chromePayload, isReady: chromeReady } = useBackendChrome()
+  const canManageParties = !chromeReady || hasFeature(chromePayload?.grantedFeatures, 'parties.manage')
+  const [quickCreateOpen, setQuickCreateOpen] = React.useState(false)
   const { organizations, failed: organizationsFailed, scopeVersion } = useRelatedOrganizations()
   const queryClient = useQueryClient()
   const [partiesFailed, setPartiesFailed] = React.useState(false)
@@ -590,12 +622,35 @@ function BuyerPickerField({
         clearable
         disabled={disabled}
       />
+      {tradeType === 'external' && canManageParties ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setQuickCreateOpen(true)}
+          disabled={disabled}
+        >
+          <Plus className="size-4" aria-hidden="true" />
+          {t('internal_sales.form.buyer.quickCreate', 'New customer')}
+        </Button>
+      ) : null}
       {organizationsFailed ? (
         <p className="text-xs text-status-error-text">
           {t('internal_sales.form.buyer.orgLoadFailed', 'Could not load related organizations')}
         </p>
       ) : null}
       {partiesFailed ? <p className="text-xs text-status-error-text">{partyLoadFailed}</p> : null}
+      {tradeType === 'external' ? (
+        <CustomerQuickCreateDialog
+          open={quickCreateOpen}
+          onOpenChange={setQuickCreateOpen}
+          onCreated={(partyId) => {
+            // Reuse the picker's own selection path — the same handler the list calls — so the
+            // printed buyer name and the email prefill resolve exactly as a manual pick would.
+            handleChange(encodeBuyerRef({ kind: 'party', id: partyId }))
+          }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -640,6 +695,12 @@ function InternalSalesLinesEditor(
   }, [values.lines])
   const productCache = React.useRef(new Map<string, ProductOption>())
   /**
+   * Per-input scale errors, keyed by the row's stable key + field. Filled on blur, cleared on the
+   * next keystroke; presentation only — the row still submits with the operator's own value and the
+   * submit guard (`lineScaleViolation`) is unchanged.
+   */
+  const [scaleErrors, setScaleErrors] = React.useState<Record<string, boolean>>({})
+  /**
    * Latest rows, for reads that happen after an `await`.
    *
    * `setValue` has no functional form, so an async continuation would otherwise write from the rows
@@ -655,6 +716,26 @@ function InternalSalesLinesEditor(
     },
     [lines, setValue],
   )
+
+  // Two writers over the same error map: the blur check fills a row's slot, the keystroke clears it.
+  const markScaleError = React.useCallback(
+    (line: InternalSalesLineValues, field: 'quantity' | 'unitPriceNet', value: string) => {
+      setScaleErrors((prev) => ({
+        ...prev,
+        [`${line.key}:${field}`]: lineFieldScaleViolation(line, field, value),
+      }))
+    },
+    [],
+  )
+  const clearScaleError = React.useCallback((rowKey: string, field: 'quantity' | 'unitPriceNet') => {
+    setScaleErrors((prev) => {
+      const key = `${rowKey}:${field}`
+      if (!prev[key]) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }, [])
 
   const addLine = React.useCallback(() => {
     setValue('lines', [...lines, { ...EMPTY_LINE, key: `line-${Date.now()}` }])
@@ -753,8 +834,18 @@ function InternalSalesLinesEditor(
                 id={`internal-sales-quantity-${index}`}
                 inputMode="decimal"
                 value={line.quantity}
-                onChange={(event) => updateLine(index, { quantity: event.target.value })}
+                aria-invalid={scaleErrors[`${line.key}:quantity`] || undefined}
+                onChange={(event) => {
+                  clearScaleError(line.key, 'quantity')
+                  updateLine(index, { quantity: event.target.value })
+                }}
+                onBlur={(event) => markScaleError(line, 'quantity', event.target.value)}
               />
+              {scaleErrors[`${line.key}:quantity`] ? (
+                <p className="text-xs text-status-error-text">
+                  {t('internal_sales.form.lines.scaleInvalid', 'Quantity and unit price accept at most 4 decimal places.')}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5 md:col-span-2">
               <FieldLabel htmlFor={`internal-sales-price-${index}`} required>
@@ -764,8 +855,18 @@ function InternalSalesLinesEditor(
                 id={`internal-sales-price-${index}`}
                 inputMode="decimal"
                 value={line.unitPriceNet}
-                onChange={(event) => updateLine(index, { unitPriceNet: event.target.value })}
+                aria-invalid={scaleErrors[`${line.key}:unitPriceNet`] || undefined}
+                onChange={(event) => {
+                  clearScaleError(line.key, 'unitPriceNet')
+                  updateLine(index, { unitPriceNet: event.target.value })
+                }}
+                onBlur={(event) => markScaleError(line, 'unitPriceNet', event.target.value)}
               />
+              {scaleErrors[`${line.key}:unitPriceNet`] ? (
+                <p className="text-xs text-status-error-text">
+                  {t('internal_sales.form.lines.scaleInvalid', 'Quantity and unit price accept at most 4 decimal places.')}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5 md:col-span-3 flex items-end justify-end">
               <IconButton
@@ -961,7 +1062,28 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
   const { entryIdFor, isLoading: statusLoading, failed: statusFailed } = useSalesStatusEntries()
   // The quote list's row action arrives here; the panel loads that quote once on mount.
   const fromQuote = useSearchParams().get('fromQuote')
+  const { organizationId } = useOrganizationScopeDetail()
   const entryHref = listHrefForTradeType(kind, entryTradeType)
+  /**
+   * The starting currency.
+   *
+   * With `?fromQuote=` the quote loader writes that quote's own currency on auto-load, which must
+   * stay ahead of the remembered default — so the memory is only consulted without a source quote.
+   * Read after mount because localStorage is unavailable during SSR; the operator's own change is
+   * never overwritten afterwards (the loader confirms before touching a non-empty form, and this
+   * effect does not re-run on their edits).
+   */
+  const [initialCurrency, setInitialCurrency] = React.useState<string>(EMPTY_VALUES.currencyCode)
+  React.useEffect(() => {
+    if (fromQuote?.trim()) return
+    setInitialCurrency(
+      resolveInitialCurrency({
+        quoteCurrency: null,
+        storedCurrency: readStoredCurrency(currencyStorageKey(organizationId, entryTradeType)),
+        fallback: EMPTY_VALUES.currencyCode,
+      }),
+    )
+  }, [entryTradeType, fromQuote, organizationId])
   const groups = useGroups(t, {
     withQuoteLoad: kind === 'order',
     mode: 'create',
@@ -1015,6 +1137,8 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
     try {
       const created = await createCrud<{ id?: string }>(apiPathFor(kind), payload)
       const id = typeof created.result?.id === 'string' ? created.result.id : null
+      // Remember what was used: the next document in this organization + trade type starts here.
+      writeStoredCurrency(currencyStorageKey(organizationId, entryTradeType), values.currencyCode)
       pushWithFlash(
         router,
         id ? documentEditHrefForTradeType(kind, id, values.tradeType) : entryHref,
@@ -1025,7 +1149,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       flash(t('internal_sales.form.saveFailed'), 'error')
       throw error
     }
-  }, [channels, entryHref, entryIdFor, hasAllChannels, kind, missingChannelMessage, router, statusFailed, statusLoading, t])
+  }, [channels, entryHref, entryIdFor, entryTradeType, hasAllChannels, kind, missingChannelMessage, organizationId, router, statusFailed, statusLoading, t])
 
   return (
     <CrudForm<InternalSalesFormValues>
@@ -1041,6 +1165,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       initialValues={{
         ...EMPTY_VALUES,
         tradeType: entryTradeType,
+        currencyCode: initialCurrency,
         lines: [{ ...EMPTY_LINE }],
       }}
       submitLabel={t('internal_sales.form.save')}

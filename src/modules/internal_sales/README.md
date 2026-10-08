@@ -297,3 +297,10 @@ npx jest src/modules/internal_sales                     # 买方值协议 / 快�
 从 `src/modules.ts` 移除 `{ id: 'internal_sales', from: '@app' }` 并 `yarn generate`；本模块没有自己的表与迁移
 （无 DDL 可回退），单据数据仍在官方 `sales_*` 表里，不受影响。同时把 `sales` 的 `routes.pages` 覆盖去掉即可恢复
 官方新建页的侧边栏入口——该覆盖只改导航可见性，那些 URL 一直是可解析的。
+
+## 录入减负（2026-10-08）
+
+- **买方内联快速建档**：对外入口的买方选择器旁「新建客户」按钮打开 `src/lib/parties/CustomerQuickCreateDialog.tsx`（app 级共享件，从 `trade_docs` 提升；建档走 `parties` 的 create 路由，ACL/作用域/校验/事件仍归 `parties`）。按钮按 `parties.manage` 显隐，chrome payload 未就绪时不隐藏；成功后经**选择器自身**的处理函数选中新客户（回填名称/邮箱快照）。
+- **币种默认**：新建时优先级 = `?fromQuote=` 带的币种 → 该组织 + 该入口上次使用的币种（`localStorage` 键 `om:internalSales:currency:<orgId>:<tradeType>`）→ 现状；操作员手改过的值不会被覆盖，保存成功后写回记忆。纯函数在 `lib/currencyDefault.ts`。
+- **行内小数校验**：数量/单价 blur 时用既有 `lineScaleViolation` 规则给行内提示（`internal_sales.form.lines.scaleInvalid`，并标 `aria-invalid`）；提交时的拦截不变。
+- **零行草案：不做** —— 安装层 `orderCreateSchema` 要求 `lines.min(1)`，引擎不接受零行订单（见 spec Resolved decisions Q-011）。
