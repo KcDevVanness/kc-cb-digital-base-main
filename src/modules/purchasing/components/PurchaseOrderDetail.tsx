@@ -39,13 +39,13 @@ import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/u
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { AttachmentPreviewLink, useAttachmentPreview } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { PurchaseOrderStatusBadge } from '@/lib/orders/purchaseOrderStatus'
 import {
   ORDERS_API_PATH,
   ORDERS_LINES_API_PATH,
   ORDERS_LIST_HREF,
   ORDERS_PAYMENTS_API_PATH,
   ORDERS_TRANSITIONS_API_PATH,
-  PurchaseOrderStatusBadge,
   formatOrderDate,
   toPurchaseOrderRecord,
   toOptionalNumber,

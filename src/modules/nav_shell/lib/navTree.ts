@@ -51,6 +51,9 @@ export const NAV_TREE: NavTreeNode[] = [
     labelKey: 'nav_shell.tree.domain.orders',
     iconName: 'clipboard-list',
     children: [
+      // The workbench leads the domain: it is the screen the operator opens first, and the three
+      // lists are where they go to work on one kind.
+      { href: '/backend/orders' },
       { href: '/backend/internal-sales/orders' },
       { href: '/backend/external-sales/orders' },
       { href: '/backend/purchasing/orders' },

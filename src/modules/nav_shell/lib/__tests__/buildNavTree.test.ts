@@ -56,6 +56,8 @@ describe('buildNavTree', () => {
 
     const orders = groups.find((group) => group.id === 'tree:orders')!
     expect(orders.items.map((item) => item.id)).toEqual([
+      // The workbench leads the domain, then the three per-kind lists.
+      '/backend/orders',
       '/backend/internal-sales/orders',
       '/backend/external-sales/orders',
       '/backend/purchasing/orders',

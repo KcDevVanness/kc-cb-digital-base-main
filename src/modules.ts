@@ -341,6 +341,11 @@ enabledModules.push({ id: 'storage_ops', from: '@app' })
 // See .ai/specs/2026-10-08-order-centric-entry.md (Phase 1) and src/modules/nav_shell/README.md
 enabledModules.push({ id: 'nav_shell', from: '@app' })
 
+// App-owned order workbench — the three order kinds on one screen with their fill progress, read
+// through one scoped projection. No entity, no migration, no write path.
+// See .ai/specs/2026-10-08-order-centric-entry.md (Phase 4) and src/modules/order_hub/README.md
+enabledModules.push({ id: 'order_hub', from: '@app' })
+
 // Optional S3-compatible object storage provider, gated by the flag the shipped `.env` block
 // documents ("When true, `storage_s3` is added to enabledModules in modules.ts"). Phase 0 of
 // .ai/specs/2026-09-23-local-to-s3-storage-migration.md installs and credentials it while both
