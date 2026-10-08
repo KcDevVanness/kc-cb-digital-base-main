@@ -88,27 +88,24 @@ describe('nav_shell tree registration', () => {
     }
     for (const node of NAV_TREE) walk(node.children)
 
-    // The tree has two kinds of app-owned nodes — module nodes (`tree:module:*`) and ledger nodes
-    // (`tree:ledger:*`) — and both need an explicit id: without one a node would key itself by its
-    // href and collide with the first child page's preference key.
-    expect(
-      branchIds.every((id) => id.startsWith('tree:module:') || id.startsWith('tree:ledger:')),
-    ).toBe(true)
+    // App-owned module nodes (`tree:module:*`) need an explicit id: without one a node would key
+    // itself by its href and collide with the first child page's preference key.
+    expect(branchIds.every((id) => id.startsWith('tree:module:'))).toBe(true)
     expect(new Set(branchIds).size).toBe(branchIds.length)
     expect(branchIds.filter((id) => TREE_HREFS.includes(id))).toEqual([])
   })
 
-  it('leads the orders domain with the workbench and follows with the four ledger nodes', () => {
+  it('leads the orders domain with the workbench and follows with the four business groups', () => {
     const orders = NAV_TREE.find((node) => node.id === 'tree:orders')!
 
-    // A future edit that reorders a ledger or drops one fails here: the workbench is the only entry
-    // for creating an order and the ledgers are the read-only lookups that follow it.
+    // A future edit that reorders a group or drops one fails here: the workbench is the only entry
+    // for creating an order and the four groups are where its blocks are filled in and looked up.
     expect(orders.children.map((child) => (isNavTreeBranch(child) ? child.id : child.href))).toEqual([
       '/backend/orders',
-      'tree:ledger:purchase-orders',
-      'tree:ledger:contracts',
-      'tree:ledger:documents',
-      'tree:ledger:shipments',
+      'tree:module:purchasing',
+      'tree:module:export-sales',
+      'tree:module:contracts',
+      'tree:module:shipping',
     ])
   })
 
@@ -124,14 +121,9 @@ describe('nav_shell tree registration', () => {
     ).toBe(true)
   })
 
-  it('registers the retired work surfaces in TREE_EXCLUDED so re-adding one fails loudly', () => {
+  it('registers the retired order lists in TREE_EXCLUDED so re-adding one fails loudly', () => {
     expect(EXCLUDED_HREFS).toEqual(
-      expect.arrayContaining([
-        '/backend/internal-sales/orders',
-        '/backend/external-sales/orders',
-        '/backend/internal-sales/quotes',
-        '/backend/external-sales/quotes',
-      ]),
+      expect.arrayContaining(['/backend/internal-sales/orders', '/backend/external-sales/orders']),
     )
   })
 })
