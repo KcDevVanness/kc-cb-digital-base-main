@@ -8,11 +8,12 @@
  * installed `requireFeatures` value stays the only gate. `lib/__tests__/navTree.coverage.test.ts`
  * fails when a navigable page is registered neither in `NAV_TREE` nor in `TREE_EXCLUDED`.
  *
- * Domains become chrome *groups* (their id is the preference key for group order/label). Module
- * nodes become chrome *items with children*: the chrome item contract requires an `href`, so a
- * module node carries the href of its first page and the renderer treats it as an expand/collapse
- * toggle rather than a link. Module nodes therefore need an explicit `id` (`tree:module:*`) — with
- * the href as the key they would collide with the first child page's preference key.
+ * Domains become chrome *groups* (their id is the preference key for group order/label). Module and
+ * ledger nodes become chrome *items with children*: the chrome item contract requires an `href`, so
+ * such a node carries the href of its first page and the renderer treats it as an expand/collapse
+ * toggle rather than a link. These nodes therefore need an explicit `id` (`tree:module:*` for a
+ * business area, `tree:ledger:*` for a company-order ledger) — with the href as the key they would
+ * collide with the first child page's preference key.
  *
  * Labels for domains and module nodes live in this module's catalogs (`nav_shell.tree.*`); page
  * entries use the page's own `titleKey` (zh + en already ship for every page in the tree).
@@ -21,6 +22,12 @@
 export type NavTreeLeaf = {
   /** Backend page path as it appears in the route manifest (`/backend/...`). */
   href: string
+  /**
+   * Icon of a page whose metadata does not name one. A leaf's icon normally comes from its page
+   * metadata, but an installed page whose `icon` is a ReactNode (not a name string) resolves to no
+   * icon at all, so the leaf may name one here — see `buildNavTree.buildLeaf` for the precedence.
+   */
+  iconName?: string
 }
 
 export type NavTreeBranch = {
@@ -47,56 +54,41 @@ export function isNavTreeBranch(child: NavTreeChild): child is NavTreeBranch {
 
 export const NAV_TREE: NavTreeNode[] = [
   {
+    // The company-order domain is the app's entry for order work. The workbench is the only place an
+    // order is created (its dialog opens the trade-type form) and each order is completed block by
+    // block in its own detail page; the four nodes below are read-only ledgers where those blocks
+    // (purchase orders, contracts, documents, shipments) are looked up.
     id: 'tree:orders',
     labelKey: 'nav_shell.tree.domain.orders',
     iconName: 'clipboard-list',
     children: [
-      // The workbench leads the domain: it is the screen the operator opens first, and the three
-      // lists are where they go to work on one kind.
+      // The workbench leads the domain: it is the screen the operator opens first.
       { href: '/backend/orders' },
-      { href: '/backend/internal-sales/orders' },
-      { href: '/backend/external-sales/orders' },
-      { href: '/backend/purchasing/orders' },
-    ],
-  },
-  {
-    id: 'tree:operations',
-    labelKey: 'nav_shell.tree.domain.operations',
-    iconName: 'handshake',
-    children: [
       {
-        id: 'tree:module:purchasing',
-        labelKey: 'nav_shell.tree.module.purchasing',
+        id: 'tree:ledger:purchase-orders',
+        labelKey: 'nav_shell.tree.module.purchaseLedger',
         iconName: 'package',
-        children: [
-          { href: '/backend/purchasing/suppliers' },
-          { href: '/backend/purchasing/supplier-products' },
-          { href: '/backend/sourcing/quotes' },
-        ],
+        children: [{ href: '/backend/purchasing/orders' }],
       },
       {
-        id: 'tree:module:export-sales',
-        labelKey: 'nav_shell.tree.module.exportSales',
-        iconName: 'globe',
-        children: [
-          { href: '/backend/internal-sales/quotes' },
-          { href: '/backend/external-sales/quotes' },
-        ],
-      },
-      {
-        id: 'tree:module:contracts',
-        labelKey: 'nav_shell.tree.module.contracts',
+        id: 'tree:ledger:contracts',
+        labelKey: 'nav_shell.tree.module.contractLedger',
         iconName: 'file-text',
+        children: [{ href: '/backend/trade-docs/contracts' }],
+      },
+      {
+        id: 'tree:ledger:documents',
+        labelKey: 'nav_shell.tree.module.documentLedger',
+        iconName: 'receipt',
         children: [
-          { href: '/backend/trade-docs/contracts' },
           { href: '/backend/trade-docs/proformas' },
           { href: '/backend/trade-docs/commercial-invoices' },
           { href: '/backend/trade-docs/invoices' },
         ],
       },
       {
-        id: 'tree:module:shipping',
-        labelKey: 'nav_shell.tree.module.shipping',
+        id: 'tree:ledger:shipments',
+        labelKey: 'nav_shell.tree.module.shipmentLedger',
         iconName: 'truck',
         children: [
           { href: '/backend/cross_border/shipments' },
@@ -177,6 +169,10 @@ export const NAV_TREE: NavTreeNode[] = [
       { href: '/backend/parties' },
       { href: '/backend/our-parties' },
       { href: '/backend/dictionaries' },
+      // Supplier master data and supplier quotations are reference data, not order processing.
+      { href: '/backend/purchasing/suppliers' },
+      { href: '/backend/purchasing/supplier-products' },
+      { href: '/backend/sourcing/quotes' },
     ],
   },
   {
@@ -184,13 +180,16 @@ export const NAV_TREE: NavTreeNode[] = [
     labelKey: 'nav_shell.tree.domain.system',
     iconName: 'settings',
     children: [
-      { href: '/backend/users' },
-      { href: '/backend/roles' },
-      { href: '/backend/directory/organizations' },
-      { href: '/backend/directory/tenants' },
-      { href: '/backend/entities/user' },
-      { href: '/backend/entities/system' },
-      { href: '/backend/storage/attachments' },
+      // These installed pages carry a ReactNode icon, so their page metadata yields no icon name;
+      // the config names one instead. The names come from `@open-mercato/ui`'s generated lucide
+      // registry. The order of these entries is user-reorderable, so the icons are the only change.
+      { href: '/backend/users', iconName: 'users' },
+      { href: '/backend/roles', iconName: 'shield' },
+      { href: '/backend/directory/organizations', iconName: 'folder-tree' },
+      { href: '/backend/directory/tenants', iconName: 'building' },
+      { href: '/backend/entities/user', iconName: 'boxes' },
+      { href: '/backend/entities/system', iconName: 'database' },
+      { href: '/backend/storage/attachments', iconName: 'archive' },
     ],
   },
 ]
@@ -205,7 +204,10 @@ export const NAV_TREE: NavTreeNode[] = [
  * - installed CRM / catalog / sales surfaces this deployment supersedes with app-owned modules —
  *   kept resolvable (stored notification links and bookmarks still open) but out of the new
  *   information architecture;
- * - settings-context admin pages that are not `navHidden` but live in the settings sidebar.
+ * - settings-context admin pages that are not `navHidden` but live in the settings sidebar;
+ * - work surfaces retired into the order-centric entry — the workbench is the entry, the pages here
+ *   are the filling layer reached from an order's blocks. The ledger entries that stay in the tree
+ *   point at list pages that remain read-only ledgers.
  */
 export const TREE_EXCLUDED: ReadonlyArray<{ href: string; reason: string }> = [
   // Create forms — always entered from the list page that owns the action.
@@ -254,4 +256,25 @@ export const TREE_EXCLUDED: ReadonlyArray<{ href: string; reason: string }> = [
   { href: '/backend/sales/channels/create', reason: 'installed sales channel form' },
   { href: '/backend/sales/channels/offers', reason: 'installed sales channel offers' },
   { href: '/backend/config/customers/deals', reason: 'installed CRM pipeline stage configuration' },
+
+  // Work surfaces retired into the order-centric entry: the workbench is the only entry, and these
+  // pages stay reachable as the filling layer and from the create-order flow.
+  {
+    href: '/backend/internal-sales/orders',
+    reason:
+      'list entry retired: the company-order workbench is the only entry, and the page stays reachable as a filling surface',
+  },
+  {
+    href: '/backend/external-sales/orders',
+    reason:
+      'list entry retired: the company-order workbench is the only entry, and the page stays reachable as a filling surface',
+  },
+  {
+    href: '/backend/internal-sales/quotes',
+    reason: 'quote lists stay out of the tree: they are reached from the create-order flow, not from the sidebar',
+  },
+  {
+    href: '/backend/external-sales/quotes',
+    reason: 'quote lists stay out of the tree: they are reached from the create-order flow, not from the sidebar',
+  },
 ]

@@ -8,7 +8,7 @@ import {
   type SidebarGroupLike,
   type SidebarItemLike,
 } from '@open-mercato/core/modules/auth/services/sidebarPreferencesService'
-import { NAV_TREE, isNavTreeBranch, type NavTreeBranch, type NavTreeNode } from './navTree'
+import { NAV_TREE, isNavTreeBranch, type NavTreeBranch, type NavTreeLeaf, type NavTreeNode } from './navTree'
 
 /**
  * Turns `NAV_TREE` into the chrome payload shape the sidebar and the customization editor both
@@ -146,21 +146,23 @@ export function buildNavTree(input: BuildNavTreeInput): NavTreeGroup[] {
   const allowed = input.isAllowed ?? (() => true)
   const label = (key: string | undefined, fallback: string) => input.translate(key, fallback)
 
-  const buildLeaf = (href: string, order: number): TreeItem | null => {
-    const facts = byHref[href]
+  const buildLeaf = (leaf: NavTreeLeaf, order: number): TreeItem | null => {
+    const facts = byHref[leaf.href]
     // A page the manifest does not publish is not navigable in this deployment: dropping it keeps
     // the tree honest instead of rendering a link that 404s.
     if (!facts) return null
     // A page that declares no feature is open to every authenticated caller; the predicate only
     // answers the question the page asked.
     if (facts.requireFeatures?.length && !allowed(facts.requireFeatures)) return null
-    const title = label(facts.titleKey, facts.title ?? href)
+    const title = label(facts.titleKey, facts.title ?? leaf.href)
     return {
-      id: href,
-      href,
+      id: leaf.href,
+      href: leaf.href,
       title,
       defaultTitle: title,
-      iconName: typeof facts.icon === 'string' ? facts.icon : undefined,
+      // A page's own metadata wins when it names its icon; an exported ReactNode is not a name, so
+      // the config's `iconName` is what makes such a page icon-bearing.
+      iconName: typeof facts.icon === 'string' ? facts.icon : leaf.iconName,
       requireFeatures: facts.requireFeatures,
       order,
     }
@@ -169,7 +171,7 @@ export function buildNavTree(input: BuildNavTreeInput): NavTreeGroup[] {
   const buildBranch = (branch: NavTreeBranch, order: number): TreeItem | null => {
     const children = branch.children
       .map((child, index) =>
-        isNavTreeBranch(child) ? buildBranch(child, index) : buildLeaf(child.href, index),
+        isNavTreeBranch(child) ? buildBranch(child, index) : buildLeaf(child, index),
       )
       .filter((item): item is TreeItem => item !== null)
     if (children.length === 0) return null
@@ -190,7 +192,7 @@ export function buildNavTree(input: BuildNavTreeInput): NavTreeGroup[] {
   const buildGroup = (node: NavTreeNode, weight: number): TreeGroup | null => {
     const items = node.children
       .map((child, index) =>
-        isNavTreeBranch(child) ? buildBranch(child, index) : buildLeaf(child.href, index),
+        isNavTreeBranch(child) ? buildBranch(child, index) : buildLeaf(child, index),
       )
       .filter((item): item is TreeItem => item !== null)
     if (items.length === 0) return null
