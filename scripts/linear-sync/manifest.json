@@ -1,0 +1,186 @@
+{
+  "project": {
+    "id": "574444f8-6aab-4715-b2c4-1e5ebe95d509",
+    "name": "kc-cb-digital-base-main"
+  },
+  "team": {
+    "key": "SP"
+  },
+  "workspace": "f5d1e884-ac15-4650-b2fd-ad37113bcb3c",
+  "entries": {
+    "prd/cross-border-erp#epic": {
+      "id": "a984e337-07b9-4053-9d86-8e7112a2b7d9",
+      "identifier": "SP-8",
+      "title": "【需求】跨境 ERP：采购 / 跨境发运 / 平台结算（PRD）",
+      "state": "In Progress",
+      "hash": "c467294d7652ac8ded83db39e07c9ceab7be7e811edaaaf1da2541d78e382b28",
+      "updatedAt": "2026-10-08T15:42:09.854Z"
+    },
+    "prd/finance-and-cockpit#epic": {
+      "id": "d36dac5c-5554-4cb2-b5c8-eaba8190bf6f",
+      "identifier": "SP-9",
+      "title": "【需求】财务模块完善 · 数据打通 · 老板驾驶舱（PRD）",
+      "state": "Done",
+      "hash": "77aa880a9b8bcecd8a75530d409f9e13745bcc5ad0da12feb1ea322faa85d469",
+      "updatedAt": "2026-10-08T15:42:15.679Z"
+    },
+    "prd/lookup-field-dropdown#epic": {
+      "id": "84fba466-d9d4-481c-ae1f-017e075978a2",
+      "identifier": "SP-10",
+      "title": "【需求】关联字段选择器改为「下拉 + 搜索」（PRD）",
+      "state": "In Progress",
+      "hash": "84c87ec2ab11eb5979bb96c9c112aa65259c3f47c2ad24b17bbb832898f25d59",
+      "updatedAt": "2026-10-08T15:42:21.190Z"
+    },
+    "plans#epic": {
+      "id": "272af4c9-6191-4f3e-8751-f87ca3f340d7",
+      "identifier": "SP-11",
+      "title": "【里程碑】实施计划（docs/plans：跨境 ERP / 财务与驾驶舱 / 关联字段选择器）",
+      "state": "In Progress",
+      "hash": "711ba62788dffa2100926f383a45f6b68239ab680758b61cf15b0d4a599cbf33",
+      "updatedAt": "2026-10-08T15:42:26.542Z"
+    },
+    "dev#epic": {
+      "id": "2e990401-6ca3-4d75-920a-95aff22fb006",
+      "identifier": "SP-12",
+      "title": "【开发文档】docs/dev 开发文档集（8 份）",
+      "state": "Done",
+      "hash": "a40088b0ae38669aee2851f1b9493a1f662c39b249fbda3a0c2e26aea7b2b18f",
+      "updatedAt": "2026-10-08T15:42:35.101Z"
+    },
+    "dev/setup.md": {
+      "id": "c1fb0b14-5c40-4e15-af3a-22d4fce8b202",
+      "identifier": "SP-13",
+      "title": "【开发文档】本地开发环境搭建",
+      "state": "Done",
+      "hash": "bd75099bacc67978ae9cab430fde838d93aa232aa74ea256a92becdb30e864cc",
+      "updatedAt": "2026-10-08T15:42:38.428Z"
+    },
+    "dev/architecture.md": {
+      "id": "2ae8fccc-2c0d-4539-ba41-8e38638bdba1",
+      "identifier": "SP-14",
+      "title": "【开发文档】架构与目录职责",
+      "state": "Done",
+      "hash": "34baaf1413891be8f5573c10a59c590944f7a6dfdfe6483219d2b6aaed7a881a",
+      "updatedAt": "2026-10-08T15:42:41.519Z"
+    },
+    "dev/business-architecture.md": {
+      "id": "5185a858-26ac-4d53-add3-aee1432dd69a",
+      "identifier": "SP-15",
+      "title": "【开发文档】业务架构：外贸 + 跨境电商",
+      "state": "Done",
+      "hash": "7753a4ffbafeb966cfc45df816615615754ce792a8bb9240da5b7a4c15ad8d17",
+      "updatedAt": "2026-10-08T15:42:44.674Z"
+    },
+    "dev/i18n.md": {
+      "id": "232da184-3341-43de-be2e-e6aeeaadd3df",
+      "identifier": "SP-16",
+      "title": "【开发文档】多语言（i18n）",
+      "state": "Done",
+      "hash": "0d20e808d29b5aa54901589b58a772c9aa1fc2fe4adc082526455203a7c2521c",
+      "updatedAt": "2026-10-08T15:42:47.844Z"
+    },
+    "dev/currency-policy.md": {
+      "id": "2394549c-33c7-4c8f-832e-b9415be3a065",
+      "identifier": "SP-17",
+      "title": "【开发文档】币种策略（currency_policy）",
+      "state": "Done",
+      "hash": "16dbee1f3d6e20354962b29dbced3c50c8c8a11e76cbf096ae045e0b5df8d858",
+      "updatedAt": "2026-10-08T15:42:51.040Z"
+    },
+    "dev/multi-company-org-model.md": {
+      "id": "7a7064f8-4c68-4470-88ab-48bd7ce71395",
+      "identifier": "SP-18",
+      "title": "【开发文档】多公司组织模型与权限配置",
+      "state": "Done",
+      "hash": "457f681a3b78e7a5f0240a3d496731ed4e46afccb3df4ef74280d36b4e3e5e99",
+      "updatedAt": "2026-10-08T15:42:54.080Z"
+    },
+    "dev/navigation.md": {
+      "id": "8f5aad6b-6c8b-4239-9ff8-86efc4fd7faf",
+      "identifier": "SP-19",
+      "title": "【开发文档】导航（后台侧边栏树）",
+      "state": "Done",
+      "hash": "df56869e786c8101596cbd93d03c878307de86b696fc0304a494d5335031c3fa",
+      "updatedAt": "2026-10-08T15:42:57.576Z"
+    },
+    "dev/parallel-development.md": {
+      "id": "97f108b2-9994-46cf-a279-639f521cb72e",
+      "identifier": "SP-20",
+      "title": "【开发文档】多路并行开发（worktree + PR 流水线）",
+      "state": "Done",
+      "hash": "ca6fc2c022f29258ab48f67489e7fe3960754aae0dd7e176e1c161c5e9ac72bd",
+      "updatedAt": "2026-10-08T15:43:00.548Z"
+    },
+    "ru-petkit#epic": {
+      "id": "a7ec6a3a-9d9d-4867-bb4a-d074ceadc4cc",
+      "identifier": "SP-21",
+      "title": "【外部系统】RU PETKIT 对接（docs/ru-petkit，外部系统调研）",
+      "state": "In Progress",
+      "hash": "80829e7c7a9ff9b4aa9ec0d53645eaa2ae37515b2096b65612181837194de9b6",
+      "updatedAt": "2026-10-08T15:43:04.438Z"
+    },
+    "ru-petkit/prd.md": {
+      "id": "9e04e7f9-c044-4362-8a80-7df0ce140e09",
+      "identifier": "SP-22",
+      "title": "【外部系统】RU PETKIT · 系统功能 PRD（F-01…F-11）",
+      "state": "Done",
+      "hash": "f35ecb34283aacdfb5da3a50dd409be6c59c3b1f8bc93f474f8cd9c456a87d25",
+      "updatedAt": "2026-10-08T15:43:07.830Z"
+    },
+    "ru-petkit/supply-sync-tech.md": {
+      "id": "80d2b876-7911-4a10-bc37-ba04d3f6449e",
+      "identifier": "SP-23",
+      "title": "【外部系统】RU PETKIT · 对接需求总包 v2（17 个端点技术规范）",
+      "state": "In Progress",
+      "hash": "59b5c141255e7923383f5e0a25323cee4673e6fb8eec7baf7c6e7eb97dba0cf3",
+      "updatedAt": "2026-10-08T15:43:10.658Z"
+    },
+    "ru-petkit/system-analysis.md": {
+      "id": "a7aeac2a-6023-4457-ab0d-5e852c39a80b",
+      "identifier": "SP-24",
+      "title": "【外部系统】RU PETKIT · 系统功能分析（逐页长文）",
+      "state": "Done",
+      "hash": "ad7e9f0759bef7be556bb3df2df4f51653b393e5c27712b7282e9869ac9156c5",
+      "updatedAt": "2026-10-08T15:43:13.687Z"
+    },
+    "ru-petkit/field-mapping.md": {
+      "id": "15357ab7-a594-462c-9824-94e33f5023c2",
+      "identifier": "SP-25",
+      "title": "【外部系统】RU PETKIT · 字段与维度需求清单 + 中方映射",
+      "state": "Done",
+      "hash": "54241e5c09d78ca37cc47651c60df790b8f26ed4d428708c549177e6c6aeeb4b",
+      "updatedAt": "2026-10-08T15:43:17.545Z"
+    },
+    "ru-petkit/integration-brief.md": {
+      "id": "2f9d3eb7-84b2-454e-b513-a4d33820f35a",
+      "identifier": "SP-26",
+      "title": "【外部系统】RU PETKIT · 发俄方对接 brief（架构 + 模块 + 接口规范）",
+      "state": "Done",
+      "hash": "9d313e093a3f9601ca9e70361b91f30974df87e2da467f5c5e69fd54a70636b1",
+      "updatedAt": "2026-10-08T15:43:21.328Z"
+    },
+    "ru-petkit/evidence.md": {
+      "id": "fa2dda92-ab9f-47dc-bdb8-4cc6f1d95753",
+      "identifier": "SP-27",
+      "title": "【外部系统】RU PETKIT · 取证证据包",
+      "state": "Done",
+      "hash": "7add20f72b4c3e493be90ebcbb4c7e842b1228b3d70be754a07ecddb0f53fc66",
+      "updatedAt": "2026-10-08T15:43:24.408Z"
+    },
+    "index/spec-status-board": {
+      "id": "94cc5b41-6112-4dd1-b159-88f0d6962c23",
+      "identifier": "SP-28",
+      "title": "【索引】规格状态板（.ai/specs 快照）",
+      "state": "Backlog",
+      "hash": "ad3564e14db308c7368f16d57d5be5711e83a37beebf19b9b394cb33114ec66d",
+      "updatedAt": "2026-10-08T15:43:27.398Z"
+    }
+  },
+  "docs": {
+    "root": "/Users/vanness/Developer/kc-cb-digital-base-min",
+    "commit": "e545eaf2957a35ea857e3d6c8d496221ae6b4995",
+    "branch": "dev"
+  },
+  "updatedAt": "2026-10-08T15:43:27.398Z"
+}
