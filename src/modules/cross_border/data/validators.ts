@@ -209,6 +209,8 @@ export const shipmentListSchema = z.object({
   status: z.enum(SHIPMENT_STATUSES).optional(),
   /** Only shipments linked to this purchase/sales contract. */
   contractId: uuid().optional(),
+  /** Only shipments carrying goods from this sales order — the order hub's 发运单 section. */
+  salesOrderId: uuid().optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(100).default(50),
   sortField: z.enum(['id', 'number', 'status', 'eta', 'created_at', 'updated_at']).optional().default('created_at'),

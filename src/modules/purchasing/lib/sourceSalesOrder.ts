@@ -15,8 +15,17 @@
  * Everything in this file is pure so both the server command and the create form can share it.
  */
 
-export const SOURCE_SALES_ORDER_KINDS = ['internal_sales_order', 'external_sales_order'] as const
-export type SourceSalesOrderKind = (typeof SOURCE_SALES_ORDER_KINDS)[number]
+/**
+ * The two trade-type kinds and the `?orderKind=&orderId=` parser live in `src/lib/orders/` — every
+ * "create something for this order" entry reads the same pair — and are re-exported here so this
+ * module's callers (and its tests) keep one import path.
+ */
+export { SOURCE_SALES_ORDER_KINDS, isSourceSalesOrderKind, parseSourceOrderParams } from '@/lib/orders/sourceOrderParams'
+export type { SourceSalesOrderKind, SourceOrderParamResult } from '@/lib/orders/sourceOrderParams'
+
+// Imported as well as re-exported: the mapping below needs the name in scope, not only in the
+// module's public surface.
+import type { SourceSalesOrderKind } from '@/lib/orders/sourceOrderParams'
 
 /**
  * Channel code → kind. The codes are the identity `internal_sales` seeds per organization
@@ -26,36 +35,6 @@ export type SourceSalesOrderKind = (typeof SOURCE_SALES_ORDER_KINDS)[number]
 export const SOURCE_KIND_BY_CHANNEL_CODE: Record<string, SourceSalesOrderKind> = {
   INTERNAL_SALES: 'internal_sales_order',
   EXTERNAL_SALES: 'external_sales_order',
-}
-
-export function isSourceSalesOrderKind(value: unknown): value is SourceSalesOrderKind {
-  return typeof value === 'string' && (SOURCE_SALES_ORDER_KINDS as readonly string[]).includes(value)
-}
-
-export type SourceOrderParamResult =
-  | { status: 'none' }
-  | { status: 'ok'; kind: SourceSalesOrderKind; id: string }
-  | { status: 'invalid'; reason: 'kind' | 'id' | 'incomplete' }
-
-/**
- * Reads the `?orderKind=&orderId=` pair the order hub and the workbench link with.
- *
- * Returns `none` when neither parameter is present (a plain create page), `ok` when the pair is
- * usable, and `invalid` when something was passed but cannot be trusted — the caller shows an inline
- * message for that case instead of silently ignoring the parameter or failing the whole page.
- */
-export function parseSourceOrderParams(params: { get(name: string): string | null }): SourceOrderParamResult {
-  const rawKind = params.get('orderKind')
-  const rawId = params.get('orderId')
-  const kind = rawKind?.trim() ?? ''
-  const id = rawId?.trim() ?? ''
-  if (kind.length === 0 && id.length === 0) return { status: 'none' }
-  if (kind.length === 0 || id.length === 0) return { status: 'invalid', reason: 'incomplete' }
-  if (!isSourceSalesOrderKind(kind)) return { status: 'invalid', reason: 'kind' }
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-    return { status: 'invalid', reason: 'id' }
-  }
-  return { status: 'ok', kind, id }
 }
 
 /** A sales order line as the sales API returns it. */

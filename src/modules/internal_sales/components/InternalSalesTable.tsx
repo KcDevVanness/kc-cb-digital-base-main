@@ -23,7 +23,8 @@ import {
   DialogTitle,
 } from '@open-mercato/ui/primitives/dialog'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
-import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
+import { writeSalesStatus } from '../lib/salesStatusWrite'
+import { toDocumentRecord, type DocumentRecord } from '../lib/salesDocumentRecord'
 import { formatDate } from '@open-mercato/ui/utils/format'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { usePathname } from 'next/navigation'
@@ -61,22 +62,6 @@ import { documentEditHrefForTradeType, listHrefForTradeType } from './InternalSa
 
 const PAGE_SIZE = 50
 
-type DocumentRecord = {
-  id: string
-  number: string | null
-  currencyCode: string
-  total: string
-  customerName: string | null
-  /** The buyer address `quotes/send` needs; the list carries the snapshot, so the dialog can pre-check. */
-  buyerEmail: string | null
-  status: string | null
-  /** Quote only: the deadline `quotes/send` wrote (ISO date, `null` when never sent). */
-  validUntil: string | null
-  /** Carried for the optimistic lock every status write sends (`buildOptimisticLockHeader`). */
-  updatedAt: string | null
-  lineItemCount: number
-  createdAt: string | null
-}
 
 function readText(source: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
@@ -86,43 +71,6 @@ function readText(source: Record<string, unknown>, ...keys: string[]): string {
   return ''
 }
 
-function toDocumentRecord(item: Record<string, unknown>, kind: InternalSalesKind): DocumentRecord {
-  const snapshot = item.customerSnapshot ?? item.customer_snapshot
-  const customerName = snapshot && typeof snapshot === 'object'
-    ? readText(snapshot as Record<string, unknown>, 'name') || null
-    : null
-  // The same two keys the engine's `resolveQuoteEmail` reads, so the dialog can block a send the
-  // route would refuse anyway (and say why) instead of letting the operator discover it by 400.
-  const snapshotRecord = snapshot && typeof snapshot === 'object' ? snapshot as Record<string, unknown> : null
-  const contact = snapshotRecord?.contact
-  const customer = snapshotRecord?.customer
-  const metadata = item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
-    ? item.metadata as Record<string, unknown>
-    : null
-  const buyerEmail = (contact && typeof contact === 'object' && !Array.isArray(contact)
-    ? readText(contact as Record<string, unknown>, 'email')
-    : '')
-    || (customer && typeof customer === 'object' && !Array.isArray(customer)
-      ? readText(customer as Record<string, unknown>, 'primaryEmail')
-      : '')
-    // Third key of the engine's own resolution chain (`resolveQuoteEmail`): an address another
-    // surface may have frozen into the document metadata.
-    || (metadata ? readText(metadata, 'customerEmail') : '')
-  const total = item.grandTotalNetAmount ?? item.grand_total_net_amount ?? item.grandTotalGrossAmount
-  return {
-    id: String(item.id),
-    number: readText(item, kind === 'quote' ? 'quoteNumber' : 'orderNumber') || null,
-    currencyCode: readText(item, 'currencyCode', 'currency_code') || 'CNY',
-    total: typeof total === 'number' ? String(total) : typeof total === 'string' ? total : '0',
-    customerName,
-    buyerEmail: buyerEmail || null,
-    status: readText(item, 'status') || null,
-    validUntil: readText(item, 'validUntil', 'valid_until') || null,
-    updatedAt: readText(item, 'updatedAt', 'updated_at') || null,
-    lineItemCount: Number(item.lineItemCount ?? item.line_item_count ?? 0),
-    createdAt: (item.createdAt ?? item.created_at ?? null) as string | null,
-  }
-}
 
 /**
  * The quote's validity cell: the deadline `quotes/send` wrote, and — when it has passed while the
@@ -371,24 +319,20 @@ export default function InternalSalesTable({ kind }: { kind: InternalSalesKind }
       flash(t('internal_sales.list.actions.statusMissing', 'This status is not configured for your organization.'), 'error')
       return false
     }
-    const write = async (entryId: string, updatedAt: string | null) => readApiResultOrThrow<{ updatedAt?: string }>(
-      `/api/${apiPath}`,
-      {
-        method: 'PUT',
-        headers: {
-          'content-type': 'application/json',
-          ...(updatedAt ? buildOptimisticLockHeader(updatedAt) : {}),
-        },
-        body: JSON.stringify({ id: row.id, statusEntryId: entryId, updatedAt: updatedAt ?? null }),
-      },
-      { errorMessage: t('internal_sales.list.actions.statusFailed', 'Could not change the status.') },
-    )
+    // One write path, shared with the order hub (`lib/salesStatusWrite.ts`).
+    const write = async (entryId: string, updatedAt: string | null) =>
+      writeSalesStatus({
+        apiPath,
+        documentId: row.id,
+        statusEntryId: entryId,
+        updatedAt,
+        errorMessage: t('internal_sales.list.actions.statusFailed', 'Could not change the status.'),
+      })
     try {
       let version = row.updatedAt
       if (kind === 'quote' && row.status === SALES_STATUS_SENT) {
         // The engine's revoke: any update of a sent quote returns it to draft and kills the link.
-        const revoked = await write(statusEntryId, version)
-        version = typeof revoked?.updatedAt === 'string' ? revoked.updatedAt : null
+        version = await write(statusEntryId, version)
         await queryClient.invalidateQueries({ queryKey })
       }
       await write(statusEntryId, version)

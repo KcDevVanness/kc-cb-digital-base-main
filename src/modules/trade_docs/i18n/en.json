@@ -569,5 +569,10 @@
   "trade_docs.contracts.detail.orders.dialog.duplicate": "The same order is listed twice.",
   "trade_docs.contracts.detail.orders.dialog.save": "Save",
   "trade_docs.contracts.detail.orders.dialog.saved": "Order links updated",
-  "trade_docs.contracts.detail.orders.dialog.saveFailed": "Could not save the order links"
+  "trade_docs.contracts.detail.orders.dialog.saveFailed": "Could not save the order links",
+  "trade_docs.form.sourceOrder.loading": "Loading the source order…",
+  "trade_docs.form.sourceOrder.loadFailed": "The source order lines could not be read — add them by hand",
+  "trade_docs.form.sourceOrder.skipped": "{count} line(s) carry no product reference and were not copied",
+  "trade_docs.form.sourceOrder.invalid": "The source order parameters are invalid; opening a plain new form",
+  "trade_docs.form.sourceOrder.applied": "Prefilled from the source order"
 }

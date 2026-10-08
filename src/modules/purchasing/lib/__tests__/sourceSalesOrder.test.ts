@@ -1,56 +1,19 @@
 import { describe, expect, it } from '@jest/globals'
-import {
-  isSourceSalesOrderKind,
-  parseSourceOrderParams,
-  salesOrderLinesToPurchaseLines,
-} from '../sourceSalesOrder'
 
 /**
- * The two pure pieces of the source anchor: the `?orderKind=&orderId=` pair the hub and the workbench
- * link with, and the line mapping a prefill copies.
+ * The line mapping a purchase-order prefill copies.
  *
- * The mapping's whole point is what it does **not** copy — the sales price — so that is pinned here
- * rather than left to the form.
+ * Its whole point is what it does **not** copy — the sales price, which is what the customer pays —
+ * so that is pinned here rather than left to the form. The `?orderKind=&orderId=` parser these
+ * entries share lives in `src/lib/orders/__tests__/sourceOrderParams.test.ts`.
  */
 
-const params = (values: Record<string, string>) => ({
-  get: (name: string) => values[name] ?? null,
-})
+import { salesOrderLinesToPurchaseLines } from '../sourceSalesOrder'
 
-describe('parseSourceOrderParams', () => {
-  it('reads a usable pair', () => {
-    expect(parseSourceOrderParams(params({ orderKind: 'internal_sales_order', orderId: '0f8fad5b-d9cb-469f-a165-70867728950e' })))
-      .toEqual({ status: 'ok', kind: 'internal_sales_order', id: '0f8fad5b-d9cb-469f-a165-70867728950e' })
-  })
-
-  it('reports "none" when the page was opened without the parameters', () => {
-    expect(parseSourceOrderParams(params({}))).toEqual({ status: 'none' })
-  })
-
-  it('refuses an unknown kind instead of guessing a trade type', () => {
-    expect(parseSourceOrderParams(params({ orderKind: 'vendor_order', orderId: '0f8fad5b-d9cb-469f-a165-70867728950e' })))
-      .toEqual({ status: 'invalid', reason: 'kind' })
-  })
-
-  it('refuses an id that is not a uuid', () => {
-    expect(parseSourceOrderParams(params({ orderKind: 'external_sales_order', orderId: 'ORDER-2026-0001' })))
-      .toEqual({ status: 'invalid', reason: 'id' })
-  })
-
-  it('refuses half a pair', () => {
-    expect(parseSourceOrderParams(params({ orderKind: 'internal_sales_order' })))
-      .toEqual({ status: 'invalid', reason: 'incomplete' })
-    expect(parseSourceOrderParams(params({ orderId: '0f8fad5b-d9cb-469f-a165-70867728950e' })))
-      .toEqual({ status: 'invalid', reason: 'incomplete' })
-  })
-
-  it('accepts the kinds it publishes and nothing else', () => {
-    expect(isSourceSalesOrderKind('internal_sales_order')).toBe(true)
-    expect(isSourceSalesOrderKind('external_sales_order')).toBe(true)
-    expect(isSourceSalesOrderKind('internal')).toBe(false)
-    expect(isSourceSalesOrderKind(null)).toBe(false)
-  })
-})
+/**
+ * The line mapping a purchase-order prefill copies. Its whole point is what it does **not** copy —
+ * the sales price — so that is pinned here rather than left to the form.
+ */
 
 describe('salesOrderLinesToPurchaseLines', () => {
   it('copies the product reference and the quantity, and never the sales price', () => {

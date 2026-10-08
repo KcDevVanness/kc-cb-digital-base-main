@@ -35,6 +35,7 @@ import {
 } from '@open-mercato/ui/primitives/date-format'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
+import { parseSourceOrderParams } from '@/lib/orders/sourceOrderParams'
 import { loadProductOption, loadProductOptions, type ProductOption } from '../../products/components/formOptions'
 import {
   loadCarrierOptions,
@@ -71,6 +72,12 @@ export const SHIPMENTS_LIST_HREF = '/backend/cross_border/shipments'
 
 const PURCHASE_ORDERS_API_URL = '/api/purchasing/purchase-orders'
 const PURCHASE_ORDER_LINES_API_URL = '/api/purchasing/purchase-orders/lines'
+/**
+ * Statuses the shipment command accepts an allocation from, mirrored from its own
+ * `ALLOCATABLE_ORDER_STATUSES` so the `?orderKind=&orderId=` prefill never seeds a row the save
+ * would refuse.
+ */
+const ALLOCATABLE_PURCHASE_ORDER_STATUSES = ['placed', 'shipped', 'received']
 const WAREHOUSES_API_URL = '/api/wms/warehouses'
 const LOCATIONS_API_URL = '/api/wms/locations'
 const OPTION_PAGE_SIZE = 50
@@ -1896,10 +1903,28 @@ function useShipmentFields(t: TranslateFn): CrudField[] {
   ], [t])
 }
 
+/**
+ * `?orderKind=&orderId=` — the order hub hands the operator here with the sales order already
+ * known, so the shipment starts with both allocation sets filled from it: the order's lines become
+ * the sales allocations, and the purchase orders raised against that sales order supply the
+ * purchase allocations.
+ *
+ * The prefill resolves before the form mounts (`initialValues === null` renders the loading state),
+ * which is why there is no "overwrite what you typed" confirmation: there is nothing to overwrite
+ * yet. An unusable parameter pair is reported inline and the form opens empty — a mistyped link
+ * must not block the page — and a failed read keeps the form usable with a notice.
+ */
+type ShipmentPrefillState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; values: ShipmentFormValues; skipped: number; applied: boolean }
+  | { status: 'failed' }
+
 export default function ShipmentForm() {
   const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { organizationId } = useOrganizationScopeDetail()
   const fields = useShipmentFields(t)
 
   /**
@@ -1907,7 +1932,7 @@ export default function ShipmentForm() {
    * linked: the click said which contract this container belongs to, and re-picking it is busywork.
    * The label stays empty because it is display-only — the picker resolves it from its options.
    */
-  const initialValues = React.useMemo<ShipmentFormValues>(() => {
+  const contractPrefill = React.useMemo<ShipmentFormValues>(() => {
     const contractId = searchParams.get('contractId')?.trim() ?? ''
     if (!contractId) return EMPTY_SHIPMENT_VALUES
     return {
@@ -1915,6 +1940,103 @@ export default function ShipmentForm() {
       contracts: [{ key: newRowKey(), contractId, contractLabel: '' }],
     }
   }, [searchParams])
+
+  const sourceParam = React.useMemo(() => parseSourceOrderParams(searchParams), [searchParams])
+  const [prefillState, setPrefillState] = React.useState<ShipmentPrefillState>(
+    sourceParam.status === 'ok' ? { status: 'loading' } : { status: 'idle' },
+  )
+
+  React.useEffect(() => {
+    if (sourceParam.status !== 'ok') return
+    let cancelled = false
+    const loadError = t('cross_border.shipments.form.sourceOrder.loadFailed')
+    const load = async () => {
+      // One failed read fails the whole prefill: a shipment that silently lost half of its
+      // allocations would look complete and ship short, so the form opens empty with a notice
+      // instead.
+      const [salesLines, salesLabel, purchaseOrders] = await Promise.all([
+        loadSalesOrderLineOptions(loadError, sourceParam.id),
+        loadSalesOrderLabel(sourceParam.id).catch(() => null),
+        readApiResultOrThrow<PagedItems>(
+          `${PURCHASE_ORDERS_API_URL}?${new URLSearchParams({ sourceSalesOrderId: sourceParam.id, pageSize: '50' })}`,
+          undefined,
+          { fallback: { items: [] }, errorMessage: loadError },
+        ),
+      ])
+      const orderLabel = (salesLabel ?? '').trim() || sourceParam.id
+      const salesAllocations: ShipmentSalesAllocationValues[] = []
+      let skipped = 0
+      for (const line of salesLines) {
+        // The catalog bridge is what a commercial invoice aggregates on; the command refuses a line
+        // without it, so it is skipped here and counted for the notice rather than failing save.
+        const option = line.productId
+          ? await loadProductOption(line.productId, loadError, organizationId).catch(() => null)
+          : null
+        const catalogProductId = option?.catalogProductId ?? ''
+        if (!catalogProductId) {
+          skipped += 1
+          continue
+        }
+        salesAllocations.push({
+          key: newRowKey(),
+          salesOrderId: sourceParam.id,
+          salesOrderLabel: orderLabel,
+          salesOrderLineId: line.id,
+          lineNumber: line.lineNumber,
+          productId: line.productId,
+          catalogProductId,
+          productTitle: option?.name || line.productTitle,
+          productSku: option?.sku || line.productSku,
+          orderedQuantity: line.quantity,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          currencyCode: line.currencyCode,
+        })
+      }
+      const allocations: ShipmentAllocationValues[] = []
+      for (const order of purchaseOrders.items ?? []) {
+        const orderId = readText(order, 'id')
+        if (!orderId) continue
+        // The command only accepts an allocation from an order that is placed, shipped or received
+        // (its own `ALLOCATABLE_ORDER_STATUSES`); a draft/cancelled/closed order's lines would fail
+        // save, so they are left out of the prefill instead of being offered and then refused.
+        if (!ALLOCATABLE_PURCHASE_ORDER_STATUSES.includes(readText(order, 'status'))) continue
+        const number = readText(order, 'number') || orderId
+        const supplier = readText(order, 'supplierName', 'supplier_name')
+        const purchaseOrderLabel = supplier ? `${number} — ${supplier}` : number
+        const lines = await loadPurchaseOrderLines(loadError, orderId).catch(() => [] as PurchaseOrderLineOption[])
+        for (const line of lines) {
+          // A line without a catalog link can be shipped but never received into stock, so the
+          // command refuses the allocation; it is left out of the prefill rather than failing save.
+          if (!line.catalogProductId) continue
+          allocations.push({
+            key: newRowKey(),
+            purchaseOrderId: orderId,
+            purchaseOrderLabel,
+            purchaseOrderLineId: line.id,
+            productTitle: line.productTitle ?? '',
+            productSku: line.productSku ?? '',
+            supplierSku: line.supplierSku ?? '',
+            orderedQuantity: line.quantity,
+            allocatedQuantity: line.quantity,
+          })
+        }
+      }
+      if (cancelled) return
+      setPrefillState({
+        status: 'ready',
+        skipped,
+        applied: salesAllocations.length + allocations.length > 0,
+        values: { ...contractPrefill, salesAllocations, allocations },
+      })
+    }
+    load().catch(() => {
+      if (!cancelled) setPrefillState({ status: 'failed' })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [contractPrefill, organizationId, sourceParam, t])
 
   const groups = React.useMemo<CrudFormGroup[]>(() => [
     {
@@ -1984,17 +2106,45 @@ export default function ShipmentForm() {
     }
   }, [router, t])
 
+  if (prefillState.status === 'loading') {
+    return <p className="text-sm text-muted-foreground">{t('cross_border.shipments.form.sourceOrder.loading')}</p>
+  }
+
+  const invalidSourceParam = sourceParam.status === 'invalid'
+
   return (
-    <CrudForm<ShipmentFormValues>
-      title={t('cross_border.shipments.form.createTitle')}
-      titleHeadingLevel={1}
-      backHref={SHIPMENTS_LIST_HREF}
-      fields={fields}
-      groups={groups}
-      initialValues={initialValues}
-      submitLabel={t('cross_border.shipments.form.save')}
-      cancelHref={SHIPMENTS_LIST_HREF}
-      onSubmit={handleSubmit}
-    />
+    <>
+      {invalidSourceParam ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('cross_border.shipments.form.sourceOrder.invalid')}
+        </p>
+      ) : null}
+      {prefillState.status === 'failed' ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('cross_border.shipments.form.sourceOrder.loadFailed')}
+        </p>
+      ) : null}
+      {prefillState.status === 'ready' && prefillState.applied ? (
+        <p className="mb-3 text-xs text-muted-foreground">
+          {t('cross_border.shipments.form.sourceOrder.applied')}
+        </p>
+      ) : null}
+      {prefillState.status === 'ready' && prefillState.skipped > 0 ? (
+        <p className="mb-3 text-xs text-muted-foreground">
+          {t('cross_border.shipments.form.sourceOrder.skipped', { count: prefillState.skipped })}
+        </p>
+      ) : null}
+      <CrudForm<ShipmentFormValues>
+        title={t('cross_border.shipments.form.createTitle')}
+        titleHeadingLevel={1}
+        backHref={SHIPMENTS_LIST_HREF}
+        fields={fields}
+        groups={groups}
+        initialValues={prefillState.status === 'ready' ? prefillState.values : contractPrefill}
+        submitLabel={t('cross_border.shipments.form.save')}
+        cancelHref={SHIPMENTS_LIST_HREF}
+        onSubmit={handleSubmit}
+      />
+    </>
   )
 }
