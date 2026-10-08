@@ -7,7 +7,6 @@ import { GET as salesOrdersGet } from '@open-mercato/core/modules/sales/api/orde
 import { GET as purchaseOrdersGet } from '../../../purchasing/api/purchase-orders/route'
 import { TRADE_TYPE_CHANNEL_CODES } from '../../../internal_sales/lib/tradeType'
 import { loadOrderStages, type OrderStageItem } from '../../lib/orderStages'
-import { isOrderPending, type OrderPendingInput } from '../../lib/orderPending'
 import { resolveOrderHubRequestScope } from '../../lib/requestScope'
 import {
   mergeOrderRows,
@@ -53,8 +52,6 @@ const ordersQuerySchema = z.object({
   type: z.enum(['all', 'internal', 'external', 'purchase']).default('all'),
   status: z.string().min(1).optional(),
   search: z.string().optional(),
-  /** Boolean token; `true` keeps only orders with a missing block, `false` disables the filter. */
-  pending: z.enum(['true', 'false', '1', '0']).optional(),
 })
 
 const stageItemSchema = z.object({
@@ -203,15 +200,6 @@ async function scanSource(
   return { ok: true, scan: { source, rows, total, windowTruncated, peerTotalCapped } }
 }
 
-function pendingInputFor(row: OrderRow): OrderPendingInput {
-  return {
-    kind: row.source === 'purchase_order' ? 'purchase' : row.source,
-    status: row.status,
-    createdAt: row.createdAt,
-    stages: row.stages,
-  }
-}
-
 export async function GET(request: Request) {
   const scope = await resolveOrderHubRequestScope(request)
   if (!scope.ok) return scope.response
@@ -222,8 +210,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Invalid query parameters' }, { status: 400 })
   }
   const { page, pageSize, type, status, search } = parsed.data
-  const pendingToken = parsed.data.pending
-  const pendingOnly = pendingToken === 'true' || pendingToken === '1'
 
   try {
     const channels = await readTradeTypeChannelIds(scope.em, scope)
@@ -271,11 +257,10 @@ export async function GET(request: Request) {
     const stageById = new Map(stageItems.map((item) => [item.id, item]))
     let rows: OrderRow[] = merged.map((row) => ({ ...row, stages: stageById.get(row.id) ?? null }))
 
-    // The installed sales list has no status filter, so both filters run on the merged window.
+    // The installed sales list has no status filter, so the status filter runs on the merged window.
     if (status) rows = rows.filter((row) => row.status === status)
-    if (pendingOnly) rows = rows.filter((row) => isOrderPending(pendingInputFor(row)))
 
-    const filtered = Boolean(status) || pendingOnly
+    const filtered = Boolean(status)
     const total = filtered ? rows.length : sumTotals(scans)
     const totalIsCapped = filtered
       ? scans.some((scan) => scan.windowTruncated || scan.peerTotalCapped)
@@ -305,14 +290,14 @@ export const openApi: OpenApiRouteDoc = {
       description: [
         'Reads the internal-sales, external-sales and purchase-order lists through their own module routes and merges them newest-first by `createdAt` (ties keep the source order: internal, external, purchase), deduped by id.',
         'Each source is scanned newest-first until the requested page can be filled (`page * pageSize` rows), the source is exhausted, or MAX_SCAN_PER_SOURCE (500) rows were read.',
-        '`total`: without `status` or `pending=true` this is the exact sum of the queried sources’ own totals. With a filter it counts only the rows inside the scanned window, so treat it as a floor and check `totalIsCapped` (true when a source stopped before its own total, or when a peer capped its own count).',
-        '`type` selects which sources are read (default `all`). `pending` is a boolean token (`true|false|1|0`); `true`/`1` keep only orders with a missing block, `false`/`0` disable the filter. `status` filters on the exact row status in the window (the installed sales list has no status filter).',
+        '`total`: without `status` this is the exact sum of the queried sources’ own totals. With a filter it counts only the rows inside the scanned window, so treat it as a floor and check `totalIsCapped` (true when a source stopped before its own total, or when a peer capped its own count).',
+        '`type` selects which sources are read (default `all`). `status` filters on the exact row status in the window (the installed sales list has no status filter).',
         'A source the caller may not read, or whose read failed, contributes no rows and is named in `unavailableSources` instead of failing the whole response; a 401 from a peer is returned unchanged.',
       ].join(' '),
       query: ordersQuerySchema,
       responses: [
         { status: 200, description: 'The merged page of orders', schema: ordersResponseSchema },
-        { status: 400, description: 'Invalid `page`, `pageSize`, `type`, `status` or `pending`' },
+        { status: 400, description: 'Invalid `page`, `pageSize`, `type` or `status`' },
         { status: 401, description: 'Unauthorized' },
         { status: 403, description: 'Missing order_hub.view' },
       ],

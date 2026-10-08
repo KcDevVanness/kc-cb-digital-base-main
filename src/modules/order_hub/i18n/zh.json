@@ -11,7 +11,6 @@
   "order_hub.workbench.filters.type": "类型",
   "order_hub.workbench.filters.status": "状态",
   "order_hub.workbench.filters.all": "全部",
-  "order_hub.workbench.filters.pendingOnly": "只看待补",
   "order_hub.workbench.type.internalSales": "对内销售",
   "order_hub.workbench.type.externalSales": "对外销售",
   "order_hub.workbench.type.purchase": "采购",

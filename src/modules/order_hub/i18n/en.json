@@ -11,7 +11,6 @@
   "order_hub.workbench.filters.type": "Type",
   "order_hub.workbench.filters.status": "Status",
   "order_hub.workbench.filters.all": "All",
-  "order_hub.workbench.filters.pendingOnly": "Only what is missing",
   "order_hub.workbench.type.internalSales": "Internal sales",
   "order_hub.workbench.type.externalSales": "External sales",
   "order_hub.workbench.type.purchase": "Purchasing",

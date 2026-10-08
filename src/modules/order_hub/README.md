@@ -1,7 +1,7 @@
 # `order_hub` — 订单工作台
 
 app 自有模块。**以公司订单为根的一屏总览**：三类订单（对内销售 / 对外销售 / 采购）在同一张表上，
-每行带四个填充阶段（采购 / 发运 / 单证 / 收汇·退税）与「只看待补」筛选。需求见
+每行带四个填充阶段（采购 / 发运 / 单证 / 收汇·退税）。需求见
 [`.ai/specs/2026-10-08-order-centric-entry.md`](../../../../.ai/specs/2026-10-08-order-centric-entry.md)
 （Phase 4 / REQ-001、REQ-009、REQ-010）。
 
@@ -17,7 +17,7 @@ app 自有模块。**以公司订单为根的一屏总览**：三类订单（对
 | API | `GET /api/order_hub/stages?ids=<uuid,…>`（1–200 个，超限 400；`order_hub.view`） |
 | 权限 | 工作台 `order_hub.view`；订单 hub `sales.order.view`（与其读的 `/api/sales/orders`、`/api/sales/order-lines` 同门禁）。`setup.ts` 默认授予 `superadmin`/`admin`；既有租户用 `yarn mercato auth sync-role-acls` 补授 `order_hub.view` |
 | 共用件 | `@/lib/orders/purchaseOrderStatus`（采购状态徽章与文案映射，`purchasing` 的列表/详情与工作台共用；词条仍在 `purchasing` 的 i18n） |
-| 单元 | `lib/__tests__/orderPending.test.ts`（待补判定 × 三类订单 × 终态；合并排序）、`lib/__tests__/mergeOrders.test.ts`（跨源归并、去重、截断、分页切片、合计、两个行映射） |
+| 单元 | `lib/__tests__/mergeOrders.test.ts`（跨源归并、去重、截断、分页切片、合计、两个行映射、`compareByCreatedAtDesc` 排序） |
 | 集成 | `__integration__/order-hub-stages.spec.ts`（阶段投影）与 `__integration__/order-hub-aggregate.spec.ts`（聚合列表分页、合计、筛选、跨组织） |
 
 ## 聚合列表（`api/orders/route.ts` → 客户端 `lib/mergeOrders.ts`）
@@ -32,14 +32,13 @@ app 自有模块。**以公司订单为根的一屏总览**：三类订单（对
 | `type` | `all`（默认）/ `internal` / `external` / `purchase`；只读选中的来源 |
 | `status` | 可选，精确匹配合并行的 `status`（安装层销售列表没有状态过滤，故在窗口内过滤） |
 | `search` | 可选，透传给各来源的列表路由 |
-| `pending` | 可选布尔 token（`true/false/1/0`）；`true` 只保留有缺口的单，`false` 关闭该过滤 |
 
 **扫描窗口**：每个来源按 `pageSize=100`、`created_at desc` 从第 1 页向上取，直到累计行数 ≥ `page * pageSize`、
 该来源 `total` 用尽，或达到 `MAX_SCAN_PER_SOURCE = 500`。合并 = 按来源顺序展平 → 同 id 去重（保留先出现者）→
-按 `createdAt desc` 排序 → 取前 `page * pageSize` 行；随后批量接一次阶段投影，再做 `status` / `pending` 过滤，
+按 `createdAt desc` 排序 → 取前 `page * pageSize` 行；随后批量接一次阶段投影，再做 `status` 过滤，
 最后 `slicePage`。**来源顺序是去重与同时间戳的稳定 tiebreak**，改动它会改变分页。
 
-**`total` 口径（重要）**：不加 `status` / `pending=true` 时是三个来源 `total` 的精确和；
+**`total` 口径（重要）**：不加 `status` 时是三个来源 `total` 的精确和；
 加了任一过滤时只统计**扫描窗口内**命中的行数，是下界，需配合 `totalIsCapped`
 （任一来源在自己的 `total` 前停下，或对端自己报了 `OM_LIST_COUNT_CAP`）——UI 用它提示「收窄筛选」。
 
@@ -67,8 +66,8 @@ id 直接不出现**——响应不确认外部记录是否存在。
 
 ## 工作台（`components/OrderWorkbench.tsx`）
 
-- **一个取数**：`useQuery(['order-hub-orders', page, pageSize, type, status, search, pendingOnly, scopeVersion])`
-  打 `/api/order_hub/orders`；类型 / 状态 / 搜索 /「只看待补」都是请求参数，任一变更都会把页码重置为 1。
+- **一个取数**：`useQuery(['order-hub-orders', page, pageSize, type, status, search, scopeVersion])`
+  打 `/api/order_hub/orders`；类型 / 状态 / 搜索都是请求参数，任一变更都会把页码重置为 1。
 - **单源失败不影响其余**：由聚合路由的 `unavailableSources` 表达，行内错误 + 重试只重取这一个请求。
 - **分页**：`DataTable` 用服务端的 `page / pageSize / total / totalPages`，页码可选 20 / 50 / 100；
   `totalIsCapped` 时工具栏展示「已到扫描上限」提示。
@@ -124,7 +123,7 @@ yarn mercato auth sync-role-acls   # 既有租户补授 order_hub.view
 ```
 
 浏览器：树里「公司订单 → 订单工作台」可进入；底部是页码控件、翻页内容变化、`共 N 条` 与接口 `total` 一致；
-「只看待补」勾选后请求带 `pending=true` 且只有一次聚合请求；三类订单都列出且阶段列与订单 hub 一致；
+类型 / 状态 / 关键词任一变更只发一次聚合请求；三类订单都列出且阶段列与订单 hub 一致；
 阶段为 0 的格子点击直达预填新建；「新建订单」按 manage 功能位显隐、弹窗选贸易类型后进入对应建单页；
 采购行「全字段」三组与 `/backend/export-finance/orders/<id>` 同值、无 `export_finance.orders.view` 时该组显示
 无权限文案；`/backend` 仍是仪表盘。

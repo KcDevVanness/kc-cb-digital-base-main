@@ -53,21 +53,6 @@ type OrdersPayload = {
   unavailableSources?: string[]
 }
 
-/**
- * The same question `isOrderPending` answers, restated against the response shape so the assertion is
- * about the *route's* output rather than re-importing the rule under test.
- */
-function hasMissingBlock(row: OrderRow): boolean {
-  if (!row.stages) return false
-  if (row.source === 'purchase_order' && (row.status === 'cancelled' || row.status === 'closed')) return false
-  if (row.source !== 'purchase_order' && row.status === 'canceled') return false
-  if (row.stages.shipmentCount === 0 || row.stages.documentCount === 0) return true
-  if (row.source === 'external_sales') return false
-  if (!row.stages.collected) return true
-  if (row.source === 'purchase_order' && !row.stages.refunded) return true
-  return row.source === 'internal_sales' && row.stages.procurementCount === 0
-}
-
 test.describe.serial('order_hub — aggregate list and paging', () => {
   let api: APIRequestContext
   let rootToken = ''
@@ -240,16 +225,6 @@ test.describe.serial('order_hub — aggregate list and paging', () => {
     expect(items.length).toBeGreaterThan(0)
     for (const item of items) {
       expect(item.source).toBe('purchase_order')
-    }
-  })
-
-  test('pending=true returns only orders with a missing block', async () => {
-    const payload = await readOrders('pending=true&pageSize=100')
-    const items = payload.items ?? []
-    expect(items.length).toBeGreaterThan(0)
-    for (const item of items) {
-      expect(item.stages, `${item.id} carries a stage projection`).not.toBeNull()
-      expect(hasMissingBlock(item), `${item.id} must have a missing block`).toBe(true)
     }
   })
 
