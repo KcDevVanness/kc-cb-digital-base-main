@@ -207,9 +207,12 @@ export default function InternalSalesTable({ kind, tradeType }: {
   // so the filter opens preselected; anything else (or no token) falls back to `all`.
   const merged = tradeType === 'both'
   const entryTradeType = tradeTypeFromPathname(pathname)
+  // The merged workbench opens on both types (`all`) and only narrows when the retired per-type URLs
+  // hand it a `?type=` token; a single-type entry keeps its own type, which its route prefix owns.
   const [typeFilter, setTypeFilter] = React.useState<QuoteListType>(() => {
     const token = searchParams?.get('type')
-    return merged && isQuoteListType(token) ? token : entryTradeType
+    if (!merged) return entryTradeType
+    return isQuoteListType(token) ? token : 'all'
   })
   const external = entryTradeType === 'external'
   const { channels, isLoading: channelsLoading, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
