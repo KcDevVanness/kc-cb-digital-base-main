@@ -74,6 +74,7 @@ const SALES_QUOTES_API_PATH = 'sales/quotes'
 const PURCHASE_ORDERS_API_PATH = 'purchasing/purchase-orders'
 const SHIPMENTS_API_PATH = 'cross_border/shipments'
 const DOCUMENTS_API_PATH = 'trade_docs/documents'
+const INVOICES_API_PATH = 'trade_docs/invoices'
 const OUR_PARTIES_PROFILES_API_PATH = 'our_parties/profiles'
 
 export function readText(source: Record<string, unknown>, ...keys: string[]): string {
@@ -371,6 +372,30 @@ export async function loadDocumentOptions(
         counterpartyName,
       }
     })
+    .filter((option) => option.value.length > 0)
+}
+
+/**
+ * Tax invoices a sales order can carry. The invoices ledger is this module's own read; only the
+ * head facts a picker needs are taken, in the same `DocumentOption` shape the two PI/CI sources use,
+ * so the order hub's documents dialog can label a row without knowing which table it came from.
+ */
+export async function loadTaxInvoiceOptions(query?: string): Promise<DocumentOption[]> {
+  const term = query?.trim()
+  const payload = await fetchCrudList<Record<string, unknown>>(INVOICES_API_PATH, {
+    pageSize: 20,
+    sortField: 'created_at',
+    sortDir: 'desc',
+    ...(term ? { search: term } : {}),
+  })
+  return (payload.items ?? [])
+    .map((item) => ({
+      value: String(item.id ?? ''),
+      kind: 'tax_invoice',
+      number: readText(item, 'number', 'ourNumber', 'our_number') || null,
+      counterpartyName: (item.counterpartyName as string | null | undefined)
+        ?? (snapshotText(item.counterpartySnapshot ?? item.counterparty_snapshot) || null),
+    }))
     .filter((option) => option.value.length > 0)
 }
 

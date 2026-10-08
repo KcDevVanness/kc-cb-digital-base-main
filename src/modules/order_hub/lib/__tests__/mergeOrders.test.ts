@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals'
 import {
+  compareByCreatedAtDesc,
   mergeOrderRows,
   slicePage,
   sumTotals,
@@ -233,5 +234,28 @@ describe('toPurchaseOrderRow', () => {
     expect(mapped.currencyCode).toBe('CNY')
     expect(mapped.total).toBe('0')
     expect(mapped.number).toBeNull()
+  })
+})
+
+describe('compareByCreatedAtDesc', () => {
+  it('orders newest first', () => {
+    const rows = [
+      { createdAt: '2026-10-01T00:00:00.000Z' },
+      { createdAt: '2026-10-03T00:00:00.000Z' },
+      { createdAt: '2026-10-02T00:00:00.000Z' },
+    ]
+    expect([...rows].sort(compareByCreatedAtDesc).map((row) => row.createdAt)).toEqual([
+      '2026-10-03T00:00:00.000Z',
+      '2026-10-02T00:00:00.000Z',
+      '2026-10-01T00:00:00.000Z',
+    ])
+  })
+
+  it('sorts a row without a timestamp last instead of guessing', () => {
+    const rows = [{ createdAt: null }, { createdAt: '2026-10-01T00:00:00.000Z' }]
+    expect([...rows].sort(compareByCreatedAtDesc).map((row) => row.createdAt)).toEqual([
+      '2026-10-01T00:00:00.000Z',
+      null,
+    ])
   })
 })

@@ -9,7 +9,6 @@ import { DataTable } from '@open-mercato/ui/backend/DataTable'
 import { ListEmptyState } from '@open-mercato/ui/backend/filters/ListEmptyState'
 import { RowActions } from '@open-mercato/ui/backend/RowActions'
 import { Button } from '@open-mercato/ui/primitives/button'
-import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { useBackendChrome } from '@open-mercato/ui/backend/BackendChromeProvider'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@open-mercato/ui/primitives/dialog'
@@ -147,7 +146,6 @@ export default function OrderWorkbench() {
   })
   const [statusFilter, setStatusFilter] = React.useState('all')
   const [search, setSearch] = React.useState('')
-  const [pendingOnly, setPendingOnly] = React.useState(false)
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE)
   const [createOpen, setCreateOpen] = React.useState(false)
@@ -162,7 +160,7 @@ export default function OrderWorkbench() {
   const canSeeOrderFile = !chromeReady || granted.has('export_finance.orders.view')
 
   const orders = useQuery({
-    queryKey: ['order-hub-orders', page, pageSize, typeFilter, statusFilter, search, pendingOnly, scopeVersion],
+    queryKey: ['order-hub-orders', page, pageSize, typeFilter, statusFilter, search, scopeVersion],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -172,7 +170,6 @@ export default function OrderWorkbench() {
       if (statusFilter !== 'all') params.set('status', statusFilter)
       const term = search.trim()
       if (term) params.set('search', term)
-      if (pendingOnly) params.set('pending', 'true')
       return readApiResultOrThrow<OrdersResponse>(
         `/api/order_hub/orders?${params.toString()}`,
         undefined,
@@ -320,10 +317,6 @@ export default function OrderWorkbench() {
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox checked={pendingOnly} onCheckedChange={(checked) => { setPendingOnly(checked === true); setPage(1) }} />
-          {t('order_hub.workbench.filters.pendingOnly')}
-        </label>
         {totalIsCapped ? <span className="text-xs text-muted-foreground">{t('order_hub.workbench.capReached')}</span> : null}
         {listError ? (
           <Button type="button" variant="ghost" size="sm" onClick={retryAll}>

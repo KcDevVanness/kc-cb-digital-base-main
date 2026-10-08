@@ -34,3 +34,17 @@ export function parseSourceOrderParams(params: { get(name: string): string | nul
   if (!UUID_PATTERN.test(id)) return { status: 'invalid', reason: 'id' }
   return { status: 'ok', kind, id }
 }
+
+/**
+ * The pair as a create payload carries it, for the entries that **record** the link rather than
+ * only prefill a form (a document or a tax invoice raised for an order writes
+ * `trade_docs_order_documents` in the same transaction as the create). An invalid pair yields no
+ * fields at all: the form has already reported it inline, and a half pair would be rejected by the
+ * command's own schema.
+ */
+export function sourceOrderPayload(result: SourceOrderParamResult): {
+  orderKind?: SourceSalesOrderKind
+  orderId?: string
+} {
+  return result.status === 'ok' ? { orderKind: result.kind, orderId: result.id } : {}
+}

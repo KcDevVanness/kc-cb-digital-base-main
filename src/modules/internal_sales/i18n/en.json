@@ -53,6 +53,11 @@
   "internal_sales.list.columns.validUntil": "Valid until",
   "internal_sales.list.columns.createdAt": "Created",
   "internal_sales.list.quoteExpired": "Expired",
+  "internal_sales.list.columns.type": "Type",
+  "internal_sales.list.filters.type.all": "All",
+  "internal_sales.list.filters.type.internal": "Internal sales",
+  "internal_sales.list.filters.type.external": "External sales",
+  "internal_sales.list.unmarkedType": "Unmarked",
   "internal_sales.list.actions.edit": "Edit",
   "internal_sales.form.linePrecision": "Line {line}: quantity and unit price accept at most 4 decimal places.",
   "internal_sales.list.actions.convert": "Convert to order",
@@ -126,5 +131,10 @@
   "internal_sales.form.quoteLoad.notOrderable": "This quote has not been sent yet, or was canceled — it cannot be ordered.",
   "internal_sales.form.sentQuoteHint": "This quote has been sent: saving returns it to draft and invalidates the link that went out. Send it again when ready.",
   "internal_sales.form.statusDictionaryFailed": "Could not read this organization’s sales status dictionary. Retry; if it keeps failing, ask an administrator.",
-  "internal_sales.hub.title": "Sales order"
+  "internal_sales.hub.title": "Sales order",
+  "internal_sales.quotes.workbench.title": "Sales quotes",
+  "internal_sales.quotes.workbench.description": "The internal and external sales quotes on one list: the Type column names each quote's trade type and the type filter narrows the list to one of them. Row actions follow the row's own type (edit, convert to order, order from this quote). Not the proforma invoice (PI) that backs a collection.",
+  "internal_sales.quotes.workbench.empty": "No sales quotes yet — create one.",
+  "internal_sales.quotes.actions.create": "New quote",
+  "internal_sales.quotes.createDialog.title": "Choose the quote's trade type"
 }

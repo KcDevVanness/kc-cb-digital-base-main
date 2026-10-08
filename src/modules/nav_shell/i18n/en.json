@@ -7,6 +7,7 @@
   "nav_shell.tree.domain.sync": "Data sync",
   "nav_shell.tree.domain.masterData": "Master data",
   "nav_shell.tree.domain.system": "System",
+  "nav_shell.tree.module.orderWorkbench": "Order workbench",
   "nav_shell.tree.module.purchasing": "Purchasing",
   "nav_shell.tree.module.exportSales": "Export sales",
   "nav_shell.tree.module.contracts": "Contracts & documents",

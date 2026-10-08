@@ -8,9 +8,9 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 
 | 层 | 内容 |
 |---|---|
-| 实体（`data/entities.ts`） | `TradeDocsContract` / `TradeDocsContractLine` / `TradeDocsInvoice` / `TradeDocsInvoiceLine` → 表 `trade_docs_contracts` / `trade_docs_contract_lines` / `trade_docs_invoices` / `trade_docs_invoice_lines` |
-| API | `GET|POST|PUT|DELETE /api/trade_docs/contracts`、`/invoices`；`GET /contracts/lines`、`/invoices/lines`（只读行面，行只经合同 / 发票命令写入）；`POST /contracts/transitions`、`/invoices/transitions`（状态流转：同路径的 GET 列表只为 CRUD 工厂解析作用域，不是 UI 契约）；`PUT /contracts/attach`（绑定盖章扫描件，`attachmentId: null` 解绑）、`PUT /invoices/attach`；`POST|GET /contracts/[id]/document`（生成 / 下载合同 Excel） |
-| 命令 | `trade_docs.contracts.{create,update,delete,transition,attach,generate-document}`、`trade_docs.invoices.{create,update,delete,transition,attach}` |
+| 实体（`data/entities.ts`） | `TradeDocsContract` / `TradeDocsContractLine` / `TradeDocsInvoice` / `TradeDocsInvoiceLine` → 表 `trade_docs_contracts` / `trade_docs_contract_lines` / `trade_docs_invoices` / `trade_docs_invoice_lines`；`TradeDocsOrderDocument` → `trade_docs_order_documents`（销售订单↔单据关联，见下「销售订单 ↔ 单据关联」） |
+| API | `GET|POST|PUT|DELETE /api/trade_docs/contracts`、`/invoices`；`GET /contracts/lines`、`/invoices/lines`（只读行面，行只经合同 / 发票命令写入）；`POST /contracts/transitions`、`/invoices/transitions`（状态流转：同路径的 GET 列表只为 CRUD 工厂解析作用域，不是 UI 契约）；`PUT /contracts/attach`（绑定盖章扫描件，`attachmentId: null` 解绑）、`PUT /invoices/attach`；`POST|GET /contracts/[id]/document`（生成 / 下载合同 Excel）；`GET|POST /api/trade_docs/orders/documents`（销售订单↔单据关联，GET 读 / POST 成套替换） |
+| 命令 | `trade_docs.contracts.{create,update,delete,transition,attach,generate-document}`、`trade_docs.invoices.{create,update,delete,transition,attach}`、`trade_docs.orders.documents.replace` |
 | 后台页面 | `/backend/trade-docs/contracts`（列表/新建/详情/编辑）、`/backend/trade-docs/invoices`（列表/新建/编辑+确认/作废/附件）。**2026-09-28**：发票页标题改「税务发票台账」/ "Tax invoice ledger"，`pageGroupKey` 由 `cross_border.nav.group` 移入 `export_finance.nav.group`（「财务」组，`pageOrder 420`），create/edit 页同组嵌套（`pageOrder 421/422`），导航里不再出现在出口业务组 |
 | 事件 | `trade_docs.contract.{created,updated,deleted,issued,signed,closed,cancelled,document.generated}`、`trade_docs.invoice.{created,updated,deleted,confirmed,voided,attached}` |
 | 权限 | `trade_docs.contracts.view|manage`、`trade_docs.invoices.view|manage` |
@@ -170,6 +170,7 @@ app 自有模块。**合同的唯一台账**：采购/销售两个方向的购�
 ```bash
 yarn generate && yarn typecheck && yarn lint && yarn ds:check
 yarn jest --config jest.config.cjs src/modules/trade_docs
+yarn mercato test:integration order-documents   # 订单↔单据关联（2026-10-08）
 # 合同订单关联冒烟（2026-09-29）：
 #   POST /api/trade_docs/contracts/orders {contractId, orders:[采购单, 内部销售订单]} → 201 {ok, count:2}
 #   → GET …/contracts/orders?contractId= 读回冻结快照（单号/对方/日期/状态）
@@ -189,6 +190,13 @@ yarn jest --config jest.config.cjs src/modules/trade_docs
 # 合同金额与财务金额分离 → 发票 confirm 后财务金额取票面、void 回退 → 上传+绑定附件 200 →
 # POST/GET [id]/document 生成并下载 XLSX（内容类型为 xlsx，金额列可求和）
 # 附件预览冒烟（2026-09-24）：合同详情「盖章件」与发票表单/列表的「查看文件」→ 图片等比显示 / PDF 由 PDF.js 渲染到 canvas / 其它类型说明 + 下载（同一组件，见 purchasing README）
+# 订单单据关联冒烟（2026-10-08，见 __integration__/order-documents.spec.ts）：
+#   POST /api/trade_docs/orders/documents {orderKind, orderId, rows:[{documentKind, documentId}]} → 201 {ok, count}
+#   → GET ?orderKind=&orderId= 逐行返回且 documentNumber 已冻结；只留一张再 POST → 另一行消失
+#   → 跨组织订单/单据 → 422；同一 (kind,id) 重复列出 → 422
+#   → 带 orderKind/orderId 建单据 → 关联行自动存在；删除该单据 → 关联行消失
+# 订单 hub「单据」区块冒烟（2026-10-08，浏览器）：订单详情区块列出关联表里的单据（先手动 POST 关联两张，
+#   刷新后出现），行显示当前状态/金额；带 ?orderKind=&orderId= 新建一张 → 刷新后自动出现；已删单据的关联行不显示
 ```
 
 ## 回滚
@@ -214,3 +222,47 @@ yarn jest --config jest.config.cjs src/modules/trade_docs
 本模块的交易对手选择器与 `internal_sales` 的买方选择器共用；词条仍留在 `trade_docs.counterparty.create.*`
 （共享件可读模块词表，与 `@/lib/orders/purchaseOrderStatus` 同例）。`CounterpartyPicker.tsx` 只改了 import，
 行为不变。
+
+## 销售订单 ↔ 单据关联（订单单据维度，2026-10-08）
+
+在这之前销售订单没有**自己的**单据维度：订单 hub 的「单据」区块靠合同推导
+（`trade_docs_contract_orders` → 合同 → 单据/发票的 `contract_id`），既表达不了「开工单但没有合同」的
+PI，也表达不了「属于这张订单但不属于合同那一套」的单据。本轮把这条关系独立成表，合同侧的订单关联与
+合同自身的 `source_kind/source_id` 都不动（两者并存、互不回写）。
+
+| 层 | 内容 |
+|---|---|
+| 实体 | `TradeDocsOrderDocument` → `trade_docs_order_documents`（`order_kind` + `order_id` + 冻结 `order_number`、`document_kind`（`proforma`/`commercial`/`tax_invoice`）+ `document_id` + 冻结 `document_number` + `document_snapshot` jsonb）；索引 `..._scope_idx(organization_id, tenant_id)`、`..._order_idx(organization_id, tenant_id, order_kind, order_id)`、唯一 `..._order_document_uniq(order_kind, order_id, document_kind, document_id)` |
+| 命令 | `trade_docs.orders.documents.replace`（`commands/orderDocuments.ts`，单写者，审计 `resource_kind = trade_docs.order.document`） |
+| API | `GET\|POST /api/trade_docs/orders/documents`（`api/orders/documents/route.ts`；GET 按 `orderKind`+`orderId` 或 `documentKind`+`documentId` 过滤，逐行回传冻结单号 + `documentSnapshot`；POST = 成套替换动作 `{ orderKind, orderId, rows[], orderUpdatedAt? }`）；权限 `trade_docs.documents.view` / `trade_docs.documents.manage` |
+| 关联词表 | `ORDER_DOCUMENT_KINDS = ['proforma','commercial','tax_invoice']`（`data/validators.ts`）——关联行自己的词表，因为三个 kind 分居两张表 |
+| 创建即关联 | `documentCreateSchema` / `invoiceCreateSchema` 增可选 `orderKind`/`orderId`（**同生同灭**，半对是校验错误 `orderKind and orderId go together`），两个 create 命令在**同一事务**写一条关联行（`commands/documents.ts` / `commands/invoices.ts`）；建单页把这对参数放进 payload（`components/DocumentsForm.tsx`、`components/InvoiceForm.tsx`，提交前经 `src/lib/orders/sourceOrderParams.ts` 的 `sourceOrderPayload`） |
+| 删除即解绑 | 两个 delete 命令先 `nativeDelete` 掉该单据的关联行再软删单据（无外键即无级联，见 `commands/documents.ts` delete 分支注释）——被删单据因此不留悬空行，可重新关联 |
+| 迁移 | `migrations/Migration20261008095745_trade_docs.ts`（只建新表 + 三个索引，已应用） |
+
+**口径**
+
+- **无外键，靠写入方自律**：PI/CI 是 `trade_docs_documents` 的行、税票是 `trade_docs_invoices` 的行，
+  多态引用建不了外键。写时两端都在**调用方作用域**内解析（`lib/orderDocumentReads.ts`）：订单看不见
+  （跨组织/已删）→ 422 `order_document_link_order_not_found`；单据解析不到、或 `documentKind` 与该行自身
+  `kind` 矛盾 → 视为不存在（422 `order_document_link_document_not_found`）；同一 `(kind, id)` 重复列出也
+  422。读侧由 hub 兜底：关联行对应的单据已被删时不渲染该行，不会显示裸 id。
+- **快照冻结**：关联行冻结订单号、单据号与 `document_snapshot`（kind / number / status / total /
+  currencyCode / issuedAt），改名不回写；hub 另按 `ids=` 读活单据/发票，行上显示的是**当前**状态与金额。
+- **成套替换 + 乐观锁**：保存即整组替换（与合同订单关联、单据行同构），挂错靠重开「管理单据关联」
+  对话框改（`components/OrderDocumentsDialog.tsx`，每次打开重读集合）。锁是**订单的** `updated_at`
+  （聚合锁），对话框携带的版本过期 → 409（`optimistic_lock_conflict`），不静默丢弃他人刚加的关联。
+  替换 schema 上限 200 行，对话框同值。
+- **创建时挂不上的订单会失败，不会静默丢链**：带 `?orderKind=&orderId=` 建单时若订单看不见 → 422
+  （`commands/documents.ts` / `commands/invoices.ts` 的 create 分支），否则这张单据永远不会出现在它所属
+  订单下。
+
+**界面入口**：`/backend/trade-docs/proformas/create?orderKind=&orderId=`（订单恰好只有一张关联合同时再带
+`&contractId=`）= 建单即关联；订单 hub 的「单据」区块 = 「新建单据」（同上链接）+「管理单据关联」+
+「查看全部」（口径见 `order_hub` README）。
+
+**区块内就地编辑（2026-10-08）**：订单 hub 的区块行可以就地改记录的**头部字段**，走各模块自己的 `PUT` +
+行版本乐观锁（通用件 `src/lib/quick-edit/QuickEditDialog.tsx`）。本模块提供三个字段工厂：
+`lib/documentQuickEdit.ts`（有效至 / 交期 / 付款条件 / 贸易条款 / 备注）、`lib/invoiceQuickEdit.ts`
+（票种 / 开票日期 / 备注）、`lib/contractQuickEdit.ts`（签订日期 / 交期 / 贸易条款 / 运输方式 / 目的地 /
+备注）——字段名与各自 update schema 一一对应，行集合、状态、金额与关联关系都不在其中（那些归各自页面）。

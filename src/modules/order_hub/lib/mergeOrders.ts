@@ -1,5 +1,4 @@
 import type { OrderStageItem } from './orderStages'
-import { compareByCreatedAtDesc } from './orderPending'
 
 /**
  * The merge behind the order workbench, as a pure function.
@@ -103,6 +102,19 @@ export function toPurchaseOrderRow(item: Record<string, unknown>): OrderRow {
     lineCount: 0,
     stages: null,
   }
+}
+
+/** Newest first, by the timestamp the list projections carry; a row without one sorts last. */
+export function compareByCreatedAtDesc(
+  a: Pick<OrderRow, 'createdAt'>,
+  b: Pick<OrderRow, 'createdAt'>,
+): number {
+  const left = a.createdAt ? Date.parse(a.createdAt) : Number.NaN
+  const right = b.createdAt ? Date.parse(b.createdAt) : Number.NaN
+  if (Number.isNaN(left) && Number.isNaN(right)) return 0
+  if (Number.isNaN(left)) return 1
+  if (Number.isNaN(right)) return -1
+  return right - left
 }
 
 /**

@@ -37,7 +37,7 @@ import {
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { parseExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
-import { parseSourceOrderParams } from '@/lib/orders/sourceOrderParams'
+import { parseSourceOrderParams, sourceOrderPayload } from '@/lib/orders/sourceOrderParams'
 import { AMOUNT_SCALE, multiplyExactDecimal, toAmountString } from '../lib/money'
 import { OurPartyPicker } from './ContractForm'
 import {
@@ -1554,7 +1554,15 @@ function DocumentCreateForm({ kind, listHref, fields, groups }: FormWiring) {
       try {
         const created = await createCrud<{ id?: string }>(
           DOCUMENTS_API_PATH,
-          { kind, ...buildDocumentPayload(values), lines: buildDocumentLines(values) },
+          {
+            kind,
+            ...buildDocumentPayload(values),
+            lines: buildDocumentLines(values),
+            // Arriving from an order's hub (`?orderKind=&orderId=`): the create records the order ↔
+            // document link in the same transaction, so the order's Documents block shows the new
+            // proforma/commercial invoice without a second call.
+            ...sourceOrderPayload(sourceParam),
+          },
         )
         const createdId = typeof created.result?.id === 'string' ? created.result.id : null
         if (createdId) {
@@ -1567,7 +1575,7 @@ function DocumentCreateForm({ kind, listHref, fields, groups }: FormWiring) {
         throw error
       }
     },
-    [kind, listHref, router, t],
+    [kind, listHref, router, sourceParam, t],
   )
 
   if (prefillState.status === 'loading') {

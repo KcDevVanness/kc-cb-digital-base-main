@@ -2,12 +2,15 @@
 
 The backend sidebar is drawn by this module instead of by the shell's built-in flat list: 域 → 模块 →
 页面, in the order the business reads it (公司订单 → 财务 → 经营概览 → 仓储与库存 → 平台运营 →
-数据同步 → 基础数据 → 系统). See
+数据同步 → 基础数据 → 系统). The company-order domain is one level deeper than the rest — 公司订单 →
+订单工作台 → 采购 / 出口销售 / 合同与单据 / 发运与装箱 → 页面 — and every branch row's title is a link
+(the workbench node opens `/backend/orders`; a node without a page opens the first page it holds) next to
+an expand/collapse toggle. See
 [`.ai/specs/2026-10-08-order-centric-entry.md`](../../../../.ai/specs/2026-10-08-order-centric-entry.md)
 (Phase 1) for the requirement record and `docs/dev/navigation.md` for the operator-facing notes.
 
-公司订单 is the app's single entry for order work: the workbench (`/backend/orders`) creates and
-lists orders, and the four groups below it are where each order's blocks are filled in and looked up
+公司订单 is the app's single entry for order work: the workbench node (`/backend/orders`) creates and
+lists orders, and the four groups under it are where each order's blocks are filled in and looked up
 — 采购 (采购单 / 供应商 / 供应商产品库 / 供应商报价单), 出口销售 (对内 / 对外销售报价单), 合同与单据
 (购销合同 / PI / CI / 税务发票台账) and 发运与装箱 (发运单 / 装箱单). The per-trade-type order *lists*
 stay out of the tree because the workbench is their only entry; the quote lists live under 出口销售.
@@ -22,7 +25,7 @@ No entity, no migration, no ACL feature: this is a **display layer**. Every page
 
 | Surface | What it does |
 |---|---|
-| `lib/navTree.ts` | The tree configuration — the single source of truth. A page entry names only its `href`; its label, icon and filter features come from the page's own `page.meta.ts` through the route manifest. A leaf may also name an `iconName` for a page whose metadata carries a ReactNode icon (no name string) — see the icon rule below. `TREE_EXCLUDED` lists the navigable pages that deliberately stay out of the tree, each with a reason. |
+| `lib/navTree.ts` | The tree configuration — the single source of truth. A page entry names only its `href`; its label, icon and filter features come from the page's own `page.meta.ts` through the route manifest. A branch may name its own `href` (the workbench node: the row title links at it); without one the node links at its first page. A leaf may also name an `iconName` for a page whose metadata carries a ReactNode icon (no name string) — see the icon rule below. `TREE_EXCLUDED` lists the navigable pages that deliberately stay out of the tree, each with a reason. |
 | `lib/buildNavTree.ts` | Pure builder: config → chrome-shaped groups, effective-feature filter, role preference → default adoption → user preference, then `itemOrder`. |
 | `api/chrome/route.ts` | `GET /api/nav_shell/chrome` — the installed chrome payload with `groups: []`. The shell reads this instead of `/api/auth/admin/nav`, so the built-in flat list renders nothing while brand, roles, `grantedFeatures`, the settings/profile sections and their path prefixes stay exactly as installed. |
 | `api/tree/route.ts` | `GET /api/nav_shell/tree` — `{ groups, featureFiltered }`, scoped to the caller, uncached. |
@@ -65,7 +68,11 @@ so re-adding one to the tree without a decision fails loudly.
 - **`itemOrder` is applied here.** The installed renderer persists it and never reads it back; without
   this pass, reordering items inside a domain would save and do nothing. The customization editor
   supports drag-reordering at the top level of a domain only (nested entries support hide/rename),
-  which is the granularity this module applies.
+  which is the granularity this module applies — so in the four-level company-order domain only the
+  workbench node is orderable and the four groups are hide/rename-only.
+- **A branch's own page is resolved like a leaf's**: it must be published by the route manifest and
+  allowed by the caller's effective features. When it is not, the node falls back to its first
+  surviving child instead of rendering a title link that the page gate would refuse.
 
 ## Known limitations
 
@@ -91,11 +98,13 @@ curl -s -b "$COOKIE" http://localhost:3100/api/nav_shell/chrome | jq '.groups'  
 curl -s -b "$COOKIE" http://localhost:3100/api/nav_shell/tree | jq '.groups[].name'     # the 8 domains
 ```
 
-Browser: the sidebar shows the 8 domains with no duplicate flat list, folds/unfolds at every level,
-highlights the active page, filters on a keyword, renders icon-only when the shell is collapsed, and
-renders inside the mobile drawer below 420px. A user whose only grant is
-`cross_border.shipments.view` sees 公司订单 → 发运与装箱 and nothing else, and a direct visit to
-`/backend/finance/payables` is still refused by the page gate.
+Browser: the sidebar shows the 8 domains with no duplicate flat list, folds/unfolds at every level
+(the company-order domain is 公司订单 → 订单工作台 → the four groups → pages), links a row title to
+its page (the workbench node's title opens `/backend/orders`, its chevron only toggles), highlights the
+active page, filters on a keyword, renders icon-only when the shell is collapsed, and renders inside the
+mobile drawer below 420px. A user whose only grant is `cross_border.shipments.view` sees
+公司订单 → 订单工作台 → 发运与装箱 and nothing else, and a direct visit to `/backend/finance/payables`
+is still refused by the page gate.
 
 ## Rollback
 

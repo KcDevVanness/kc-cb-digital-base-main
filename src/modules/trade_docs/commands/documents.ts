@@ -10,13 +10,13 @@ import {
 import { withAtomicFlush } from '@open-mercato/shared/lib/commands/flush'
 import { extractUndoPayload } from '@open-mercato/shared/lib/commands/undo'
 import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/optimistic-lock-command'
-import { badRequest, conflict, notFound } from '@open-mercato/shared/lib/crud/errors'
+import { badRequest, conflict, CrudHttpError, notFound } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEmitContext, CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
 import { createAttachmentFromBuffer } from '@open-mercato/core/modules/attachments/lib/createFromBuffer'
 import { buildXlsx, XLSX_CONTENT_TYPE } from '@open-mercato/core/modules/staff/lib/timesheets-reports/xlsx'
-import { TradeDocsDocument, TradeDocsDocumentLine } from '../data/entities'
+import { TradeDocsDocument, TradeDocsDocumentLine, TradeDocsOrderDocument } from '../data/entities'
 import {
   documentAggregateSchema,
   documentAttachSchema,
@@ -39,6 +39,7 @@ import {
 } from '../../cross_border/lib/shipmentSalesReads'
 import { invalidateDocumentCaches } from '../lib/cacheInvalidation'
 import { documentFilter, ensureScope, loadDocument, resolveContractLink, type TradeDocsScope } from '../lib/scope'
+import { loadSalesOrderRef } from '../lib/orderDocumentReads'
 import { productSnapshotPayload, readProductSnapshots } from '../lib/productSnapshots'
 import { computeLineAmounts, sumAmounts } from '../lib/money'
 import { buildDocumentSheet, DOCUMENT_TEMPLATE_IDS } from '../lib/documentTemplate'
@@ -339,6 +340,19 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
     )
     await assertCounterpartyReference(em, scope, counterpartyKind, parsed.counterpartyId ?? null)
     const contractLink = await resolveContractLink(em, scope, parsed.contractId)
+    // `?orderKind=&orderId=` on the create page: the link is written in the same transaction as the
+    // document, so the order hub's Documents block sees it without a second call. An order the
+    // caller cannot see fails the create instead of being silently dropped — the number would
+    // otherwise never show up under the order it was raised for.
+    const orderLink = parsed.orderKind && parsed.orderId
+      ? await loadSalesOrderRef(em, scope, parsed.orderId)
+      : null
+    if (parsed.orderKind && parsed.orderId && !orderLink) {
+      throw new CrudHttpError(422, {
+        error: 'order_document_link_order_not_found',
+        orderId: parsed.orderId,
+      })
+    }
 
     const lines = await resolveDocumentLines(em, scope, parsed.lines)
     let document!: TradeDocsDocument
@@ -379,6 +393,31 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
         },
         async () => {
           await recomputeDocumentHead(em, scope, String(document.id))
+        },
+        async () => {
+          // The frozen snapshot is written after the head recompute so it carries the created
+          // document's own totals rather than the zero placeholders the entity started with.
+          if (!orderLink || !parsed.orderKind) return
+          em.persist(
+            em.create(TradeDocsOrderDocument, {
+              tenantId: scope.tenantId,
+              organizationId: scope.organizationId,
+              orderKind: parsed.orderKind,
+              orderId: orderLink.id,
+              orderNumber: orderLink.number,
+              documentKind: parsed.kind,
+              documentId: String(document.id),
+              documentNumber: document.number ?? null,
+              documentSnapshot: {
+                kind: parsed.kind,
+                number: document.number ?? null,
+                status: document.status,
+                total: document.total,
+                currencyCode: document.currencyCode,
+                issuedAt: document.issuedAt ? new Date(document.issuedAt).toISOString() : null,
+              },
+            }),
+          )
         },
       ],
       { transaction: true, label: 'trade_docs.documents.create' },
@@ -595,6 +634,16 @@ const deleteDocumentCommand: CommandHandler<
     if (document.status === 'issued') {
       throw conflict('An issued document cannot be deleted; void it instead')
     }
+
+    // The link has no foreign key (it is polymorphic), so nothing cascades: the rows pointing at
+    // this document go first, and a document that still exists afterwards is simply unlinked —
+    // recoverable from the order hub's dialog, unlike a link to a document that is gone.
+    await em.nativeDelete(TradeDocsOrderDocument, {
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+      documentKind: document.kind,
+      documentId: String(document.id),
+    } as FilterQuery<TradeDocsOrderDocument>)
 
     const removed = await de.deleteOrmEntity({
       entity: TradeDocsDocument,

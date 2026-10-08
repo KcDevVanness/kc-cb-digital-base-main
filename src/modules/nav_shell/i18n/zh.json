@@ -7,6 +7,7 @@
   "nav_shell.tree.domain.sync": "数据同步",
   "nav_shell.tree.domain.masterData": "基础数据",
   "nav_shell.tree.domain.system": "系统",
+  "nav_shell.tree.module.orderWorkbench": "订单工作台",
   "nav_shell.tree.module.purchasing": "采购",
   "nav_shell.tree.module.exportSales": "出口销售",
   "nav_shell.tree.module.contracts": "合同与单据",
