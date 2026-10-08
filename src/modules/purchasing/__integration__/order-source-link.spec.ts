@@ -57,8 +57,10 @@ test.describe.serial('purchasing — purchase order source link', () => {
   let catalogProductId = ''
   let productId = ''
   let supplierId = ''
+  let branchSupplierId = ''
   let salesOrderId = ''
   let salesOrderNumber = ''
+  let unmarkedSalesOrderId = ''
   const purchaseOrderIds: string[] = []
 
   const stamp = Date.now().toString(36)
@@ -145,11 +147,55 @@ test.describe.serial('purchasing — purchase order source link', () => {
     salesOrderNumber = String(orderRow?.orderNumber ?? '')
     expect(salesOrderNumber, 'the sales order fixture carries a number to freeze').toBeTruthy()
 
-    // A second organization, to prove the anchor does not resolve across organizations.
+    // An order with no trade-type channel at all: its kind cannot be derived, so it must be refused
+    // for the same reason a missing order is.
+    const unmarked = await scoped('POST', '/api/sales/orders', {
+      currencyCode: 'CNY',
+      customerSnapshot: { name: `Source link unmarked ${stamp}` },
+      lines: [{ kind: 'product', name: 'Source link line', currencyCode: 'CNY', quantity: 1, unitPriceNet: 5 }],
+    })
+    expect(unmarked.status(), 'POST /api/sales/orders without a channel should return 201').toBe(201)
+    unmarkedSalesOrderId = String((await readJsonSafe<IdPayload>(unmarked))?.id ?? '')
+    expect(unmarkedSalesOrderId).toBeTruthy()
+
+    // A second organization, to prove the anchor does not resolve across organizations. A fixture
+    // organization has no currency dictionary, so it is seeded here — otherwise the write would fail
+    // on the currency check before it ever reached the anchor.
     branchOrgId = await createOrganizationFixture(api, rootToken, {
       name: `Source link branch ${stamp}`,
       tenantId,
     })
+    const dictionary = await scoped(
+      'POST',
+      '/api/dictionaries',
+      { key: 'currency', name: 'Currency' },
+      rootToken,
+      branchOrgId,
+    )
+    const dictionaryId = String((await readJsonSafe<IdPayload>(dictionary))?.id ?? '')
+    expect(dictionaryId, 'the branch organization currency dictionary is seeded').toBeTruthy()
+    const dictionaryEntry = await scoped(
+      'POST',
+      `/api/dictionaries/${encodeURIComponent(dictionaryId)}/entries`,
+      { value: 'CNY', label: '人民币' },
+      rootToken,
+      branchOrgId,
+    )
+    expect(dictionaryEntry.status(), 'the CNY entry is seeded for the branch organization').toBeLessThan(300)
+
+    // The branch organization needs its own supplier: a purchase order may only name a supplier of
+    // the organization it is written in, so the cross-organization attempt below must fail on the
+    // anchor rather than on a foreign supplier.
+    const branchSupplier = await scoped(
+      'POST',
+      '/api/purchasing/suppliers',
+      { name: `Source link branch supplier ${stamp}`, defaultCurrencyCode: 'CNY' },
+      rootToken,
+      branchOrgId,
+    )
+    expect(branchSupplier.status(), await branchSupplier.text()).toBe(201)
+    branchSupplierId = String((await readJsonSafe<IdPayload>(branchSupplier))?.id ?? '')
+    expect(branchSupplierId).toBeTruthy()
     roleId = await createRoleFixture(api, rootToken, { name: `Source link staff ${stamp}`, tenantId })
     await setRoleAclFeatures(api, rootToken, { roleId, features: STAFF_FEATURES })
     const staffEmail = `src-link-staff-${stamp}@example.com`
@@ -167,11 +213,11 @@ test.describe.serial('purchasing — purchase order source link', () => {
     for (const id of purchaseOrderIds) {
       await scoped('DELETE', `${PURCHASE_ORDERS_URL}?id=${encodeURIComponent(id)}`).catch(() => undefined)
     }
-    if (salesOrderId) {
-      await scoped('DELETE', `/api/sales/orders?id=${encodeURIComponent(salesOrderId)}`).catch(() => undefined)
+    for (const id of [salesOrderId, unmarkedSalesOrderId]) {
+      if (id) await scoped('DELETE', `/api/sales/orders?id=${encodeURIComponent(id)}`).catch(() => undefined)
     }
-    if (supplierId) {
-      await scoped('DELETE', `/api/purchasing/suppliers?id=${encodeURIComponent(supplierId)}`).catch(() => undefined)
+    for (const [id, orgId] of [[supplierId, hqOrgId], [branchSupplierId, branchOrgId ?? hqOrgId]] as const) {
+      if (id) await scoped('DELETE', `/api/purchasing/suppliers?id=${encodeURIComponent(id)}`, undefined, rootToken, orgId).catch(() => undefined)
     }
     if (productId) {
       await scoped('DELETE', `/api/products/items?id=${encodeURIComponent(productId)}`).catch(() => undefined)
@@ -210,11 +256,22 @@ test.describe.serial('purchasing — purchase order source link', () => {
     expect(unknown.status, unknown.body).toBe(422)
     expect(unknown.body).toContain('source_sales_order_not_found')
 
+    // An order that exists but carries no trade-type channel: the kind cannot be derived, so it is
+    // refused with the same code rather than stored as an untyped anchor.
+    const unmarked = await createOrder({
+      supplierId,
+      currencyCode: 'CNY',
+      sourceSalesOrderId: unmarkedSalesOrderId,
+      lines: [{ productId, quantity: 1, unitPrice: 10, taxRate: 0, priceIncludesTax: true }],
+    })
+    expect(unmarked.status, unmarked.body).toBe(422)
+    expect(unmarked.body).toContain('source_sales_order_not_found')
+
     // The same id, written by an operator of another organization: the sales order exists, but not
     // in that caller's scope, so the refusal must be identical.
     const crossOrg = await createOrder(
       {
-        supplierId,
+        supplierId: branchSupplierId,
         currencyCode: 'CNY',
         sourceSalesOrderId: salesOrderId,
         lines: [{ productId, quantity: 1, unitPrice: 10, taxRate: 0, priceIncludesTax: true }],
