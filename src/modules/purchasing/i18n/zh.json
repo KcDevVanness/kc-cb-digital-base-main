@@ -350,5 +350,15 @@
   "purchasing.supplierProducts.actions.disabled": "该商品已停用。",
   "purchasing.supplierProducts.actions.enabled": "该商品已恢复启用。",
   "purchasing.supplierProducts.actions.disableFailed": "停用失败。",
-  "purchasing.supplierProducts.actions.enableFailed": "启用失败。"
+  "purchasing.supplierProducts.actions.enableFailed": "启用失败。",
+  "purchasing.orders.form.sourceOrder.loading": "正在载入来源订单…",
+  "purchasing.orders.form.sourceOrder.loadFailed": "来源订单的行读取失败，请手动补充商品行",
+  "purchasing.orders.form.sourceOrder.skipped": "{count} 行缺少商品引用，未复制",
+  "purchasing.orders.form.sourceOrder.label": "来源销售订单",
+  "purchasing.orders.form.sourceOrder.open": "打开订单详情",
+  "purchasing.orders.create.sourceOrder.invalid": "来源订单参数无效，已按新建处理",
+  "purchasing.orders.form.lines.priceLoadFailed": "供应商供货价读取失败，请手动填写单价",
+  "purchasing.orders.list.sourceOrderFilter": "仅显示来源订单 {number} 的采购单",
+  "purchasing.orders.list.sourceOrderFilterUnknown": "仅显示指定来源订单的采购单",
+  "purchasing.orders.list.clearSourceOrderFilter": "清除筛选"
 }

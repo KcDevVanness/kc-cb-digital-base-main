@@ -350,5 +350,15 @@
   "purchasing.supplierProducts.actions.disabled": "This item is no longer offered.",
   "purchasing.supplierProducts.actions.enabled": "This item is offered again.",
   "purchasing.supplierProducts.actions.disableFailed": "Could not stop this item.",
-  "purchasing.supplierProducts.actions.enableFailed": "Could not re-enable this item."
+  "purchasing.supplierProducts.actions.enableFailed": "Could not re-enable this item.",
+  "purchasing.orders.form.sourceOrder.loading": "Loading the source order…",
+  "purchasing.orders.form.sourceOrder.loadFailed": "The source order lines could not be read — add them by hand",
+  "purchasing.orders.form.sourceOrder.skipped": "{count} line(s) carry no product reference and were not copied",
+  "purchasing.orders.form.sourceOrder.label": "Source sales order",
+  "purchasing.orders.form.sourceOrder.open": "Open the order",
+  "purchasing.orders.create.sourceOrder.invalid": "The source order parameters are invalid; opening a plain new order",
+  "purchasing.orders.form.lines.priceLoadFailed": "The supplier price could not be read — type the unit price",
+  "purchasing.orders.list.sourceOrderFilter": "Showing only purchase orders raised for {number}",
+  "purchasing.orders.list.sourceOrderFilterUnknown": "Showing only purchase orders of the given source order",
+  "purchasing.orders.list.clearSourceOrderFilter": "Clear filter"
 }

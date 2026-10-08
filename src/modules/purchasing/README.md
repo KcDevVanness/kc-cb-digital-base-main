@@ -15,7 +15,23 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 | 事件 | `purchasing.supplier.{created,updated,deleted}`、`purchasing.supplier_product.{created,updated,deleted}`、`purchasing.supplier_product_prices.updated`、`purchasing.purchase_order.{created,updated,placed,shipped,received,closed,cancelled,deleted}`、`purchasing.purchase_payment.{recorded,deleted}`；单证 CRUD 侧效另发 `purchasing.purchase_order_document.{created,updated,deleted}`（`commands/orders.ts` 的 `purchaseOrderDocumentCrudEvents`，实体 `purchase_order_document`；这三个 id 目前未登记在 `events.ts`） |
 | 权限 | `purchasing.suppliers.view|manage`、`purchasing.supplier-products.view|manage|promote`、`purchasing.orders.view|manage`、`purchasing.payments.manage` |
 | 命令公共件 | `commands/shared.ts`：本模块唯一的 `ensureScope`（可信作用域、缺组织 fail closed）与产品库的实体 id / 资源类型 / 事件与索引桥配置 |
-| 迁移 | `migrations/Migration20260921081717_purchasing.ts`（`purchasing_suppliers`）、`Migration20260921085348_purchasing.ts`（订单 / 行 / 付款三表）、`Migration20260921100702_purchasing.ts`（付款 `attachment_id`）、`Migration20260922073530_purchasing.ts`（行 `product_id` + `catalog_product_id` 放开 NOT NULL）、`Migration20260922082559_purchasing.ts`（`purchasing_purchase_order_documents` 表 + 单头 `business_number`/`product_category`/`owner_*`/`customer_*`）、`Migration20260922103027_purchasing.ts`（行 `supplier_product_id`）、`Migration20260924041621_purchasing.ts`（供应商 `brand_value`）、`Migration20260928073630_purchasing.ts`（订单/行/付款金额列收窄为 `numeric(18,2)`）、`Migration20260929063626_purchasing.ts`（`purchasing_supplier_bank_accounts` 供应商银行账户表）；产品库的表由 `sourcing` 侧的迁移建出并在 `Migration20260923043000_sourcing.ts` **改名为 `purchasing_*`**（含 `Migration20260923044000_sourcing.ts` 的 pkey 改名），数据原样保留 |
+| 迁移 | `migrations/Migration20260921081717_purchasing.ts`（`purchasing_suppliers`）、`Migration20260921085348_purchasing.ts`（订单 / 行 / 付款三表）、`Migration20260921100702_purchasing.ts`（付款 `attachment_id`）、`Migration20260922073530_purchasing.ts`（行 `product_id` + `catalog_product_id` 放开 NOT NULL）、`Migration20260922082559_purchasing.ts`（`purchasing_purchase_order_documents` 表 + 单头 `business_number`/`product_category`/`owner_*`/`customer_*`）、`Migration20260922103027_purchasing.ts`（行 `supplier_product_id`）、`Migration20260924041621_purchasing.ts`（供应商 `brand_value`）、`Migration20260928073630_purchasing.ts`（订单/行/付款金额列收窄为 `numeric(18,2)`）、`Migration20261008042809_purchasing.ts`（采购单来源销售订单三列 + 索引）、`Migration20260929063626_purchasing.ts`（`purchasing_supplier_bank_accounts` 供应商银行账户表）；产品库的表由 `sourcing` 侧的迁移建出并在 `Migration20260923043000_sourcing.ts` **改名为 `purchasing_*`**（含 `Migration20260923044000_sourcing.ts` 的 pkey 改名），数据原样保留 |
+
+## 采购单的来源销售订单（2026-10-08）
+
+采购单可以挂在一张**销售订单**上——「这张订单的采购单是哪些」由此可查（订单详情 hub 的采购分区、
+订单工作台的「采购」阶段列都读它）。
+
+| 事项 | 口径 |
+|---|---|
+| 列 | `source_sales_order_id` / `source_sales_order_kind` / `source_sales_order_number`（都可空；索引 `purchasing_purchase_orders_source_sales_order_idx` 前缀是 `organization_id, tenant_id`） |
+| 谁能写 | 只有**销售订单 id**：`kind`（`internal_sales_order` / `external_sales_order`）与 `number` 在命令内由销售订单**推导并冻结**，客户端直写会被忽略 |
+| 解析规则 | 命令内 scoped 只读 `sales_orders`（同租户 + 同组织 + 未软删），经 `sales_channels.code` 判定贸易类型；解析不到 → **422 `source_sales_order_not_found`**（跨组织与不存在返回同一码：不确认他组织记录的存在） |
+| 更新语义 | 不出现即不改；显式 `null` 清空三列；来源是**链接不是商务条款**，因此已下单（非 `draft`）也可改 |
+| 列表 | `GET /api/purchasing/purchase-orders?sourceSalesOrderId=<uuid>` 只回该销售订单的采购单；出参带三个 camelCase 字段 |
+| 新建预填 | `/backend/purchasing/orders/create?orderKind=<kind>&orderId=<uuid>`：来源已填、行按销售订单行复制（**只复制商品引用与数量，不复制销售单价**——那是客户价）；供应商选定后自动带出该供应商供货价（未手填的行） |
+| 页面 | 列表页带可清除的来源筛选横幅；详情页抬头只读显示来源单号并链到订单详情 hub |
+| 纯函数 | `lib/sourceSalesOrder.ts`（参数解析、行映射、kind 映射，客户端与服务端共用）+ `lib/sourceSalesOrderReads.ts`（scoped 只读与 422 前置） |
 
 ## 商品引用：自建商品主数据优先（REQ-017）
 

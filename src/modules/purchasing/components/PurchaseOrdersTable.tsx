@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import type { SortingState } from '@tanstack/react-table'
@@ -89,6 +89,13 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<PurchaseOrderRe
 }
 
 export default function PurchaseOrdersTable() {
+  const searchParams = useSearchParams()
+  /**
+   * `?sourceSalesOrderId=` — arriving from an order hub or the order workbench narrows the list to
+   * the purchase orders raised for that sales order. The banner below names the source and offers a
+   * one-click way out of the filter, so a narrowed list never looks like an empty module.
+   */
+  const sourceSalesOrderId = searchParams.get('sourceSalesOrderId')?.trim() ?? ''
   const t = useT()
   const locale = useLocale()
   const router = useRouter()
@@ -109,8 +116,9 @@ export default function PurchaseOrdersTable() {
     const term = search.trim()
     if (term) params.set('search', term)
     if (status !== ALL_STATUSES) params.set('status', status)
+    if (sourceSalesOrderId) params.set('sourceSalesOrderId', sourceSalesOrderId)
     return params
-  }, [page, search, sorting, status])
+  }, [page, search, sorting, sourceSalesOrderId, status])
 
   const queryKey = React.useMemo(
     () => [QUERY_KEY_ROOT, queryParams.toString(), scopeVersion],
@@ -150,7 +158,25 @@ export default function PurchaseOrdersTable() {
     [],
   )
 
+  // The rows themselves carry the frozen source number, so naming the filter costs no extra request.
+  const sourceOrderNumber = sourceSalesOrderId
+    ? rows.find((row) => row.sourceSalesOrderNumber)?.sourceSalesOrderNumber ?? null
+    : null
+
   return (
+    <>
+      {sourceSalesOrderId ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">
+            {sourceOrderNumber
+              ? t('purchasing.orders.list.sourceOrderFilter', { number: sourceOrderNumber })
+              : t('purchasing.orders.list.sourceOrderFilterUnknown')}
+          </span>
+          <Button type="button" variant="ghost" size="sm" onClick={() => router.replace(ORDERS_LIST_HREF)}>
+            {t('purchasing.orders.list.clearSourceOrderFilter')}
+          </Button>
+        </div>
+      ) : null}
     <DataTable<PurchaseOrderRecord>
       title={(
         <div className="flex flex-col gap-1">
@@ -221,5 +247,6 @@ export default function PurchaseOrdersTable() {
       error={listError}
       onRowClick={(row) => router.push(detailHref(row))}
     />
+    </>
   )
 }
