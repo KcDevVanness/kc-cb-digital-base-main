@@ -14,6 +14,10 @@ import { ComboboxInput, type ComboboxOption } from '@open-mercato/ui/backend/inp
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { createCrud } from '@open-mercato/ui/backend/utils/crud'
+import {
+  PurchaseOrderStatusBadge,
+  purchaseOrderStatusLabel as orderStatusLabel,
+} from '@/lib/orders/purchaseOrderStatus'
 import { pushWithFlash } from '@open-mercato/ui/backend/utils/flash'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
@@ -76,27 +80,8 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number]
 export const PAYMENT_STATUSES = ['unpaid', 'deposit_paid', 'partially_paid', 'paid'] as const
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number]
 
-const ORDER_STATUS_MAP: StatusMap<OrderStatus> = {
-  draft: 'neutral',
-  placed: 'info',
-  shipped: 'info',
-  received: 'success',
-  closed: 'success',
-  cancelled: 'error',
-}
 
-const ORDER_STATUS_LABEL_KEYS: Record<OrderStatus, string> = {
-  draft: 'purchasing.orders.status.draft',
-  placed: 'purchasing.orders.status.placed',
-  shipped: 'purchasing.orders.status.shipped',
-  received: 'purchasing.orders.status.received',
-  closed: 'purchasing.orders.status.closed',
-  cancelled: 'purchasing.orders.status.cancelled',
-}
 
-export function orderStatusLabel(t: TranslateFn, status: OrderStatus): string {
-  return t(ORDER_STATUS_LABEL_KEYS[status])
-}
 
 /** A purchase order as `/api/purchasing/purchase-orders` projects it. */
 export type PurchaseOrderRecord = {
@@ -1018,12 +1003,3 @@ export default function PurchaseOrderForm() {
   )
 }
 
-/** Status pill used by the list and the detail header, so both read the same vocabulary. */
-export function PurchaseOrderStatusBadge({ status }: { status: OrderStatus }) {
-  const t = useT()
-  return (
-    <StatusBadge variant={ORDER_STATUS_MAP[status]} dot>
-      {orderStatusLabel(t, status)}
-    </StatusBadge>
-  )
-}

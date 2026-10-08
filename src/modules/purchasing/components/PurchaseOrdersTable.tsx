@@ -19,13 +19,15 @@ import {
   ORDERS_API_PATH,
   ORDERS_LIST_HREF,
   ORDER_STATUSES,
-  PurchaseOrderStatusBadge,
   formatOrderDate,
-  orderStatusLabel,
   toPurchaseOrderRecord,
   type OrderStatus,
   type PurchaseOrderRecord,
 } from './PurchaseOrderForm'
+import {
+  PurchaseOrderStatusBadge,
+  purchaseOrderStatusLabel as orderStatusLabel,
+} from '@/lib/orders/purchaseOrderStatus'
 
 const PAGE_SIZE = 50
 const QUERY_KEY_ROOT = 'purchasing-purchase-orders'
