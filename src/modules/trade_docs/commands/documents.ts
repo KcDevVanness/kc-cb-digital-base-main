@@ -37,7 +37,7 @@ import {
   readShipmentPurchaseAllocations,
   readShipmentSalesAllocations,
 } from '../../cross_border/lib/shipmentSalesReads'
-import { invalidateDocumentCaches } from '../lib/cacheInvalidation'
+import { invalidateDocumentCaches, invalidateOrderDocumentLinkCaches } from '../lib/cacheInvalidation'
 import { documentFilter, ensureScope, loadDocument, resolveContractLink, type TradeDocsScope } from '../lib/scope'
 import { loadSalesOrderRef } from '../lib/orderDocumentReads'
 import { productSnapshotPayload, readProductSnapshots } from '../lib/productSnapshots'
@@ -437,6 +437,14 @@ const createDocumentCommand: CommandHandler<Record<string, unknown>, TradeDocsDo
       { id: String(document.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
       'created',
     )
+    // A create that recorded an order link moved that collection too (its own cache resource).
+    if (orderLink) {
+      await invalidateOrderDocumentLinkCaches(
+        { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+        { id: orderLink.id, tenantId: scope.tenantId, organizationId: scope.organizationId },
+        'order-document-linked',
+      )
+    }
 
     return document
   },
@@ -638,7 +646,7 @@ const deleteDocumentCommand: CommandHandler<
     // The link has no foreign key (it is polymorphic), so nothing cascades: the rows pointing at
     // this document go first, and a document that still exists afterwards is simply unlinked —
     // recoverable from the order hub's dialog, unlike a link to a document that is gone.
-    await em.nativeDelete(TradeDocsOrderDocument, {
+    const removedLinks = await em.nativeDelete(TradeDocsOrderDocument, {
       tenantId: scope.tenantId,
       organizationId: scope.organizationId,
       documentKind: document.kind,
@@ -667,6 +675,13 @@ const deleteDocumentCommand: CommandHandler<
       { id: String(removed.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
       'deleted',
     )
+    if (removedLinks > 0) {
+      await invalidateOrderDocumentLinkCaches(
+        { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+        { id: String(removed.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+        'order-document-unlinked',
+      )
+    }
 
     return removed
   },

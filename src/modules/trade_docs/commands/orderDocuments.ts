@@ -6,6 +6,7 @@ import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/opti
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import { TradeDocsOrderDocument } from '../data/entities'
 import { orderDocumentsReplaceSchema } from '../data/validators'
+import { invalidateOrderDocumentLinkCaches } from '../lib/cacheInvalidation'
 import { loadOrderDocumentRefs, loadSalesOrderRef, orderDocumentKey } from '../lib/orderDocumentReads'
 import { ensureScope, type TradeDocsScope } from '../lib/scope'
 
@@ -101,6 +102,14 @@ const replaceOrderDocumentsCommand: CommandHandler<
         },
       ],
       { transaction: true, label: 'trade_docs.orders.documents.replace' },
+    )
+
+    // The link collection is its own cache resource: the replace command rewrites it, so it names it
+    // explicitly (a hub that read the block before this write would otherwise keep the old set).
+    await invalidateOrderDocumentLinkCaches(
+      { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      { id: parsed.orderId, tenantId: scope.tenantId, organizationId: scope.organizationId },
+      'order-documents-replaced',
     )
 
     return {
