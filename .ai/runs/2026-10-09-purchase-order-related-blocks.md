@@ -53,6 +53,6 @@
 - [x] 1.1 Shipments-by-purchase-order read, list filter, banner, integration spec — 666e770
 - [x] 1.2 Purchase order page association blocks + i18n — fc436c3
 - [x] 1.3 Spec, module READMEs, status board — 9b6489f
-- [ ] 1.4 Integration spec TEST-307 green in the ephemeral env
+- [x] 1.4 Integration spec TEST-307 green in the ephemeral env — `yarn test:integration:ephemeral shipment-purchase-order-filter` **3 passed**
 - [ ] 1.5 Broad gate green in the main tree after the local dev merge
 - [ ] 1.6 Browser smoke on /backend/purchasing/orders/&lt;id&gt;
