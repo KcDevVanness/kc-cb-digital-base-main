@@ -2,7 +2,7 @@ import type { EntityManager } from '@mikro-orm/postgresql'
 import type { Kysely } from 'kysely'
 import type { ModuleCli } from '@open-mercato/shared/modules/registry'
 import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
-import { resolveTradeTypeChannelIds } from '../internal_sales/lib/tradeTypeChannels.server'
+import { resolveTradeTypeChannelIds } from '../internal_sales/lib/tradeTypeChannelIds'
 import { CompanyOrder, CompanyOrderLink } from './data/entities'
 import {
   createCompanyOrderFromRef,
