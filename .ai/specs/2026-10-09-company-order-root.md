@@ -1,7 +1,7 @@
 # 公司订单根单化（company order as a first-class root entity）
 
 **Date**: 2026-10-09
-**Status**: Phases 1–3 Delivered（PR `feat/company-order-root`，已合入 `dev` f26112b）；**第四轮 Delivered**（PR `feat/company-order-collaboration`，已合入 `dev` 8905b6b）；**第五轮 Delivered**（PR #153，含 CSP 修复）：宽门禁全绿（82 suites · 661 tests）+ 集成 `--filter order_hub` 35 passed + 浏览器实测（工作台金额列 / 全字段抽屉 / 无号草稿可选中 / 协作账号列文件与下载）。证据（前四轮）：`yarn typecheck` 全仓干净；`yarn jest src/modules/order_hub` 3 suites · 28 tests；ephemeral 集成 `company-orders` 6 / `company-order-links` 9 / `company-order-backfill` 3 = **18 passed**；浏览器实测（工作台=公司订单、点进 hub、关联对话框成套替换、旧 URL 归位、「未关联」一键建根、采购/对内销售预填+自动关联、暗色/窄屏/键盘）。迁移已生成并审阅但**未应用**；升级步骤（应用迁移 + `backfill-company-orders --apply` + `auth sync-role-acls`）见模块 README。
+**Status**: Phases 1–3 Delivered（PR `feat/company-order-root`，已合入 `dev` f26112b）；**第四轮 Delivered**（PR `feat/company-order-collaboration`，已合入 `dev` 8905b6b）；**第五轮 Delivered**（PR #153，已合入 `dev` dc119ba，含 CSP 修复）：宽门禁全绿（82 suites · 661 tests）+ 集成 `--filter order_hub` 35 passed + 浏览器实测（工作台金额列 / 全字段抽屉 / 无号草稿可选中 / 协作账号列文件与下载）。证据（前四轮）：`yarn typecheck` 全仓干净；`yarn jest src/modules/order_hub` 3 suites · 28 tests；ephemeral 集成 `company-orders` 6 / `company-order-links` 9 / `company-order-backfill` 3 = **18 passed**；浏览器实测（工作台=公司订单、点进 hub、关联对话框成套替换、旧 URL 归位、「未关联」一键建根、采购/对内销售预填+自动关联、暗色/窄屏/键盘）。迁移已生成并审阅但**未应用**；升级步骤（应用迁移 + `backfill-company-orders --apply` + `auth sync-role-acls`）见模块 README。
 
 > owner 已批准两个结构决策（2026-10-09，见 Resolved decisions）：**容器根单**（新表 + 关联表，模块数据仍归各模块）与**全量补录**（现有渠道内销售单 1:1 生成公司订单）。本规格取代 `2026-10-08-order-centric-entry.md` 里「工作台合并三类既有列表 / 无实体」的口径（该文件的 Phase 4/REQ-001/009/010 与 Non-goals 第一条）。
 
