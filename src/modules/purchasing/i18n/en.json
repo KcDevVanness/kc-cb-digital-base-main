@@ -364,7 +364,6 @@
   "purchasing.orders.form.sourceOrder.loading": "Loading the source order…",
   "purchasing.orders.form.sourceOrder.loadFailed": "The source order lines could not be read — add them by hand",
   "purchasing.orders.form.sourceOrder.skipped": "{count} line(s) carry no product reference and were not copied",
-  "purchasing.orders.form.sourceOrder.label": "Source sales order",
   "purchasing.orders.form.sourceOrder.open": "Open the order",
   "purchasing.orders.create.sourceOrder.invalid": "The source order parameters are invalid; opening a plain new order",
   "purchasing.orders.form.lines.priceLoadFailed": "The supplier price could not be read — type the unit price",

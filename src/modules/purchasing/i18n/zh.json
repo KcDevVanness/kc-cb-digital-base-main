@@ -364,7 +364,6 @@
   "purchasing.orders.form.sourceOrder.loading": "正在载入来源订单…",
   "purchasing.orders.form.sourceOrder.loadFailed": "来源订单的行读取失败，请手动补充商品行",
   "purchasing.orders.form.sourceOrder.skipped": "{count} 行缺少商品引用，未复制",
-  "purchasing.orders.form.sourceOrder.label": "来源销售订单",
   "purchasing.orders.form.sourceOrder.open": "打开订单详情",
   "purchasing.orders.create.sourceOrder.invalid": "来源订单参数无效，已按新建处理",
   "purchasing.orders.form.lines.priceLoadFailed": "供应商供货价读取失败，请手动填写单价",
