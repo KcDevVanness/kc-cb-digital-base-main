@@ -295,34 +295,49 @@ export async function resolveCompanyOrderIdsForRefs(
 }
 
 /**
- * Refuses a create-time link whose child is already attached to a **live** company order in this
- * scope. One child document belongs to one root — the manual `link-child` already treats an existing
- * link as "already attached" (it returns the owning root rather than inserting a second row), so the
- * one-step create must not silently double-attach it. Rows left by a soft-deleted root are ignored,
- * so a child freed by deleting its root can be attached again.
+ * **Moves** the given children onto the caller's root.
+ *
+ * One child document belongs to at most one company order, so both writers that name a child
+ * explicitly (`links.replace` and the create-time `links` of `order_hub.orders.create`) delete every
+ * link row these `(kind, refId)` cells already have **in this scope** before persisting their own.
+ * A row left behind by a soft-deleted root is moved too — that is how a child freed by deleting its
+ * root is re-attachable without leaving an orphan behind that the reverse lookup could answer from.
+ *
+ * Returns the ids of the **other** roots the children moved off (the caller's own target root is
+ * never reported), so the caller can invalidate those roots' cached link collections and announce
+ * the move to them as well — their attach block changed even though they were not written.
  */
-export async function assertCompanyOrderChildrenUnattached(
+export async function moveCompanyOrderChildren(
   em: EntityManager,
   scope: CompanyOrderScope,
   entries: Array<{ kind: CompanyOrderLinkKind; refId: string }>,
-): Promise<void> {
-  if (entries.length === 0) return
-  const links = await em.fork().find(CompanyOrderLink, {
-    tenantId: scope.tenantId,
-    organizationId: scope.organizationId,
-    kind: { $in: [...new Set(entries.map((entry) => entry.kind))] },
-    refId: { $in: [...new Set(entries.map((entry) => entry.refId))] },
-    companyOrder: { tenantId: scope.tenantId, organizationId: scope.organizationId, deletedAt: null },
-  } as FilterQuery<CompanyOrderLink>)
-  const attached = new Set(links.map((link) => linkKey(link.kind, String(link.refId))))
-  for (const entry of entries) {
-    if (attached.has(linkKey(entry.kind, entry.refId))) {
-      throw new CrudHttpError(422, {
-        error: `Child document is already linked to a company order: ${entry.kind} ${entry.refId}`,
-        code: 'link_already_attached',
-      })
-    }
+  options: { keepCompanyOrderId?: string } = {},
+): Promise<string[]> {
+  if (entries.length === 0) return []
+  const links = await em.fork().find(
+    CompanyOrderLink,
+    {
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+      kind: { $in: [...new Set(entries.map((entry) => entry.kind))] },
+      refId: { $in: [...new Set(entries.map((entry) => entry.refId))] },
+    } as FilterQuery<CompanyOrderLink>,
+    { populate: ['companyOrder'] },
+  )
+  const affected = new Set<string>()
+  const doomed: string[] = []
+  for (const link of links) {
+    const ownerId = String(link.companyOrder.id)
+    if (options.keepCompanyOrderId && ownerId === options.keepCompanyOrderId) continue
+    doomed.push(String(link.id))
+    affected.add(ownerId)
   }
+  if (doomed.length > 0) {
+    // Deleted by id, not by cell: a `nativeDelete` on the filter would have to repeat the ref set
+    // and would touch rows this pass deliberately kept.
+    await em.nativeDelete(CompanyOrderLink, { id: { $in: doomed } } as FilterQuery<CompanyOrderLink>)
+  }
+  return [...affected]
 }
 
 /** The company order must exist in this scope and not be soft-deleted. */
@@ -424,16 +439,21 @@ export type LinkChildResult = {
 }
 
 /**
- * Attaches a resolved child to a company order — idempotently.
+ * Attaches a resolved child to a company order — idempotently, and without ever double-attaching.
+ *
+ * A child belongs to **at most one** root, so an existing link for the same `(kind, refId)` always
+ * wins: the call answers with the root that already holds it (`linked: false`), whether or not that
+ * is the requested target. Callers rely on this — a form that just saved a child and named a target
+ * root follows the returned id, and a second click on the same row cannot move or duplicate it.
  *
  * - With `companyOrderId`: the target must exist in scope and not be deleted (else 422); the link is
- *   inserted only when missing (the unique key is the real guard).
- * - Without: an existing link for the same `(kind, refId)` wins (idempotent). Otherwise a **sales**
- *   child gets a fresh draft root (`CO-…`, order date = today) so every app-created sales order has
- *   a root; a **purchase** child cannot invent one, so it is refused with 422
- *   `company_order_required`.
+ *   inserted only when the child is attached nowhere (the unique key is the real guard).
+ * - Without: a **sales** child with no link at all gets a fresh draft root (`CO-…`, order date =
+ *   today) so every app-created sales order has a root; a **purchase** child cannot invent one, so
+ *   it is refused with 422 `company_order_required`.
  *
- * Persisted but not flushed: the caller owns the transaction.
+ * Persisted but not flushed: the caller owns the transaction. Writes are the owner's (and, for the
+ * no-target case, the caller's own organization) — see `linkChildCommand`.
  */
 export async function linkChild(
   em: EntityManager,
@@ -450,15 +470,9 @@ export async function linkChild(
 
   if (input.companyOrderId) {
     const companyOrder = await loadCompanyOrder(em, scope, input.companyOrderId)
-    const existing = await em.fork().findOne(CompanyOrderLink, {
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      companyOrder,
-      kind: input.kind,
-      refId: input.refId,
-    } as FilterQuery<CompanyOrderLink>)
+    const existing = await findExistingLink(em, scope, input.kind, input.refId)
     if (existing) {
-      return { companyOrderId: String(companyOrder.id), linked: false, created: false }
+      return { companyOrderId: String(existing.companyOrder.id), linked: false, created: false }
     }
     persistCompanyOrderLink(em, scope, companyOrder, ref)
     return { companyOrderId: String(companyOrder.id), linked: true, created: false }

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { EntityManager } from '@mikro-orm/postgresql'
 import { makeCrudRoute } from '@open-mercato/shared/lib/crud/factory'
 import { badRequest } from '@open-mercato/shared/lib/crud/errors'
 import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
@@ -9,8 +10,15 @@ import {
   companyOrderLinksReplaceSchema,
 } from '../../../data/validators'
 import { createOrderHubCrudOpenApi, orderHubOkSchema } from '../../openapi'
+import { loadCollaboratorCompanyOrderIds } from '../../../lib/collaborators'
 
 const ENTITY_ID = 'order_hub:company_order_link' as const
+
+/**
+ * A uuid no row can carry: an empty `id $in []` is rejected by the query-engine path the factory
+ * uses for a projected list, so "match nothing" is expressed as a single impossible id instead.
+ */
+const NO_MATCH_ID = '00000000-0000-0000-0000-000000000000'
 
 const companyOrderLinkItemSchema = z
   .object({
@@ -43,6 +51,12 @@ function toIsoTimestamp(value: unknown): string | null {
  * request that names neither is refused. `POST` is the **replace** action
  * (`order_hub.orders.links.replace`): a whole-set write for one kind, not a per-row CRUD update,
  * because the dialog edits the set as a whole and the command owns uniqueness, scope and the lock.
+ *
+ * `orm.orgField: null` for the same reason the orders route uses it: a collaborator must read the
+ * attach block of a root whose links belong to the **owner's** organization, so the organization
+ * scope is applied in `buildFilters` as "the caller's own links **or** the links of a root the
+ * caller collaborates on". Everything outside the caller's visibility is simply absent from the
+ * answer, exactly as before.
  */
 export const { metadata, GET, POST } = makeCrudRoute({
   metadata: {
@@ -53,7 +67,7 @@ export const { metadata, GET, POST } = makeCrudRoute({
     entity: CompanyOrderLink,
     idField: 'id',
     tenantField: 'tenantId',
-    orgField: 'organizationId',
+    orgField: null,
   },
   list: {
     schema: companyOrderLinksListSchema,
@@ -72,7 +86,7 @@ export const { metadata, GET, POST } = makeCrudRoute({
       'organization_id',
     ],
     defaultSort: { field: 'created_at', dir: 'asc' },
-    buildFilters: async (query) => {
+    buildFilters: async (query, ctx) => {
       if (!query.companyOrderId && !query.refId) {
         throw badRequest('Either companyOrderId or refId is required')
       }
@@ -80,6 +94,21 @@ export const { metadata, GET, POST } = makeCrudRoute({
       if (query.companyOrderId) filters.company_order_id = query.companyOrderId
       if (query.refId) filters.ref_id = query.refId
       if (query.kind) filters.kind = query.kind
+
+      const tenantId = ctx.auth?.tenantId ?? null
+      const organizationIds = ctx.organizationIds?.length ? ctx.organizationIds : []
+      if (!tenantId || organizationIds.length === 0 || ctx.organizationScope?.selectionRejected) {
+        // Fail closed: `orgField: null` means this function carries the whole scope, including the
+        // empty-set and stale-selected-org cases the factory used to refuse on its own.
+        return { ...filters, id: { $in: [NO_MATCH_ID] } }
+      }
+      const em = ctx.container.resolve('em') as EntityManager
+      const collaboratorRootIds = await loadCollaboratorCompanyOrderIds(em, tenantId, organizationIds)
+      filters.tenant_id = tenantId
+      filters.$or = [
+        { organization_id: { $in: organizationIds } },
+        { company_order_id: { $in: collaboratorRootIds.length > 0 ? collaboratorRootIds : [NO_MATCH_ID] } },
+      ]
       return filters
     },
     transformItem: (item: Record<string, unknown>) => ({

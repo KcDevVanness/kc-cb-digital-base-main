@@ -22,6 +22,11 @@ type CompanyOrderReadTables = {
     organization_id: string
     deleted_at: Date | null
   }
+  order_hub_company_order_collaborators: {
+    company_order_id: string
+    organization_id: string
+    tenant_id: string
+  }
   order_hub_company_order_links: {
     company_order_id: string
     kind: string
@@ -171,24 +176,45 @@ export async function loadCompanyOrderSummaries(
   const tenantId = scope.tenantId
   const organizationIds = [...scope.organizationIds]
 
-  // Only company orders that exist in scope (and are not deleted) can have a summary entry.
+  // Only company orders that exist in scope (and are not deleted) can have a summary entry. The
+  // scope is the caller's own organization set **plus the roots its organizations collaborate on**
+  // (REQ-016) — one module-local read of the collaborator table, the same predicate the workbench
+  // list applies, so an id from an unrelated organization still produces no entry at all.
   const orderRows = (await db
     .selectFrom('order_hub_company_orders')
-    .select(['id'])
+    .select(['id', 'organization_id'])
     .where('id', 'in', [...companyOrderIds])
     .where('tenant_id', '=', tenantId)
-    .where('organization_id', 'in', organizationIds)
     .where('deleted_at', 'is', null)
-    .execute()) as Array<{ id: string }>
+    .where((eb) => eb.or([
+      eb('organization_id', 'in', childOrganizationIds),
+      eb(
+        'id',
+        'in',
+        eb
+          .selectFrom('order_hub_company_order_collaborators')
+          .select('company_order_id')
+          .where('tenant_id', '=', tenantId)
+          .where('organization_id', 'in', childOrganizationIds),
+      ),
+    ]))
+    .execute()) as Array<{ id: string; organization_id: string }>
   const visibleIds = orderRows.map((row) => String(row.id))
   if (visibleIds.length === 0) return []
+
+  // A collaborator's root is owned by another organization: every projection below still filters by
+  // organization (defence in depth), so it must run with the owners' organizations added — otherwise
+  // the children of exactly the collaborator roots whose ids we just admitted would read empty.
+  const childOrganizationIds = Array.from(
+    new Set([...organizationIds, ...orderRows.map((row) => String(row.organization_id))]),
+  )
 
   const linkRows = (await db
     .selectFrom('order_hub_company_order_links')
     .select(['company_order_id', 'kind', 'ref_id', 'ref_number', 'ref_counterparty'])
     .where('company_order_id', 'in', visibleIds)
     .where('tenant_id', '=', tenantId)
-    .where('organization_id', 'in', organizationIds)
+    .where('organization_id', 'in', childOrganizationIds)
     .execute()) as LinkRow[]
 
   const salesIdToCompany = new Map<string, Set<string>>()
@@ -238,7 +264,7 @@ export async function loadCompanyOrderSummaries(
       .select(['id', 'status'])
       .where('id', 'in', purchaseIds)
       .where('tenant_id', '=', tenantId)
-      .where('organization_id', 'in', organizationIds)
+      .where('organization_id', 'in', childOrganizationIds)
       .where('deleted_at', 'is', null)
       .execute()) as Array<{ id: string; status: string | null }>
     for (const row of rows) {
@@ -257,7 +283,7 @@ export async function loadCompanyOrderSummaries(
       .select(['a.shipment_id as shipment_id', 'a.sales_order_id as order_id'])
       .where('a.sales_order_id', 'in', salesIds)
       .where('a.tenant_id', '=', tenantId)
-      .where('a.organization_id', 'in', organizationIds)
+      .where('a.organization_id', 'in', childOrganizationIds)
       .where('s.deleted_at', 'is', null)
       .execute()) as Array<{ shipment_id: string; order_id: string }>
     for (const row of rows) {
@@ -273,7 +299,7 @@ export async function loadCompanyOrderSummaries(
       .select(['a.shipment_id as shipment_id', 'a.purchase_order_id as order_id'])
       .where('a.purchase_order_id', 'in', purchaseIds)
       .where('a.tenant_id', '=', tenantId)
-      .where('a.organization_id', 'in', organizationIds)
+      .where('a.organization_id', 'in', childOrganizationIds)
       .where('s.deleted_at', 'is', null)
       .execute()) as Array<{ shipment_id: string; order_id: string }>
     for (const row of rows) {
@@ -297,7 +323,7 @@ export async function loadCompanyOrderSummaries(
       .select(['order_id', 'document_id'])
       .where('order_id', 'in', salesIds)
       .where('tenant_id', '=', tenantId)
-      .where('organization_id', 'in', organizationIds)
+      .where('organization_id', 'in', childOrganizationIds)
       .execute()) as Array<{ order_id: string; document_id: string }>
     for (const row of rows) {
       for (const companyOrderId of salesIdToCompany.get(String(row.order_id)) ?? []) {
@@ -314,7 +340,7 @@ export async function loadCompanyOrderSummaries(
       .select(['contract_id', 'order_id'])
       .where('order_id', 'in', allChildIds)
       .where('tenant_id', '=', tenantId)
-      .where('organization_id', 'in', organizationIds)
+      .where('organization_id', 'in', childOrganizationIds)
       .execute()) as Array<{ contract_id: string; order_id: string }>
     for (const row of rows) {
       const owners = new Set([
@@ -332,7 +358,7 @@ export async function loadCompanyOrderSummaries(
         .select(['id', 'contract_id'])
         .where('contract_id', 'in', contractIds)
         .where('tenant_id', '=', tenantId)
-        .where('organization_id', 'in', organizationIds)
+        .where('organization_id', 'in', childOrganizationIds)
         .where('deleted_at', 'is', null)
         .execute() as Promise<Array<{ id: string; contract_id: string | null }>>,
       db
@@ -340,7 +366,7 @@ export async function loadCompanyOrderSummaries(
         .select(['id', 'contract_id'])
         .where('contract_id', 'in', contractIds)
         .where('tenant_id', '=', tenantId)
-        .where('organization_id', 'in', organizationIds)
+        .where('organization_id', 'in', childOrganizationIds)
         .where('deleted_at', 'is', null)
         .execute() as Promise<Array<{ id: string; contract_id: string | null }>>,
     ])
@@ -364,7 +390,7 @@ export async function loadCompanyOrderSummaries(
       .select(['id', 'shipment_id'])
       .where('shipment_id', 'in', allShipmentIds)
       .where('tenant_id', '=', tenantId)
-      .where('organization_id', 'in', organizationIds)
+      .where('organization_id', 'in', childOrganizationIds)
       .where('deleted_at', 'is', null)
       .execute()) as Array<{ id: string; shipment_id: string }>
     for (const row of rows) {
@@ -381,7 +407,7 @@ export async function loadCompanyOrderSummaries(
       .select(['purchase_order_id', 'collection_status'])
       .where('purchase_order_id', 'in', purchaseIds)
       .where('tenant_id', '=', tenantId)
-      .where('organization_id', 'in', organizationIds)
+      .where('organization_id', 'in', childOrganizationIds)
       .where('deleted_at', 'is', null)
       .execute()) as Array<{ purchase_order_id: string; collection_status: string | null }>
     for (const row of rows) {
@@ -399,7 +425,7 @@ export async function loadCompanyOrderSummaries(
       .select(['shipment_id'])
       .where('shipment_id', 'in', allShipmentIds)
       .where('tenant_id', '=', tenantId)
-      .where('organization_id', 'in', organizationIds)
+      .where('organization_id', 'in', childOrganizationIds)
       .where('deleted_at', 'is', null)
       .execute()) as Array<{ shipment_id: string }>
     for (const row of rows) {

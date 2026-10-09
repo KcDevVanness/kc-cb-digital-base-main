@@ -24,6 +24,13 @@ const COMPANY_ORDER_LINK = deriveResourceFromCommandId('order_hub.orders.links.r
  */
 const COMPANY_ORDER_LINK_TAG = 'order_hub.company_order.link'
 
+/**
+ * The collaborator collection's own tag, named explicitly for the same reason as the link tag: the
+ * command-id derivation collapses every `order_hub.orders.*` writer onto `order_hub.order`, so this
+ * alias only matters if that ever splits — but it must not be silently forgotten when it does.
+ */
+const COMPANY_ORDER_COLLABORATOR_TAG = 'order_hub.company_order.collaborator'
+
 export type CacheScope = {
   container: AwilixContainer
   tenantId: string | null
@@ -75,4 +82,22 @@ export async function invalidateCompanyOrderLinkCaches(
   reason: string,
 ): Promise<void> {
   await invalidate(scope, [COMPANY_ORDER_LINK, COMPANY_ORDER_LINK_TAG, COMPANY_ORDER], identifiers, reason)
+}
+
+/**
+ * A collaborator-set write moves the orders list too — the set decides which organizations see the
+ * row at all, so a cached list of the caller's organization (and of every collaborator's) is stale
+ * the moment it changes.
+ */
+export async function invalidateCompanyOrderCollaboratorCaches(
+  scope: CacheScope,
+  identifiers: CacheIdentifiers,
+  reason: string,
+): Promise<void> {
+  await invalidate(
+    scope,
+    [COMPANY_ORDER_COLLABORATOR_TAG, COMPANY_ORDER, COMPANY_ORDER_LINK, COMPANY_ORDER_LINK_TAG],
+    identifiers,
+    reason,
+  )
 }

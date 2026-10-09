@@ -111,9 +111,45 @@ export const companyOrderLinkChildSchema = z.object({
   companyOrderId: z.string().uuid().optional(),
 })
 
+/**
+ * The collaborator list of one root (REQ-014). `companyOrderId` is the dialog's only read; the
+ * reverse direction (which roots an organization collaborates on) is not a page.
+ */
+export const companyOrderCollaboratorsListSchema = z.object({
+  companyOrderId: z.string().uuid().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().max(200).default(200),
+})
+
+/**
+ * Whole-set replace of the collaborating organizations; like the link dialog the operator edits the
+ * set as a whole, so this is not per-row. Only the **owner** organization may call it, and the body
+ * carries the root version the dialog rendered with (409 on a stale one).
+ */
+export const companyOrderCollaboratorsReplaceSchema = z.object({
+  companyOrderId: z.string().uuid(),
+  organizationIds: z.array(z.string().uuid()).max(200),
+  updatedAt: z.string().min(1).optional(),
+})
+
 export type CompanyOrderCreateInput = z.infer<typeof companyOrderCreateSchema>
 export type CompanyOrderUpdateInput = z.infer<typeof companyOrderUpdateSchema>
 export type CompanyOrderListQuery = z.infer<typeof companyOrderListSchema>
 export type CompanyOrderLinksListQuery = z.infer<typeof companyOrderLinksListSchema>
 export type CompanyOrderLinksReplaceInput = z.infer<typeof companyOrderLinksReplaceSchema>
 export type CompanyOrderLinkChildInput = z.infer<typeof companyOrderLinkChildSchema>
+export type CompanyOrderCollaboratorsListQuery = z.infer<typeof companyOrderCollaboratorsListSchema>
+export type CompanyOrderCollaboratorsReplaceInput = z.infer<typeof companyOrderCollaboratorsReplaceSchema>
+
+/**
+ * Named error codes the collaboration write path answers with, so a caller (and the integration
+ * test) can tell the three refusals apart without matching on prose:
+ *   - `company_order_owner_required` — the caller may *see* the root (collaborator) but the action
+ *     is owner-only (delete, links/collaborators replace, link-child onto an existing root);
+ *   - `collaborator_field_not_allowed` — a collaborator wrote a field outside `status`/`notes`;
+ *   - `collaborator_organization_not_found` — a requested collaborator organization is unknown or
+ *     outside the writer's tenant.
+ */
+export const COMPANY_ORDER_OWNER_REQUIRED_CODE = 'company_order_owner_required' as const
+export const COMPANY_ORDER_COLLABORATOR_FIELD_CODE = 'collaborator_field_not_allowed' as const
+export const COMPANY_ORDER_COLLABORATOR_ORGANIZATION_CODE = 'collaborator_organization_not_found' as const

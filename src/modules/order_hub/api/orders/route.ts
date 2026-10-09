@@ -16,6 +16,7 @@ import {
   orderHubCreatedSchema,
   orderHubOkSchema,
 } from '../openapi'
+import { loadCollaboratorCompanyOrderIds } from '../../lib/collaborators'
 
 const ENTITY_ID = 'order_hub:company_order' as const
 
@@ -25,8 +26,8 @@ const ENTITY_ID = 'order_hub:company_order' as const
  */
 const NO_MATCH_ID = '00000000-0000-0000-0000-000000000000'
 
-// The search/kind sub-reads touch this module's own two tables; the handle is cast once because
-// MikroORM types `getKysely()`'s DB generic as `never`.
+// The search/kind sub-reads touch this module's own two tables (plus the collaborator set); the
+// handle is cast once because MikroORM types `getKysely()`'s DB generic as `never`.
 type CompanyOrderSearchTables = {
   order_hub_company_orders: {
     id: string
@@ -42,6 +43,11 @@ type CompanyOrderSearchTables = {
     ref_number: string | null
     tenant_id: string
     organization_id: string
+  }
+  order_hub_company_order_collaborators: {
+    company_order_id: string
+    organization_id: string
+    tenant_id: string
   }
 }
 
@@ -62,6 +68,11 @@ const companyOrderListItemSchema = z
     updated_at: z.string().nullable().optional(),
     /** The version the hub's link/replace dialog echoes back for the optimistic lock. */
     updatedAt: z.string().nullable().optional(),
+    /**
+     * True when the caller sees this row as a **collaborator** rather than as its owner
+     * organization: the workbench badges it and the hub offers only status/notes.
+     */
+    viewerIsCollaborator: z.boolean().optional(),
   })
   .passthrough()
 
@@ -104,12 +115,20 @@ const listFields = [
 ]
 
 /**
- * The company-order list (REQ-002) and its CRUD actions (REQ-001).
+ * The company-order list (REQ-002), its CRUD actions (REQ-001) and the collaboration read scope
+ * (REQ-016).
  *
  * `search`/`kind` are not columns on the root record: the search term must also match a **child's**
  * frozen number, and the kind filter is a property of the links. Both therefore resolve a scoped id
  * set first (`buildFilters` is async) and narrow the page through it. The same-resource CRUD cache
- * is cleared by the commands; the cross-resource link collection is named there too.
+ * is cleared by the commands; the cross-resource link and collaborator collections are named there
+ * too.
+ *
+ * `orm.orgField: null` deliberately turns the factory's automatic organization filter **off**: the
+ * row's scope is no longer a single `organization_id ∈ <visible set>`, because an organization also
+ * sees the roots it is a **collaborator** of (a different `organization_id`). `buildFilters` is
+ * therefore the one and only place the list's scope is applied — tenant plus
+ * (`organization_id ∈ <visible set>` OR the root is in the caller's collaborator set).
  */
 export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
   metadata: {
@@ -122,7 +141,8 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
     entity: CompanyOrder,
     idField: 'id',
     tenantField: 'tenantId',
-    orgField: 'organizationId',
+    // The collaboration-aware scope lives in `buildFilters` (see the comment above).
+    orgField: null,
     softDeleteField: 'deletedAt',
   },
   indexer: { entityType: ENTITY_ID },
@@ -147,14 +167,38 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       if (query.status) filters.status = query.status
 
       // The factory scopes the main query by the caller's *expanded* visible organization set
-      // (`ctx.organizationIds`), so the search/kind sub-reads must use the same set — deriving a
-      // single org from the session would drop every descendant-org row the page still shows.
+      // (`ctx.organizationIds`), so the scope below must use the same set — deriving a single org
+      // from the session would drop every descendant-org row the page still shows.
       const tenantId = ctx.auth?.tenantId ?? null
       const organizationIds = ctx.organizationIds?.length ? ctx.organizationIds : []
-      if (!tenantId || organizationIds.length === 0) {
-        // Fail closed, exactly like the factory's own empty-scope behavior.
+      // Two states the factory used to refuse for us while `orgField` was set: an empty visible set,
+      // and a selected organization the caller may no longer use (stale switcher cookie). Both fail
+      // closed here with an impossible id instead of silently widening the scope.
+      if (!tenantId || organizationIds.length === 0 || ctx.organizationScope?.selectionRejected) {
         return { ...filters, id: { $in: [NO_MATCH_ID] } }
       }
+
+      const em = ctx.container.resolve('em') as EntityManager
+      const db = em.fork().getKysely() as unknown as Kysely<CompanyOrderSearchTables>
+
+      // The roots this caller's organizations collaborate on — the second disjunct of the scope, and
+      // the reason the search/kind sub-reads below cannot simply filter the link table by the
+      // caller's own organizations (a collaborator's link rows carry the owner's organization).
+      const collaboratorRootIds = await loadCollaboratorCompanyOrderIds(em, tenantId, organizationIds)
+      // `$in []` is not an empty disjunct the engine can express (an empty `$in` matches nothing but
+      // the planners reject it), so "no collaborator roots" is spelled as a single impossible id.
+      const collaboratorIds = collaboratorRootIds.length > 0 ? collaboratorRootIds : [NO_MATCH_ID]
+
+      filters.tenant_id = tenantId
+      // The scope, in the primary `$or` form: the caller's visible organizations **or** the roots
+      // they collaborate on. The equivalent id-set contingency (first read every visible root id,
+      // then `filters.id = { $in: <that set> }`) is what the sub-reads below effectively use; it is
+      // only a contingency for an engine that rejects an `$or` subtree, because it costs a full id
+      // read on every list.
+      filters.$or = [
+        { organization_id: { $in: organizationIds } },
+        { id: { $in: collaboratorIds } },
+      ]
 
       let candidateIds: Set<string> | null = null
       const narrow = (ids: string[]) => {
@@ -162,15 +206,15 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         candidateIds = candidateIds ? new Set([...candidateIds].filter((id) => next.has(id))) : next
       }
 
-      const em = ctx.container.resolve('em') as EntityManager
-      const db = em.fork().getKysely() as unknown as Kysely<CompanyOrderSearchTables>
-
       if (query.kind) {
         const rows = (await db
           .selectFrom('order_hub_company_order_links')
           .select('company_order_id')
           .where('tenant_id', '=', tenantId)
-          .where('organization_id', 'in', organizationIds)
+          .where((eb) => eb.or([
+            eb('organization_id', 'in', organizationIds),
+            eb('company_order_id', 'in', collaboratorIds),
+          ]))
           .where('kind', '=', query.kind)
           .execute()) as Array<{ company_order_id: string }>
         narrow(rows.map((row) => String(row.company_order_id)))
@@ -185,7 +229,10 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
           .selectFrom('order_hub_company_orders')
           .select('id')
           .where('tenant_id', '=', tenantId)
-          .where('organization_id', 'in', organizationIds)
+          .where((eb) => eb.or([
+            eb('organization_id', 'in', organizationIds),
+            eb('id', 'in', collaboratorIds),
+          ]))
           .where('deleted_at', 'is', null)
           .where((eb) => eb.or([eb('number', 'ilike', like), eb('title', 'ilike', like)]))
           .execute()) as Array<{ id: string }>
@@ -193,15 +240,27 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
           .selectFrom('order_hub_company_order_links')
           .select('company_order_id')
           .where('tenant_id', '=', tenantId)
-          .where('organization_id', 'in', organizationIds)
+          .where((eb) => eb.or([
+            eb('organization_id', 'in', organizationIds),
+            eb('company_order_id', 'in', collaboratorIds),
+          ]))
           .where('ref_number', 'ilike', like)
           .execute()) as Array<{ company_order_id: string }>
         narrow([...rootRows.map((row) => String(row.id)), ...linkRows.map((row) => String(row.company_order_id))])
       }
 
       if (candidateIds) {
-        const ids = [...candidateIds]
-        filters.id = { $in: ids.length > 0 ? ids : [NO_MATCH_ID] }
+        // The annotation is load-bearing: `candidateIds` is only ever assigned inside `narrow` above,
+        // so the compiler's flow analysis narrows it to the declared initializer (`null`) here and
+        // the spread alone would come out as `never[]`.
+        const ids: string[] = [...candidateIds]
+        // Intersect with an explicit `?id=` rather than replacing it: the hub's single-row read
+        // (`?id=` + pageSize 1) must not be widened by a stray search term.
+        if (query.id) {
+          filters.id = { $in: ids.includes(query.id) ? [query.id] : [NO_MATCH_ID] }
+        } else {
+          filters.id = { $in: ids.length > 0 ? ids : [NO_MATCH_ID] }
+        }
       }
       return filters
     },
@@ -219,10 +278,31 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       customerSnapshot: (item.customer_snapshot ?? null) as Record<string, unknown> | null,
       supplierId: (item.supplier_id ?? null) as string | null,
       supplierSnapshot: (item.supplier_snapshot ?? null) as Record<string, unknown> | null,
+      tenantId: (item.tenant_id ?? null) as string | null,
+      organizationId: (item.organization_id ?? null) as string | null,
       created_at: toIsoTimestamp(item.created_at),
       updated_at: toIsoTimestamp(item.updated_at),
       updatedAt: toIsoTimestamp(item.updated_at),
     }),
+  },
+  hooks: {
+    /**
+     * Marks the rows the caller sees as a **collaborator** rather than as the root's own
+     * organization (REQ-016) — the workbench badges them and the hub switches to the reduced view.
+     *
+     * `transformItem` is synchronous and holds no caller context, so the split cannot live there;
+     * the hook runs before the list is cached (and the cached payload already carries the flag), and
+     * the cache key is partitioned by the caller's organization scope, so the flag is per-viewer.
+     */
+    afterList: async (res, ctx) => {
+      const payload = res as { items?: Array<Record<string, unknown>> } | null
+      if (!payload || !Array.isArray(payload.items) || payload.items.length === 0) return
+      const organizationIds = new Set(ctx.organizationIds?.length ? ctx.organizationIds : [])
+      for (const item of payload.items) {
+        const owner = typeof item.organizationId === 'string' ? item.organizationId : null
+        item.viewerIsCollaborator = owner !== null && !organizationIds.has(owner)
+      }
+    },
   },
   actions: {
     create: {
