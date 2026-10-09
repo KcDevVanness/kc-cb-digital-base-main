@@ -12,17 +12,25 @@ import {
   COMPANY_ORDER_ATTACHMENT_ENTITY_ID,
   isCompanyOrderVisibleToScope,
 } from '../../../../lib/companyOrderAttachments'
+import { CompanyOrderDocument } from '../../../../data/entities'
+import { COMPANY_ORDER_DOCUMENT_ENTITY_ID } from '../../../../commands/companyOrderDocuments'
 import { resolveOrderHubRequestScope } from '../../../../lib/requestScope'
 import { orderHubTag } from '../../../openapi'
 
 /**
- * Bytes of one company-order file (REQ-018).
+ * Bytes of one company-order file (REQ-018, extended by REQ-022).
  *
  * The installed `/api/attachments/file/[id]` route scopes its row by the caller's own organization,
  * so a collaborating organization cannot download the owner's files. This proxy instead resolves the
- * attachment inside the **tenant** only, refuses anything that is not filed under this module's root
- * entity, and then authorizes on the **root** (owner or collaborator). Unknown id, foreign entity or
- * an invisible root all answer 404 — the route never leaks that a foreign attachment exists.
+ * attachment inside the **tenant** only, refuses anything that is not filed under one of this
+ * module's two root entities, and then authorizes on the **root** (owner or collaborator). Unknown
+ * id, foreign entity or an invisible root all answer 404 — the route never leaks that a foreign
+ * attachment exists.
+ *
+ * Two entity ids are served: the root's generic files (`order_hub:company_order`, where `recordId`
+ * is the root itself) and a **document-slot** file (`order_hub:company_order_document`, where
+ * `recordId` is the slot row, which in turn names the root). Both paths run the identical root
+ * visibility check and the identical byte/header handling.
  *
  * The bytes and headers come from the same platform pieces the installed route uses (the storage
  * driver factory and the shared content-disposition/inline helpers), so a file downloads identically
@@ -52,15 +60,27 @@ export async function GET(request: Request, context: { params?: { id?: string } 
     })
     if (!attachment) return NextResponse.json({ error: 'Attachment not found' }, { status: 404 })
 
-    // This proxy serves exactly one entity: a wrong entity is indistinguishable from an unknown id.
-    if (attachment.entityId !== COMPANY_ORDER_ATTACHMENT_ENTITY_ID) {
+    // This proxy serves exactly two entity ids: the root's generic files and its document-slot
+    // files. Anything else is indistinguishable from an unknown id.
+    let companyOrderId: string
+    if (attachment.entityId === COMPANY_ORDER_ATTACHMENT_ENTITY_ID) {
+      companyOrderId = String(attachment.recordId)
+    } else if (attachment.entityId === COMPANY_ORDER_DOCUMENT_ENTITY_ID) {
+      // A document-slot file's `recordId` is the slot row, which names the root.
+      const slotRow = await em.fork().findOne(CompanyOrderDocument, {
+        id: String(attachment.recordId),
+        tenantId: scope.tenantId,
+      })
+      if (!slotRow) return NextResponse.json({ error: 'Attachment not found' }, { status: 404 })
+      companyOrderId = String(slotRow.companyOrder.id)
+    } else {
       return NextResponse.json({ error: 'Attachment not found' }, { status: 404 })
     }
 
     const visible = await isCompanyOrderVisibleToScope(
       em,
       { tenantId: scope.tenantId, organizationIds: scope.organizationIds },
-      String(attachment.recordId),
+      companyOrderId,
     )
     if (!visible) return NextResponse.json({ error: 'Attachment not found' }, { status: 404 })
 
