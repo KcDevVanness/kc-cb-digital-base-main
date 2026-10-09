@@ -14,11 +14,8 @@ import type { NavTreeGroup } from '../treeTypes'
 
 function collectHrefs(children: NavTreeChild[], into: string[] = []): string[] {
   for (const child of children) {
-    if (isNavTreeBranch(child)) {
-      // A node that names its own page (the workbench node) links at it, so its href needs facts too.
-      if (child.href) into.push(child.href)
-      collectHrefs(child.children, into)
-    } else into.push(child.href)
+    if (isNavTreeBranch(child)) collectHrefs(child.children, into)
+    else into.push(child.href)
   }
   return into
 }
@@ -50,6 +47,18 @@ function findLeaf(groups: NavTreeGroup[], href: string) {
   return undefined
 }
 
+function findItem(groups: NavTreeGroup[], id: string) {
+  for (const group of groups) {
+    const stack = [...group.items]
+    while (stack.length > 0) {
+      const item = stack.pop()!
+      if (item.id === id) return item
+      if (item.children) stack.push(...item.children)
+    }
+  }
+  return undefined
+}
+
 describe('buildNavTree', () => {
   it('maps the config into chrome-shaped groups, keeping node ids and page hrefs as keys', () => {
     const groups = buildNavTree({ entries: facts(), translate })
@@ -59,22 +68,17 @@ describe('buildNavTree', () => {
 
     const orders = groups.find((group) => group.id === 'tree:orders')!
     expect(orders.items.map((item) => item.id)).toEqual([
-      // The workbench node leads the domain; the four business groups hang under it.
-      'tree:module:order-workbench',
-    ])
-
-    const workbench = orders.items[0]
-    // The one branch in the tree with a page of its own: the row title links at it.
-    expect(workbench.href).toBe('/backend/orders')
-    expect(workbench.children?.map((child) => child.id)).toEqual([
+      // The workbench is a plain page leaf — its label comes from the page's own metadata — and the
+      // four business groups sit beside it on the same level.
+      '/backend/orders',
       'tree:module:purchasing',
       'tree:module:export-sales',
       'tree:module:contracts',
       'tree:module:shipping',
     ])
 
-    const purchasing = workbench.children!.find((item) => item.id === 'tree:module:purchasing')!
-    // A module node has no page of its own: the chrome item contract requires an href, so it points
+    const purchasing = orders.items.find((item) => item.id === 'tree:module:purchasing')!
+    // A group node has no page of its own: the chrome item contract requires an href, so it points
     // at its first page while its preference key stays the explicit node id.
     expect(purchasing.href).toBe('/backend/purchasing/orders')
     expect(purchasing.children?.map((child) => child.href)).toEqual([
@@ -135,26 +139,21 @@ describe('buildNavTree', () => {
     expect(groups.find((group) => group.id === 'tree:master_data')).toBeDefined()
   })
 
-  it('falls back to the first child when a node\'s own page is not linkable', () => {
-    // The node's own page is resolved through the same gate as a leaf: when the manifest does not
-    // publish it, or the caller may not open it, the title links at the group instead of offering a
-    // page that would refuse the caller.
+  it('points a group at its first surviving page', () => {
+    // The group's href follows the filtered children: a page the manifest does not publish, or the
+    // caller may not open, shifts the group's link to the next one instead of leaving a dead href.
     const unpublished = buildNavTree({
-      entries: facts().filter((entry) => entry.pattern !== '/backend/orders'),
+      entries: facts().filter((entry) => entry.pattern !== '/backend/purchasing/orders'),
       translate,
     })
-    expect(unpublished.find((group) => group.id === 'tree:orders')?.items[0]?.href).toBe(
-      '/backend/purchasing/orders',
-    )
+    expect(findItem(unpublished, 'tree:module:purchasing')?.href).toBe('/backend/purchasing/suppliers')
 
     const forbidden = buildNavTree({
-      entries: facts({ '/backend/orders': { requireFeatures: ['feature.orders'] } }),
+      entries: facts({ '/backend/purchasing/orders': { requireFeatures: ['feature.orders'] } }),
       translate,
       isAllowed: (features) => !features?.includes('feature.orders'),
     })
-    expect(forbidden.find((group) => group.id === 'tree:orders')?.items[0]?.href).toBe(
-      '/backend/purchasing/orders',
-    )
+    expect(findItem(forbidden, 'tree:module:purchasing')?.href).toBe('/backend/purchasing/suppliers')
   })
 
   it('applies role labels, then user labels over them', () => {
@@ -219,9 +218,9 @@ describe('buildNavTree', () => {
       translate,
       userPreference: {
         version: 2,
-        // The keys are the depth-0 items of the group: with the company-order domain now four levels
-        // deep, `tree:orders` holds a single node and the flat finance domain is where a page-level
-        // order still reads.
+        // The keys are the depth-0 items of the group: `tree:finance` holds pages directly, so a
+        // page-level order reads there (`tree:orders` holds the workbench page and the four group
+        // nodes instead).
         itemOrder: { 'tree:finance': ['/backend/finance/receivables', '/backend/finance/payables'] },
       },
     })
