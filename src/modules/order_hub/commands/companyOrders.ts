@@ -60,7 +60,7 @@ const ORDER_RESOURCE_KIND = 'order_hub.company_order' as const
 const LINK_RESOURCE_KIND = 'order_hub.company_order.link' as const
 
 /** Trusted scope only — never from a payload. Mirrors the module's other command scope helpers. */
-function ensureCompanyOrderScope(ctx: CommandRuntimeContext): CompanyOrderScope {
+export function ensureCompanyOrderScope(ctx: CommandRuntimeContext): CompanyOrderScope {
   const tenantId = ctx.auth?.tenantId ?? null
   if (!tenantId) throw new CrudHttpError(400, { error: 'Tenant context is required' })
   const organizationId = ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null
