@@ -5,7 +5,7 @@ export const metadata: ModuleInfo = {
   title: 'Order workbench',
   version: '0.1.0',
   description:
-    'The company-order workbench: the three order kinds on one screen with each order’s fill progress (purchasing, shipping, documents, collections and tax refunds), plus the stage projection it reads.',
+    'The company-order hub: each row is an app-owned company order — the root record of one deal — that attaches its sales and purchase orders and shows how far it has been filled in (purchasing, shipping, documents, collections and tax refunds), plus the stage projection it reads.',
   author: 'App Team',
   license: 'MIT',
 }

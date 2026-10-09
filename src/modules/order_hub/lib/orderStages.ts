@@ -133,12 +133,6 @@ export type OrderStageScope = {
   organizationIds: readonly string[]
 }
 
-/**
- * Legacy alias: the old workbench's merge helper (`lib/mergeOrders.ts`) still types its rows with
- * this name until Phase 2 removes it. The shape is the same summary the new projection returns.
- */
-export type OrderStageItem = CompanyOrderStageSummary
-
 const PURCHASE_ORDER_CANCELLED = 'cancelled'
 const COLLECTION_RECEIVED = 'received'
 const SALES_KINDS = new Set(['internal_sales_order', 'external_sales_order'])
