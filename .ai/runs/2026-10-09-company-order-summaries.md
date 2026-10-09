@@ -72,10 +72,10 @@ owner 2026-10-09 确认实作三件（第 4 项「订单描述长文本」不做
 
 ### Phase 5.B: 附件协作可见（REQ-018）
 
-- [ ] 2.1 Attachments list route
-- [ ] 2.2 Byte proxy route
-- [ ] 2.3 Files block rewiring
-- [ ] 2.4 TEST-012
+- [x] 2.1 Attachments list route — 56e66ef
+- [x] 2.2 Byte proxy route — 56e66ef
+- [x] 2.3 Files block rewiring — 76f4fe2
+- [x] 2.4 TEST-012 — dd63b6e
 
 ### Phase 5.C: 草稿单据可选（REQ-019）
 
