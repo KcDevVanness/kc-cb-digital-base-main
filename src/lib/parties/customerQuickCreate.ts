@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * The quick-create contract of an external customer from a trade-document form.
+ * The quick-create contract of an external customer, shared by every app surface that adds one.
  *
  * Pure data (schema, empty values, payload builder) so it is unit-testable without the dialog; the
  * component only wires it to `CrudForm` and `POST /api/parties`. The customer master itself stays in

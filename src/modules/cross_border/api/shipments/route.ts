@@ -6,6 +6,8 @@ import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/
 import { CrossBorderShipment } from '../../data/entities'
 import { shipmentCreateSchema, shipmentListSchema, shipmentUpdateSchema, SHIPMENT_STATUSES, SHIPMENT_MILESTONES } from '../../data/validators'
 import { loadShipmentIdsForContract } from '../../lib/contractReads'
+import { loadShipmentIdsForPurchaseOrder, loadShipmentIdsForSalesOrder } from '../../lib/shipmentSalesReads'
+import { linkIdFilter } from '../../lib/linkIdFilter'
 import { createCrossBorderCrudOpenApi, crossBorderCreatedSchema, crossBorderOkSchema } from '../openapi'
 
 const ENTITY_ID = 'cross_border:cross_border_shipment' as const
@@ -95,14 +97,37 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       if (query.status) filters.status = query.status
       if (query.contractId) {
         // The link lives in this module's join table: resolve the linked shipment ids first, then
-        // narrow the page. An unknown contract yields an empty `$in`, which matches nothing.
+        // narrow the page. An unknown contract resolves to no ids — `linkIdFilter` turns that into a
+        // filter matching nothing (an empty `$in` is a SQL syntax error, not an empty page).
         const em = ctx.container.resolve('em') as EntityManager
         const linked = await loadShipmentIdsForContract(
           em,
           { tenantId: ctx.auth?.tenantId ?? '', organizationIds: ctx.organizationIds ?? [] },
           query.contractId,
         )
-        filters.id = { $in: linked }
+        filters.id = linkIdFilter(linked)
+      }
+      if (query.salesOrderId) {
+        // Same shape as the contract filter above, on the sales-allocation join table: an order no
+        // shipment carries yet resolves to no ids and must still answer an empty page.
+        const em = ctx.container.resolve('em') as EntityManager
+        const linked = await loadShipmentIdsForSalesOrder(
+          em,
+          { tenantId: ctx.auth?.tenantId ?? '', organizationIds: ctx.organizationIds ?? [] },
+          query.salesOrderId,
+        )
+        filters.id = linkIdFilter(linked)
+      }
+      if (query.purchaseOrderId) {
+        // The purchase side of the filter above, on the purchase-allocation join table — the
+        // purchase order page's 关联发运单 block and its 查看全部 link read through it.
+        const em = ctx.container.resolve('em') as EntityManager
+        const linked = await loadShipmentIdsForPurchaseOrder(
+          em,
+          { tenantId: ctx.auth?.tenantId ?? '', organizationIds: ctx.organizationIds ?? [] },
+          query.purchaseOrderId,
+        )
+        filters.id = linkIdFilter(linked)
       }
       if (query.containerNumber && query.containerNumber.trim().length > 0) {
         filters.container_number = { $ilike: `%${escapeLikePattern(query.containerNumber.trim())}%` }

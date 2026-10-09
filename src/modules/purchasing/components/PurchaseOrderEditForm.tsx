@@ -126,6 +126,9 @@ function PurchaseOrderEditFormBody({
     depositAmount: order.depositAmount ?? '',
     expectedShipAt: toUtcDateInputValue(order.expectedShipAt) ?? '',
     notes: order.notes ?? '',
+    // Carried through unchanged: the edit form does not re-point an order's source, but the payload
+    // must keep the anchor it already has (an omitted key never clears it server-side).
+    sourceSalesOrderId: order.sourceSalesOrderId ?? '',
     lines: initialLines,
   }), [initialLines, order])
 

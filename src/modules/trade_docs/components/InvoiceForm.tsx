@@ -51,6 +51,7 @@ import {
 } from './formOptions'
 import { CounterpartyPicker } from './CounterpartyPicker'
 import { COUNTERPARTY_KIND_BY_INVOICE_DIRECTION } from '../data/validators'
+import { parseSourceOrderParams, sourceOrderPayload } from '@/lib/orders/sourceOrderParams'
 
 const INVOICES_API_PATH = 'trade_docs/invoices'
 const INVOICE_LINES_API_PATH = 'trade_docs/invoices/lines'
@@ -513,6 +514,11 @@ function InvoiceCreateForm() {
   const searchParams = useSearchParams()
   const fields = useInvoiceFields(t, 'create')
   const groups = useInvoiceGroups(t)
+  // Arriving from an order's hub (`?orderKind=&orderId=`): the create records the order ↔ invoice
+  // link in the same transaction, so the order's Documents block shows the new tax invoice without a
+  // second call. The invoice carries no line prefill from the order (its lines come from the scan or
+  // the contract), so only the link travels.
+  const sourceParam = React.useMemo(() => parseSourceOrderParams(searchParams), [searchParams])
   const initialValues = React.useMemo<InvoiceFormValues>(() => {
     const contractId = searchParams.get('contractId') ?? ''
     return { ...EMPTY_INVOICE_VALUES, contractId, lines: [{ ...EMPTY_LINE }] }
@@ -520,7 +526,10 @@ function InvoiceCreateForm() {
 
   const handleSubmit = React.useCallback(async (values: InvoiceFormValues) => {
     try {
-      const created = await createCrud<{ id?: string }>(INVOICES_API_PATH, buildInvoicePayload(values))
+      const created = await createCrud<{ id?: string }>(INVOICES_API_PATH, {
+        ...buildInvoicePayload(values),
+        ...sourceOrderPayload(sourceParam),
+      })
       const createdId = typeof created.result?.id === 'string' ? created.result.id : null
       // The edit page is where the scan is uploaded and the invoice confirmed, so the create flow
       // lands there instead of the list.
@@ -534,20 +543,29 @@ function InvoiceCreateForm() {
       flash(t('trade_docs.invoices.form.saveFailed'), 'error')
       throw error
     }
-  }, [router, t])
+  }, [router, sourceParam, t])
 
   return (
-    <CrudForm<InvoiceFormValues>
-      title={t('trade_docs.invoices.form.createTitle')}
-      titleHeadingLevel={1}
-      backHref={LIST_HREF}
-      fields={fields}
-      groups={groups}
-      initialValues={initialValues}
-      submitLabel={t('trade_docs.invoices.form.save')}
-      cancelHref={LIST_HREF}
-      onSubmit={handleSubmit}
-    />
+    <>
+      {/* The pair only feeds the link write, so an unusable one never blocks the create — it is
+          reported and the invoice is simply raised without an order link. */}
+      {sourceParam.status === 'invalid' ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('trade_docs.form.sourceOrder.invalid')}
+        </p>
+      ) : null}
+      <CrudForm<InvoiceFormValues>
+        title={t('trade_docs.invoices.form.createTitle')}
+        titleHeadingLevel={1}
+        backHref={LIST_HREF}
+        fields={fields}
+        groups={groups}
+        initialValues={initialValues}
+        submitLabel={t('trade_docs.invoices.form.save')}
+        cancelHref={LIST_HREF}
+        onSubmit={handleSubmit}
+      />
+    </>
   )
 }
 

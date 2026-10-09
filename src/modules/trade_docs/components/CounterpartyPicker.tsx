@@ -17,7 +17,7 @@ import {
   loadSupplierCounterpartyOptions,
   type CounterpartyDetail,
 } from './formOptions'
-import { CustomerQuickCreateDialog } from './CustomerQuickCreateDialog'
+import { CustomerQuickCreateDialog } from '@/lib/parties/CustomerQuickCreateDialog'
 
 /**
  * The counterparty picker of every trade document.

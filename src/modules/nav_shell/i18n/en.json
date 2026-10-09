@@ -1,0 +1,21 @@
+{
+  "nav_shell.tree.domain.orders": "Company orders",
+  "nav_shell.tree.domain.finance": "Finance",
+  "nav_shell.tree.domain.executive": "Executive overview",
+  "nav_shell.tree.domain.warehouse": "Warehouse & inventory",
+  "nav_shell.tree.domain.platform": "Platform operations",
+  "nav_shell.tree.domain.sync": "Data sync",
+  "nav_shell.tree.domain.masterData": "Master data",
+  "nav_shell.tree.domain.system": "System",
+  "nav_shell.tree.module.purchasing": "Purchasing",
+  "nav_shell.tree.module.exportSales": "Export sales",
+  "nav_shell.tree.module.contracts": "Contracts & documents",
+  "nav_shell.tree.module.shipping": "Shipping & packing",
+  "nav_shell.search.placeholder": "Search navigation",
+  "nav_shell.search.aria": "Search navigation",
+  "nav_shell.loading": "Loading navigation…",
+  "nav_shell.loadFailed": "Failed to load the navigation",
+  "nav_shell.refreshFailed": "Refresh failed — showing the previous navigation",
+  "nav_shell.retry": "Retry",
+  "nav_shell.empty": "This account has no navigation entries to show"
+}

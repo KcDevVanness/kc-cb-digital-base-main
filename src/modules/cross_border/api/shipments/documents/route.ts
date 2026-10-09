@@ -6,6 +6,7 @@ import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/
 import { CrossBorderExportDocument } from '../../../data/entities'
 import { documentCreateSchema, documentListSchema, documentUpdateSchema, EXPORT_DOC_TYPES } from '../../../data/validators'
 import { loadShipmentIdsForContract } from '../../../lib/contractReads'
+import { linkIdFilter } from '../../../lib/linkIdFilter'
 import { createCrossBorderCrudOpenApi, crossBorderCreatedSchema, crossBorderOkSchema } from '../../openapi'
 
 const ENTITY_ID = 'cross_border:cross_border_export_document' as const
@@ -81,14 +82,15 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       if (query.docType) filters.doc_type = query.docType
       if (query.contractId) {
         // A packing list belongs to a contract through its shipment: resolve the linked shipment
-        // ids, then narrow the page. An unknown contract yields an empty `$in` (matches nothing).
+        // ids, then narrow the page. An unknown contract resolves to no ids — `linkIdFilter` turns
+        // that into a filter matching nothing (an empty `$in` is a SQL syntax error, not an empty page).
         const em = ctx.container.resolve('em') as EntityManager
         const linked = await loadShipmentIdsForContract(
           em,
           { tenantId: ctx.auth?.tenantId ?? '', organizationIds: ctx.organizationIds ?? [] },
           query.contractId,
         )
-        filters.shipment_id = { $in: linked }
+        filters.shipment_id = linkIdFilter(linked)
       }
       if (query.search && query.search.trim().length > 0) {
         // `document_number` and `note` are plaintext columns; the escape keeps a typed `%` literal.

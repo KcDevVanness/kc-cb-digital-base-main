@@ -16,4 +16,5 @@
 | [currency-policy.md](./currency-policy.md) | 启用哪些币种、币种字典与汇率主数据的分工、收敛与重跑命令 |
 | [multi-company-org-model.md](./multi-company-org-model.md) | 一租户 + 组织树的多公司建模、角色矩阵、配置步骤与自查 |
 | [business-architecture.md](./business-architecture.md) | 公司实际业务链路、模块归属（复用/自建/待启用）、数据主源约定、新增流程对齐规则 |
+| [navigation.md](./navigation.md) | 后台侧边栏「域 → 模块 → 页面」树：结构、新增页面后怎么登记、偏好与权限语义、已知限制、回滚 |
 | [parallel-development.md](./parallel-development.md) | 多路并行开发：并行单元、worktree、分支生命周期与清理（`yarn branches:cleanup`）、共享脊柱文件清单、数据库与端口分配、PR 与合并规则 |

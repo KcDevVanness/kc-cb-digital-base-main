@@ -205,5 +205,13 @@
   "cross_border.shipments.status.closed": "已归档",
   "cross_border.shipments.actions.close": "归档",
   "cross_border.shipments.closeConfirmTitle": "把这张发运单归档？",
-  "cross_border.shipments.closeConfirmBody": "归档是终态：之后不能再编辑、取消或记录里程碑；请确认单证与结算已完成。"
+  "cross_border.shipments.closeConfirmBody": "归档是终态：之后不能再编辑、取消或记录里程碑；请确认单证与结算已完成。",
+  "cross_border.shipments.form.sourceOrder.loading": "正在载入来源订单…",
+  "cross_border.shipments.form.sourceOrder.loadFailed": "来源订单的分摊读取失败，请手动选择",
+  "cross_border.shipments.form.sourceOrder.skipped": "{count} 行缺少官方目录链接，未预填分摊",
+  "cross_border.shipments.form.sourceOrder.invalid": "来源订单参数无效，已按新建处理",
+  "cross_border.shipments.form.sourceOrder.applied": "已按来源订单预填销售分摊",
+  "cross_border.shipments.list.sourceOrderFilter": "仅显示来源订单 {number} 的发运单",
+  "cross_border.shipments.list.sourceOrderFilterUnknown": "仅显示指定来源订单的发运单",
+  "cross_border.shipments.list.clearSourceOrderFilter": "清除筛选"
 }

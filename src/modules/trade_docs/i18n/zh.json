@@ -569,5 +569,10 @@
   "trade_docs.contracts.detail.orders.dialog.duplicate": "同一张订单重复出现。",
   "trade_docs.contracts.detail.orders.dialog.save": "保存",
   "trade_docs.contracts.detail.orders.dialog.saved": "订单关联已更新",
-  "trade_docs.contracts.detail.orders.dialog.saveFailed": "保存订单关联失败"
+  "trade_docs.contracts.detail.orders.dialog.saveFailed": "保存订单关联失败",
+  "trade_docs.form.sourceOrder.loading": "正在载入来源订单…",
+  "trade_docs.form.sourceOrder.loadFailed": "来源订单的行读取失败，请手动补充",
+  "trade_docs.form.sourceOrder.skipped": "{count} 行缺少商品引用，未复制",
+  "trade_docs.form.sourceOrder.invalid": "来源订单参数无效，已按新建处理",
+  "trade_docs.form.sourceOrder.applied": "已按来源订单预填"
 }
