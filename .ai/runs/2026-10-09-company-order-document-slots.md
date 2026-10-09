@@ -2,7 +2,7 @@
 
 **Source doc:** `.ai/specs/2026-10-09-company-order-root.md` 的「第七轮」节（REQ-022…REQ-027）
 **Base:** `dev`（603dd77）
-**PR:** 待开
+**PR:** #157
 
 ## Goal
 
@@ -78,7 +78,7 @@ owner 2026-10-09 反馈：第五轮的「文件」区块太笼统——35 列的
 ### Phase 7.C：收口
 
 - [x] 7.C.1 Browser smoke (TEST-020)（见下）
-- [ ] 7.C.2 Broad gate + docs + PR
+- [x] 7.C.2 Broad gate + docs + PR — #157
 
 ## Evidence
 

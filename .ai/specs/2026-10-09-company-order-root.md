@@ -701,7 +701,7 @@
 
 | Date | Change |
 |---|---|
-| 2026-10-09 | **第七轮交付并验证**（PR 待开）：新表 `order_hub_company_order_documents`（一行=一个槽位文件，行 id 即附件 `recordId`）+ `GET\|POST\|DELETE /orders/documents` + 字节代理扩展；`documents.bySlot` + hub「单据与文件」逐槽位区块 + 抽屉按槽位。实现期修复一处：**无号草稿合同**已盖章但无单号时被漏计来源（改按盖章计数、单号仅作标签）。证据：集成 `--filter order_hub` **42 passed**（含 TEST-017 6 项 / TEST-018）；浏览器实测（槽位上传→行内可见、确认删除→回到未上传、抽屉按槽位、协作账号 0 上传按钮、字节 sha 一致）。 |
+| 2026-10-09 | **第七轮交付并验证**（PR #157）：新表 `order_hub_company_order_documents`（一行=一个槽位文件，行 id 即附件 `recordId`）+ `GET\|POST\|DELETE /orders/documents` + 字节代理扩展；`documents.bySlot` + hub「单据与文件」逐槽位区块 + 抽屉按槽位。实现期修复一处：**无号草稿合同**已盖章但无单号时被漏计来源（改按盖章计数、单号仅作标签）。证据：集成 `--filter order_hub` **42 passed**（含 TEST-017 6 项 / TEST-018）；浏览器实测（槽位上传→行内可见、确认删除→回到未上传、抽屉按槽位、协作账号 0 上传按钮、字节 sha 一致）。 |
 | 2026-10-09 | **第七轮口径定案（owner 反馈）**：文件区太笼统——要求**每个单据字段一个附件槽位**（一字段一附件位），按「新表 + 关联」实现；KC 盖章等字段要有自己的上传位，汇总可追溯到具体文件。REQ-022…REQ-027 / TEST-017…TEST-020 / AC-022…AC-024 建立。 |
 | 2026-10-09 | **第五轮交付并验证**（PR #153）：35 列汇总（`GET /orders/fields` + `stages.amounts` + 工作台金额列 + hub「全字段」四组）、附件协作可见（order_hub 列表 + 字节代理按根单可见性授权；`AttachmentsSection` 支持自有路由；installed 上传仍 owner-only）、无号草稿可选（两页合并 + 客户端回退过滤）。宽门禁 82 suites · 661 tests；集成 `--filter order_hub` 35 passed；浏览器实测四条链路。实测发现并修复：`next.config.ts` 全站 CSP 覆盖了代理路由的沙箱 CSP，补 `source: '/api/order_hub/orders/attachments/:id'` 豁免（与 installed 文件路由同法）。 |
 | 2026-10-09 | **第五轮口径定案（owner）**：① 35 列汇总到公司订单视角（金额按币种/日期/单据号/发运单证/水单发票/收汇退税/KC 盖章）；② 协作组织可看/下载所有者文件；③ 选择器要能选到**无号草稿**采购单。「订单描述长文本」明确不做。REQ-017…REQ-019 / TEST-011…TEST-014 / AC-017…AC-019 建立。 |
