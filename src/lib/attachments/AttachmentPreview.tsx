@@ -49,8 +49,9 @@ type PreviewPayload = { blob: Blob } | { tooLarge: true }
 function AttachmentPreviewDialog({
   attachmentId,
   fileName,
+  fileHref,
   onClose,
-}: PreviewRequest & { onClose: () => void }) {
+}: PreviewRequest & { fileHref: string; onClose: () => void }) {
   const t = useT()
   const [state, setState] = React.useState<PreviewState>({ status: 'loading' })
 
@@ -62,7 +63,7 @@ function AttachmentPreviewDialog({
     const load = async () => {
       try {
         const call = await apiCall<PreviewPayload>(
-          `/api/attachments/file/${encodeURIComponent(attachmentId)}`,
+          `${fileHref}/${encodeURIComponent(attachmentId)}`,
           {
             method: 'GET',
             credentials: 'same-origin',
@@ -120,7 +121,7 @@ function AttachmentPreviewDialog({
       controller.abort()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [attachmentId])
+  }, [attachmentId, fileHref])
 
   const title = t('attachments.preview.title', 'File preview')
   const label = fileName ?? title
@@ -174,7 +175,7 @@ function AttachmentPreviewDialog({
         {body}
         <DialogFooter>
           <Button variant="outline" asChild>
-            <a href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}>
+            <a href={`${fileHref}/${encodeURIComponent(attachmentId)}?download=1`}>
               <Download aria-hidden="true" />
               {t('attachments.preview.download', 'Download')}
             </a>
@@ -190,7 +191,7 @@ function AttachmentPreviewDialog({
  * action menu, or a form field. Render `previewDialog` once and call `openPreview` from the
  * triggers.
  */
-export function useAttachmentPreview(): {
+export function useAttachmentPreview(fileHref: string = '/api/attachments/file'): {
   openPreview: (attachmentId: string, fileName?: string | null) => void
   previewDialog: React.ReactNode
 } {
@@ -206,6 +207,7 @@ export function useAttachmentPreview(): {
       key={request.attachmentId}
       attachmentId={request.attachmentId}
       fileName={request.fileName}
+      fileHref={fileHref}
       onClose={() => setRequest(null)}
     />
   ) : null
@@ -221,13 +223,16 @@ export function AttachmentPreviewLink({
   label,
   fileName,
   className,
+  fileHref = '/api/attachments/file',
 }: {
   attachmentId: string
   label: string
   fileName?: string | null
   className?: string
+  /** Byte-route base path; defaults to the installed `/api/attachments/file`. */
+  fileHref?: string
 }) {
-  const { openPreview, previewDialog } = useAttachmentPreview()
+  const { openPreview, previewDialog } = useAttachmentPreview(fileHref)
 
   return (
     <>

@@ -1260,8 +1260,11 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         </ul>
       </RelatedSection>
 
-      {/* 未拆细的文件（水单/证明/盖章件…）先挂根单：the installed `attachments` module owns the bytes,
-          the permission and the organization scope; this block only frames the record's files. */}
+      {/* 未拆细的文件（水单/证明/盖章件…）先挂根单：the installed `attachments` module owns the bytes
+          and the upload, but its list/file routes scope by the caller's own organization, which hides
+          the owner's files from a collaborator. This block reads through this module's routes, which
+          authorize on the root; upload still posts to the installed route, and a collaborator's
+          `canManage={false}` hides the write controls. */}
       <AttachmentsSection
         entityId="order_hub:company_order"
         recordId={head.id}
@@ -1270,6 +1273,8 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         emptyLabel={t('order_hub.detail.files.empty')}
         messages={relatedSectionMessages}
         canManage={canWrite}
+        listHref={(recordId) => `/api/order_hub/orders/attachments?companyOrderId=${encodeURIComponent(recordId)}`}
+        fileHref="/api/order_hub/orders/attachments"
       />
 
       {quickEdit ? (

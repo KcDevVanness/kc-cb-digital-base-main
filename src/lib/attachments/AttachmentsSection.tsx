@@ -22,9 +22,12 @@ import { AttachmentPreviewLink } from './AttachmentPreview'
  * section's framing (`title`/`emptyLabel`/`messages`) and the entity id the files are filed under,
  * and the block supplies the states and the controls.
  *
- * It is a *shell*, not an authorization layer: the bytes and the rows come from the platform's own
- * attachment routes (`/api/attachments`), which apply `attachments.view`/`attachments.manage` and
- * the organization scope. `canManage` only hides the write controls; the API still decides.
+ * It is a *shell*, not an authorization layer: by default the bytes and the rows come from the
+ * platform's own attachment routes (`/api/attachments`), which apply `attachments.view`/
+ * `attachments.manage` and the organization scope. A host whose record is reached through another
+ * authorization (the company order hub, whose collaborators must read the owner's files) passes its
+ * own `listHref`/`fileHref`; uploads still always post to the installed route. `canManage` only hides
+ * the write controls; the API still decides.
  *
  * Failure isolation follows the hub's other blocks: the section renders its own loading/error/empty
  * state through `RelatedSection`, so a failed attachments read never takes the page down with it.
@@ -41,6 +44,18 @@ export type AttachmentsSectionProps = {
   messages: RelatedSectionMessages
   /** Hide the upload/delete controls when false (the API gates the writes regardless). */
   canManage: boolean
+  /**
+   * Full list URL for a record. Defaults to the installed `/api/attachments` route, which scopes by
+   * the caller's own organization; a host whose record needs another authorization (the company
+   * order hub, whose collaborators must see the owner's files) passes its own route instead.
+   */
+  listHref?: (recordId: string) => string
+  /**
+   * Byte-route base path. Defaults to the installed `/api/attachments/file`; the block appends
+   * `/<id>`, and `?download=1` for downloads and previews. Upload still always posts to the
+   * installed `/api/attachments`.
+   */
+  fileHref?: string
 }
 
 type AttachmentRow = {
@@ -67,6 +82,8 @@ export function AttachmentsSection({
   emptyLabel,
   messages,
   canManage,
+  listHref,
+  fileHref = '/api/attachments/file',
 }: AttachmentsSectionProps) {
   const t = useT()
   const queryClient = useQueryClient()
@@ -75,14 +92,19 @@ export function AttachmentsSection({
   const [isUploading, setIsUploading] = React.useState(false)
   const [isDeleting, setIsDeleting] = React.useState(false)
 
-  const queryKey = React.useMemo(() => ['attachments', entityId, recordId], [entityId, recordId])
+  const queryKey = React.useMemo(
+    () => ['attachments', entityId, recordId, fileHref],
+    [entityId, recordId, fileHref],
+  )
   const filesQuery = useQuery({
     queryKey,
     enabled: recordId.length > 0,
     queryFn: async () => {
-      const params = new URLSearchParams({ entityId, recordId, pageSize: '100' })
+      const href = listHref
+        ? listHref(recordId)
+        : `/api/attachments?${new URLSearchParams({ entityId, recordId, pageSize: '100' }).toString()}`
       const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
-        `/api/attachments?${params.toString()}`,
+        href,
         undefined,
         { errorMessage: t('attachments.section.loadFailed', 'Failed to load the files') },
       )
@@ -208,10 +230,11 @@ export function AttachmentsSection({
               <AttachmentPreviewLink
                 attachmentId={row.id}
                 fileName={row.fileName}
+                fileHref={fileHref}
                 label={t('attachments.section.preview', 'Preview')}
               />
               <Button asChild variant="ghost" size="sm">
-                <a href={`/api/attachments/file/${encodeURIComponent(row.id)}?download=1`}>
+                <a href={`${fileHref}/${encodeURIComponent(row.id)}?download=1`}>
                   <Download className="size-4" aria-hidden="true" />
                   {t('attachments.section.download', 'Download')}
                 </a>
