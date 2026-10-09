@@ -17,9 +17,6 @@
 
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import type { CrudFieldOption } from '@open-mercato/ui/backend/CrudForm'
-import type { CompanyOrderLinkKind } from '@/lib/orders/companyOrderLinkPayload'
-
-export type { CompanyOrderLinkKind }
 
 const SUPPLIERS_API_PATH = '/api/purchasing/suppliers'
 const PARTIES_OPTIONS_PATH = '/api/parties/options'
