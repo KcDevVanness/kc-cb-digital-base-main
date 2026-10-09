@@ -27,9 +27,10 @@ No entity, no migration, no ACL feature: this is a **display layer**. Every page
 |---|---|
 | `lib/navTree.ts` | The tree configuration — the single source of truth. A page entry names only its `href`; its label, icon and filter features come from the page's own `page.meta.ts` through the route manifest. A branch may name its own `href` (the workbench node: the row title links at it); without one the node links at its first page. A leaf may also name an `iconName` for a page whose metadata carries a ReactNode icon (no name string) — see the icon rule below. `TREE_EXCLUDED` lists the navigable pages that deliberately stay out of the tree, each with a reason. |
 | `lib/buildNavTree.ts` | Pure builder: config → chrome-shaped groups, effective-feature filter, role preference → default adoption → user preference, then `itemOrder`. |
+| `lib/navActive.ts` | Pure active-path rule: `hrefIsActive` (a page is active on its own path and below it), `collectActiveIds` (the keys of the nodes above the open page) and `resolveRowState` → `active` / `on-path` / `idle`. The open page is marked once: a branch that names no page of its own carries its first child's href (`采购` → `/backend/purchasing/orders`, the href `采购单` also publishes), so a node holding the open page is `on-path` even when it links at that very page, and only the deepest row that publishes the page carries the marker. |
 | `api/chrome/route.ts` | `GET /api/nav_shell/chrome` — the installed chrome payload with `groups: []`. The shell reads this instead of `/api/auth/admin/nav`, so the built-in flat list renders nothing while brand, roles, `grantedFeatures`, the settings/profile sections and their path prefixes stay exactly as installed. |
 | `api/tree/route.ts` | `GET /api/nav_shell/tree` — `{ groups, featureFiltered }`, scoped to the caller, uncached. |
-| `components/SidebarNavTree.tsx` | The client tree: collapsible domains and module nodes, active-path highlighting and auto-expansion, a search box, hidden-entry skipping, icon-only compact mode (`useSidebarCollapse()`), and loading/empty/error(+retry) states. |
+| `components/SidebarNavTree.tsx` | The client tree: collapsible domains and module nodes, active-path highlighting (the marker on the open page, bold on the rows above it) and auto-expansion, a search box, hidden-entry skipping, icon-only compact mode (`useSidebarCollapse()`), and loading/empty/error(+retry) states. |
 | `widgets/injection/sidebar-tree` | Mounts the tree at the `backend:sidebar:nav` spot (desktop). |
 | `src/app/(backend)/backend/layout.tsx` | Points `adminNavApi` at `/api/nav_shell/chrome` and passes the same component to `mobileSidebarSlot` — the mobile drawer deliberately does not render injection spots, so the slot is the only way in there. |
 | `src/modules/auth/backend/sidebar-customization/` | Shadows the installed customization page so the editor edits **this** tree (its `groups` prop). The page body is app-owned; `page.meta.ts` is mirrored from the installed one — an app shadow that ships no `page.meta.ts` publishes the route with `undefined` metadata and silently loses the `auth.sidebar.manage` gate. |
@@ -100,11 +101,12 @@ curl -s -b "$COOKIE" http://localhost:3100/api/nav_shell/tree | jq '.groups[].na
 
 Browser: the sidebar shows the 8 domains with no duplicate flat list, folds/unfolds at every level
 (the company-order domain is 公司订单 → 订单工作台 → the four groups → pages), links a row title to
-its page (the workbench node's title opens `/backend/orders`, its chevron only toggles), highlights the
-active page, filters on a keyword, renders icon-only when the shell is collapsed, and renders inside the
-mobile drawer below 420px. A user whose only grant is `cross_border.shipments.view` sees
-公司订单 → 订单工作台 → 发运与装箱 and nothing else, and a direct visit to `/backend/finance/payables`
-is still refused by the page gate.
+its page (the workbench node's title opens `/backend/orders`, its chevron only toggles), marks only the
+open page (bar + filled background; the rows and domain header above it are bolded, e.g. on
+`/backend/purchasing/orders` neither 采购 nor 订单工作台 is marked), filters on a keyword, renders
+icon-only when the shell is collapsed, and renders inside the mobile drawer below 420px. A user whose
+only grant is `cross_border.shipments.view` sees 公司订单 → 订单工作台 → 发运与装箱 and nothing else,
+and a direct visit to `/backend/finance/payables` is still refused by the page gate.
 
 ## Rollback
 
