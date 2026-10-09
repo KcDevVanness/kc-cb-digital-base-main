@@ -6,6 +6,8 @@
   "internal_sales.form.save": "保存",
   "internal_sales.form.saved": "单据已保存",
   "internal_sales.form.saveFailed": "单据保存失败",
+  "internal_sales.form.companyOrder.invalid": "公司订单链接参数无效，已按普通新建处理",
+  "internal_sales.form.companyOrder.linkFailed": "单据已保存，但关联公司订单失败，请在公司订单页手动关联",
   "internal_sales.form.loadFailed": "单据加载失败",
   "internal_sales.form.notFound": "未找到该单据，或你没有访问权限。",
   "internal_sales.form.field.customer": "买方（分公司/客户）",

@@ -56,6 +56,7 @@ import {
   resolveInitialCurrency,
   writeStoredCurrency,
 } from '../lib/currencyDefault'
+import { parseCompanyOrderParam } from '@/lib/orders/companyOrderParams'
 import { SALES_STATUS_DRAFT, SALES_STATUS_SENT } from '../lib/salesStatus'
 import { useSalesStatusEntries } from '../lib/salesStatusEntries'
 import {
@@ -1061,7 +1062,15 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
   // writing a status the tenant cannot see).
   const { entryIdFor, isLoading: statusLoading, failed: statusFailed } = useSalesStatusEntries()
   // The quote list's row action arrives here; the panel loads that quote once on mount.
-  const fromQuote = useSearchParams().get('fromQuote')
+  const searchParams = useSearchParams()
+  const fromQuote = searchParams.get('fromQuote')
+  /**
+   * `?companyOrderId=` — the company order's "new child" entry hands the operator here with the
+   * root already known, so a saved document is attached back to it. A malformed value is reported
+   * inline and treated as absent: the operator still gets their create, and any link can be made
+   * by hand from the company order page.
+   */
+  const companyOrderParam = React.useMemo(() => parseCompanyOrderParam(searchParams), [searchParams])
   const { organizationId } = useOrganizationScopeDetail()
   const entryHref = listHrefForTradeType(kind, entryTradeType)
   /**
@@ -1139,8 +1148,36 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       const id = typeof created.result?.id === 'string' ? created.result.id : null
       // Remember what was used: the next document in this organization + trade type starts here.
       writeStoredCurrency(currencyStorageKey(organizationId, entryTradeType), values.currencyCode)
-      // A new order lands on its hub (the one filling surface, `/backend/orders/<id>`); a quote keeps
-      // the edit page it has always landed on, and a create without an id keeps the list fallback.
+      // A new order created from a company order's "new" entry is attached back to that root and
+      // lands on it, so the operator sees the row they just created. The kind is the entry's own
+      // trade type — a document cannot be linked as a kind its channel contradicts.
+      if (id && kind === 'order' && companyOrderParam.status === 'ok') {
+        const companyOrderHref = `/backend/orders/${encodeURIComponent(companyOrderParam.companyOrderId)}`
+        const childKind = entryTradeType === 'external' ? 'external_sales_order' : 'internal_sales_order'
+        try {
+          await readApiResultOrThrow(
+            '/api/order_hub/orders/link-child',
+            {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ kind: childKind, refId: id, companyOrderId: companyOrderParam.companyOrderId }),
+            },
+            { errorMessage: t('internal_sales.form.companyOrder.linkFailed') },
+          )
+          pushWithFlash(router, companyOrderHref, t('internal_sales.form.saved'), 'success')
+        } catch (linkError) {
+          // The document exists; a failed attach must not strand it. Land on the company order page
+          // anyway and say the link still needs a hand.
+          const message = linkError instanceof Error && linkError.message
+            ? linkError.message
+            : t('internal_sales.form.companyOrder.linkFailed')
+          pushWithFlash(router, companyOrderHref, message, 'warning')
+        }
+        return
+      }
+      // Without the parameter a new order lands on its hub (the one filling surface,
+      // `/backend/orders/<id>`, which resolves it or shows the "unlinked" state); a quote keeps the
+      // edit page it has always landed on, and a create without an id keeps the list fallback.
       const landingHref = id
         ? (kind === 'order'
             ? `/backend/orders/${encodeURIComponent(id)}`
@@ -1151,9 +1188,15 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       flash(t('internal_sales.form.saveFailed'), 'error')
       throw error
     }
-  }, [channels, entryHref, entryIdFor, entryTradeType, hasAllChannels, kind, missingChannelMessage, organizationId, router, statusFailed, statusLoading, t])
+  }, [channels, companyOrderParam, entryHref, entryIdFor, entryTradeType, hasAllChannels, kind, missingChannelMessage, organizationId, router, statusFailed, statusLoading, t])
 
   return (
+    <>
+      {kind === 'order' && companyOrderParam.status === 'invalid' ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('internal_sales.form.companyOrder.invalid')}
+        </p>
+      ) : null}
     <CrudForm<InternalSalesFormValues>
       title={t(
         entryTradeType === 'external'
@@ -1174,6 +1217,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
       cancelHref={entryHref}
       onSubmit={handleSubmit}
     />
+    </>
   )
 }
 

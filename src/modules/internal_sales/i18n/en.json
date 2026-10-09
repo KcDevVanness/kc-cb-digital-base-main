@@ -6,6 +6,8 @@
   "internal_sales.form.save": "Save",
   "internal_sales.form.saved": "Document saved",
   "internal_sales.form.saveFailed": "Could not save the document",
+  "internal_sales.form.companyOrder.invalid": "The company order link is invalid; saving creates a plain order",
+  "internal_sales.form.companyOrder.linkFailed": "The document was saved, but it could not be linked to the company order — link it from the company order page",
   "internal_sales.form.loadFailed": "Could not load the document",
   "internal_sales.form.notFound": "This document was not found, or you have no access to it.",
   "internal_sales.form.field.customer": "Buyer (branch / customer)",
