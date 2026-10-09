@@ -403,12 +403,12 @@ function ExistingCompanyOrderPicker({
 function SalesChildPickerDialog({
   open,
   onOpenChange,
-  children: salesChildren,
+  candidates: salesChildren,
   onPick,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  children: LinkRow[]
+  candidates: LinkRow[]
   onPick: (child: LinkRow) => void
 }) {
   const t = useT()
@@ -1236,7 +1236,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
       <SalesChildPickerDialog
         open={pickerAction !== null}
         onOpenChange={(next) => { if (!next) setPickerAction(null) }}
-        children={allSalesChildren}
+        candidates={allSalesChildren}
         onPick={(child) => {
           const action = pickerAction
           setPickerAction(null)
