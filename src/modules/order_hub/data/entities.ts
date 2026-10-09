@@ -48,6 +48,30 @@ export class CompanyOrder {
   @Property({ type: 'text', nullable: true })
   notes?: string | null
 
+  /**
+   * The optional default customer of the deal: a scalar `parties` id plus the display name frozen
+   * at write time (the party's own `name` is encrypted, so the hub never re-reads it). Omitted at
+   * create is `null`; an explicit `null` in an update clears it — an absent key never does (the
+   * partial-update rule). Buyer side of the deal.
+   */
+  @Property({ name: 'customer_party_id', type: 'uuid', nullable: true })
+  customerPartyId?: string | null
+
+  /** `{ name, code }` frozen at write time; see `customerPartyId`. */
+  @Property({ name: 'customer_snapshot', type: 'jsonb', nullable: true })
+  customerSnapshot?: Record<string, unknown> | null
+
+  /**
+   * The optional default supplier: a scalar `purchasing_suppliers` id plus its frozen name
+   * snapshot, the counterpart pair to `customerPartyId`.
+   */
+  @Property({ name: 'supplier_id', type: 'uuid', nullable: true })
+  supplierId?: string | null
+
+  /** `{ name, code }` frozen at write time; see `supplierId`. */
+  @Property({ name: 'supplier_snapshot', type: 'jsonb', nullable: true })
+  supplierSnapshot?: Record<string, unknown> | null
+
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()
 
@@ -105,6 +129,47 @@ export class CompanyOrderLink {
   /** `{ status, createdAt, currencyCode, totalGross }`, frozen at link time. */
   @Property({ name: 'ref_snapshot', type: 'jsonb', nullable: true })
   refSnapshot?: Record<string, unknown> | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}
+
+/**
+ * One **collaborating organization** of a company order (REQ-014).
+ *
+ * The owner organization writes this set; each row grants exactly one other organization the right
+ * to *see* the root in its own workbench and to write its `status`/`notes` (and nothing else — the
+ * whitelist lives in the update command, not here). Unlike `CompanyOrderLink`, the row's
+ * `organizationId` is the **collaborator**, not the root's owner, so the reverse index leads with it:
+ * "which roots do I collaborate on" is the read the list/stage scope widens with.
+ *
+ * The pair is unique per root: re-adding an organization collapses onto the same row (the replace
+ * command de-duplicates before the index sees it).
+ */
+@Entity({ tableName: 'order_hub_company_order_collaborators' })
+@Unique({
+  name: 'order_hub_company_order_collaborators_order_org_uniq',
+  properties: ['companyOrder', 'organizationId'],
+})
+@Index({ name: 'order_hub_company_order_collaborators_scope_idx', properties: ['organizationId', 'tenantId'] })
+export class CompanyOrderCollaborator {
+  [OptionalProps]?: 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  /** The **collaborating** organization; the root's own `organization_id` never appears here. */
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @ManyToOne(() => CompanyOrder, { fieldName: 'company_order_id', deleteRule: 'cascade' })
+  companyOrder!: CompanyOrder
 
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()

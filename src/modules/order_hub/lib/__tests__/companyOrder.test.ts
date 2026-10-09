@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals'
-import { freezeLinkSnapshot, linkKey, type CompanyOrderRef } from '../companyOrder'
+import { freezeLinkSnapshot, freezeNameSnapshot, linkKey, type CompanyOrderRef } from '../companyOrder'
 import { formatCompanyOrderNumber } from '../companyOrderNumber'
 
 /**
@@ -58,5 +58,11 @@ describe('companyOrder lib', () => {
     expect(formatCompanyOrderNumber(2026, 42)).toBe('CO-2026-0042')
     expect(formatCompanyOrderNumber(2026, 9999)).toBe('CO-2026-9999')
     expect(formatCompanyOrderNumber(2030, 10000)).toBe('CO-2030-10000')
+  })
+
+  it('freezes a default customer/supplier name snapshot as { name, code }', () => {
+    expect(freezeNameSnapshot({ name: 'Acme', code: 'SUP-1' })).toEqual({ name: 'Acme', code: 'SUP-1' })
+    // A missing code is explicit `null`, never absent — the column's shape stays predictable.
+    expect(freezeNameSnapshot({ name: 'Acme' })).toEqual({ name: 'Acme', code: null })
   })
 })

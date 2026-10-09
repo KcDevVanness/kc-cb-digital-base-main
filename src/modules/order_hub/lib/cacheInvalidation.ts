@@ -24,6 +24,13 @@ const COMPANY_ORDER_LINK = deriveResourceFromCommandId('order_hub.orders.links.r
  */
 const COMPANY_ORDER_LINK_TAG = 'order_hub.company_order.link'
 
+/**
+ * The collaborator collection's own tag, named explicitly for the same reason as the link tag: the
+ * command-id derivation collapses every `order_hub.orders.*` writer onto `order_hub.order`, so this
+ * alias only matters if that ever splits — but it must not be silently forgotten when it does.
+ */
+const COMPANY_ORDER_COLLABORATOR_TAG = 'order_hub.company_order.collaborator'
+
 export type CacheScope = {
   container: AwilixContainer
   tenantId: string | null
@@ -59,13 +66,39 @@ async function invalidate(
   })
 }
 
+/**
+ * Clears this list/link collection for every organization whose cached page can contain the row.
+ *
+ * The CRUD cache is keyed per organization, and the collaborator set decides whether an
+ * organization's list contains a root at all — so the owner's tags alone are not enough: a branch
+ * that gained (or lost) visibility keeps answering its pre-change page (an empty one when it just
+ * gained the row) until TTL unless its own collection tag is cleared too.
+ */
+async function invalidateForOrganizations(
+  scope: CacheScope,
+  resources: string[],
+  identifiers: CacheIdentifiers,
+  reason: string,
+  additionalOrganizationIds: readonly string[],
+): Promise<void> {
+  const seen = new Set<string>()
+  for (const organizationId of additionalOrganizationIds) {
+    if (!organizationId || organizationId === identifiers.organizationId || seen.has(organizationId)) continue
+    seen.add(organizationId)
+    await invalidate(scope, resources, { ...identifiers, organizationId }, reason)
+  }
+}
+
 /** A company-order write moves both the orders list and the link collection. */
 export async function invalidateCompanyOrderCaches(
   scope: CacheScope,
   identifiers: CacheIdentifiers,
   reason: string,
+  collaboratorOrganizationIds: readonly string[] = [],
 ): Promise<void> {
-  await invalidate(scope, [COMPANY_ORDER, COMPANY_ORDER_LINK, COMPANY_ORDER_LINK_TAG], identifiers, reason)
+  const resources = [COMPANY_ORDER, COMPANY_ORDER_LINK, COMPANY_ORDER_LINK_TAG]
+  await invalidate(scope, resources, identifiers, reason)
+  await invalidateForOrganizations(scope, resources, identifiers, reason, collaboratorOrganizationIds)
 }
 
 /** A link-only write still moves the orders list (its counts/search read the links). */
@@ -73,6 +106,25 @@ export async function invalidateCompanyOrderLinkCaches(
   scope: CacheScope,
   identifiers: CacheIdentifiers,
   reason: string,
+  collaboratorOrganizationIds: readonly string[] = [],
 ): Promise<void> {
-  await invalidate(scope, [COMPANY_ORDER_LINK, COMPANY_ORDER_LINK_TAG, COMPANY_ORDER], identifiers, reason)
+  const resources = [COMPANY_ORDER_LINK, COMPANY_ORDER_LINK_TAG, COMPANY_ORDER]
+  await invalidate(scope, resources, identifiers, reason)
+  await invalidateForOrganizations(scope, resources, identifiers, reason, collaboratorOrganizationIds)
+}
+
+/**
+ * A collaborator-set write moves the orders list too — the set decides which organizations see the
+ * row at all, so a cached list of the caller's organization (and of every organization that gained
+ * or lost the row) is stale the moment it changes.
+ */
+export async function invalidateCompanyOrderCollaboratorCaches(
+  scope: CacheScope,
+  identifiers: CacheIdentifiers,
+  reason: string,
+  affectedOrganizationIds: readonly string[] = [],
+): Promise<void> {
+  const resources = [COMPANY_ORDER_COLLABORATOR_TAG, COMPANY_ORDER, COMPANY_ORDER_LINK, COMPANY_ORDER_LINK_TAG]
+  await invalidate(scope, resources, identifiers, reason)
+  await invalidateForOrganizations(scope, resources, identifiers, reason, affectedOrganizationIds)
 }

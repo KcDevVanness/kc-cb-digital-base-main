@@ -136,7 +136,8 @@ type ScopedEmMocks = {
   create: jest.Mock<(...args: unknown[]) => Record<string, unknown>>
   persist: jest.Mock<(...args: unknown[]) => unknown>
   flush: jest.Mock<() => Promise<void>>
-  findOne: jest.Mock<(...args: unknown[]) => Promise<OrderRow | null>>
+  findOne: jest.Mock<(...args: unknown[]) => Promise<unknown>>
+  find: jest.Mock<(...args: unknown[]) => Promise<unknown[]>>
   nativeDelete: jest.Mock<(...args: unknown[]) => Promise<number>>
 }
 
@@ -145,7 +146,8 @@ type EmMocks = {
   create: jest.Mock<(...args: unknown[]) => Record<string, unknown>>
   persist: jest.Mock<(...args: unknown[]) => unknown>
   flush: jest.Mock<() => Promise<void>>
-  findOne: jest.Mock<(...args: unknown[]) => Promise<OrderRow | null>>
+  findOne: jest.Mock<(...args: unknown[]) => Promise<unknown>>
+  find: jest.Mock<(...args: unknown[]) => Promise<unknown[]>>
   nativeDelete: jest.Mock<(...args: unknown[]) => Promise<number>>
 }
 
@@ -166,6 +168,9 @@ function createHarness() {
     persist: jest.fn(() => scoped),
     flush: jest.fn(async () => undefined),
     findOne: jest.fn(async () => null),
+    // The scope-aware write helpers (`moveCompanyOrderChildren`) read the existing link rows before
+    // deleting them; an empty table is the "nothing to move" case.
+    find: jest.fn(async () => []),
     nativeDelete: jest.fn(async () => 0),
   }
 
@@ -178,6 +183,7 @@ function createHarness() {
     persist: jest.fn(() => em),
     flush: jest.fn(async () => undefined),
     findOne: jest.fn(async () => null),
+    find: jest.fn(async () => []),
     nativeDelete: jest.fn(async () => 0),
   }
 
@@ -346,8 +352,64 @@ describe('order_hub company order commands', () => {
     expect(result).toEqual(outcome)
     expect(jest.mocked(linkChild)).toHaveBeenCalledWith(
       expect.anything(),
-      { tenantId: 'tenant-1', organizationId: 'org-1' },
+      expect.objectContaining({ tenantId: 'tenant-1', organizationId: 'org-1' }),
       { kind: 'purchase_order', refId: REF_A },
     )
+  })
+
+  it('update lets a collaborator write status/notes and refuses any other key with 422', async () => {
+    const { ctx, scoped, de } = createHarness()
+    // `resolveCompanyOrderAccess`: the root is owned by another organization and the second read
+    // (the collaborator row) answers a row, so the caller is a collaborator.
+    const ownedBySomeoneElse = makeOrder({ organizationId: 'org-owner' })
+    scoped.findOne.mockImplementation(async (entity: unknown) =>
+      entity === CompanyOrder ? ownedBySomeoneElse : { id: 'collaborator-1' },
+    )
+
+    await expect(
+      updateCompanyOrderCommand.execute(
+        { id: ORDER_ID, updatedAt: '2026-10-01T00:00:00.000Z', title: 'Renamed by a collaborator' },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ status: 422, body: { code: 'collaborator_field_not_allowed' } })
+    expect(de.updateOrmEntity).not.toHaveBeenCalled()
+
+    de.updateOrmEntity.mockImplementation(async (args: { apply: (entity: OrderRow) => void }) => {
+      const entity = makeOrder({ organizationId: 'org-owner' })
+      args.apply(entity)
+      return entity
+    })
+    const updated = await updateCompanyOrderCommand.execute(
+      { id: ORDER_ID, updatedAt: '2026-10-01T00:00:00.000Z', status: 'completed', notes: null },
+      ctx,
+    )
+    expect(updated.status).toBe('completed')
+    expect(updated.notes).toBeNull()
+    // A whitelisted write leaves the fields outside the whitelist alone.
+    expect(updated.title).toBe('Order A')
+  })
+
+  it('lets a non-collaborator update nothing: an unrelated organization gets the plain 404', async () => {
+    const { ctx, scoped } = createHarness()
+    scoped.findOne.mockResolvedValue(null)
+
+    await expect(
+      updateCompanyOrderCommand.execute({ id: ORDER_ID, status: 'completed' }, ctx),
+    ).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('links.replace refuses a collaborating organization with the owner-required code', async () => {
+    const { ctx, scoped } = createHarness()
+    const ownedBySomeoneElse = makeOrder({ organizationId: 'org-owner' })
+    scoped.findOne.mockImplementation(async (entity: unknown) =>
+      entity === CompanyOrder ? ownedBySomeoneElse : { id: 'collaborator-1' },
+    )
+
+    await expect(
+      replaceCompanyOrderLinksCommand.execute(
+        { companyOrderId: ORDER_ID, kind: 'purchase_order', refs: [] },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ status: 403, body: { code: 'company_order_owner_required' } })
   })
 })

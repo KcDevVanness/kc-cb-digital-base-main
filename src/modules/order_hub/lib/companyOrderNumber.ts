@@ -2,7 +2,17 @@ import type { EntityManager } from '@mikro-orm/postgresql'
 import type { Kysely } from 'kysely'
 
 /** The trusted scope every order_hub read/write carries. */
-export type CompanyOrderScope = { tenantId: string; organizationId: string }
+export type CompanyOrderScope = {
+  tenantId: string
+  /** The organization the write lands in (the session's selected org). */
+  organizationId: string
+  /**
+   * The caller's expanded visible organization set (`ctx.organizationIds`, parent → descendants).
+   * Used by the collaboration checks; the write/ownership scope stays the single `organizationId`.
+   * Absent means "exactly `organizationId`".
+   */
+  organizationIds?: readonly string[]
+}
 
 // MikroORM types `getKysely()`'s DB generic as `never`; the handle is cast once to the columns this
 // projection actually reads (lesson `.ai/lessons/kysely-bare-handle-types-tables-away.md`).

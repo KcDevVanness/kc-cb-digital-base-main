@@ -1,7 +1,7 @@
 # 公司订单根单化（company order as a first-class root entity）
 
 **Date**: 2026-10-09
-**Status**: Delivered — Phases 1–3 implemented and verified (2026-10-09)，PR `feat/company-order-root`（off `dev`）。证据：`yarn typecheck` 全仓干净；`yarn jest src/modules/order_hub` 3 suites · 28 tests；ephemeral 集成 `company-orders` 6 / `company-order-links` 9 / `company-order-backfill` 3 = **18 passed**；浏览器实测（工作台=公司订单、点进 hub、关联对话框成套替换、旧 URL 归位、「未关联」一键建根、采购/对内销售预填+自动关联、暗色/窄屏/键盘）。迁移已生成并审阅但**未应用**；升级步骤（应用迁移 + `backfill-company-orders --apply` + `auth sync-role-acls`）见模块 README。
+**Status**: Phases 1–3 Delivered（2026-10-09，PR `feat/company-order-root` off `dev`）；**第四轮 Delivered**（PR `feat/company-order-collaboration`，stacked on #150）：建单起手信息 + 建单即关联 + 子单预填默认 + 协作组织白名单（状态/备注可写）+ 文件区块。证据见「第四轮」节与 run record。证据（前三轮）：`yarn typecheck` 全仓干净；`yarn jest src/modules/order_hub` 3 suites · 28 tests；ephemeral 集成 `company-orders` 6 / `company-order-links` 9 / `company-order-backfill` 3 = **18 passed**；浏览器实测（工作台=公司订单、点进 hub、关联对话框成套替换、旧 URL 归位、「未关联」一键建根、采购/对内销售预填+自动关联、暗色/窄屏/键盘）。迁移已生成并审阅但**未应用**；升级步骤（应用迁移 + `backfill-company-orders --apply` + `auth sync-role-acls`）见模块 README。
 
 > owner 已批准两个结构决策（2026-10-09，见 Resolved decisions）：**容器根单**（新表 + 关联表，模块数据仍归各模块）与**全量补录**（现有渠道内销售单 1:1 生成公司订单）。本规格取代 `2026-10-08-order-centric-entry.md` 里「工作台合并三类既有列表 / 无实体」的口径（该文件的 Phase 4/REQ-001/009/010 与 Non-goals 第一条）。
 
@@ -321,6 +321,10 @@
 | TEST-004 | UI（浏览器） | dev 数据/构造数据 | 工作台 → 新建公司订单 → hub → 对内区块「新建」保存（预填+自动关联）→ 工作台复看；旧 `/backend/orders/<salesOrderId>` 归位；关联对话框替换 | 行 id=公司订单；区块与阶段列更新；409 冲突条；暗色/窄屏 | REQ-002, REQ-003, REQ-006, REQ-007 |
 | TEST-005 | unit | 纯函数夹具 | 编号生成、快照映射、阶段聚合、解析器 | 边界（撞号、缺渠道、硬删对端） | REQ-001, REQ-005, REQ-007 |
 | TEST-006 | security | 无 `order_hub.manage` 的用户 | `POST links` / `link-child` / CRUD 写 | 403；读仍按 `order_hub.view` | REQ-008 |
+| TEST-007 | integration | 两组织 + parties/供应商夹具 | create 带主体与 `links`；未知/跨组织；清空 | 见「第四轮」节 | REQ-011, REQ-012 |
+| TEST-008 | integration | 所有者 + 协作 + 无关组织 | collaborators.replace；三视角读；协作者写 status/title | 见「第四轮」节 | REQ-014, REQ-016 |
+| TEST-009 | integration | 根单 + 小文件 | attachments 上传/列表/删除 | 见「第四轮」节 | REQ-015 |
+| TEST-010 | UI（浏览器） | 上述夹具 | 建单/协作视图/文件三条链路 | 见「第四轮」节 | REQ-011…REQ-016 |
 
 ## Implementation Phases
 
@@ -368,6 +372,12 @@
 | REQ-008 | 全部 | `acl.ts`/`setup.ts` | Phase 1 | TEST-006 | AC-008 |
 | REQ-009 | `/backend/orders` | 路由重定义 + 删除 `mergeOrders` | Phase 2 | TEST-001, TEST-002 | AC-009 |
 | REQ-010 | 本文档 | docs/README/状态板 | Phase 1–3 | TEST-003（登记） | AC-010 |
+| REQ-011 | 建单页 / 抬头卡 | `company_orders` 4 列；`create`/`update` 校验+冻结 | Phase 4.A | TEST-007 | AC-011 |
+| REQ-012 | 建单页「关联已有单据」 | `create.links[]` 同事务落关联 | Phase 4.A | TEST-007 | AC-012 |
+| REQ-013 | 两个子单新建表单 | `?companyOrderId=` → 默认买方/供应商 | Phase 4.A | TEST-010 | AC-013 |
+| REQ-014 | hub「协作组织」+ 命令 | `collaborators` 表；`collaborators.replace`；`update` 字段白名单 | Phase 4.B | TEST-008 | AC-014 |
+| REQ-015 | hub「文件」区块 | installed `attachments`（entityType/recordId） | Phase 4.C | TEST-009 | AC-015 |
+| REQ-016 | 工作台协作标记 / hub 入口收敛 | 列表 scope 并入协作集；UI 隐藏 | Phase 4.B | TEST-008 | AC-014 |
 
 ## Extension-Surface Traceability
 
@@ -396,6 +406,105 @@
 | REQ-007 | `lib/companyOrderResolve.ts` + 解析页 | `runtime.tenant-scoped-cache`（最近行） | `src/modules/example/lib/todoSummaryService.ts` | Phase 2 | TEST-005 | framework-only |
 
 **未映射的行（诚实登记）：** app 级纯函数 lib（`companyOrder`/`orderStages`/`companyOrderResolve`）与 app 内共享对话框在 `surface-inventory.json` 没有一一对应能力行，用最近行承载并标 `framework-only`；不使用 `negative-fixture`。
+
+## 第四轮 — 起手信息、母子协作与附件（2026-10-09，owner 已定口径）
+
+**背景**：owner 给出原飞书多维表格的 35 列字段清单，并明确三条口径（2026-10-09 答复）：
+
+1. **建单抓起手信息**：可选客户/供应商（主体，用作子单预填默认）+ **建单时直接关联已有销售/采购单**（一步建根+挂单）。
+2. **协作组织白名单 + 状态可写**：根单加「协作组织」，被授权子公司可见并可改「订单状态 + 备注」（其它只读）。
+3. **先加公司订单「文件」区块**：未拆细的文件（水单/证明/盖章件…）先挂根单，后续再逐个拆到模块。
+
+### 字段归属（35 列 → 承载方）
+
+| 飞书列 | 承载方（现状） | 本轮动作 |
+|---|---|---|
+| 订单号 / 下单日期 / 预计交货 / 备注 | 公司订单 `number` / `orderDate` / `etaDate` / `notes` | 不动 |
+| 订单状态 | 公司订单 `status` | **协作组织可写**（REQ-014/016） |
+| 客户名称 / 供应商名称 / 采购负责人 | 销售单 `customer_snapshot`、采购单 `supplier_snapshot`/`owner_snapshot`（已冻结进关联行） | 根单增**默认客户/供应商**（REQ-011/013），显示仍以子单冻结值为准 |
+| 订单金额 / 预付款·尾款 / 运输日期 | 子单金额、采购付款行、发运里程碑（只读聚合） | 留后续（建议下一轮做「35 字段汇总」；本轮不做） |
+| INV.NO / Invoice / 箱单 / 电放提单 / 中国报关单 / 订舱运杂费水单及发票 / 国内段运费水单及发票 / 采购水单及发票 / 涉外收入证明 / KC INVOICE 盖章 | `trade_docs` 单据与合同、`cross_border` 出口单证（`EXPORT_DOC_TYPES` 已覆盖）、`export_finance` 收汇/退税 + 各模块附件 | 留后续（汇总读） |
+| 购销合同 / KC 订单价格 / USD | 合同区块、合同 `finance_total`、币种 | 不动 |
+| 是否已收款 / 退税状态 / 退税金额 | `export_finance`（按采购单/柜） | 不动 |
+| 未拆细的文件 | 现无根单层落点 | **文件区块**（REQ-015） |
+
+### REQ（本轮）
+
+- **REQ-011** — 根单增可选 **默认客户**（`customer_party_id` + `customer_snapshot`，来源 `parties` 的 buyer 选项源）与 **默认供应商**（`supplier_id` + `supplier_snapshot`，来源 `purchasing/suppliers`）；create/update 命令做 scoped 存在性校验（不存在/跨组织 → 422）并冻结快照；可显式清空（含部分更新不得把「字段缺席」当清空）。
+- **REQ-012** — **建单即关联**：`order_hub.orders.create` 接受可选 `links: [{ kind, refId }]`（≤20），与建根在**同一事务**内解析、冻结快照并落关联（重复/未知/跨组织 → 422）；建单表单给出「关联已有单据」两个搜索多选（对内/对外销售单按贸易类型通道、采购单）。
+- **REQ-013** — **子单预填默认**：经 `?companyOrderId=` 进入 `internal_sales`（对内/对外）与 `purchasing` 新建表单时，读取根单默认客户/供应商作为**未填时**的买方/供应商默认；读取失败静默降级、不阻断（操作员手填优先）。
+- **REQ-014** — **协作组织**：新表 `order_hub_company_order_collaborators`（唯一 `(company_order_id, organization_id)`）；所有者可在 hub 管理（组织选择器来自 directory 可见树、排除自身组织）；被授权组织**可见**该根单，除 `status`+`notes` 外只读；命令 `order_hub.orders.collaborators.replace`（成套替换、乐观锁、仅所有者）。
+- **REQ-015** — **文件区块**：根单详情页「文件」区块复用 installed `attachments`（表单域 `entityId='order_hub:company_order'`、`recordId=根单 id`；列表/删除/预览同模块既有路由）：上传/列出/删除/预览；权限沿用 attachments 自身门禁；区块级失败隔离。
+- **REQ-016** — **协作可见性落地**：工作台对协作行显示「协作」标记；协作组织使用者的 hub 只提供 状态/备注 编辑入口；**授权仍由服务端命令白名单强制**（UI 隐藏不代替授权）。
+
+### 数据模型（增量）
+
+| 位置 | 增量 |
+|---|---|
+| `order_hub_company_orders` | `customer_party_id uuid null`、`customer_snapshot jsonb null`、`supplier_id uuid null`、`supplier_snapshot jsonb null`（均可清空） |
+| 新表 `order_hub_company_order_collaborators` | `id`/`tenant_id`/`organization_id`（协作方组织）/`company_order_id`（FK cascade）/`created_at`/`updated_at`；唯一 `(company_order_id, organization_id)`；索引 `(organization_id, tenant_id)`（反查「我能看到哪些协作根单」） |
+
+迁移由 `yarn db:generate` 生成、审阅后提交（含既有 4 列的追加与 1 张新表），不应用。
+
+### 读路径与写路径（协作可见性）
+
+- **列表读**（`GET /api/order_hub/orders`）：`orm.orgField: null` 关闭 factory 的单一组织过滤，scope 由 `buildFilters` 统一施加为**显式可见 id 集**：先读「`organization_id ∈ 我的可见组织集` **或** 我是其协作组织的根单 id」，列表/筛选/`?id=`/`?ids=` 都在这一个集合上做交（空集 → 哨兵 id → 合法空页）。**实现期更正**：最初用 `$or` 主形式，实测引擎在「顶层 `id` 过滤 + `$or` 子树」并存时 OR 组不再匹配（协作组织的 search/`?ids=` 读全空），因此落地为 id 集形式（原记的「contingency」即此）；`links` 读同法。协作可见性由集成测试三视角证明。
+- **读投影**（`stages`/`links`）：scope 同样并上「我是协作组织」的根单集合。
+- **写**（`update`）：命令内判定「所有者组织 vs 协作组织」——协作者只接受 `status`/`notes`（含显式 `null`），payload 出现其它键 → 422；`delete`、`collaborators.replace`、`links.replace`、`link-child`（对已存在的根单）仅所有者。
+- **一个子单只属于一张公司订单**（2026-10-09 实现期口径）：`create.links[]` 与 `links.replace` 在落关联前先把这些 `(kind, refId)` 在调用方可见 scope 内的**其它**根单关联行删掉（同一事务内“移动”），因此「在另一个根上重挂同一张子单」= 搬移而不是 422；`link-child` 带显式目标时沿用幂等语义（已挂时返回现有根、不搬）。搬移会向被移出的根发 `links.updated` 并失效其缓存。
+- **权限**：协作组织使用者写状态仍需 `order_hub.manage`（租户角色配置），README 写明。
+
+### UI
+
+- 建单页 `/backend/orders/create`：+ 默认客户（buyer 选项源）、默认供应商（供应商选项源）、「关联已有单据」（销售/采购两个搜索多选）；保存一次完成「建根 + 挂单」。
+- 抬头卡：默认客户/供应商（可清空、显示为名称快照）+ 「协作组织」对话框（组织多选、保存成套替换、带 `updatedAt`）；协作者视图隐藏 编辑/删除/关联 等入口，只留 状态/备注。
+- 工作台：协作行加「协作」标记（不改变其它列与筛选）。
+- 「文件」区块：`RelatedSection` 壳 + 上传/列表，预览复用 `@/lib/attachments/AttachmentPreview`；新增 app 级共享件 `src/lib/attachments/AttachmentsSection.tsx`（本期只被本区块使用，便于后续替换其它模块的副本）。
+
+### Implementation Phases（第四轮）
+
+- **Phase 4.A（REQ-011/012/013）** — 4 列 schema + create/update 校验与冻结 + create 的 `links` 同事务落关联 + 建单页三个控件 + 两个子单表单的默认预填。Tests：TEST-007、TEST-010（A 段）。Exit：建单一次带上主体与 1 张销售单 + 1 张采购单，工作台立即可见；未知/跨组织引用 422。
+- **Phase 4.B（REQ-014/016）** — collaborators 表 + 读路径改造 + 命令白名单 + hub/工作台 UI。Tests：TEST-008、TEST-010（B 段）。Exit：所有者把 A 组织加入协作 → A 组织账号的工作台可见该行、hub 只能改状态/备注；无关组织不可见；越权改其它字段 422。
+- **Phase 4.C（REQ-015）** — 文件区块 + 共享件。Tests：TEST-009、TEST-010（C 段）。Exit：上传/列出/预览/删除在根单工作。
+
+### Integration Coverage（第四轮）
+
+| Test ID | Level | Setup / fixture | Actions | Assertions | Requirement IDs |
+|---|---|---|---|---|---|
+| TEST-007 | integration | 两组织 + parties/供应商夹具 | create 带 `customerPartyId`/`supplierId`/`links`（销售+采购）；再试未知/跨组织引用；清空主体 | 201 且快照冻结、关联行同事务可见；422；显式清空读回 null | REQ-011, REQ-012 |
+| TEST-008 | integration | 所有者组织 + 协作组织 + 无关组织 | `collaborators.replace`；协作组织读列表/hub；协作组织 PUT status/notes；协作者 PUT title；无关组织读 | 200/可见；status 200；title 422；无关不可见 | REQ-014, REQ-016 |
+| TEST-009 | integration | 根单 + 小文件 | `POST /api/attachments`(entityType/recordId) → 列表 → 删除 | 列表回该件、删除后不回；跨组织不可见 | REQ-015 |
+| TEST-010 | UI（浏览器） | 上述夹具 | 建单页主体+关联、协作者视图、文件区块 | 三条链路各自可见结果；暗色/窄屏/键盘 | REQ-011…REQ-016 |
+
+### Acceptance Criteria（第四轮）
+
+- [x] **AC-011** — 建单页可选客户/供应商并在保存后读回（名称快照）；显式清空读回 `null`；未知/跨组织主体 422。*证据：integration `company-order-create-fields`（4 passed）+ 浏览器建单读回「Default customer/supplier」。*
+- [x] **AC-012** — 建单页勾选 1 张销售单 + 1 张采购单 → 一次保存后工作台与 hub 立即出现两行（冻结单号/对方），无手动关联步骤。*证据：浏览器实测（`ORDER-20261009-00001` + 采购单同现）+ integration create-fields。*
+- [x] **AC-013** — 带 `?companyOrderId=` 打开对内/对外销售单或采购单新建页时，买方/供应商按根单默认预填；手填值不被覆盖；根单无默认时行为与今天一致。*证据：Phase 3 浏览器实测 + 本轮实现（字段为空才填）。*
+- [x] **AC-014** — 协作组织账号：工作台可见带「协作」标记的根单；hub 只能改状态/备注（其它字段 422 且入口不显示）；无关组织不可见；所有者可管理协作组织列表（成套替换 + 409）。*证据：integration `company-order-collaborators`（4 passed）+ 浏览器实测（分公司账号 hub 只显示「Update status and notes」；写状态后 API 读回 `in_progress`；hub 对话框成套保存）。*
+- [x] **AC-015** — 根单「文件」区块上传/列出/预览/删除可用；读失败只影响该区块。*证据：integration `company-order-files`（1 passed）+ 浏览器实测（上传 → 行显示名称/大小/日期 + Preview/Download）。*
+- [x] **AC-016** — 迁移为「4 列追加 + 1 张新表 + 索引」，审阅后未应用；README/spec/状态板同步更新。*证据：`Migration20261009044102_order_hub.ts` + `Migration20261009051049_order_hub.ts`（均未应用；`yarn db:generate` 复跑 no changes）。*
+
+### Migration & Backward Compatibility（第四轮）
+
+| 契约类别 | 改动 | 判定 |
+|---|---|---|
+| DB schema | `order_hub_company_orders` 追加 4 个可空列；新增 `order_hub_company_order_collaborators` 表 + 索引 | 允许（MAY add new columns with defaults / MAY add new tables freely） |
+| API 请求 | `POST /api/order_hub/orders` 追加可选 `customerPartyId`/`supplierId`/`links`；`PUT` 追加可选同名主体字段 | 允许（MAY add new optional fields） |
+| 命令 | 新增 `order_hub.orders.collaborators.replace`；`create` 输入扩展 | 允许（MAY add freely） |
+| 读路径 | 列表/汇总的 scope 并入「协作组织」——**授权行为变化**：被显式加入协作的组织由「不可见」变为「可见」，属 owner 要求的行为，README 披露 | 披露 |
+| 附件 | 复用 installed `attachments`，不改其契约 | 无影响 |
+
+### Risks（第四轮）
+
+| 风险 | 缓解 |
+|---|---|
+| 列表 scope 脱离 factory 单一组织过滤后漏加条件 | 集成测试显式覆盖「所有者/协作/无关」三视角；`orgField: null` 的注释写明这是唯一 scope 施加点 |
+| 协作者越权写其它字段 | 命令层字段白名单（服务端），UI 隐藏只是 UX |
+| 子单预填覆盖操作员手填 | 只在字段为空时填；读取失败静默降级 |
+| 建单 `links` 与既有 link-child 口径漂移 | 复用 `loadCompanyOrderRefs`/`persistCompanyOrderLink` 同一实现 |
+
+---
 
 ## Rollout, Migration, and Rollback
 
@@ -483,5 +592,7 @@
 
 | Date | Change |
 |---|---|
+| 2026-10-09 | **第四轮交付并验证**（PR #151，stacked on #150）：Phase 4.A（4 列默认客户/供应商 + `create.links[]` 同事务 + 建单表单选择器/多选 + 子单预填）、4.B（协作组织表/命令/显式可见 id 集读路径/字段白名单/UI）、4.C（`AttachmentsSection` + 文件区块）；一致性修正「一个子单一张根」（移动语义）。实现期修复 4 处：stages 的先行引用 500、`$or`+顶层 id 的读路径失效、跨组织 CRUD 列表缓存失效、31 个缺失 i18n 键。证据：宽门禁全绿（81 suites · 654 tests）；集成 6 套 **28 passed**；浏览器实测建单/文件/协作视图/协作写状态。 |
+| 2026-10-09 | **第四轮口径定案（owner）**：建单抓起手信息（可选默认客户/供应商 + 建单即关联已有单据）、订单状态支持「协作组织白名单 + 状态/备注可写」、先加公司订单「文件」区块。REQ-011…REQ-016 / TEST-007…TEST-010 / AC-011…AC-016 建立；35 列字段归属表与「金额/单证汇总」的后续项一并记录。 |
 | 2026-10-09 | **Phases 1–3 实现并验证**：实体/迁移/命令/路由/补录 CLI（Phase 1，含 5 处实现期自修）、工作台与 hub 重写 + create/edit + 旧 URL 归位 + 删除旧聚合（Phase 2）、`?companyOrderId=` 预填与自动关联（Phase 3）。实现期发现并修复「对方」列优先级与规格不符（`lib/orderStages.ts` 两段合并 + 回归断言）。证据见 Status 行。|
 | 2026-10-09 | Initial draft — owner approved 容器根单 + 全量补录; 三阶段（数据地基 / 工作台与 hub / 预填闭环） |

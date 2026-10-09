@@ -12,6 +12,7 @@ const events = [
   { id: 'order_hub.company_order.updated', label: 'Company Order Updated', entity: 'company_order', category: 'crud', clientBroadcast: true },
   { id: 'order_hub.company_order.deleted', label: 'Company Order Deleted', entity: 'company_order', category: 'crud', clientBroadcast: true },
   { id: 'order_hub.company_order.links.updated', label: 'Company Order Links Updated', entity: 'company_order', category: 'lifecycle', clientBroadcast: true },
+  { id: 'order_hub.company_order.collaborators.updated', label: 'Company Order Collaborators Updated', entity: 'company_order', category: 'lifecycle', clientBroadcast: true },
 ] as const
 
 export const eventsConfig = createModuleEvents({
