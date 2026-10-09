@@ -1,6 +1,6 @@
 # 2026-10-09 — company-order-document-slots（第七轮：字段级附件槽位）
 
-**Source doc:** `.ai/specs/2026-10-09-company-order-root.md` 的「第七轮」节（REQ-020…REQ-025）
+**Source doc:** `.ai/specs/2026-10-09-company-order-root.md` 的「第七轮」节（REQ-022…REQ-027）
 **Base:** `dev`（603dd77）
 **PR:** 待开
 
@@ -28,25 +28,25 @@ owner 2026-10-09 反馈：第五轮的「文件」区块太笼统——35 列的
 
 ## Implementation Plan
 
-### Phase 7.A：数据与 API（REQ-020…REQ-022、REQ-025）
+### Phase 7.A：数据与 API（REQ-022…REQ-024、REQ-027）
 
 - 7.A.1 迁移生成 + 审阅（新表/唯一键/索引）。
 - 7.A.2 校验器（登记输入、槽位枚举引用）+ 命令 `order_hub.orders.documents.attach`/`detach`（所有权、租户校验、事件、缓存失效、可撤销）。
 - 7.A.3 路由：`GET|POST|DELETE /api/order_hub/orders/documents`（可见性/所有权）。
 - 7.A.4 字节代理扩展（`order_hub:company_order_document` → 槽位行 → 根单 → 可见性）。
-- 7.A.5 集成 TEST-015（槽位全链路 + 三视角）；单测 TEST-017（校验）。
+- 7.A.5 集成 TEST-017（槽位全链路 + 三视角）；单测 TEST-019（校验）。
 
-### Phase 7.B：汇总与 UI（REQ-023、REQ-024）
+### Phase 7.B：汇总与 UI（REQ-025、REQ-026）
 
 - 7.B.1 `documents.bySlot`（本单文件 + 子单来源信号；既有布尔字段保留）。
 - 7.B.2 `OrderDocumentsSection.tsx` + hub 接线（槽位行：文件 chips/上传/预览/下载/删除；来源徽标；「其他文件」保留）。
 - 7.B.3 抽屉「单证与文件」按槽位渲染。
 - 7.B.4 i18n（槽位标签、区块文案，双语言扁平键）。
-- 7.B.5 集成 TEST-016（bySlot 与子单来源共存）。
+- 7.B.5 集成 TEST-018（bySlot 与子单来源共存）。
 
 ### Phase 7.C：收口
 
-- 7.C.1 浏览器实测（TEST-018：槽位上传/预览/下载/删除、抽屉、协作者只读）。
+- 7.C.1 浏览器实测（TEST-020：槽位上传/预览/下载/删除、抽屉、协作者只读）。
 - 7.C.2 宽门禁 + 文档（README/spec/状态板）+ PR。
 
 ## Risks
@@ -65,7 +65,7 @@ owner 2026-10-09 反馈：第五轮的「文件」区块太笼统——35 列的
 - [x] 7.A.2 Validators + commands — 9cd123e, 67040ca
 - [x] 7.A.3 Documents routes — d5ee172
 - [x] 7.A.4 Byte proxy extension — d5ee172
-- [x] 7.A.5 TEST-015 + TEST-017 — 484e424, 9cd123e
+- [x] 7.A.5 TEST-017 + TEST-019 — 484e424, 9cd123e
 
 ### Phase 7.B：汇总与 UI
 
@@ -73,16 +73,16 @@ owner 2026-10-09 反馈：第五轮的「文件」区块太笼统——35 列的
 - [x] 7.B.2 Documents section + hub wiring — d422155
 - [x] 7.B.3 Drawer by slot — d422155
 - [x] 7.B.4 i18n — fedc8c3
-- [x] 7.B.5 TEST-016 — 27781f8
+- [x] 7.B.5 TEST-018 — 27781f8
 
 ### Phase 7.C：收口
 
-- [x] 7.C.1 Browser smoke (TEST-018)（见下）
+- [x] 7.C.1 Browser smoke (TEST-020)（见下）
 - [ ] 7.C.2 Broad gate + docs + PR
 
 ## Evidence
 
-- **集成（ephemeral，`--keep --filter order_hub`）**：**42 passed**（含 TEST-015 六项：登记/列表元数据/重复 409/非本单附件 422/代理字节/删除/协作只读/无关组织；TEST-016 bySlot 本单文件 + 子单来源）。
+- **集成（ephemeral，`--keep --filter order_hub`）**：**42 passed**（含 TEST-017 六项：登记/列表元数据/重复 409/非本单附件 422/代理字节/删除/协作只读/无关组织；TEST-018 bySlot 本单文件 + 子单来源）。
 - **单测**：`data/__tests__/companyOrderDocuments.test.ts` 7 passed；`lib/__tests__/documentSlots.test.ts`；模块合计 7 suites · 43 tests；i18n 2 suites · 7 tests。
 - **浏览器实测（ephemeral，admin@acme.com + 协作账号）**：
   - hub「Document files」逐槽位 10 行：每行独立「Upload」；已上传行显示文件 chips（名/大小/时间 + Preview/Download/Delete，删除有确认对话框）。
@@ -90,4 +90,4 @@ owner 2026-10-09 反馈：第五轮的「文件」区块太笼统——35 列的
   - 「All fields」抽屉按槽位显示：`Customs declaration → On this order · customs-declaration.txt · 2026-10-09`、`KC invoice stamp → On this order · kc-stamp.txt`，其余槽位「Not uploaded on this order」。
   - 协作账号（`partner@slots-smoke.test`，仅 `order_hub.view`）：槽位文件可见、**0 个 Upload 按钮**、下载链接指向代理；字节 sha 与所有者一致（`0a5a31e4…`）；登记/删除 → **403**。
   - 「Other files」通用区保留。
-- **实现期修复**：无号草稿合同已盖章但无单号时，KC 槽位的合同来源被漏计（原实现只在有单号时入列）——改为按盖章存在计数（TEST-016 抓到，4d33cdf）。
+- **实现期修复**：无号草稿合同已盖章但无单号时，KC 槽位的合同来源被漏计（原实现只在有单号时入列）——改为按盖章存在计数（TEST-018 抓到，4d33cdf）。
