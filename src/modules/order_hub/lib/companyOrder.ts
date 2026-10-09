@@ -1,0 +1,360 @@
+import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
+import type { Kysely } from 'kysely'
+import { SalesOrder } from '@open-mercato/core/modules/sales/data/entities'
+import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
+import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
+import { CompanyOrder, CompanyOrderLink } from '../data/entities'
+import {
+  COMPANY_ORDER_LINK_KINDS,
+  type CompanyOrderLinkKind,
+} from '../data/validators'
+import { nextCompanyOrderNumber, type CompanyOrderScope } from './companyOrderNumber'
+
+export { COMPANY_ORDER_LINK_KINDS, type CompanyOrderLinkKind }
+export type { CompanyOrderScope }
+
+/**
+ * A resolved child document: the peer's display facts, frozen when it is attached.
+ *
+ * The counterparty comes from the peer's own snapshot column (`customer_snapshot.name` for a sales
+ * order, `supplier_snapshot.name` for a purchase order) — never recomputed here — so the label the
+ * hub shows is the one the owning module printed.
+ */
+export type CompanyOrderRef = {
+  kind: CompanyOrderLinkKind
+  id: string
+  number: string | null
+  counterparty: string | null
+  status: string | null
+  createdAt: string | null
+  currencyCode: string | null
+  totalGross: string | null
+}
+
+const PURCHASE_ORDER_TABLE = 'purchasing_purchase_orders'
+
+// `supplier_snapshot` is plaintext, so the purchase read is a scoped raw projection. The handle is
+// cast once because MikroORM types `getKysely()`'s DB generic as `never`
+// (lesson `.ai/lessons/kysely-bare-handle-types-tables-away.md`).
+type PurchaseRefReadTables = {
+  purchasing_purchase_orders: {
+    id: string
+    number: string | null
+    status: string | null
+    supplier_snapshot: unknown
+    created_at: unknown
+    currency_code: string | null
+    total: string | null
+    tenant_id: string
+    organization_id: string
+    deleted_at: Date | null
+  }
+}
+
+/** Stable map key for one `(kind, refId)` cell; the command derives duplicates through it. */
+export const linkKey = (kind: string, refId: string): string => `${kind}:${refId}`
+
+/** The frozen snapshot stored on a link row: status, date, and the money header when present. */
+export function freezeLinkSnapshot(ref: CompanyOrderRef): Record<string, unknown> {
+  return {
+    status: ref.status,
+    createdAt: ref.createdAt,
+    currencyCode: ref.currencyCode,
+    totalGross: ref.totalGross,
+  }
+}
+
+function snapshotName(snapshot: unknown): string | null {
+  if (!snapshot || typeof snapshot !== 'object' || !('name' in snapshot)) return null
+  const name: unknown = snapshot.name
+  return typeof name === 'string' && name.trim().length > 0 ? name : null
+}
+
+function toIso(value: unknown): string | null {
+  if (!value) return null
+  const date = value instanceof Date ? value : new Date(String(value))
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+function toNullableString(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  const text = String(value)
+  return text.length > 0 ? text : null
+}
+
+/**
+ * Resolves the requested `(kind, refId)` documents in the caller's scope.
+ *
+ * Purchase orders are read with a scoped raw query — `supplier_snapshot` is plaintext
+ * (`purchasing/encryption.ts` covers only the bank account), so no decryption is involved. Sales
+ * orders are read through `findWithDecryption` on purpose: the installed sales encryption map
+ * covers `customer_snapshot` as a whole field, so a raw read would freeze **ciphertext** as the
+ * counterparty. Do not "optimize" the sales read back to raw SQL.
+ *
+ * Ids outside the caller's scope are simply absent from the result; the caller turns a missing one
+ * into a 422 rather than storing a dangling link.
+ */
+export async function loadCompanyOrderRefs(
+  em: EntityManager,
+  scope: CompanyOrderScope,
+  entries: Array<{ kind: CompanyOrderLinkKind; refId: string }>,
+): Promise<Map<string, CompanyOrderRef>> {
+  const resolved = new Map<string, CompanyOrderRef>()
+
+  const purchaseIds = Array.from(
+    new Set(entries.filter((entry) => entry.kind === 'purchase_order').map((entry) => entry.refId)),
+  )
+  if (purchaseIds.length > 0) {
+    const rows = (await (em.fork().getKysely() as unknown as Kysely<PurchaseRefReadTables>)
+      .selectFrom(`${PURCHASE_ORDER_TABLE} as o`)
+      .select([
+        'o.id as id',
+        'o.number as number',
+        'o.status as status',
+        'o.supplier_snapshot as counterparty_snapshot',
+        'o.created_at as created_at',
+        'o.currency_code as currency_code',
+        'o.total as total',
+      ])
+      .where('o.id', 'in', purchaseIds)
+      .where('o.tenant_id', '=', scope.tenantId)
+      .where('o.organization_id', '=', scope.organizationId)
+      .where('o.deleted_at', 'is', null)
+      .execute()) as Array<{
+        id: string
+        number: string | null
+        status: string | null
+        counterparty_snapshot: unknown
+        created_at: unknown
+        currency_code: string | null
+        total: string | null
+      }>
+    for (const row of rows) {
+      resolved.set(linkKey('purchase_order', String(row.id)), {
+        kind: 'purchase_order',
+        id: String(row.id),
+        number: row.number ?? null,
+        counterparty: snapshotName(row.counterparty_snapshot),
+        status: row.status ?? null,
+        createdAt: toIso(row.created_at),
+        currencyCode: row.currency_code ?? null,
+        totalGross: toNullableString(row.total),
+      })
+    }
+  }
+
+  const salesEntries = entries.filter((entry) => entry.kind !== 'purchase_order')
+  const salesIds = Array.from(new Set(salesEntries.map((entry) => entry.refId)))
+  if (salesIds.length > 0) {
+    // Encrypted `customer_snapshot`: read through the decryption helper with the scope, never raw.
+    const orders = await findWithDecryption(
+      em.fork(),
+      SalesOrder,
+      {
+        id: { $in: salesIds },
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        deletedAt: null,
+      } as FilterQuery<SalesOrder>,
+      {},
+      { tenantId: scope.tenantId, organizationId: scope.organizationId },
+    )
+    const byId = new Map(orders.map((order) => [String(order.id), order]))
+    for (const entry of salesEntries) {
+      const order = byId.get(entry.refId)
+      if (!order) continue
+      resolved.set(linkKey(entry.kind, entry.refId), {
+        kind: entry.kind,
+        id: String(order.id),
+        number: order.orderNumber ?? null,
+        counterparty: snapshotName(order.customerSnapshot),
+        status: order.status ?? null,
+        createdAt: toIso(order.createdAt),
+        currencyCode: order.currencyCode ?? null,
+        totalGross: toNullableString(order.grandTotalGrossAmount),
+      })
+    }
+  }
+
+  return resolved
+}
+
+/**
+ * Reverse lookup: which company order holds each of these child documents.
+ *
+ * One scoped read of the links table; a ref that is not linked (or is outside the caller's
+ * organization) is simply absent. Used by the legacy-URL resolution and the backfill CLI.
+ */
+export async function resolveCompanyOrderIdsForRefs(
+  em: EntityManager,
+  scope: CompanyOrderScope,
+  kind: CompanyOrderLinkKind,
+  refIds: readonly string[],
+): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(refIds))
+  const result = new Map<string, string>()
+  if (unique.length === 0) return result
+  const links = await em.fork().find(
+    CompanyOrderLink,
+    {
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+      kind,
+      refId: { $in: unique },
+    } as FilterQuery<CompanyOrderLink>,
+  )
+  for (const link of links) {
+    const refId = String(link.refId)
+    if (!result.has(refId)) result.set(refId, String(link.companyOrder.id))
+  }
+  return result
+}
+
+/** The company order must exist in this scope and not be soft-deleted. */
+export async function loadCompanyOrder(
+  em: EntityManager,
+  scope: CompanyOrderScope,
+  id: string,
+): Promise<CompanyOrder> {
+  const order = await em.fork().findOne(CompanyOrder, {
+    id,
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+    deletedAt: null,
+  } as FilterQuery<CompanyOrder>)
+  if (!order) {
+    throw new CrudHttpError(422, { error: `Company order not found in this organization: ${id}` })
+  }
+  return order
+}
+
+/**
+ * Creates a draft company order for a resolved child, allocating the number under the scope's unique
+ * key. Persisted but not flushed — the caller owns the transaction (the command's atomic flush, or
+ * the CLI's per-row flush) so the number's read-your-write assumption holds.
+ */
+export async function createCompanyOrderFromRef(
+  em: EntityManager,
+  scope: CompanyOrderScope,
+  ref: CompanyOrderRef,
+  options: { orderDate?: Date; status?: string } = {},
+): Promise<CompanyOrder> {
+  const number = await nextCompanyOrderNumber(em, scope)
+  const order = em.create(CompanyOrder, {
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+    number,
+    title: null,
+    orderDate: options.orderDate ?? new Date(),
+    etaDate: null,
+    status: options.status ?? 'draft',
+    notes: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+  em.persist(order)
+  return order
+}
+
+/** Freezes a resolved child onto a new link row (persisted, not flushed). */
+export function persistCompanyOrderLink(
+  em: EntityManager,
+  scope: CompanyOrderScope,
+  companyOrder: CompanyOrder,
+  ref: CompanyOrderRef,
+): CompanyOrderLink {
+  const link = em.create(CompanyOrderLink, {
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+    companyOrder,
+    kind: ref.kind,
+    refId: ref.id,
+    refNumber: ref.number,
+    refCounterparty: ref.counterparty,
+    refSnapshot: freezeLinkSnapshot(ref),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+  em.persist(link)
+  return link
+}
+
+async function findExistingLink(
+  em: EntityManager,
+  scope: CompanyOrderScope,
+  kind: CompanyOrderLinkKind,
+  refId: string,
+): Promise<CompanyOrderLink | null> {
+  return em.fork().findOne(CompanyOrderLink, {
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+    kind,
+    refId,
+  } as FilterQuery<CompanyOrderLink>)
+}
+
+export type LinkChildResult = {
+  companyOrderId: string
+  /** A new link row was inserted by this call (false when the attach already existed). */
+  linked: boolean
+  /** A fresh company order was auto-created by this call (sales kinds with no target). */
+  created: boolean
+}
+
+/**
+ * Attaches a resolved child to a company order — idempotently.
+ *
+ * - With `companyOrderId`: the target must exist in scope and not be deleted (else 422); the link is
+ *   inserted only when missing (the unique key is the real guard).
+ * - Without: an existing link for the same `(kind, refId)` wins (idempotent). Otherwise a **sales**
+ *   child gets a fresh draft root (`CO-…`, order date = today) so every app-created sales order has
+ *   a root; a **purchase** child cannot invent one, so it is refused with 422
+ *   `company_order_required`.
+ *
+ * Persisted but not flushed: the caller owns the transaction.
+ */
+export async function linkChild(
+  em: EntityManager,
+  scope: CompanyOrderScope,
+  input: { kind: CompanyOrderLinkKind; refId: string; companyOrderId?: string },
+): Promise<LinkChildResult> {
+  const refs = await loadCompanyOrderRefs(em, scope, [{ kind: input.kind, refId: input.refId }])
+  const ref = refs.get(linkKey(input.kind, input.refId))
+  if (!ref) {
+    throw new CrudHttpError(422, {
+      error: `Child document not found in this organization: ${input.kind} ${input.refId}`,
+    })
+  }
+
+  if (input.companyOrderId) {
+    const companyOrder = await loadCompanyOrder(em, scope, input.companyOrderId)
+    const existing = await em.fork().findOne(CompanyOrderLink, {
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+      companyOrder,
+      kind: input.kind,
+      refId: input.refId,
+    } as FilterQuery<CompanyOrderLink>)
+    if (existing) {
+      return { companyOrderId: String(companyOrder.id), linked: false, created: false }
+    }
+    persistCompanyOrderLink(em, scope, companyOrder, ref)
+    return { companyOrderId: String(companyOrder.id), linked: true, created: false }
+  }
+
+  const existing = await findExistingLink(em, scope, input.kind, input.refId)
+  if (existing) {
+    return { companyOrderId: String(existing.companyOrder.id), linked: false, created: false }
+  }
+
+  if (input.kind === 'purchase_order') {
+    throw new CrudHttpError(422, {
+      error: 'A purchase order cannot create a company order; provide companyOrderId',
+      code: 'company_order_required',
+    })
+  }
+
+  const companyOrder = await createCompanyOrderFromRef(em, scope, ref)
+  persistCompanyOrderLink(em, scope, companyOrder, ref)
+  return { companyOrderId: String(companyOrder.id), linked: true, created: true }
+}

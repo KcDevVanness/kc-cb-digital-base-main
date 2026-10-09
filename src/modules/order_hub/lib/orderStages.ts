@@ -2,34 +2,37 @@ import type { EntityManager } from '@mikro-orm/postgresql'
 import type { Kysely } from 'kysely'
 
 /**
- * The stage projection behind the order workbench: for a batch of company orders, how far each one has
- * been filled in — 采购 / 发运 / 单证 / 收汇·退税.
+ * The stage projection behind the order workbench: for a batch of **company orders**, how far each
+ * one has been filled in — 采购 / 发运 / 单证 / 收汇·退税.
  *
- * One scoped read per stage, all batched over the requested ids: the workbench lists up to a few
- * hundred rows, and a per-row query would turn one screen into hundreds of round trips. Every query
- * carries the caller's tenant and organization set and skips soft-deleted rows, so an id from another
- * organization simply produces no stage row — the caller never sees it at all.
+ * A company order is a container: its stages are the union of its linked children's stages. The
+ * per-stage caliber is unchanged from the previous (sales-order-keyed) projection; only the key is —
+ * the union of linked children instead of one document's own relations. Every query carries the
+ * caller's tenant and organization set and skips soft-deleted rows, so an id from another
+ * organization produces no entry at all.
  *
- * Nothing here writes, and nothing decrypts: the counts and flags are what the workbench needs, while
- * the names beside them come from the modules that own them (the buyer name is encrypted, so it is
- * only ever read through the sales API).
- *
- * **Buyer names are deliberately absent**: see the module README.
+ * Nothing here writes. The columns are declared locally because a cross-module read is a projection,
+ * not an entity dependency; the handle is cast once because MikroORM types `getKysely()`'s DB generic
+ * as `never` (see lesson `.ai/lessons/kysely-bare-handle-types-tables-away.md`).
  */
-
-
-/**
- * The columns this projection reads, declared here because a cross-module read is a projection, not an
- * entity dependency: `order_hub` owns no table, and importing five modules' entities to count rows
- * would make it depend on their schemas rather than on the four columns it actually needs. The handle
- * is cast once because MikroORM types `getKysely()`'s DB generic as `never` (a bare call can address
- * no table at all) — see `.ai/lessons/kysely-bare-handle-types-tables-away.md`.
- */
-type OrderStageReadTables = {
-  sales_orders: { id: string; tenant_id: string; organization_id: string; deleted_at: Date | null }
+type CompanyOrderReadTables = {
+  order_hub_company_orders: {
+    id: string
+    tenant_id: string
+    organization_id: string
+    deleted_at: Date | null
+  }
+  order_hub_company_order_links: {
+    company_order_id: string
+    kind: string
+    ref_id: string
+    ref_number: string | null
+    ref_counterparty: string | null
+    tenant_id: string
+    organization_id: string
+  }
   purchasing_purchase_orders: {
     id: string
-    source_sales_order_id: string | null
     status: string | null
     tenant_id: string
     organization_id: string
@@ -49,6 +52,7 @@ type OrderStageReadTables = {
     organization_id: string
   }
   cross_border_export_documents: {
+    id: string
     shipment_id: string
     tenant_id: string
     organization_id: string
@@ -61,12 +65,14 @@ type OrderStageReadTables = {
     organization_id: string
   }
   trade_docs_documents: {
+    id: string
     contract_id: string | null
     tenant_id: string
     organization_id: string
     deleted_at: Date | null
   }
   trade_docs_invoices: {
+    id: string
     contract_id: string | null
     tenant_id: string
     organization_id: string
@@ -95,28 +101,31 @@ type OrderStageReadTables = {
   }
 }
 
-const readDb = (em: EntityManager): Kysely<OrderStageReadTables> =>
-  em.fork().getKysely() as unknown as Kysely<OrderStageReadTables>
+const readDb = (em: EntityManager): Kysely<CompanyOrderReadTables> =>
+  em.fork().getKysely() as unknown as Kysely<CompanyOrderReadTables>
 
 export type OrderStageSource = 'sales_order' | 'purchase_order'
 
-export type OrderStageItem = {
+export type CompanyOrderStageSummary = {
   id: string
+  /** Derived: `sales_order` when the container has any sales child, else `purchase_order`. */
   source: OrderStageSource
-  /** Sales rows only: the sales order's purchase orders that are not cancelled. */
+  /** Linked purchase children that are not cancelled. */
   procurementCount: number
-  /** Distinct shipments carrying goods from this order (sales allocations) or this purchase order. */
+  /** Distinct shipments carrying goods from any linked child. */
   shipmentCount: number
-  /**
-   * Sales rows: the order's own document links (`trade_docs_order_documents`) plus the export
-   * documents of its shipments. Purchase rows: the PI/CI and tax invoices of its contracts, plus the
-   * export documents of its shipments.
-   */
+  /** Distinct documents: sales children's own links + their contracts' PI/CI + child shipments' export docs. */
   documentCount: number
-  /** Sales rows: any linked purchase order has a received collection. Purchase rows: its own. */
+  /** Any linked purchase child has a received collection. */
   collected: boolean
-  /** Any of its shipments carries a tax-refund record. */
+  /** Any child shipment carries a tax-refund record. */
   refunded: boolean
+  /** First sales child's frozen counterparty, else the first purchase child's. */
+  counterparty: string | null
+  /** The linked children's frozen numbers. */
+  childNumbers: string[]
+  /** The distinct child kinds present. */
+  kinds: string[]
 }
 
 export type OrderStageScope = {
@@ -124,15 +133,15 @@ export type OrderStageScope = {
   organizationIds: readonly string[]
 }
 
+/**
+ * Legacy alias: the old workbench's merge helper (`lib/mergeOrders.ts`) still types its rows with
+ * this name until Phase 2 removes it. The shape is the same summary the new projection returns.
+ */
+export type OrderStageItem = CompanyOrderStageSummary
+
 const PURCHASE_ORDER_CANCELLED = 'cancelled'
 const COLLECTION_RECEIVED = 'received'
-
-type SalesOrderDbRow = { id: string }
-type PurchaseOrderDbRow = { id: string; source_sales_order_id: string | null; status: string | null }
-type AllocationDbRow = { shipment_id: string; order_id: string }
-type ContractOrderDbRow = { contract_id: string; order_id: string }
-type CountDbRow = { key: string; count: number | string }
-type StatusDbRow = { key: string; status: string | null }
+const SALES_KINDS = new Set(['internal_sales_order', 'external_sales_order'])
 
 function addToSet<K>(map: Map<K, Set<string>>, key: K, value: string): void {
   const existing = map.get(key)
@@ -143,270 +152,271 @@ function addToSet<K>(map: Map<K, Set<string>>, key: K, value: string): void {
   map.set(key, new Set([value]))
 }
 
-function toNumber(value: number | string | null | undefined): number {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
-  if (typeof value === 'string') {
-    const parsed = Number.parseInt(value, 10)
-    return Number.isFinite(parsed) ? parsed : 0
-  }
-  return 0
-}
-
 function distinctIds(values: readonly (string | null | undefined)[]): string[] {
   const out = new Set<string>()
   for (const value of values) if (value) out.add(value)
   return [...out]
 }
 
-export async function loadOrderStages(
+type LinkRow = {
+  company_order_id: string
+  kind: string
+  ref_id: string
+  ref_number: string | null
+  ref_counterparty: string | null
+}
+
+export async function loadCompanyOrderSummaries(
   em: EntityManager,
   scope: OrderStageScope,
-  ids: readonly string[],
-): Promise<OrderStageItem[]> {
-  if (ids.length === 0) return []
+  companyOrderIds: readonly string[],
+): Promise<CompanyOrderStageSummary[]> {
+  if (companyOrderIds.length === 0) return []
   if (!scope.tenantId || scope.organizationIds.length === 0) return []
-  const kysely = readDb(em)
+  const db = readDb(em)
+  const tenantId = scope.tenantId
   const organizationIds = [...scope.organizationIds]
 
-  // Which of the requested ids are sales orders, and which are purchase orders (either by their own
-  // id or as the source of a sales order we were asked about).
-  const salesRows = (await kysely
-    .selectFrom('sales_orders')
+  // Only company orders that exist in scope (and are not deleted) can have a summary entry.
+  const orderRows = (await db
+    .selectFrom('order_hub_company_orders')
     .select(['id'])
-    .where('id', 'in', [...ids])
-    .where('tenant_id', '=', scope.tenantId)
+    .where('id', 'in', [...companyOrderIds])
+    .where('tenant_id', '=', tenantId)
     .where('organization_id', 'in', organizationIds)
     .where('deleted_at', 'is', null)
-    .execute()) as SalesOrderDbRow[]
+    .execute()) as Array<{ id: string }>
+  const visibleIds = orderRows.map((row) => String(row.id))
+  if (visibleIds.length === 0) return []
 
-  const purchaseRows = (await kysely
-    .selectFrom('purchasing_purchase_orders')
-    .select(['id', 'source_sales_order_id', 'status'])
-    .where('tenant_id', '=', scope.tenantId)
+  const linkRows = (await db
+    .selectFrom('order_hub_company_order_links')
+    .select(['company_order_id', 'kind', 'ref_id', 'ref_number', 'ref_counterparty'])
+    .where('company_order_id', 'in', visibleIds)
+    .where('tenant_id', '=', tenantId)
     .where('organization_id', 'in', organizationIds)
-    .where('deleted_at', 'is', null)
-    // One id list matches either the purchase order itself or the sales order it was raised for.
-    .where((eb) => eb.or([eb('id', 'in', [...ids]), eb('source_sales_order_id', 'in', [...ids])]))
-    .execute()) as PurchaseOrderDbRow[]
+    .execute()) as LinkRow[]
 
-  const salesIds = salesRows.map((row) => String(row.id))
-  const purchaseOrderIds = purchaseRows.map((row) => String(row.id))
-  const allOrderIds = distinctIds([...salesIds, ...purchaseOrderIds])
-  if (allOrderIds.length === 0) return []
+  const salesIdToCompany = new Map<string, Set<string>>()
+  const purchaseIdToCompany = new Map<string, Set<string>>()
+  const childNumbers = new Map<string, string[]>()
+  const kinds = new Map<string, Set<string>>()
+  const counterparty = new Map<string, string>()
+  const hasSales = new Set<string>()
 
-  const purchaseOrdersBySalesOrder = new Map<string, PurchaseOrderDbRow[]>()
-  for (const row of purchaseRows) {
-    const source = row.source_sales_order_id ? String(row.source_sales_order_id) : null
-    if (!source) continue
-    const list = purchaseOrdersBySalesOrder.get(source) ?? []
-    list.push(row)
-    purchaseOrdersBySalesOrder.set(source, list)
+  for (const row of linkRows) {
+    const companyOrderId = String(row.company_order_id)
+    const refId = String(row.ref_id)
+    const isSales = SALES_KINDS.has(String(row.kind))
+    if (isSales) {
+      addToSet(salesIdToCompany, refId, companyOrderId)
+      hasSales.add(companyOrderId)
+    } else {
+      addToSet(purchaseIdToCompany, refId, companyOrderId)
+    }
+    if (row.ref_number) {
+      const list = childNumbers.get(companyOrderId) ?? []
+      list.push(String(row.ref_number))
+      childNumbers.set(companyOrderId, list)
+    }
+    addToSet(kinds, companyOrderId, String(row.kind))
+    if (!counterparty.has(companyOrderId) && row.ref_counterparty) {
+      counterparty.set(companyOrderId, String(row.ref_counterparty))
+    }
   }
 
-  const shipmentsBySalesOrder = new Map<string, Set<string>>()
-  const shipmentsByPurchaseOrder = new Map<string, Set<string>>()
-  const allShipmentIds = new Set<string>()
+  const salesIds = distinctIds([...salesIdToCompany.keys()])
+  const purchaseIds = distinctIds([...purchaseIdToCompany.keys()])
+  const allChildIds = distinctIds([...salesIds, ...purchaseIds])
 
+  const procurementCount = new Map<string, number>()
+  if (purchaseIds.length > 0) {
+    const rows = (await db
+      .selectFrom('purchasing_purchase_orders')
+      .select(['id', 'status'])
+      .where('id', 'in', purchaseIds)
+      .where('tenant_id', '=', tenantId)
+      .where('organization_id', 'in', organizationIds)
+      .where('deleted_at', 'is', null)
+      .execute()) as Array<{ id: string; status: string | null }>
+    for (const row of rows) {
+      if ((row.status ?? '') === PURCHASE_ORDER_CANCELLED) continue
+      for (const companyOrderId of purchaseIdToCompany.get(String(row.id)) ?? []) {
+        procurementCount.set(companyOrderId, (procurementCount.get(companyOrderId) ?? 0) + 1)
+      }
+    }
+  }
+
+  const shipmentsByCompany = new Map<string, Set<string>>()
   if (salesIds.length > 0) {
-    const rows = (await kysely
+    const rows = (await db
       .selectFrom('cross_border_shipment_sales_allocations as a')
       .innerJoin('cross_border_shipments as s', 's.id', 'a.shipment_id')
       .select(['a.shipment_id as shipment_id', 'a.sales_order_id as order_id'])
       .where('a.sales_order_id', 'in', salesIds)
-      .where('a.tenant_id', '=', scope.tenantId)
+      .where('a.tenant_id', '=', tenantId)
       .where('a.organization_id', 'in', organizationIds)
       .where('s.deleted_at', 'is', null)
-      .execute()) as AllocationDbRow[]
+      .execute()) as Array<{ shipment_id: string; order_id: string }>
     for (const row of rows) {
-      addToSet(shipmentsBySalesOrder, String(row.order_id), String(row.shipment_id))
-      allShipmentIds.add(String(row.shipment_id))
+      for (const companyOrderId of salesIdToCompany.get(String(row.order_id)) ?? []) {
+        addToSet(shipmentsByCompany, companyOrderId, String(row.shipment_id))
+      }
     }
   }
-
-  if (purchaseOrderIds.length > 0) {
-    const rows = (await kysely
+  if (purchaseIds.length > 0) {
+    const rows = (await db
       .selectFrom('cross_border_shipment_allocations as a')
       .innerJoin('cross_border_shipments as s', 's.id', 'a.shipment_id')
       .select(['a.shipment_id as shipment_id', 'a.purchase_order_id as order_id'])
-      .where('a.purchase_order_id', 'in', purchaseOrderIds)
-      .where('a.tenant_id', '=', scope.tenantId)
+      .where('a.purchase_order_id', 'in', purchaseIds)
+      .where('a.tenant_id', '=', tenantId)
       .where('a.organization_id', 'in', organizationIds)
       .where('s.deleted_at', 'is', null)
-      .execute()) as AllocationDbRow[]
+      .execute()) as Array<{ shipment_id: string; order_id: string }>
     for (const row of rows) {
-      addToSet(shipmentsByPurchaseOrder, String(row.order_id), String(row.shipment_id))
-      allShipmentIds.add(String(row.shipment_id))
+      for (const companyOrderId of purchaseIdToCompany.get(String(row.order_id)) ?? []) {
+        addToSet(shipmentsByCompany, companyOrderId, String(row.shipment_id))
+      }
     }
   }
-
-  // Contracts linked to any of the orders, then the documents and invoices those contracts carry.
-  const contractsByOrder = new Map<string, Set<string>>()
-  const contractRows = (await kysely
-    .selectFrom('trade_docs_contract_orders')
-    .select(['contract_id', 'order_id'])
-    .where('order_id', 'in', allOrderIds)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', 'in', organizationIds)
-    .execute()) as ContractOrderDbRow[]
-  for (const row of contractRows) {
-    addToSet(contractsByOrder, String(row.order_id), String(row.contract_id))
+  const allShipmentIds = distinctIds([...shipmentsByCompany.values()].flatMap((set) => [...set]))
+  const shipmentToCompany = new Map<string, Set<string>>()
+  for (const [companyOrderId, set] of shipmentsByCompany) {
+    for (const shipmentId of set) addToSet(shipmentToCompany, shipmentId, companyOrderId)
   }
 
-  const contractIds = distinctIds(contractRows.map((row) => String(row.contract_id)))
-  const documentsByContract = new Map<string, number>()
-  if (contractIds.length > 0) {
-    const documentCounts = (await kysely
-      .selectFrom('trade_docs_documents')
-      .select((builder) => [builder.ref('contract_id').as('key'), builder.fn.countAll().as('count')])
-      .where('contract_id', 'in', contractIds)
-      .where('tenant_id', '=', scope.tenantId)
-      .where('organization_id', 'in', organizationIds)
-      .where('deleted_at', 'is', null)
-      .groupBy('contract_id')
-      .execute()) as CountDbRow[]
-    const invoiceCounts = (await kysely
-      .selectFrom('trade_docs_invoices')
-      .select((builder) => [builder.ref('contract_id').as('key'), builder.fn.countAll().as('count')])
-      .where('contract_id', 'in', contractIds)
-      .where('tenant_id', '=', scope.tenantId)
-      .where('organization_id', 'in', organizationIds)
-      .where('deleted_at', 'is', null)
-      .groupBy('contract_id')
-      .execute()) as CountDbRow[]
-    for (const row of [...documentCounts, ...invoiceCounts]) {
-      const key = String(row.key)
-      documentsByContract.set(key, (documentsByContract.get(key) ?? 0) + toNumber(row.count))
-    }
-  }
+  const documentsByCompany = new Map<string, Set<string>>()
 
-  // Export documents belong to a shipment, not to a contract: they count for whichever order the
-  // shipment carries goods from.
-  const exportDocsByShipment = new Map<string, number>()
-  const shipmentIds = [...allShipmentIds]
-  if (shipmentIds.length > 0) {
-    const counts = (await kysely
-      .selectFrom('cross_border_export_documents')
-      .select((builder) => [builder.ref('shipment_id').as('key'), builder.fn.countAll().as('count')])
-      .where('shipment_id', 'in', shipmentIds)
-      .where('tenant_id', '=', scope.tenantId)
-      .where('organization_id', 'in', organizationIds)
-      .where('deleted_at', 'is', null)
-      .groupBy('shipment_id')
-      .execute()) as CountDbRow[]
-    for (const row of counts) exportDocsByShipment.set(String(row.key), toNumber(row.count))
-  }
-
-  // A sales order's documents are its **own** link rows. The contract-derived count below stays the
-  // purchase order's caliber: a purchase order has no documents block of its own (its invoices are
-  // the contract's), while a sales order can carry a document with no contract at all — which is
-  // exactly what the link table exists for.
-  const orderDocumentCounts = new Map<string, number>()
+  // Sales children's own document links.
   if (salesIds.length > 0) {
-    const counts = (await kysely
+    const rows = (await db
       .selectFrom('trade_docs_order_documents')
-      .select((builder) => [builder.ref('order_id').as('key'), builder.fn.countAll().as('count')])
+      .select(['order_id', 'document_id'])
       .where('order_id', 'in', salesIds)
-      .where('tenant_id', '=', scope.tenantId)
+      .where('tenant_id', '=', tenantId)
       .where('organization_id', 'in', organizationIds)
-      .groupBy('order_id')
-      .execute()) as CountDbRow[]
-    for (const row of counts) orderDocumentCounts.set(String(row.key), toNumber(row.count))
-  }
-
-  const collectionStatusByPurchaseOrder = new Map<string, string[]>()
-  if (purchaseOrderIds.length > 0) {
-    const rows = (await kysely
-      .selectFrom('export_finance_collections')
-      .select(['purchase_order_id as key', 'collection_status as status'])
-      .where('purchase_order_id', 'in', purchaseOrderIds)
-      .where('tenant_id', '=', scope.tenantId)
-      .where('organization_id', 'in', organizationIds)
-      .where('deleted_at', 'is', null)
-      .execute()) as StatusDbRow[]
+      .execute()) as Array<{ order_id: string; document_id: string }>
     for (const row of rows) {
-      const key = String(row.key)
-      const list = collectionStatusByPurchaseOrder.get(key) ?? []
-      list.push(String(row.status ?? ''))
-      collectionStatusByPurchaseOrder.set(key, list)
+      for (const companyOrderId of salesIdToCompany.get(String(row.order_id)) ?? []) {
+        addToSet(documentsByCompany, companyOrderId, String(row.document_id))
+      }
     }
   }
 
-  const refundedShipments = new Set<string>()
-  if (shipmentIds.length > 0) {
-    const rows = (await kysely
-      .selectFrom('export_finance_refunds')
-      .select(['shipment_id as key'])
-      .where('shipment_id', 'in', shipmentIds)
-      .where('tenant_id', '=', scope.tenantId)
+  // Contracts of the children, then the PI/CI those contracts carry.
+  const contractsByCompany = new Map<string, Set<string>>()
+  if (allChildIds.length > 0) {
+    const rows = (await db
+      .selectFrom('trade_docs_contract_orders')
+      .select(['contract_id', 'order_id'])
+      .where('order_id', 'in', allChildIds)
+      .where('tenant_id', '=', tenantId)
+      .where('organization_id', 'in', organizationIds)
+      .execute()) as Array<{ contract_id: string; order_id: string }>
+    for (const row of rows) {
+      const owners = new Set([
+        ...(salesIdToCompany.get(String(row.order_id)) ?? []),
+        ...(purchaseIdToCompany.get(String(row.order_id)) ?? []),
+      ])
+      for (const companyOrderId of owners) addToSet(contractsByCompany, companyOrderId, String(row.contract_id))
+    }
+  }
+  const contractIds = distinctIds([...contractsByCompany.values()].flatMap((set) => [...set]))
+  if (contractIds.length > 0) {
+    const [documentRows, invoiceRows] = await Promise.all([
+      db
+        .selectFrom('trade_docs_documents')
+        .select(['id', 'contract_id'])
+        .where('contract_id', 'in', contractIds)
+        .where('tenant_id', '=', tenantId)
+        .where('organization_id', 'in', organizationIds)
+        .where('deleted_at', 'is', null)
+        .execute() as Promise<Array<{ id: string; contract_id: string | null }>>,
+      db
+        .selectFrom('trade_docs_invoices')
+        .select(['id', 'contract_id'])
+        .where('contract_id', 'in', contractIds)
+        .where('tenant_id', '=', tenantId)
+        .where('organization_id', 'in', organizationIds)
+        .where('deleted_at', 'is', null)
+        .execute() as Promise<Array<{ id: string; contract_id: string | null }>>,
+    ])
+    const contractToCompany = new Map<string, Set<string>>()
+    for (const [companyOrderId, set] of contractsByCompany) {
+      for (const contractId of set) addToSet(contractToCompany, contractId, companyOrderId)
+    }
+    for (const row of [...documentRows, ...invoiceRows]) {
+      const contractId = row.contract_id ? String(row.contract_id) : null
+      if (!contractId) continue
+      for (const companyOrderId of contractToCompany.get(contractId) ?? []) {
+        addToSet(documentsByCompany, companyOrderId, String(row.id))
+      }
+    }
+  }
+
+  // Export documents belong to a shipment: they count for the company orders that shipment serves.
+  if (allShipmentIds.length > 0) {
+    const rows = (await db
+      .selectFrom('cross_border_export_documents')
+      .select(['id', 'shipment_id'])
+      .where('shipment_id', 'in', allShipmentIds)
+      .where('tenant_id', '=', tenantId)
       .where('organization_id', 'in', organizationIds)
       .where('deleted_at', 'is', null)
-      .execute()) as Array<{ key: string }>
-    for (const row of rows) refundedShipments.add(String(row.key))
-  }
-
-  /** Purchase orders: the documents their contracts carry, plus their shipments' export documents. */
-  const contractDocumentCountFor = (orderId: string, shipmentIdsOfOrder: Iterable<string>): number => {
-    let total = 0
-    for (const contractId of contractsByOrder.get(orderId) ?? []) {
-      total += documentsByContract.get(contractId) ?? 0
+      .execute()) as Array<{ id: string; shipment_id: string }>
+    for (const row of rows) {
+      for (const companyOrderId of shipmentToCompany.get(String(row.shipment_id)) ?? []) {
+        addToSet(documentsByCompany, companyOrderId, String(row.id))
+      }
     }
-    for (const shipmentId of shipmentIdsOfOrder) {
-      total += exportDocsByShipment.get(shipmentId) ?? 0
+  }
+
+  const collectedCompanies = new Set<string>()
+  if (purchaseIds.length > 0) {
+    const rows = (await db
+      .selectFrom('export_finance_collections')
+      .select(['purchase_order_id', 'collection_status'])
+      .where('purchase_order_id', 'in', purchaseIds)
+      .where('tenant_id', '=', tenantId)
+      .where('organization_id', 'in', organizationIds)
+      .where('deleted_at', 'is', null)
+      .execute()) as Array<{ purchase_order_id: string; collection_status: string | null }>
+    for (const row of rows) {
+      if ((row.collection_status ?? '') !== COLLECTION_RECEIVED) continue
+      for (const companyOrderId of purchaseIdToCompany.get(String(row.purchase_order_id)) ?? []) {
+        collectedCompanies.add(companyOrderId)
+      }
     }
-    return total
   }
 
-  /** Sales orders: their own link rows, plus their shipments' export documents. */
-  const linkedDocumentCountFor = (orderId: string, shipmentIdsOfOrder: Iterable<string>): number => {
-    let total = orderDocumentCounts.get(orderId) ?? 0
-    for (const shipmentId of shipmentIdsOfOrder) {
-      total += exportDocsByShipment.get(shipmentId) ?? 0
+  const refundedCompanies = new Set<string>()
+  if (allShipmentIds.length > 0) {
+    const rows = (await db
+      .selectFrom('export_finance_refunds')
+      .select(['shipment_id'])
+      .where('shipment_id', 'in', allShipmentIds)
+      .where('tenant_id', '=', tenantId)
+      .where('organization_id', 'in', organizationIds)
+      .where('deleted_at', 'is', null)
+      .execute()) as Array<{ shipment_id: string }>
+    for (const row of rows) {
+      for (const companyOrderId of shipmentToCompany.get(String(row.shipment_id)) ?? []) {
+        refundedCompanies.add(companyOrderId)
+      }
     }
-    return total
   }
 
-  const collectedFor = (purchaseOrders: PurchaseOrderDbRow[]): boolean =>
-    purchaseOrders.some((row) =>
-      (collectionStatusByPurchaseOrder.get(String(row.id)) ?? []).includes(COLLECTION_RECEIVED),
-    )
-
-  const refundedFor = (shipmentIdsOfOrder: Iterable<string>): boolean => {
-    for (const shipmentId of shipmentIdsOfOrder) if (refundedShipments.has(shipmentId)) return true
-    return false
-  }
-
-  const items: OrderStageItem[] = []
-
-  for (const salesOrderId of salesIds) {
-    const purchaseOrders = purchaseOrdersBySalesOrder.get(salesOrderId) ?? []
-    const shipments = shipmentsBySalesOrder.get(salesOrderId) ?? new Set<string>()
-    items.push({
-      id: salesOrderId,
-      source: 'sales_order',
-      procurementCount: purchaseOrders.filter((row) => row.status !== PURCHASE_ORDER_CANCELLED).length,
-      shipmentCount: shipments.size,
-      documentCount: linkedDocumentCountFor(salesOrderId, shipments),
-      collected: collectedFor(purchaseOrders),
-      refunded: refundedFor(shipments),
-    })
-  }
-
-  for (const row of purchaseRows) {
-    const purchaseOrderId = String(row.id)
-    // A purchase order that was requested by id is reported as itself, even when it also matched as
-    // some sales order's source: the two entries describe different rows of the workbench.
-    if (!ids.includes(purchaseOrderId)) continue
-    const shipments = shipmentsByPurchaseOrder.get(purchaseOrderId) ?? new Set<string>()
-    items.push({
-      id: purchaseOrderId,
-      source: 'purchase_order',
-      procurementCount: 0,
-      shipmentCount: shipments.size,
-      documentCount: contractDocumentCountFor(purchaseOrderId, shipments),
-      collected: collectedFor([row]),
-      refunded: refundedFor(shipments),
-    })
-  }
-
-  return items
+  return visibleIds.map((id) => ({
+    id,
+    source: hasSales.has(id) ? 'sales_order' : 'purchase_order',
+    procurementCount: procurementCount.get(id) ?? 0,
+    shipmentCount: shipmentsByCompany.get(id)?.size ?? 0,
+    documentCount: documentsByCompany.get(id)?.size ?? 0,
+    collected: collectedCompanies.has(id),
+    refunded: refundedCompanies.has(id),
+    counterparty: counterparty.get(id) ?? null,
+    childNumbers: childNumbers.get(id) ?? [],
+    kinds: [...(kinds.get(id) ?? new Set<string>())],
+  }))
 }
