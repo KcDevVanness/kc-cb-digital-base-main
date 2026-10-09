@@ -1,6 +1,7 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
 import type { Kysely } from 'kysely'
 import { loadCollaboratorCompanyOrderIds } from './collaborators'
+import { loadLinkedCurrencyAmounts } from './companyOrderFields'
 
 /** `$in []` is not a disjunct the planners accept; "nothing" is one impossible id. */
 const NO_MATCH_ID = '00000000-0000-0000-0000-000000000000'
@@ -135,6 +136,15 @@ export type CompanyOrderStageSummary = {
   childNumbers: string[]
   /** The distinct child kinds present. */
   kinds: string[]
+  /** The money side of the deal, grouped by currency (never summed across currencies). */
+  amounts: CompanyOrderAmountSummary[]
+}
+
+/** The workbench's amount cell only needs the sales/purchase totals; the fields projection reads the rest. */
+export type CompanyOrderAmountSummary = {
+  currencyCode: string
+  sales: string
+  purchase: string
 }
 
 export type OrderStageScope = {
@@ -437,6 +447,13 @@ export async function loadCompanyOrderSummaries(
     }
   }
 
+  const amountsByCompany = await loadLinkedCurrencyAmounts(
+    em,
+    { tenantId, organizationIds: childOrganizationIds },
+    salesIdToCompany,
+    purchaseIdToCompany,
+  )
+
   return visibleIds.map((id) => ({
     id,
     source: hasSales.has(id) ? 'sales_order' : 'purchase_order',
@@ -448,5 +465,10 @@ export async function loadCompanyOrderSummaries(
     counterparty: counterparty.get(id) ?? null,
     childNumbers: childNumbers.get(id) ?? [],
     kinds: [...(kinds.get(id) ?? new Set<string>())],
+    amounts: (amountsByCompany.get(id) ?? []).map((amount) => ({
+      currencyCode: amount.currencyCode,
+      sales: amount.sales,
+      purchase: amount.purchase,
+    })),
   }))
 }
