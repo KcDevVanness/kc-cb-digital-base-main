@@ -99,6 +99,18 @@ const nextConfig: NextConfig & { agentRules?: boolean } = {
         ],
       },
       {
+        // The order_hub file proxy mirrors the attachment file route's sandbox CSP for the same
+        // reason: an inlined attachment must never run with the app's own script policy. Without
+        // this entry the `/:path*` rule above replaces the route's header (order_hub REQ-018).
+        source: '/api/order_hub/orders/attachments/:id',
+        headers: [
+          { key: 'Content-Security-Policy', value: "default-src 'none'; sandbox" },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+        ],
+      },
+      {
         // Marker header consumed by the custom-domain DNS reverse-resolve check
         // (see SPEC 2026-04-08-portal-custom-domain-routing). Lets the verifier
         // tell "request reached our origin" from "request was answered by an

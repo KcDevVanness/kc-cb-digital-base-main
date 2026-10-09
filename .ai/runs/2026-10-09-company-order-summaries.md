@@ -84,6 +84,18 @@ owner 2026-10-09 确认实作三件（第 4 项「订单描述长文本」不做
 
 ### Phase 5.D: 收口
 
-- [ ] 4.1 Browser smoke
-- [ ] 4.2 Docs + broad gate
+- [x] 4.1 Browser smoke（见下）
+- [x] 4.2 Docs + broad gate
 - [ ] 4.3 PR draft → ready
+
+## Evidence
+
+- **宽门禁（2026-10-09，CSP 修复之前）**：`yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test && yarn build` → exit 0；lint 0 errors / 11 既有 warnings；`ds:check` 1088 files passed；jest **82 suites · 661 tests passed**；build compiled successfully。
+- **集成（ephemeral）**：`company-order-fields` 3 passed、`company-order-attachment-access` 4 passed、`--filter order_hub` 35 passed。
+- **浏览器实测（ephemeral :5001，admin@acme.com / secret + 协作账号）**：
+  - 工作台列含 **Amount**：`CO-2026-0002` 行显示 `CN¥36.00 · $999.98`（按币种）；四阶段列 `1 / 1 / 2 / Collected · Refunded`。
+  - 「All fields」抽屉：订单组（编号/标题/日期/状态/子单号 PO-2026-0001, SO-DEMO-2001）；金额与日期组（CNY 销售 0.00 / 采购 36.00 / 定金 10.00 / 已付 10.00 / 应付 26.00；USD 销售 999.98；下单/预计交货/出运）；单证与文件组（报关单 · 1 · CD-MV0M1RC9 · Filed、电放提单 · 1、水单/发票附件 0）；财务组（收汇 Received · 涉外收入证明 yes、退税 Applied CN¥130.00、KC 盖章 No）。
+  - 建单表单「Link existing purchase orders」输入 `Fields supplier` → 选项同时列出无号草稿（标签为 id 前缀）与 `PO-2026-0001`；点选无号草稿成为已选 chip（**AC-019**）。
+  - 协作账号（Fields Branch Smoke 的 `partner@fields-smoke.test`，仅 `order_hub.view`）打开 owner 根单：hub 只读（只有「Update status and notes」），**Files 区块列出 `round5-note.txt` 43 B + Preview/Download，无上传入口**（**AC-018** UI 侧）。
+  - 字节级：admin（installed 路由 / hub 代理）与协作账号（hub 代理 `?download=1`）三份字节 sha256 前 16 位一致 `9494500a93ef518f`；`content-disposition`/`content-type`/`cache-control` 与 installed 一致；协作账号走 installed 文件路由被拒（404，无 `attachments.manage`）。
+- **实测发现并修复（CSP）**：`next.config.ts` 的全局 CSP（`/:path*`）会**覆盖**路由自写的 `Content-Security-Policy`——installed 文件路由有一条豁免、hub 代理路由没有，代理响应因此在浏览器里带全站 CSP 而非 `default-src 'none'; sandbox`（内联附件可能与 app 同源执行）。已按上游同样方式补豁免 `source: '/api/order_hub/orders/attachments/:id'`，重启 ephemeral 后复核响应头通过。
