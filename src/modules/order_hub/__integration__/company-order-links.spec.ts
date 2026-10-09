@@ -365,4 +365,43 @@ test.describe.serial('order_hub — company order links', () => {
     const branchView = await listLinks(`refId=${encodeURIComponent(purchaseOrderId)}`, branchToken, branch)
     expect(branchView, 'another organization never sees the link').toHaveLength(0)
   })
+
+  test('summaries count the child union and prefer the sales counterparty', async () => {
+    const attach = await scoped('POST', LINK_CHILD_URL, {
+      kind: 'internal_sales_order',
+      refId: salesOrderId,
+      companyOrderId,
+    })
+    expect(attach.status(), await attach.text()).toBe(200)
+
+    const salesHead = await scoped('GET', `/api/sales/orders?id=${encodeURIComponent(salesOrderId)}`)
+    const salesItem = (await readJsonSafe<ListPayload<{ orderNumber?: string | null }>>(salesHead))?.items?.[0]
+    const salesNumber = String(salesItem?.orderNumber ?? '')
+    expect(salesNumber, 'the sales fixture carries an engine number').toBeTruthy()
+
+    const response = await scoped('GET', `/api/order_hub/stages?ids=${encodeURIComponent(companyOrderId)}`)
+    expect(response.status(), await response.text()).toBe(200)
+    const item = (await readJsonSafe<{ items?: Array<Record<string, unknown>> }>(response))?.items?.[0]
+    expect(item, 'the summary answers for the company order').toBeTruthy()
+    expect(Number(item?.procurementCount), 'linked purchase children are counted').toBeGreaterThanOrEqual(1)
+    // The purchase children were linked before this sales child: the row's counterparty must still
+    // be the sales child's buyer, not whichever link row happens to come first.
+    expect(String(item?.counterparty), 'a sales child wins the counterparty over purchase children').toBe(
+      `Company links buyer ${stamp}`,
+    )
+    expect((item?.kinds as string[] | undefined) ?? []).toEqual(
+      expect.arrayContaining(['internal_sales_order', 'purchase_order']),
+    )
+    expect((item?.childNumbers as string[] | undefined) ?? []).toContain(salesNumber)
+  })
+
+  test('summaries hide unseen ids and refuse an oversized batch', async () => {
+    const unknown = await scoped('GET', '/api/order_hub/stages?ids=0f8fad5b-d9cb-469f-a165-70867728950e')
+    expect(unknown.status(), await unknown.text()).toBe(200)
+    expect((await readJsonSafe<{ items?: unknown[] }>(unknown))?.items ?? []).toEqual([])
+
+    const ids = Array.from({ length: 201 }, () => '0f8fad5b-d9cb-469f-a165-70867728950e').join(',')
+    const tooMany = await scoped('GET', `/api/order_hub/stages?ids=${ids}`)
+    expect(tooMany.status()).toBe(400)
+  })
 })

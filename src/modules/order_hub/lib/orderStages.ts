@@ -195,7 +195,11 @@ export async function loadCompanyOrderSummaries(
   const purchaseIdToCompany = new Map<string, Set<string>>()
   const childNumbers = new Map<string, string[]>()
   const kinds = new Map<string, Set<string>>()
-  const counterparty = new Map<string, string>()
+  // The row's counterparty prefers a sales child (the customer the deal is for) over a purchase
+  // child (the supplier), independent of the order the links were created in — so the two kinds
+  // are collected separately and merged below.
+  const salesCounterparty = new Map<string, string>()
+  const purchaseCounterparty = new Map<string, string>()
   const hasSales = new Set<string>()
 
   for (const row of linkRows) {
@@ -214,10 +218,14 @@ export async function loadCompanyOrderSummaries(
       childNumbers.set(companyOrderId, list)
     }
     addToSet(kinds, companyOrderId, String(row.kind))
-    if (!counterparty.has(companyOrderId) && row.ref_counterparty) {
-      counterparty.set(companyOrderId, String(row.ref_counterparty))
+    if (row.ref_counterparty) {
+      const target = isSales ? salesCounterparty : purchaseCounterparty
+      if (!target.has(companyOrderId)) target.set(companyOrderId, String(row.ref_counterparty))
     }
   }
+
+  const counterparty = new Map<string, string>(purchaseCounterparty)
+  for (const [companyOrderId, name] of salesCounterparty) counterparty.set(companyOrderId, name)
 
   const salesIds = distinctIds([...salesIdToCompany.keys()])
   const purchaseIds = distinctIds([...purchaseIdToCompany.keys()])
