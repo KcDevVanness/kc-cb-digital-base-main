@@ -1,5 +1,6 @@
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import type { Kysely } from 'kysely'
+import { randomUUID } from 'node:crypto'
 import { SalesOrder } from '@open-mercato/core/modules/sales/data/entities'
 import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
@@ -241,6 +242,9 @@ export async function createCompanyOrderFromRef(
 ): Promise<CompanyOrder> {
   const number = await nextCompanyOrderNumber(em, scope)
   const order = em.create(CompanyOrder, {
+    // Assigned here (not left to the DB default) so the id is readable before the caller flushes —
+    // `link-child` returns it in its response from inside the same transaction.
+    id: randomUUID(),
     tenantId: scope.tenantId,
     organizationId: scope.organizationId,
     number,
