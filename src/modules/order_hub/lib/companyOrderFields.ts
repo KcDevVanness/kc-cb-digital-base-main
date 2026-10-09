@@ -644,6 +644,7 @@ export async function loadCompanyOrderFields(
   const allContractIds = [...contractIds]
 
   let kcStamp = false
+  let stampedContractCount = 0
   const stampedContractNumbers: string[] = []
   if (allContractIds.length > 0) {
     const contractRows = (await db
@@ -657,6 +658,9 @@ export async function loadCompanyOrderFields(
     for (const row of contractRows) {
       if (!row.attachment_id) continue
       kcStamp = true
+      // A stamped draft contract has no number yet; the slot's source is the stamp itself, so the
+      // count is what matters and the number is only a label when one exists.
+      stampedContractCount += 1
       if (row.number) stampedContractNumbers.push(String(row.number))
     }
   }
@@ -867,11 +871,11 @@ export async function loadCompanyOrderFields(
     const slot = EXPORT_DOC_SLOT_BY_TYPE[group.docType]
     if (slot) addSlotSource(slot, { source: 'shipment', label: group.latestNumber ?? '', count: group.count })
   }
-  if (stampedContractNumbers.length > 0) {
+  if (stampedContractCount > 0) {
     addSlotSource('kc_invoice_stamp', {
       source: 'contract',
       label: [...new Set(stampedContractNumbers)].sort(compareStrings).join(', '),
-      count: stampedContractNumbers.length,
+      count: stampedContractCount,
     })
   }
   if (foreignIncomeCertificateCount > 0) {

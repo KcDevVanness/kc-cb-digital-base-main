@@ -46,6 +46,30 @@ const fieldsResponseSchema = z
     documents: z.object({
       byKind: z.array(z.object({ kind: z.string(), numbers: z.array(z.string()) })),
       invoiceNumbers: z.array(z.string()),
+      /**
+       * REQ-023: the same document set seen per named slot — the files uploaded on the order itself
+       * plus the child-document sources that satisfy the other slots. One entry per slot code, in
+       * the enum's order.
+       */
+      bySlot: z.array(
+        z.object({
+          slot: z.string(),
+          files: z.array(
+            z.object({
+              attachmentId: z.string(),
+              fileName: z.string(),
+              createdAt: z.string().nullable(),
+            }),
+          ),
+          childSources: z.array(
+            z.object({
+              source: z.enum(['contract', 'shipment', 'collection', 'purchasing']),
+              label: z.string(),
+              count: z.number().int().nonnegative().optional(),
+            }),
+          ),
+        }),
+      ),
     }),
     exportDocuments: z.array(
       z.object({
