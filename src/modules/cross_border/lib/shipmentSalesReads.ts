@@ -278,3 +278,31 @@ export async function loadShipmentIdsForSalesOrder(
     .execute()) as Array<{ shipment_id: string }>
   return Array.from(new Set(rows.map((row) => String(row.shipment_id))))
 }
+
+/**
+ * The shipments that carry goods from one purchase order, for the purchase order page's 关联发运单
+ * block and the shipment list's `?purchaseOrderId=` filter.
+ *
+ * Same shape as `loadShipmentIdsForSalesOrder` beside it, on the purchase-allocation table: a
+ * same-module read returning ids only, which the caller turns into an `$in` filter — an empty set
+ * matches nothing, never everything. The scope is the **read** scope (the visible organization set),
+ * and a soft-deleted shipment never counts even though its allocation row is replaced rather than
+ * soft-deleted.
+ */
+export async function loadShipmentIdsForPurchaseOrder(
+  em: EntityManager,
+  scope: ContractReadScope,
+  purchaseOrderId: string,
+): Promise<string[]> {
+  if (!scope.tenantId || scope.organizationIds.length === 0) return []
+  const rows = (await (em.fork().getKysely<any>())
+    .selectFrom('cross_border_shipment_allocations as a')
+    .innerJoin('cross_border_shipments as s', 's.id', 'a.shipment_id')
+    .select(['a.shipment_id as shipment_id'])
+    .where('a.purchase_order_id', '=', purchaseOrderId)
+    .where('a.tenant_id', '=', scope.tenantId)
+    .where('a.organization_id', 'in', scope.organizationIds)
+    .where('s.deleted_at', 'is', null)
+    .execute()) as Array<{ shipment_id: string }>
+  return Array.from(new Set(rows.map((row) => String(row.shipment_id))))
+}

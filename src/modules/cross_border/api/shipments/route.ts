@@ -6,7 +6,7 @@ import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/
 import { CrossBorderShipment } from '../../data/entities'
 import { shipmentCreateSchema, shipmentListSchema, shipmentUpdateSchema, SHIPMENT_STATUSES, SHIPMENT_MILESTONES } from '../../data/validators'
 import { loadShipmentIdsForContract } from '../../lib/contractReads'
-import { loadShipmentIdsForSalesOrder } from '../../lib/shipmentSalesReads'
+import { loadShipmentIdsForPurchaseOrder, loadShipmentIdsForSalesOrder } from '../../lib/shipmentSalesReads'
 import { linkIdFilter } from '../../lib/linkIdFilter'
 import { createCrossBorderCrudOpenApi, crossBorderCreatedSchema, crossBorderOkSchema } from '../openapi'
 
@@ -115,6 +115,17 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
           em,
           { tenantId: ctx.auth?.tenantId ?? '', organizationIds: ctx.organizationIds ?? [] },
           query.salesOrderId,
+        )
+        filters.id = linkIdFilter(linked)
+      }
+      if (query.purchaseOrderId) {
+        // The purchase side of the filter above, on the purchase-allocation join table — the
+        // purchase order page's 关联发运单 block and its 查看全部 link read through it.
+        const em = ctx.container.resolve('em') as EntityManager
+        const linked = await loadShipmentIdsForPurchaseOrder(
+          em,
+          { tenantId: ctx.auth?.tenantId ?? '', organizationIds: ctx.organizationIds ?? [] },
+          query.purchaseOrderId,
         )
         filters.id = linkIdFilter(linked)
       }

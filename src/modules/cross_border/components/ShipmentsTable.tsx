@@ -94,10 +94,11 @@ export default function ShipmentsTable() {
   const [status, setStatus] = React.useState<ShipmentStatus | typeof ALL_STATUSES>(ALL_STATUSES)
   const [page, setPage] = React.useState(1)
   const searchParams = useSearchParams()
-  // Arriving from an order's hub (`?salesOrderId=`) narrows the list to the shipments that carry
-  // goods from that order; the row projection carries no source-order number, so the banner names
-  // the filter without inventing a second read.
+  // Arriving from an order's hub (`?salesOrderId=`) or a purchase order's page (`?purchaseOrderId=`)
+  // narrows the list to the shipments that carry goods from that order; the row projection carries no
+  // source-order number, so the banner names the filter without inventing a second read.
   const salesOrderId = searchParams.get('salesOrderId')?.trim() ?? ''
+  const purchaseOrderId = searchParams.get('purchaseOrderId')?.trim() ?? ''
 
   // The shipments route orders by newest first itself; it exposes no sort parameters, so the
   // list asks for one page of the server's order rather than inventing a client-side one.
@@ -110,8 +111,9 @@ export default function ShipmentsTable() {
     if (term) params.set('search', term)
     if (status !== ALL_STATUSES) params.set('status', status)
     if (salesOrderId) params.set('salesOrderId', salesOrderId)
+    if (purchaseOrderId) params.set('purchaseOrderId', purchaseOrderId)
     return params
-  }, [page, salesOrderId, search, status])
+  }, [page, purchaseOrderId, salesOrderId, search, status])
 
   const queryKey = React.useMemo(
     () => [QUERY_KEY_ROOT, queryParams.toString(), scopeVersion],
@@ -149,7 +151,7 @@ export default function ShipmentsTable() {
 
   return (
     <>
-      {salesOrderId ? (
+      {salesOrderId || purchaseOrderId ? (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
           <span className="text-muted-foreground">
             {t('cross_border.shipments.list.sourceOrderFilterUnknown')}
