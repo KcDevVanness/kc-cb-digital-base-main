@@ -64,11 +64,11 @@ owner 2026-10-09 确认实作三件（第 4 项「订单描述长文本」不做
 
 ### Phase 5.A: 35 列汇总（REQ-017）
 
-- [ ] 1.1 Projection
-- [ ] 1.2 Fields route
-- [ ] 1.3 `amounts` on stages + workbench column
-- [ ] 1.4 Hub full-fields rendering
-- [ ] 1.5 TEST-011 + unit tests
+- [x] 1.1 Projection — 0f89ddf
+- [x] 1.2 Fields route — 0f89ddf
+- [x] 1.3 `amounts` on stages + workbench column — 0f89ddf / a94aa74
+- [x] 1.4 Hub full-fields rendering — a94aa74
+- [x] 1.5 TEST-011 + unit tests — df5ed71 / 6d18605
 
 ### Phase 5.B: 附件协作可见（REQ-018）
 
@@ -79,8 +79,8 @@ owner 2026-10-09 确认实作三件（第 4 项「订单描述长文本」不做
 
 ### Phase 5.C: 草稿单据可选（REQ-019）
 
-- [ ] 3.1 Loader merge + fallback filter
-- [ ] 3.2 TEST-013
+- [x] 3.1 Loader merge + fallback filter — 6d18605
+- [x] 3.2 TEST-013 — 6d18605
 
 ### Phase 5.D: 收口
 
