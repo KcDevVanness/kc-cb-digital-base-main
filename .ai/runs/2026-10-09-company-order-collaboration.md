@@ -67,11 +67,11 @@ owner 给出原飞书多维表格 35 列字段清单并定下三条口径（2026
 
 ### Phase 4.A: 起手字段 + 建单即关联 + 子单预填默认（REQ-011/012/013）
 
-- [ ] 1.1 Entities, validators, migration
-- [ ] 1.2 Commands (snapshots + links-at-create + clear-to-null)
-- [ ] 1.3 Create/edit form pickers + link section
-- [ ] 1.4 Child-form default prefill
-- [ ] 1.5 TEST-007 + unit helpers
+- [x] 1.1 Entities, validators, migration — 1b9442f（`Migration20261009044102_order_hub.ts`：仅 4 列追加，snapshot 同步；未应用）
+- [x] 1.2 Commands (snapshots + links-at-create + clear-to-null) — 1b9442f（主体解析+冻结、`links` 同事务落关联；422 码 `customer_party_not_found`/`supplier_not_found`/`link_not_found`/`duplicate_link`；Party 名走 `findOneWithDecryption`，供应商走 scoped 直读）
+- [x] 1.3 Create/edit form pickers + link section — d002fb7（客户/供应商 combobox + `resolveLabel`；两个搜索多选，仅建单）
+- [x] 1.4 Child-form default prefill — 6fe4130（采购表单填供应商；销售表单填客户名，买方引用仅对外类型——对内买方是兄弟组织）
+- [x] 1.5 TEST-007 + unit helpers — d0473de / 0e09e85。证据：`yarn typecheck` 干净；focused jest **6 suites · 34 tests**；`company-order-create-fields` **4/4 passed**；order_hub 全量集成 **22/22 passed**（含既有 18）；`yarn db:generate` 复跑 `order_hub: no changes`。
 
 ### Phase 4.B: 协作组织白名单（REQ-014/016）
 
