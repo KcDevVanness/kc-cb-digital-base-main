@@ -63,27 +63,41 @@ owner 已确认（本轮问答）：① 用这 7 个**替换**；② 按业务�
 - 与第五轮并行改 `order_hub` → 文件交集（README/spec/i18n/OrderDetail）；本单元改动刻意小、只追加锚点，冲突按“取并集”处理。
 - 新列在迁移应用 + dev runtime 重启前写入会被静默丢弃 → 见 lesson `entity-property-needs-dev-runtime-restart`；收口步骤里显式重启。
 
+## Evidence
+
+- 单测：`yarn jest --config jest.config.cjs src/modules/order_hub` → **5 suites · 29 tests passed**（含新 `data/__tests__/validators.test.ts` 4 例）。
+- 集成（ephemeral，生产模式 + 一次性库）：`JWT_SECRET=<random> yarn test:integration:ephemeral company-orders` → **7 passed**
+  （默认 `placed`/`unpaid`、旧值可写可读可筛、`shipped`+`paid_full` 更新、版本锁、软删、跨组织不可见）。
+- 宽门禁：`yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test && yarn build` → 全绿（82 suites · 658 tests；lint 仅既有 warning）。
+- 浏览器（主目录 dev，重启 runtime 后实测）：`/backend/orders/create` 状态下拉 = 这 7 个值（默认已下单）、是否已收款 = 已收全款/未收款（默认未收款）；
+  建单 `CO-2026-0002` → hub 抬头 `已报关` + `是否已收款 已收全款`，DB 回读 `status='customs_declared', payment_status='paid_full'`；
+  工作台徽章新词表（`已报关`）与旧值（`进行中`）并存。
+- 迁移：`Migration20261009064750_order_hub.ts` 已由 dev supervisor（`yarn db:migrate`）应用到共享 dev 库；`information_schema` 回读
+  `payment_status text null` 与 `status default 'placed'`。
+- 注意（环境）：旧 dev runtime 由带 `CI=true` 的会话启动 → 诊断面板被禁用、且 MikroORM 元数据是启动时构建的，新增实体属性在重启前**写入被静默丢弃**
+  （lesson `entity-property-needs-dev-runtime-restart`）。本轮已重启 dev runtime（`env -u CI yarn dev`，持久服务），诊断恢复可用。
+
 ## Progress
 
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
 ### Phase A: 数据与写路径
 
-- [ ] A.1 Validators（词表 + 三态）
-- [ ] A.2 Entity（默认值 + 新列）
-- [ ] A.3 Commands（默认值/apply/undo/快照/自动建根）
-- [ ] A.4 Route + CLI
-- [ ] A.5 Migration generated + reviewed
+- [x] A.1 Validators（词表 + 三态） — 7328c89
+- [x] A.2 Entity（默认值 + 新列） — 7328c89
+- [x] A.3 Commands（默认值/apply/undo/快照/自动建根） — 7328c89
+- [x] A.4 Route + CLI — 7328c89
+- [x] A.5 Migration generated + reviewed（`Migration20261009064750_order_hub.ts`：加列 + 默认值，无回填） — 7328c89
 
 ### Phase B: UI 与词表渲染
 
-- [ ] B.1 Create/edit form
-- [ ] B.2 Status dialog
-- [ ] B.3 Workbench + hub header
-- [ ] B.4 i18n
+- [x] B.1 Create/edit form（默认 `placed`/`unpaid`；旧值行保留自身选项） — 7328c89
+- [x] B.2 Status dialog — 7328c89
+- [x] B.3 Workbench + hub header — 7328c89
+- [x] B.4 i18n — 7328c89
 
 ### Phase C: 收口
 
-- [ ] C.1 Unit + integration tests
-- [ ] C.2 Migration applied + browser smoke
-- [ ] C.3 Broad gate + docs + PR draft → ready
+- [x] C.1 Unit + integration tests（`jest src/modules/order_hub` 5 suites · 29 tests；ephemeral `company-orders` 7 passed） — f39df71
+- [x] C.2 Migration applied + browser smoke — 220bfaf
+- [x] C.3 Broad gate + docs + PR draft → ready — 220bfaf
