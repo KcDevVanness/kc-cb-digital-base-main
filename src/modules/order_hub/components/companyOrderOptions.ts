@@ -60,6 +60,64 @@ function labelFromParts(code: string, name: string, fallback: string): string {
   return code || name || fallback
 }
 
+/** The label a purchase picker prints: `number — supplier`, or the id's head for a numberless draft. */
+export function purchaseOrderCandidateLabel(candidate: PurchaseOrderCandidate): string {
+  const number = candidate.number?.trim() ?? ''
+  const supplier = candidate.supplierName?.trim() ?? ''
+  const display = number.length > 0 ? number : candidate.refId.slice(0, 8)
+  return supplier.length > 0 ? `${display} — ${supplier}` : display
+}
+
+/**
+ * The purchase picker's fallback (REQ-019): a draft purchase order has **no number** until it is
+ * placed, so a server `search` by number cannot find it. The loader merges the unsearched first page
+ * with the searched one (deduped by id) and filters here by number, supplier name, or the printed
+ * label — which carries the id's head for a numberless draft. An exact number match ranks first; an
+ * empty search returns the merged set unfiltered.
+ */
+export function mergePurchaseOrderCandidates(
+  firstPage: readonly PurchaseOrderCandidate[],
+  searchedPage: readonly PurchaseOrderCandidate[],
+  search: string,
+): PurchaseOrderCandidate[] {
+  const seen = new Set<string>()
+  const merged: PurchaseOrderCandidate[] = []
+  for (const candidate of [...firstPage, ...searchedPage]) {
+    if (!candidate.refId || seen.has(candidate.refId)) continue
+    seen.add(candidate.refId)
+    merged.push(candidate)
+  }
+  const needle = search.trim().toLowerCase()
+  if (!needle) return merged
+  const matches = merged.filter((candidate) => {
+    const number = (candidate.number ?? '').toLowerCase()
+    const supplier = (candidate.supplierName ?? '').toLowerCase()
+    return (
+      number.includes(needle) ||
+      supplier.includes(needle) ||
+      purchaseOrderCandidateLabel(candidate).toLowerCase().includes(needle)
+    )
+  })
+  return matches.sort((left, right) => {
+    const leftExact = (left.number ?? '').toLowerCase() === needle ? 0 : 1
+    const rightExact = (right.number ?? '').toLowerCase() === needle ? 0 : 1
+    return leftExact - rightExact
+  })
+}
+
+/** One raw purchase-order row → a candidate; a row without an id is dropped. */
+function toPurchaseOrderCandidate(item: Record<string, unknown>): PurchaseOrderCandidate | null {
+  const refId = readText(item, 'id')
+  if (!refId) return null
+  const supplierName = readText(item, 'supplierName') || snapshotName(item.supplierSnapshot)
+  return {
+    refId,
+    number: readText(item, 'number') || null,
+    supplierName: supplierName || null,
+    status: readText(item, 'status') || null,
+  }
+}
+
 /** Active suppliers, `CODE — name`; typed input narrows by `search`. */
 export async function loadSupplierOptions(search?: string): Promise<CrudFieldOption[]> {
   const params = new URLSearchParams({ isActive: 'true', page: '1', pageSize: String(OPTION_PAGE_SIZE) })
@@ -189,22 +247,27 @@ export async function loadSalesOrderCandidates(search?: string): Promise<SalesOr
 
 /** Purchase-order candidates, labelled by their frozen supplier name. */
 export async function loadPurchaseOrderCandidates(search?: string): Promise<PurchaseOrderCandidate[]> {
-  const params = new URLSearchParams({ page: '1', pageSize: String(OPTION_PAGE_SIZE) })
-  const term = search?.trim()
-  if (term) params.set('search', term)
-  try {
-    const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
-      `${PURCHASE_ORDERS_API_PATH}?${params.toString()}`,
-      undefined,
-      { fallback: { items: [] }, errorMessage: '' },
-    )
-    return (payload.items ?? []).flatMap<PurchaseOrderCandidate>((item) => {
-      const refId = readText(item, 'id')
-      if (!refId) return []
-      const supplierName = readText(item, 'supplierName') || snapshotName(item.supplierSnapshot)
-      return [{ refId, number: readText(item, 'number') || null, supplierName: supplierName || null, status: readText(item, 'status') || null }]
-    })
-  } catch {
-    return []
+  const term = search?.trim() ?? ''
+  const fetchPage = async (withSearch: boolean): Promise<PurchaseOrderCandidate[]> => {
+    const params = new URLSearchParams({ page: '1', pageSize: String(OPTION_PAGE_SIZE) })
+    if (withSearch && term) params.set('search', term)
+    try {
+      const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
+        `${PURCHASE_ORDERS_API_PATH}?${params.toString()}`,
+        undefined,
+        { fallback: { items: [] }, errorMessage: '' },
+      )
+      return (payload.items ?? []).flatMap((item) => {
+        const candidate = toPurchaseOrderCandidate(item)
+        return candidate ? [candidate] : []
+      })
+    } catch {
+      return []
+    }
   }
+  if (!term) return fetchPage(false)
+  // A numberless draft cannot answer a number search server-side, so the unsearched first page is
+  // merged in and the filter runs here (REQ-019).
+  const [firstPage, searchedPage] = await Promise.all([fetchPage(false), fetchPage(true)])
+  return mergePurchaseOrderCandidates(firstPage, searchedPage, term)
 }

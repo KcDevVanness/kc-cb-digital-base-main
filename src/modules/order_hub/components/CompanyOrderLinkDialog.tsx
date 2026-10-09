@@ -20,10 +20,10 @@ import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { useTradeTypeChannels } from '../../internal_sales/lib/tradeTypeChannels'
 import type { SalesTradeType } from '../../internal_sales/lib/tradeType'
 import { COMPANY_ORDER_LINK_KINDS, type CompanyOrderLinkKind } from '../data/validators'
+import { loadPurchaseOrderCandidates, purchaseOrderCandidateLabel } from './companyOrderOptions'
 
 const LINKS_API_PATH = 'order_hub/orders/links'
 const SALES_ORDERS_API_PATH = 'sales/orders'
-const PURCHASE_ORDERS_API_PATH = 'purchasing/purchase-orders'
 
 /** The replace schema accepts at most 200 links; the dialog refuses to grow past it. */
 const MAX_LINKS = 200
@@ -198,18 +198,11 @@ export function CompanyOrderLinkDialog({
           })
           .filter((option) => option.value.length > 0)
       }
-      const payload = await fetchCrudList<Record<string, unknown>>(PURCHASE_ORDERS_API_PATH, {
-        pageSize: 50,
-        sortField: 'created_at',
-        sortDir: 'desc',
-        ...(term ? { search: term } : {}),
-      })
-      return (payload.items ?? [])
-        .map((item) => {
-          const id = String(item.id ?? '')
-          return { value: id, label: optionLabel(readText(item, 'number'), readText(item, 'supplierName', 'supplier_name'), id) }
-        })
-        .filter((option) => option.value.length > 0)
+      const candidates = await loadPurchaseOrderCandidates(term)
+      return candidates.map((candidate) => ({
+        value: candidate.refId,
+        label: purchaseOrderCandidateLabel(candidate),
+      }))
     },
     [channels, kind],
   )
