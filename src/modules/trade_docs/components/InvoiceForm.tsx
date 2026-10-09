@@ -31,6 +31,7 @@ import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { useReturnHref } from '@/lib/navigation/returnTo'
 import { directionLabel, invoiceStatusLabel, INVOICE_DIRECTIONS, type InvoiceStatus } from './contractLabels'
 import {
   INVOICE_KIND_UNCLASSIFIED,
@@ -512,6 +513,7 @@ function InvoiceCreateForm() {
   const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const backHref = useReturnHref(LIST_HREF)
   const fields = useInvoiceFields(t, 'create')
   const groups = useInvoiceGroups(t)
   // Arriving from an order's hub (`?orderKind=&orderId=`): the create records the order ↔ invoice
@@ -557,7 +559,7 @@ function InvoiceCreateForm() {
       <CrudForm<InvoiceFormValues>
         title={t('trade_docs.invoices.form.createTitle')}
         titleHeadingLevel={1}
-        backHref={LIST_HREF}
+        backHref={backHref}
         fields={fields}
         groups={groups}
         initialValues={initialValues}
@@ -685,6 +687,7 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const fields = useInvoiceFields(t, 'edit')
   const groups = useInvoiceGroups(t)
+  const backHref = useReturnHref(LIST_HREF)
   const [initial, setInitial] = React.useState<InvoiceFormValues | null>(null)
   const [head, setHead] = React.useState<{
     status: InvoiceStatus
@@ -836,7 +839,7 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
   )
 
   if (loading) return <LoadingMessage label={t('trade_docs.common.loading')} />
-  if (isNotFound) return <RecordNotFoundState label={t('trade_docs.invoices.form.notFound')} backHref={LIST_HREF} />
+  if (isNotFound) return <RecordNotFoundState label={t('trade_docs.invoices.form.notFound')} backHref={backHref} />
   if (error) return <ErrorMessage label={error} />
   if (!initial || !head) return null
 
@@ -861,7 +864,7 @@ function InvoiceEditPage({ invoiceId }: { invoiceId: string }) {
     <div className="space-y-6">
       <FormHeader
         mode="detail"
-        backHref={LIST_HREF}
+        backHref={backHref}
         entityTypeLabel={t('trade_docs.invoices.page.title')}
         title={(
           <span className="flex flex-wrap items-baseline gap-2">
