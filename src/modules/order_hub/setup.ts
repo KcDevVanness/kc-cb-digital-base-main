@@ -9,8 +9,8 @@ import type { ModuleSetupConfig } from '@open-mercato/shared/modules/setup'
  */
 export const setup: ModuleSetupConfig = {
   defaultRoleFeatures: {
-    superadmin: ['order_hub.view'],
-    admin: ['order_hub.view'],
+    superadmin: ['order_hub.view', 'order_hub.manage'],
+    admin: ['order_hub.view', 'order_hub.manage'],
   },
 }
 

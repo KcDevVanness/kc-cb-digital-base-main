@@ -2,15 +2,17 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { createLogger } from '@open-mercato/shared/lib/logger'
-import { loadOrderStages, type OrderStageItem } from '../../lib/orderStages'
+import { loadCompanyOrderSummaries, type CompanyOrderStageSummary } from '../../lib/orderStages'
 import { resolveOrderHubRequestScope } from '../../lib/requestScope'
 
 /**
- * The workbench's one read: the fill progress of the orders it is about to list.
+ * The workbench's one read: the fill progress of the company orders it is about to list.
  *
- * Batched by id on purpose — the workbench lists up to a few hundred rows and a per-row projection
- * would turn one screen into hundreds of round trips. Ids the caller may not see simply produce no
- * entry (the projection is scoped), so the response never confirms that a foreign id exists.
+ * The `ids` are **company order ids** (the URL and the response field names are unchanged; the
+ * additive `counterparty`/`childNumbers`/`kinds` fields carry the link facts). Batched on purpose —
+ * the workbench lists up to a few hundred rows and a per-row projection would turn one screen into
+ * hundreds of round trips. Ids the caller may not see simply produce no entry (the projection is
+ * scoped), so the response never confirms that a foreign id exists.
  */
 
 const logger = createLogger('order_hub').child({ component: 'stages-route' })
@@ -34,6 +36,9 @@ const stageItemSchema = z.object({
   documentCount: z.number().int().nonnegative(),
   collected: z.boolean(),
   refunded: z.boolean(),
+  counterparty: z.string().nullable().optional(),
+  childNumbers: z.array(z.string()).optional(),
+  kinds: z.array(z.string()).optional(),
 })
 
 const stagesResponseSchema = z.object({ items: z.array(stageItemSchema) })
@@ -67,29 +72,29 @@ export async function GET(request: Request) {
   }
 
   try {
-    const items: OrderStageItem[] = await loadOrderStages(
+    const items: CompanyOrderStageSummary[] = await loadCompanyOrderSummaries(
       scope.em,
       { tenantId: scope.tenantId, organizationIds: scope.organizationIds },
       ids,
     )
     return NextResponse.json({ items })
   } catch (error) {
-    logger.error('Failed to project the order stages', { err: error })
-    return NextResponse.json({ error: 'Failed to project the order stages' }, { status: 500 })
+    logger.error('Failed to project the company order stages', { err: error })
+    return NextResponse.json({ error: 'Failed to project the company order stages' }, { status: 500 })
   }
 }
 
 export const openApi: OpenApiRouteDoc = {
-  tag: 'Order workbench',
-  summary: 'Order fill progress',
+  tag: 'Order Hub',
+  summary: 'Company order fill progress',
   methods: {
     GET: {
-      summary: 'Project the fill progress of a batch of orders',
+      summary: 'Project the fill progress of a batch of company orders',
       description:
-        'Returns one entry per order the caller may see, for the requested ids (at most 200, comma-separated). Ids outside the caller’s organization produce no entry.',
+        'Returns one entry per company order the caller may see, for the requested company order ids (at most 200, comma-separated). Ids outside the caller’s organization produce no entry. Each count is the union of the company order’s linked children.',
       query: stagesQuerySchema,
       responses: [
-        { status: 200, description: 'One entry per visible order', schema: stagesResponseSchema },
+        { status: 200, description: 'One entry per visible company order', schema: stagesResponseSchema },
         { status: 400, description: 'Missing, malformed or too many ids' },
         { status: 401, description: 'Unauthorized' },
         { status: 403, description: 'Missing order_hub.view' },
