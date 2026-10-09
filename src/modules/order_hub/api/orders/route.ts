@@ -6,7 +6,8 @@ import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern
 import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
 import { CompanyOrder } from '../../data/entities'
 import {
-  COMPANY_ORDER_STATUSES,
+  COMPANY_ORDER_PAYMENT_STATUSES,
+  COMPANY_ORDER_STORED_STATUSES,
   companyOrderCreateSchema,
   companyOrderListSchema,
   companyOrderUpdateSchema,
@@ -58,7 +59,9 @@ const companyOrderListItemSchema = z
     title: z.string().nullable().optional(),
     orderDate: z.string().nullable().optional(),
     etaDate: z.string().nullable().optional(),
-    status: z.enum(COMPANY_ORDER_STATUSES),
+    // Stored, not offered: a row written before 2026-10-09 answers with its legacy status.
+    status: z.enum(COMPANY_ORDER_STORED_STATUSES),
+    paymentStatus: z.enum(COMPANY_ORDER_PAYMENT_STATUSES).nullable().optional(),
     notes: z.string().nullable().optional(),
     customerPartyId: z.string().uuid().nullable().optional(),
     customerSnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
@@ -103,6 +106,7 @@ const listFields = [
   'order_date',
   'eta_date',
   'status',
+  'payment_status',
   'notes',
   'customer_party_id',
   'customer_snapshot',
@@ -268,7 +272,9 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       title: (item.title ?? null) as string | null,
       orderDate: toDateOnly(item.order_date),
       etaDate: toDateOnly(item.eta_date),
-      status: String(item.status ?? 'draft'),
+      status: String(item.status ?? 'placed'),
+      // `null` for rows written before the column existed — the UI shows “—”, never a guess.
+      paymentStatus: (item.payment_status ?? null) as string | null,
       notes: (item.notes ?? null) as string | null,
       // Default customer/supplier: the id plus the name frozen at write time, so the form's pickers
       // can resolve a label and the child forms can prefill without a second read.
@@ -331,7 +337,7 @@ export const openApi = createOrderHubCrudOpenApi({
   create: {
     schema: companyOrderCreateSchema,
     responseSchema: orderHubCreatedSchema,
-    description: 'Creates a draft company order; the server assigns the `CO-<year>-<seq>` number.',
+    description: 'Creates a company order (status 已下单, 是否已收款 未收款 by default); the server assigns the `CO-<year>-<seq>` number.',
   },
   update: {
     schema: companyOrderUpdateSchema,

@@ -583,6 +583,23 @@
           "enumItems": [],
           "mappedType": "uuid"
         },
+        "payment_status": {
+          "name": "payment_status",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
         "status": {
           "name": "status",
           "type": "text",
@@ -594,7 +611,7 @@
           "length": null,
           "precision": null,
           "scale": null,
-          "default": "'draft'",
+          "default": "'placed'",
           "comment": null,
           "collation": null,
           "enumItems": [],

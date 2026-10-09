@@ -69,6 +69,15 @@ const MONEY_HREF = '/backend/export-finance/orders'
 const MAX_CHILD_READS = 20
 
 const ORDER_STATUS_VARIANT: StatusMap = {
+  // The current vocabulary (2026-10-09): the deal's own order, in flight until it reaches the
+  // warehouse. Rows written before it landed keep their old values and tones.
+  placed: 'info',
+  in_production: 'info',
+  factory_pickup: 'info',
+  customs_declared: 'info',
+  shipped: 'info',
+  in_transit: 'info',
+  warehoused: 'success',
   draft: 'neutral',
   in_progress: 'info',
   completed: 'success',
@@ -82,6 +91,8 @@ type CompanyOrderHead = {
   orderDate: string | null
   etaDate: string | null
   status: string
+  /** 是否已收款: `paid_full`/`unpaid`, or `null` for a root written before the column existed. */
+  paymentStatus: string | null
   notes: string | null
   /** The default customer/supplier frozen names (display-only here; the edit page clears them). */
   customerName: string | null
@@ -144,7 +155,8 @@ function toHead(item: Record<string, unknown>): CompanyOrderHead {
     title: (item.title ?? null) as string | null,
     orderDate: (item.orderDate ?? null) as string | null,
     etaDate: (item.etaDate ?? null) as string | null,
-    status: String(item.status ?? 'draft'),
+    status: String(item.status ?? 'placed'),
+    paymentStatus: (item.paymentStatus ?? null) as string | null,
     notes: (item.notes ?? null) as string | null,
     customerName: snapshotDisplayName(item.customerSnapshot),
     supplierName: snapshotDisplayName(item.supplierSnapshot),
@@ -964,6 +976,16 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">{t('order_hub.companyOrders.header.notes')}</p>
           <p className="text-sm font-medium">{head.notes ?? '—'}</p>
+        </div>
+        {/* 是否已收款: the root's own marker. “—” is the honest answer for a root written before the
+            column existed — never rendered as 未收款. */}
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">{t('order_hub.companyOrders.header.paymentStatus')}</p>
+          <p className="text-sm font-medium">
+            {head.paymentStatus
+              ? t(`order_hub.companyOrders.paymentStatus.${head.paymentStatus}`, head.paymentStatus)
+              : '—'}
+          </p>
         </div>
         {/* The default customer/supplier are the root's own start-up information; the display name
             is the one frozen when they were set, and clearing them stays on the edit page. */}

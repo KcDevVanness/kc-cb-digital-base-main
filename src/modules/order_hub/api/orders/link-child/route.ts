@@ -28,7 +28,7 @@ export const metadata = {
  * single attach with an optional target root, so it does not belong in a CRUD factory. It follows
  * the documented non-factory path — mutation guards first, then the command bus, then the
  * after-success callbacks once the write has committed. With no `companyOrderId` a sales-kind child
- * gets a fresh draft root; a purchase child is refused with 422 (`company_order_required`).
+ * gets a fresh root (已下单 / 未收款); a purchase child is refused with 422 (`company_order_required`).
  */
 export async function POST(request: Request) {
   const auth = await getAuthFromRequest(request)

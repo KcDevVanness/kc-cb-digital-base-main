@@ -1,14 +1,59 @@
 import { z } from 'zod'
 
 /**
- * Company-order statuses.
- *
- * A module constant, not a dictionary: the status is the operator's own marker on the root record
- * (the sales engine keeps its own status dictionary, which is a different concern). The four values
- * match the purchasing module's scheme for familiarity.
+ * Company-order statuses — the operator's own marker on the root record, in the deal's own order:
+ * 已下单 → 生产 → 工厂提货 → 已报关 → 已装运 → 路上 → 到仓库 (2026-10-09 owner vocabulary). A module
+ * constant, not a dictionary: the sales engine keeps its own status dictionary, which is a different
+ * concern.
  */
-export const COMPANY_ORDER_STATUSES = ['draft', 'in_progress', 'completed', 'cancelled'] as const
+export const COMPANY_ORDER_STATUSES = [
+  'placed',
+  'in_production',
+  'factory_pickup',
+  'customs_declared',
+  'shipped',
+  'in_transit',
+  'warehoused',
+] as const
 export type CompanyOrderStatus = (typeof COMPANY_ORDER_STATUSES)[number]
+
+/**
+ * The vocabulary this field used before 2026-10-09 (草稿/进行中/已完成/已取消). Rows written then still
+ * carry one of these, so three things hold: validation keeps accepting them (an edit that does not
+ * touch the status must not 400), their labels stay in the catalogs, and the picker re-offers a
+ * row's own value — opening an old root can therefore never silently rewrite its status on an
+ * unrelated save. New rows never get one of these values.
+ */
+export const LEGACY_COMPANY_ORDER_STATUSES = ['draft', 'in_progress', 'completed', 'cancelled'] as const
+export type LegacyCompanyOrderStatus = (typeof LEGACY_COMPANY_ORDER_STATUSES)[number]
+
+/** What a stored status may be — the picker offers less than this (see `companyOrderStatusOptions`). */
+export const COMPANY_ORDER_STORED_STATUSES = [
+  ...COMPANY_ORDER_STATUSES,
+  ...LEGACY_COMPANY_ORDER_STATUSES,
+] as const
+
+/** The picker's options: the current vocabulary, plus the row's own value when it predates it. */
+export function companyOrderStatusOptions(current?: string | null): string[] {
+  const options: string[] = [...COMPANY_ORDER_STATUSES]
+  if (
+    current &&
+    !options.includes(current) &&
+    (COMPANY_ORDER_STORED_STATUSES as readonly string[]).includes(current)
+  ) {
+    options.push(current)
+  }
+  return options
+}
+
+/**
+ * 是否已收款 — the operator's own marker on the root (the spreadsheet column of the same name).
+ * `unpaid` is what a fresh order starts as; `paid_full` is only ever set by a human. `null` is
+ * reserved for rows written before the column existed: the UI renders those as “—” instead of
+ * claiming money has or has not arrived.
+ */
+export const COMPANY_ORDER_PAYMENT_STATUSES = ['paid_full', 'unpaid'] as const
+export type CompanyOrderPaymentStatus = (typeof COMPANY_ORDER_PAYMENT_STATUSES)[number]
 
 /**
  * The child kinds a company order can hold this phase. The values are the frozen API/event
@@ -35,7 +80,12 @@ export const companyOrderCreateSchema = z.object({
   title: z.string().trim().max(200).nullable().optional(),
   orderDate: dateOnlySchema.optional(),
   etaDate: dateOnlySchema.nullable().optional(),
-  status: z.enum(COMPANY_ORDER_STATUSES).optional(),
+  status: z.enum(COMPANY_ORDER_STORED_STATUSES).optional(),
+  /**
+   * 是否已收款. Omitted on create stores the fresh-order default (`unpaid`); an explicit `null` keeps
+   * the marker unrecorded (“—”), because the column is three-state on purpose.
+   */
+  paymentStatus: z.enum(COMPANY_ORDER_PAYMENT_STATUSES).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   /**
    * Optional default customer/supplier. A non-null id must resolve inside the writer's scope (else
@@ -58,7 +108,9 @@ export const companyOrderUpdateSchema = z.object({
   title: z.string().trim().max(200).nullable().optional(),
   orderDate: dateOnlySchema.optional(),
   etaDate: dateOnlySchema.nullable().optional(),
-  status: z.enum(COMPANY_ORDER_STATUSES).optional(),
+  status: z.enum(COMPANY_ORDER_STORED_STATUSES).optional(),
+  /** Three-state like `title`: absent leaves the stored value, a value sets it, `null` clears it. */
+  paymentStatus: z.enum(COMPANY_ORDER_PAYMENT_STATUSES).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   /**
    * Three-state like `title`: absent leaves the stored value alone, an id re-resolves and re-freezes
@@ -72,7 +124,8 @@ export const companyOrderListSchema = z.object({
   id: z.string().uuid().optional(),
   ids: z.string().optional(),
   search: z.string().max(200).optional(),
-  status: z.enum(COMPANY_ORDER_STATUSES).optional(),
+  // The filter accepts the legacy values too: old rows still carry them and can be narrowed by them.
+  status: z.enum(COMPANY_ORDER_STORED_STATUSES).optional(),
   kind: z.enum(COMPANY_ORDER_LINK_KINDS).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
@@ -104,7 +157,7 @@ export const companyOrderLinksReplaceSchema = z.object({
   updatedAt: z.string().min(1).optional(),
 })
 
-/** Attach one child; with no `companyOrderId` a sales-kind child gets a fresh draft root. */
+/** Attach one child; with no `companyOrderId` a sales-kind child gets a fresh root (已下单 / 未收款). */
 export const companyOrderLinkChildSchema = z.object({
   kind: z.enum(COMPANY_ORDER_LINK_KINDS),
   refId: z.string().uuid(),

@@ -132,6 +132,7 @@ type CompanyOrderSnapshot = {
   orderDate: string
   etaDate: string | null
   status: string
+  paymentStatus: string | null
   notes: string | null
   customerPartyId: string | null
   customerSnapshot: Record<string, unknown> | null
@@ -155,6 +156,7 @@ function serializeCompanyOrder(order: CompanyOrder): CompanyOrderSnapshot {
     orderDate: toDateOnly(order.orderDate) ?? toDateOnly(new Date())!,
     etaDate: toDateOnly(order.etaDate),
     status: order.status,
+    paymentStatus: order.paymentStatus ?? null,
     notes: order.notes ?? null,
     customerPartyId: order.customerPartyId ? String(order.customerPartyId) : null,
     customerSnapshot: order.customerSnapshot ?? null,
@@ -213,6 +215,7 @@ async function createCompanyOrderAtomic(
     orderDate: Date
     etaDate: Date | null
     status: string
+    paymentStatus: string | null
     notes: string | null
     customerPartyId: string | null
     supplierId: string | null
@@ -274,6 +277,7 @@ async function createCompanyOrderAtomic(
               orderDate: data.orderDate,
               etaDate: data.etaDate,
               status: data.status,
+              paymentStatus: data.paymentStatus,
               notes: data.notes,
               customerPartyId: party ? party.id : null,
               customerSnapshot: party ? freezeNameSnapshot(party) : null,
@@ -315,7 +319,11 @@ const createCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
       title: parsed.title ?? null,
       orderDate: parsed.orderDate ? new Date(parsed.orderDate) : new Date(),
       etaDate: parsed.etaDate ? new Date(parsed.etaDate) : null,
-      status: parsed.status ?? 'draft',
+      // The first stage of the current vocabulary, and the fresh-order payment answer the owner
+      // specified: a root created today is 已下单 / 未收款 unless the caller says otherwise — an
+      // explicit `null` is the caller saying "not recorded", which stays “—”.
+      status: parsed.status ?? 'placed',
+      paymentStatus: parsed.paymentStatus === undefined ? 'unpaid' : parsed.paymentStatus,
       notes: parsed.notes ?? null,
       customerPartyId: parsed.customerPartyId ?? null,
       supplierId: parsed.supplierId ?? null,
@@ -478,6 +486,7 @@ const updateCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
         if (parsed.orderDate !== undefined) entity.orderDate = new Date(parsed.orderDate)
         if (parsed.etaDate !== undefined) entity.etaDate = parsed.etaDate ? new Date(parsed.etaDate) : null
         if (parsed.status !== undefined) entity.status = parsed.status
+        if (parsed.paymentStatus !== undefined) entity.paymentStatus = parsed.paymentStatus
         if (parsed.notes !== undefined) entity.notes = parsed.notes
         if (parsed.customerPartyId !== undefined) {
           entity.customerPartyId = customer ? customer.id : null
@@ -542,6 +551,7 @@ const updateCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
         entity.orderDate = new Date(before.orderDate)
         entity.etaDate = before.etaDate ? new Date(before.etaDate) : null
         entity.status = before.status
+        entity.paymentStatus = before.paymentStatus ?? null
         entity.notes = before.notes
         entity.customerPartyId = before.customerPartyId ?? null
         entity.customerSnapshot = before.customerSnapshot ?? null
@@ -666,6 +676,7 @@ const deleteCompanyOrderCommand: CommandHandler<
       entity.orderDate = new Date(before.orderDate)
       entity.etaDate = before.etaDate ? new Date(before.etaDate) : null
       entity.status = before.status
+      entity.paymentStatus = before.paymentStatus ?? null
       entity.notes = before.notes
       entity.customerPartyId = before.customerPartyId ?? null
       entity.customerSnapshot = before.customerSnapshot ?? null
@@ -684,6 +695,7 @@ const deleteCompanyOrderCommand: CommandHandler<
           orderDate: new Date(before.orderDate),
           etaDate: before.etaDate ? new Date(before.etaDate) : null,
           status: before.status,
+          paymentStatus: before.paymentStatus ?? null,
           notes: before.notes,
           customerPartyId: before.customerPartyId ?? null,
           customerSnapshot: before.customerSnapshot ?? null,
