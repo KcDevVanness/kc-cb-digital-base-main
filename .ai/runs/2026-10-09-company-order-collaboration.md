@@ -90,6 +90,12 @@ owner 给出原飞书多维表格 35 列字段清单并定下三条口径（2026
 
 ### Phase 4.D: 收口
 
-- [ ] 4.1 Docs
-- [ ] 4.2 Broad gate
-- [ ] 4.3 PR draft → ready
+- [x] 4.1 Docs — 本轮：模块 README（表面表 + 第四轮节 + 集成清单）、spec（Status/AC-011…016/Changelog/读路径更正）、run record；`docs/plans/README.md` 与 `docs/plans/cross-border-erp.md` 行、`docs/dev/business-architecture.md` 行同批更新
+- [x] 4.2 Broad gate — **一次运行全绿**：`yarn generate`(5s)/`typecheck`(5s)/`lint`(13s, 0 error)/`check-lessons`/`ds:check`/`yarn test` **81 suites · 654 tests**/`build`(17s)；另跑 `yarn i18n:check-hardcoded`(0) 与语言纯度 3/3
+- [x] 4.3 PR draft → ready — PR **#151**（base `feat/company-order-root`，stacked；labels `feature`/`priority-high`/`risk-medium`/`needs-qa`/`review`；assignee + claim 评论）；#150 合并后 retarget 到 `dev`
+- **浏览器实测（2026-10-09，ephemeral :5001，admin@acme.com）**：
+  - 建单页：`Default customer`/`Default supplier` 选择器 + 「Link existing sales orders / purchase orders」两个搜索多选；勾选 `ORDER-20261009-00001` 与一张采购单 → **一次保存**后 hub 头部显示两个默认主体、对内销售订单与采购订单两个区块各出现该行（子单号/对方为冻结值）。
+  - 文件区块：`Upload file` 上传 `p4-note.txt` → 行显示名称/22 B/日期 + `Preview`/`Download`（标签为正确文案）。
+  - 协作组织对话框：勾选组织 → 保存 → `GET .../collaborators` 读回该组织。
+  - 协作视角：新建分公司角色（`order_hub.view/manage`）+ 用户并登录 → hub 只显示「Update status and notes」（无 编辑/删除/关联/新建/移除），子单区块只读；打开状态对话框选 `In progress` 保存 → API 读回 `status: in_progress`；无权限的下游区块按区块显示失败 + 重试（隔离符合预期）。
+  - 说明：协作组织的「工作台行带协作徽标」由集成断言覆盖（`viewerIsCollaborator`），浏览器未单独截图。

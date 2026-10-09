@@ -16,16 +16,16 @@ app 自有模块。**公司订单是一个真表**：`order_hub_company_orders`�
 
 | 层 | 内容 |
 |---|---|
-| 实体（`data/entities.ts`） | `CompanyOrder` → `order_hub_company_orders`（唯一键 `(tenant_id, organization_id, number)`；`number = CO-<年>-<4位>` 在创建时发号、撞唯一键重试一次）；`CompanyOrderLink` → `order_hub_company_order_links`（唯一键 `(company_order_id, kind, ref_id)`；`ref_number`/`ref_counterparty`/`ref_snapshot` 在关联时冻结）。迁移 `migrations/Migration20261009024200_order_hub.ts`（**只建这两张表 + 索引/唯一键/FK**） |
-| API | `GET\|POST\|PUT\|DELETE /api/order_hub/orders`（`makeCrudRoute`：列表筛选 `search`（公司订单号/标题/子单号）/`status`/`kind`/`id`/`ids`，服务端分页与排序；`?id=` 即详情）；`GET\|POST /api/order_hub/orders/links`（GET 按 `companyOrderId` 或 `refId` 读关联——`refId` 是旧 URL 的反查；POST = 成套替换）；`POST /api/order_hub/orders/link-child`（幂等挂一张子单；销售类无目标时自动建根）；`GET /api/order_hub/stages?ids=`（工作台的一次批量汇总：四阶段计数 + `counterparty`/`childNumbers`/`kinds`；ids 为公司订单 id，1–200） |
-| 命令 | `order_hub.orders.create\|update\|delete`（可撤销、乐观锁、软删）、`order_hub.orders.links.replace`（成套替换：跨组织/未知引用 422、重复 422、过期版本 409、非撤销型）、`order_hub.orders.link-child`（幂等：唯一键兜底；`purchase_order` 无目标 → 422 `company_order_required`） |
+| 实体（`data/entities.ts`） | `CompanyOrder` → `order_hub_company_orders`（唯一键 `(tenant_id, organization_id, number)`；`number = CO-<年>-<4位>` 在创建时发号、撞唯一键重试一次；**默认客户/供应商** 4 列：`customer_party_id`/`customer_snapshot`、`supplier_id`/`supplier_snapshot`，可清空）；`CompanyOrderLink` → `order_hub_company_order_links`（唯一键 `(company_order_id, kind, ref_id)`；`ref_number`/`ref_counterparty`/`ref_snapshot` 在关联时冻结）；`CompanyOrderCollaborator` → `order_hub_company_order_collaborators`（唯一键 `(company_order_id, organization_id)`，协作组织白名单）。迁移 `Migration20261009024200_order_hub.ts`（两新表）+ `Migration20261009044102_order_hub.ts`（4 列追加）+ `Migration20261009051049_order_hub.ts`（协作表） |
+| API | `GET\|POST\|PUT\|DELETE /api/order_hub/orders`（`makeCrudRoute`：列表筛选 `search`（公司订单号/标题/子单号）/`status`/`kind`/`id`/`ids`，服务端分页与排序；scope = **显式可见 id 集**：我的组织集 ∪ 我协作的根单）；`GET\|POST /api/order_hub/orders/links`（GET 按 `companyOrderId` 或 `refId` 读关联——`refId` 是旧 URL 的反查；POST = 成套替换）；`POST /api/order_hub/orders/link-child`（幂等挂一张子单；销售类无目标时自动建根）；`GET\|POST /api/order_hub/orders/collaborators`（协作组织读取/成套替换，仅所有者）；`GET /api/order_hub/stages?ids=`（工作台的一次批量汇总：四阶段计数 + `counterparty`/`childNumbers`/`kinds`；ids 为公司订单 id，1–200） |
+| 命令 | `order_hub.orders.create\|update\|delete`（可撤销、乐观锁、软删；create 可带 `links[]` 与默认客户/供应商，同事务落库）、`order_hub.orders.links.replace`（成套替换 + **移动**语义：子单只属于一张公司订单）、`order_hub.orders.link-child`（幂等）、`order_hub.orders.collaborators.replace`（仅所有者、成套替换、根版本乐观锁；协作者写其它字段 422 `collaborator_field_not_allowed`，owner-only 动作 403 `company_order_owner_required`） |
 | CLI | `yarn mercato order_hub backfill-company-orders [--apply] [--tenant=] [--organization=]`——按 `(tenant, organization)` 扫描带贸易类型渠道的销售单，1:1 建根并冻结快照；再把带 `source_sales_order_id` 的采购单挂到对应根。dry-run 默认、幂等（重跑 `created=0`）、跨组织边界由 scope 决定 |
 | 页面 | `/backend/orders`（工作台，`navHidden`：入口走导航树「公司订单 → 订单工作台」）；`/backend/orders/create`、`/backend/orders/<id>/edit`（CrudForm，`navHidden`）；`/backend/orders/<id>`（详情 hub，`navHidden`，同时承担旧销售单 URL 的解析落点） |
-| 权限 | 读 `order_hub.view`（工作台/hub/links/stages）；写 `order_hub.manage`（CRUD、关联替换、link-child、create/edit 页）。`setup.ts` 默认授予 `superadmin`/`admin`；既有租户用 `yarn mercato auth sync-role-acls` 补授 `order_hub.manage` |
+| 权限 | 读 `order_hub.view`（工作台/hub/links/stages）；写 `order_hub.manage`（CRUD、关联替换、link-child、create/edit 页）。**协作组织**的写只放开 `status`/`notes`（服务端白名单），其余 owner-only。`setup.ts` 默认授予 `superadmin`/`admin`；既有租户用 `yarn mercato auth sync-role-acls` 补授 `order_hub.manage` |
 | 事件 | `order_hub.company_order.created\|updated\|deleted`、`order_hub.company_order.links.updated`（`clientBroadcast`） |
-| 共享件 | `src/lib/related/RelatedSection.tsx`（区块壳）、`src/lib/quick-edit/QuickEditDialog.tsx`（下游区块就地编辑，字段工厂仍在各模块 `lib/*QuickEdit.ts`）、`src/lib/orders/companyOrderParams.ts`（`?companyOrderId=` 解析，两个建单表单共用）、`internal_sales` 的贸易类型通道解析（`lib/tradeTypeChannelIds.ts` / `tradeTypeChannels.server.ts`） |
+| 共享件 | `src/lib/related/RelatedSection.tsx`（区块壳）、`src/lib/quick-edit/QuickEditDialog.tsx`（下游区块就地编辑，字段工厂仍在各模块 `lib/*QuickEdit.ts`）、`src/lib/attachments/AttachmentsSection.tsx`（文件区块壳，app 级共享）、`src/lib/orders/companyOrderParams.ts`（`?companyOrderId=` 解析，两个建单表单共用）、`internal_sales` 的贸易类型通道解析（`lib/tradeTypeChannelIds.ts` / `tradeTypeChannels.server.ts`） |
 | 单元 | `lib/__tests__/companyOrder.test.ts`、`lib/__tests__/companyOrderResolve.test.ts`、`commands/__tests__/companyOrders.test.ts` |
-| 集成 | `__integration__/company-orders.spec.ts`（CRUD/搜索/状态/kind/跨组织/祖先组织可见）、`company-order-links.spec.ts`（替换+快照+幂等+自动建根+反查+汇总口径）、`company-order-backfill.spec.ts`（CLI dry-run/apply/重跑） |
+| 集成 | `__integration__/company-orders.spec.ts`（CRUD/搜索/状态/kind/跨组织/祖先组织可见）、`company-order-links.spec.ts`（替换+快照+幂等+自动建根+反查+汇总口径+**移动**）、`company-order-backfill.spec.ts`（CLI dry-run/apply/重跑）、`company-order-create-fields.spec.ts`（建单带默认客户/供应商与 `links[]`）、`company-order-collaborators.spec.ts`（协作可见/字段白名单/成套替换/409）、`company-order-files.spec.ts`（附件上传/列表/删除） |
 
 ## 工作台（`components/OrderWorkbench.tsx`）
 
@@ -79,6 +79,13 @@ yarn mercato order_hub backfill-company-orders --apply      # 幂等落库；重
   `yarn mercato internal_sales backfill-trade-type --apply` 归类，再跑本命令。
 - 同一笔生意的对内 + 对外两张销售单会各自生成一张根（1:1）；合并靠详情页的「关联…」成套替换把子单搬到同一根下。
 - 新迁移在部署时应用（本机 dev 由 dev supervisor 在下次 `yarn dev` 应用）；**迁移 + `--apply` 之前工作台是空的**。
+
+## 第四轮：起手信息、协作组织与文件（2026-10-09）
+
+- **建单抓起手信息**：`/backend/orders/create` 增加 默认客户（`parties` buyer 选项源）、默认供应商（`purchasing/suppliers`）与「关联已有单据」两个搜索多选（销售单按贸易类型通道、采购单）；保存时 `links[]` 与根单**同一事务**落库（未知/跨组织 422）。默认客户/供应商只是**录入默认**，子单创建后各自持有真源；经 `?companyOrderId=` 进入 `internal_sales`/`purchasing` 新建表单时按这两个默认预填（字段为空才填）。
+- **协作组织白名单**：根单详情页「协作组织」对话框（组织多选、排除自身组织、成套替换 + 版本锁）；被加入的组织**可见**该根单（工作台带「协作」徽标、hub 只读），且只能通过「修改状态与备注」写 `status`/`notes`（服务端白名单，其余字段 422；`delete`/关联/协作维护等 owner-only 动作 403）。读路径说明：列表 scope 是**显式可见 id 集**（我的组织集 ∪ 我协作的根单）——用 id 集而非 `$or`，因为引擎在「顶层 `id` 过滤 + `$or`」并存时 OR 组不再匹配。
+- **文件区块**：hub 的「文件」区块复用 installed `attachments`（表单域 `entityId='order_hub:company_order'`、`recordId=根单 id`），上传/列表/预览/下载/删除；共享壳 `src/lib/attachments/AttachmentsSection.tsx`（app 级，只做展示与调用，权限仍由 attachments 的路由裁决）。未拆细的水单/证明/盖章件先挂这里，后续逐个拆到模块时再迁移。注意 attachments 自带组织作用域：**协作组织看不到所有者组织名下的文件**。
+- **一个子单只属于一张公司订单**：`create.links[]` 与 `links.replace` 会把已在其它根上的子单**移动**过来（同事务删旧关联并失效其缓存）；`link-child` 带显式目标沿用幂等（返回现有根）。
 
 ## 规则（有意为之）
 
