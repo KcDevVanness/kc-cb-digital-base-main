@@ -61,21 +61,33 @@ owner 2026-10-09 反馈：第五轮的「文件」区块太笼统——35 列的
 
 ### Phase 7.A：数据与 API
 
-- [ ] 7.A.1 Migration
-- [ ] 7.A.2 Validators + commands
-- [ ] 7.A.3 Documents routes
-- [ ] 7.A.4 Byte proxy extension
-- [ ] 7.A.5 TEST-015 + TEST-017
+- [x] 7.A.1 Migration — 9cd123e
+- [x] 7.A.2 Validators + commands — 9cd123e, 67040ca
+- [x] 7.A.3 Documents routes — d5ee172
+- [x] 7.A.4 Byte proxy extension — d5ee172
+- [x] 7.A.5 TEST-015 + TEST-017 — 484e424, 9cd123e
 
 ### Phase 7.B：汇总与 UI
 
-- [ ] 7.B.1 `bySlot` projection
-- [ ] 7.B.2 Documents section + hub wiring
-- [ ] 7.B.3 Drawer by slot
-- [ ] 7.B.4 i18n
-- [ ] 7.B.5 TEST-016
+- [x] 7.B.1 `bySlot` projection — 9652852, 4d33cdf（修复无号盖章合同漏计 + fields OpenAPI 补 `bySlot`）
+- [x] 7.B.2 Documents section + hub wiring — d422155
+- [x] 7.B.3 Drawer by slot — d422155
+- [x] 7.B.4 i18n — fedc8c3
+- [x] 7.B.5 TEST-016 — 27781f8
 
 ### Phase 7.C：收口
 
-- [ ] 7.C.1 Browser smoke (TEST-018)
+- [x] 7.C.1 Browser smoke (TEST-018)（见下）
 - [ ] 7.C.2 Broad gate + docs + PR
+
+## Evidence
+
+- **集成（ephemeral，`--keep --filter order_hub`）**：**42 passed**（含 TEST-015 六项：登记/列表元数据/重复 409/非本单附件 422/代理字节/删除/协作只读/无关组织；TEST-016 bySlot 本单文件 + 子单来源）。
+- **单测**：`data/__tests__/companyOrderDocuments.test.ts` 7 passed；`lib/__tests__/documentSlots.test.ts`；模块合计 7 suites · 43 tests；i18n 2 suites · 7 tests。
+- **浏览器实测（ephemeral，admin@acme.com + 协作账号）**：
+  - hub「Document files」逐槽位 10 行：每行独立「Upload」；已上传行显示文件 chips（名/大小/时间 + Preview/Download/Delete，删除有确认对话框）。
+  - 把 `co7-packing.txt` 上传到 **Packing list (PL)** 槽位 → 该行立即可见（名/大小/时间）；确认删除 → 该行回到「Not uploaded on this order」，服务端列表从 3 行回到 2 行。
+  - 「All fields」抽屉按槽位显示：`Customs declaration → On this order · customs-declaration.txt · 2026-10-09`、`KC invoice stamp → On this order · kc-stamp.txt`，其余槽位「Not uploaded on this order」。
+  - 协作账号（`partner@slots-smoke.test`，仅 `order_hub.view`）：槽位文件可见、**0 个 Upload 按钮**、下载链接指向代理；字节 sha 与所有者一致（`0a5a31e4…`）；登记/删除 → **403**。
+  - 「Other files」通用区保留。
+- **实现期修复**：无号草稿合同已盖章但无单号时，KC 槽位的合同来源被漏计（原实现只在有单号时入列）——改为按盖章存在计数（TEST-016 抓到，4d33cdf）。
