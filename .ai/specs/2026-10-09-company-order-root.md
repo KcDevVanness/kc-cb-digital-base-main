@@ -1,7 +1,7 @@
 # 公司订单根单化（company order as a first-class root entity）
 
 **Date**: 2026-10-09
-**Status**: Phases 1–3 Delivered（PR `feat/company-order-root`，已合入 `dev` f26112b）；**第四轮 Delivered**（PR `feat/company-order-collaboration`，已合入 `dev` 8905b6b）；**第五轮 Delivered**（PR `feat/company-order-summaries`，含 CSP 修复）：宽门禁全绿（82 suites · 661 tests）+ 集成 `--filter order_hub` 35 passed + 浏览器实测（工作台金额列 / 全字段抽屉 / 无号草稿可选中 / 协作账号列文件与下载）。证据（前四轮）：`yarn typecheck` 全仓干净；`yarn jest src/modules/order_hub` 3 suites · 28 tests；ephemeral 集成 `company-orders` 6 / `company-order-links` 9 / `company-order-backfill` 3 = **18 passed**；浏览器实测（工作台=公司订单、点进 hub、关联对话框成套替换、旧 URL 归位、「未关联」一键建根、采购/对内销售预填+自动关联、暗色/窄屏/键盘）。迁移已生成并审阅但**未应用**；升级步骤（应用迁移 + `backfill-company-orders --apply` + `auth sync-role-acls`）见模块 README。
+**Status**: Phases 1–3 Delivered（PR `feat/company-order-root`，已合入 `dev` f26112b）；**第四轮 Delivered**（PR `feat/company-order-collaboration`，已合入 `dev` 8905b6b）；**第五轮 Delivered**（PR #153，含 CSP 修复）：宽门禁全绿（82 suites · 661 tests）+ 集成 `--filter order_hub` 35 passed + 浏览器实测（工作台金额列 / 全字段抽屉 / 无号草稿可选中 / 协作账号列文件与下载）。证据（前四轮）：`yarn typecheck` 全仓干净；`yarn jest src/modules/order_hub` 3 suites · 28 tests；ephemeral 集成 `company-orders` 6 / `company-order-links` 9 / `company-order-backfill` 3 = **18 passed**；浏览器实测（工作台=公司订单、点进 hub、关联对话框成套替换、旧 URL 归位、「未关联」一键建根、采购/对内销售预填+自动关联、暗色/窄屏/键盘）。迁移已生成并审阅但**未应用**；升级步骤（应用迁移 + `backfill-company-orders --apply` + `auth sync-role-acls`）见模块 README。
 
 > owner 已批准两个结构决策（2026-10-09，见 Resolved decisions）：**容器根单**（新表 + 关联表，模块数据仍归各模块）与**全量补录**（现有渠道内销售单 1:1 生成公司订单）。本规格取代 `2026-10-08-order-centric-entry.md` 里「工作台合并三类既有列表 / 无实体」的口径（该文件的 Phase 4/REQ-001/009/010 与 Non-goals 第一条）。
 
@@ -649,7 +649,7 @@
 
 | Date | Change |
 |---|---|
-| 2026-10-09 | **第五轮交付并验证**（PR `feat/company-order-summaries`）：35 列汇总（`GET /orders/fields` + `stages.amounts` + 工作台金额列 + hub「全字段」四组）、附件协作可见（order_hub 列表 + 字节代理按根单可见性授权；`AttachmentsSection` 支持自有路由；installed 上传仍 owner-only）、无号草稿可选（两页合并 + 客户端回退过滤）。宽门禁 82 suites · 661 tests；集成 `--filter order_hub` 35 passed；浏览器实测四条链路。实测发现并修复：`next.config.ts` 全站 CSP 覆盖了代理路由的沙箱 CSP，补 `source: '/api/order_hub/orders/attachments/:id'` 豁免（与 installed 文件路由同法）。 |
+| 2026-10-09 | **第五轮交付并验证**（PR #153）：35 列汇总（`GET /orders/fields` + `stages.amounts` + 工作台金额列 + hub「全字段」四组）、附件协作可见（order_hub 列表 + 字节代理按根单可见性授权；`AttachmentsSection` 支持自有路由；installed 上传仍 owner-only）、无号草稿可选（两页合并 + 客户端回退过滤）。宽门禁 82 suites · 661 tests；集成 `--filter order_hub` 35 passed；浏览器实测四条链路。实测发现并修复：`next.config.ts` 全站 CSP 覆盖了代理路由的沙箱 CSP，补 `source: '/api/order_hub/orders/attachments/:id'` 豁免（与 installed 文件路由同法）。 |
 | 2026-10-09 | **第五轮口径定案（owner）**：① 35 列汇总到公司订单视角（金额按币种/日期/单据号/发运单证/水单发票/收汇退税/KC 盖章）；② 协作组织可看/下载所有者文件；③ 选择器要能选到**无号草稿**采购单。「订单描述长文本」明确不做。REQ-017…REQ-019 / TEST-011…TEST-014 / AC-017…AC-019 建立。 |
 | 2026-10-09 | **第四轮交付并验证**（PR #151，已合入 `dev` 8905b6b）：Phase 4.A（4 列默认客户/供应商 + `create.links[]` 同事务 + 建单表单选择器/多选 + 子单预填）、4.B（协作组织表/命令/显式可见 id 集读路径/字段白名单/UI）、4.C（`AttachmentsSection` + 文件区块）；一致性修正「一个子单一张根」（移动语义）。实现期修复 4 处：stages 的先行引用 500、`$or`+顶层 id 的读路径失效、跨组织 CRUD 列表缓存失效、31 个缺失 i18n 键。证据：宽门禁全绿（81 suites · 654 tests）；集成 6 套 **28 passed**；浏览器实测建单/文件/协作视图/协作写状态。 |
 | 2026-10-09 | **第四轮口径定案（owner）**：建单抓起手信息（可选默认客户/供应商 + 建单即关联已有单据）、订单状态支持「协作组织白名单 + 状态/备注可写」、先加公司订单「文件」区块。REQ-011…REQ-016 / TEST-007…TEST-010 / AC-011…AC-016 建立；35 列字段归属表与「金额/单证汇总」的后续项一并记录。 |

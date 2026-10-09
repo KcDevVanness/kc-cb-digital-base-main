@@ -2,7 +2,7 @@
 
 **Source doc:** `.ai/specs/2026-10-09-company-order-root.md` 的「第五轮」节（REQ-017…REQ-019）
 **Base:** `dev`（8905b6b，前四轮已合入）
-**PR:** 待开（draft → ready）
+**PR:** #153（draft → ready；合并后本行更新为已合入 `dev`）
 
 ## Goal
 
@@ -86,7 +86,7 @@ owner 2026-10-09 确认实作三件（第 4 项「订单描述长文本」不做
 
 - [x] 4.1 Browser smoke（见下）
 - [x] 4.2 Docs + broad gate
-- [ ] 4.3 PR draft → ready
+- [x] 4.3 PR draft → ready — #153
 
 ## Evidence
 
