@@ -4,6 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { z } from 'zod'
 import { Loader2, Plus, Upload } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
 import {
@@ -40,6 +41,8 @@ import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n
 import { AttachmentPreviewLink, useAttachmentPreview } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { PurchaseOrderStatusBadge } from '@/lib/orders/purchaseOrderStatus'
+import { RelatedSection, loadRelatedPage } from '@/lib/related/RelatedSection'
+import { readText } from '../lib/supplierProductFormValues'
 import {
   ORDERS_API_PATH,
   ORDERS_LINES_API_PATH,
@@ -77,6 +80,15 @@ const PAYMENT_ATTACHMENT_ENTITY_ID = 'purchasing:purchase_payment'
  * document command stores only the returned id.
  */
 const ORDER_DOCUMENT_ATTACHMENT_ENTITY_ID = 'purchasing:purchase_order'
+
+/** The contract link set covering this purchase order, and the contract list its ids resolve on. */
+const CONTRACTS_ORDERS_API_PATH = 'trade_docs/contracts/orders'
+const CONTRACTS_API_PATH = 'trade_docs/contracts'
+
+/** The shipments carrying goods from this purchase order, and the ledger its 「查看全部」 link opens. */
+const SHIPMENTS_API_PATH = 'cross_border/shipments'
+const SHIPMENTS_LIST_HREF = '/backend/cross_border/shipments'
+const RELATED_CONTRACT_PAGE_SIZE = 50
 
 /** Document types the module accepts — the same literals the command's enum offers. */
 const ORDER_DOCUMENT_TYPES = ['supplier_invoice', 'packing_list', 'purchase_payment_receipt', 'other'] as const
@@ -159,6 +171,52 @@ const PAYMENT_STATUS_MAP: StatusMap<PaymentStatus> = {
 }
 
 const PAYMENT_STAGES: readonly PaymentStage[] = ['deposit', 'balance', 'other']
+
+/** A contract covering this purchase order, as `trade_docs/contracts` projects it. */
+type RelatedContractRow = {
+  id: string
+  number: string | null
+  status: string
+  currencyCode: string
+  total: string
+}
+
+/** A shipment carrying goods from this purchase order, as `cross_border/shipments` projects it. */
+type RelatedShipmentRow = {
+  id: string
+  number: string | null
+  status: string
+  containerNumber: string | null
+  eta: string | null
+}
+
+/** The two kinds a purchase order's source anchor can name — the contract page's own kind keys. */
+const SOURCE_ORDER_KIND_LABEL_KEYS: Record<string, string> = {
+  internal_sales_order: 'trade_docs.contracts.detail.orders.kind.internal_sales_order',
+  external_sales_order: 'trade_docs.contracts.detail.orders.kind.external_sales_order',
+}
+
+const CONTRACT_STATUS_LABEL_KEYS: Record<string, string> = {
+  draft: 'trade_docs.contracts.status.draft',
+  issued: 'trade_docs.contracts.status.issued',
+  signed: 'trade_docs.contracts.status.signed',
+  closed: 'trade_docs.contracts.status.closed',
+  cancelled: 'trade_docs.contracts.status.cancelled',
+}
+
+const SHIPMENT_STATUS_LABEL_KEYS: Record<string, string> = {
+  draft: 'cross_border.shipments.status.draft',
+  in_transit: 'cross_border.shipments.status.in_transit',
+  received: 'cross_border.shipments.status.received',
+  closed: 'cross_border.shipments.status.closed',
+  cancelled: 'cross_border.shipments.status.cancelled',
+}
+
+/** The stored status resolved to its label; an unknown value shows as stored, never as a raw key. */
+function relatedStatusLabel(t: TranslateFn, keys: Record<string, string>, status: string): string {
+  const key = keys[status]
+  return key ? t(key) : status
+}
 
 function toOrderLineRecord(item: Record<string, unknown>): OrderLineRecord {
   return {
@@ -1182,6 +1240,62 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
     retryLastMutation,
   }), [mutationContextId, orderId, retryLastMutation])
 
+  const relatedMessages = React.useMemo(() => ({
+    loading: t('purchasing.orders.detail.related.loading'),
+    loadFailed: t('purchasing.orders.detail.related.loadFailed'),
+    retry: t('purchasing.orders.detail.related.retry'),
+    viewAll: t('purchasing.orders.detail.related.viewAll'),
+  }), [t])
+
+  /**
+   * 关联合同: the contract link rows naming this purchase order, resolved against the live contracts
+   * — the read the order hub does from the other side. The link set is written on the contract's own
+   * 「管理订单关联」 dialog, so this block never offers a writer.
+   */
+  const contractsQuery = useQuery({
+    queryKey: ['purchasing-order-detail-contracts', orderId, scopeVersion],
+    enabled: order !== null,
+    queryFn: async (): Promise<RelatedContractRow[]> => {
+      const links = await fetchCrudList<Record<string, unknown>>(CONTRACTS_ORDERS_API_PATH, {
+        orderKind: 'purchase_order',
+        orderId,
+        pageSize: RELATED_CONTRACT_PAGE_SIZE,
+      })
+      const contractIds = (links.items ?? [])
+        .map((item) => readText(item, 'contractId', 'contract_id'))
+        .filter((id) => id.length > 0)
+      if (contractIds.length === 0) return []
+      const payload = await fetchCrudList<Record<string, unknown>>(CONTRACTS_API_PATH, {
+        ids: contractIds.join(','),
+        pageSize: RELATED_CONTRACT_PAGE_SIZE,
+      })
+      return (payload.items ?? []).map((item) => ({
+        id: String(item.id),
+        number: (item.number ?? null) as string | null,
+        status: readText(item, 'status') || 'draft',
+        currencyCode: readText(item, 'currencyCode', 'currency_code') || 'CNY',
+        total: String(item.total ?? '0'),
+      }))
+    },
+  })
+
+  /** 关联发运单: the shipments whose purchase allocations carry this order's goods. */
+  const shipmentsQuery = useQuery({
+    queryKey: ['purchasing-order-detail-shipments', orderId, scopeVersion],
+    enabled: order !== null,
+    queryFn: () => loadRelatedPage<RelatedShipmentRow>(
+      SHIPMENTS_API_PATH,
+      { purchaseOrderId: orderId },
+      (item) => ({
+        id: String(item.id),
+        number: (item.number ?? null) as string | null,
+        status: readText(item, 'status') || 'draft',
+        containerNumber: (item.containerNumber ?? null) as string | null,
+        eta: (item.eta ?? null) as string | null,
+      }),
+    ),
+  })
+
   const load = React.useCallback(async () => {
     setLoading(true)
     setLoadError(null)
@@ -1311,10 +1425,6 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
   const transitionActions = TRANSITIONS_BY_STATUS[order.status]
   const ownerName = order.ownerName ?? (typeof order.ownerSnapshot?.name === 'string' ? order.ownerSnapshot.name : null)
   const customerName = order.customerName ?? (typeof order.customerSnapshot?.name === 'string' ? order.customerSnapshot.name : null)
-  const sourceSalesOrderHref = (kind: string | null, id: string): string => {
-    const prefix = kind === 'external_sales_order' ? '/backend/external-sales' : '/backend/internal-sales'
-    return `${prefix}/orders/${encodeURIComponent(id)}`
-  }
   const productCategoryLabel = order.productCategory
     ? categoryOptions.find((option) => option.value === order.productCategory)?.label ?? order.productCategory
     : null
@@ -1366,18 +1476,6 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
         </SummaryField>
         <SummaryField label={t('purchasing.orders.detail.owner')}>{ownerName ?? EMPTY_CELL}</SummaryField>
         <SummaryField label={t('purchasing.orders.detail.customer')}>{customerName ?? EMPTY_CELL}</SummaryField>
-        {order.sourceSalesOrderId ? (
-          // Read-only: the anchor is written by the create flow (or cleared on edit), never typed here.
-          // The link opens the order hub, which is where the rest of that order's work is listed.
-          <SummaryField label={t('purchasing.orders.form.sourceOrder.label')}>
-            <Link
-              href={sourceSalesOrderHref(order.sourceSalesOrderKind, order.sourceSalesOrderId)}
-              className="underline"
-            >
-              {order.sourceSalesOrderNumber ?? order.sourceSalesOrderId}
-            </Link>
-          </SummaryField>
-        ) : null}
         <SummaryField label={t('purchasing.orders.form.field.currency')}>{order.currencyCode}</SummaryField>
         <SummaryField label={t('purchasing.orders.list.columns.total')}>
           <MoneyAmount currencyCode={order.currencyCode} amount={order.total} />
@@ -1407,6 +1505,108 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
           disableRowClick
         />
       </div>
+
+      {/* 关联订单 — the anchor the create flow wrote, at most one order. It has no writer here (the
+          create/edit forms own it), so the block is a single row: the number links into the order
+          hub, where that order's own work is listed. */}
+      <RelatedSection
+        id="source-order"
+        title={t('purchasing.orders.detail.sourceOrder.title')}
+        isLoading={false}
+        failed={false}
+        isEmpty={!order.sourceSalesOrderId}
+        emptyLabel={t('purchasing.orders.detail.sourceOrder.empty')}
+        framed
+        messages={relatedMessages}
+      >
+        {order.sourceSalesOrderId ? (
+          <ul className="flex flex-col gap-2">
+            <li className="flex flex-wrap items-center gap-3 text-sm">
+              <Link
+                className="font-medium underline"
+                href={`/backend/orders/${encodeURIComponent(order.sourceSalesOrderId)}`}
+              >
+                {order.sourceSalesOrderNumber ?? order.sourceSalesOrderId}
+              </Link>
+              {order.sourceSalesOrderKind && SOURCE_ORDER_KIND_LABEL_KEYS[order.sourceSalesOrderKind] ? (
+                <span className="text-xs text-muted-foreground">
+                  {t(SOURCE_ORDER_KIND_LABEL_KEYS[order.sourceSalesOrderKind])}
+                </span>
+              ) : null}
+            </li>
+          </ul>
+        ) : null}
+      </RelatedSection>
+
+      {/* 关联合同 — read here and written on the contract's own 「管理订单关联」 dialog: the signed
+          paper decides which orders it covers, so this block never offers the writer. */}
+      <RelatedSection
+        id="contracts"
+        title={t('purchasing.orders.detail.contracts.title')}
+        isLoading={contractsQuery.isLoading}
+        failed={contractsQuery.isError}
+        isEmpty={(contractsQuery.data ?? []).length === 0}
+        emptyLabel={t('purchasing.orders.detail.contracts.empty')}
+        onRetry={() => void contractsQuery.refetch()}
+        framed
+        messages={relatedMessages}
+      >
+        <ul className="flex flex-col gap-2">
+          {(contractsQuery.data ?? []).map((row) => (
+            <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
+              <Link
+                className="font-medium underline"
+                href={`/backend/trade-docs/contracts/${encodeURIComponent(row.id)}`}
+              >
+                {row.number ?? row.id.slice(0, 8)}
+              </Link>
+              <MoneyAmount currencyCode={row.currencyCode} amount={row.total} />
+              <StatusBadge variant="neutral">
+                {relatedStatusLabel(t, CONTRACT_STATUS_LABEL_KEYS, row.status)}
+              </StatusBadge>
+            </li>
+          ))}
+        </ul>
+      </RelatedSection>
+
+      {/* 关联发运单 — the shipments whose purchase allocations carry this order's goods; 「查看全部」
+          opens the shipments ledger with the same filter the block reads through. */}
+      <RelatedSection
+        id="shipments"
+        title={t('purchasing.orders.detail.shipments.title')}
+        isLoading={shipmentsQuery.isLoading}
+        failed={shipmentsQuery.isError}
+        isEmpty={(shipmentsQuery.data?.items ?? []).length === 0}
+        emptyLabel={t('purchasing.orders.detail.shipments.empty')}
+        viewAllHref={
+          shipmentsQuery.data && shipmentsQuery.data.total > shipmentsQuery.data.items.length
+            ? `${SHIPMENTS_LIST_HREF}?purchaseOrderId=${encodeURIComponent(orderId)}`
+            : null
+        }
+        onRetry={() => void shipmentsQuery.refetch()}
+        framed
+        messages={relatedMessages}
+      >
+        <ul className="flex flex-col gap-2">
+          {(shipmentsQuery.data?.items ?? []).map((row) => (
+            <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
+              <Link
+                className="font-medium underline"
+                href={`/backend/cross_border/shipments/${encodeURIComponent(row.id)}`}
+              >
+                {row.number ?? row.id.slice(0, 8)}
+              </Link>
+              <span className="text-muted-foreground">{row.containerNumber ?? EMPTY_CELL}</span>
+              <StatusBadge variant="neutral">
+                {relatedStatusLabel(t, SHIPMENT_STATUS_LABEL_KEYS, row.status)}
+              </StatusBadge>
+              {row.eta ? (
+                <span className="text-xs tabular-nums text-muted-foreground">{formatOrderDate(row.eta, locale)}</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </RelatedSection>
 
       <PurchaseOrderDocumentsSection
         orderId={order.id}
