@@ -16,12 +16,8 @@ import { NAV_TREE, TREE_EXCLUDED, isNavTreeBranch, type NavTreeChild } from '../
 
 function collectHrefs(children: NavTreeChild[], into: string[] = []): string[] {
   for (const child of children) {
-    if (isNavTreeBranch(child)) {
-      // A node with a page of its own is a link target too (the workbench node), so its href is part
-      // of the registration ledger: it must name a page the manifest publishes.
-      if (child.href) into.push(child.href)
-      collectHrefs(child.children, into)
-    } else into.push(child.href)
+    if (isNavTreeBranch(child)) collectHrefs(child.children, into)
+    else into.push(child.href)
   }
   return into
 }
@@ -99,24 +95,15 @@ describe('nav_shell tree registration', () => {
     expect(branchIds.filter((id) => TREE_HREFS.includes(id))).toEqual([])
   })
 
-  it('leads the orders domain with the workbench node and keeps the four business groups under it', () => {
+  it('leads the orders domain with the workbench and keeps the four business groups beside it', () => {
     const orders = NAV_TREE.find((node) => node.id === 'tree:orders')!
 
     // A future edit that reorders a group or drops one fails here: the workbench is the only entry
     // for creating an order and the four groups are where its blocks are filled in and looked up.
+    // They are siblings on the domain's second level — the workbench is a plain leaf, since it holds
+    // no group of its own.
     expect(orders.children.map((child) => (isNavTreeBranch(child) ? child.id : child.href))).toEqual([
-      'tree:module:order-workbench',
-    ])
-
-    const workbench = orders.children[0]
-    if (!isNavTreeBranch(workbench)) throw new Error('the orders domain leads with the workbench node')
-    // The second level is the node with a page of its own: its row title opens `/backend/orders` and
-    // the four groups hang one level under it.
-    expect(workbench.href).toBe('/backend/orders')
-    expect(workbench.labelKey).toBe('nav_shell.tree.module.orderWorkbench')
-    expect(
-      workbench.children.map((child) => (isNavTreeBranch(child) ? child.id : child.href)),
-    ).toEqual([
+      '/backend/orders',
       'tree:module:purchasing',
       'tree:module:export-sales',
       'tree:module:contracts',
@@ -149,10 +136,7 @@ describe('nav_shell tree registration', () => {
 
   it('points the export-sales group at the one sales-quote workbench', () => {
     const orders = NAV_TREE.find((node) => node.id === 'tree:orders')!
-    const workbench = orders.children[0]
-    if (!isNavTreeBranch(workbench)) throw new Error('the orders domain leads with the workbench node')
-
-    const exportSales = workbench.children.find(
+    const exportSales = orders.children.find(
       (child) => isNavTreeBranch(child) && child.id === 'tree:module:export-sales',
     )
     if (!exportSales || !isNavTreeBranch(exportSales)) throw new Error('the export-sales group is missing')

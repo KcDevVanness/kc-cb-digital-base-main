@@ -40,8 +40,8 @@ type TreeRow = { item: NavTreeItem; depth: number }
 
 /**
  * Indentation by depth, as classes rather than a computed `paddingLeft`: the design-system check
- * rejects inline styles, and the tree is four levels deep in the widest branch (域 → 订单工作台 →
- * 业务组 → 页面); deeper nesting saturates at the last step.
+ * rejects inline styles, and the tree is three levels deep in the widest branch (域 → 业务组 → 页面);
+ * deeper nesting saturates at the last step.
  */
 const DEPTH_PADDING = ['pl-2', 'pl-5', 'pl-8', 'pl-11'] as const
 
