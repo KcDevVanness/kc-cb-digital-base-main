@@ -9,7 +9,7 @@ import { loadCodeListOptions } from './codeListOptions'
  * The set is the writable head of `purchaseOrderUpdateSchema` minus everything that belongs to the
  * order's own page: the lines, the supplier, the currency and the deposit are absent on purpose,
  * because changing any of them re-prices the order and only the dedicated edit form owns that.
- * 订单描述 stays a `select` over the same `order_product_category` dictionary the edit form reads,
+ * 订单描述 stays a `select` over the same `product_category` dictionary the edit form reads,
  * so a code the dictionary does not carry cannot be typed in here either.
  *
  * Field labels are i18n keys, resolved by the dialog that renders them (see `QuickEditDialog`).

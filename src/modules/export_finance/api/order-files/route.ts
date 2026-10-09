@@ -53,6 +53,7 @@ const orderFileItemSchema = z
     ownerName: z.string().nullable(),
     customerName: z.string().nullable(),
     productCategory: z.string().nullable(),
+    productCategoryLabel: z.string().nullable(),
     businessStatus: z.enum(ORDER_FILE_STATUSES),
     placedAt: z.string().nullable(),
     expectedDeliveryAt: z.string().nullable(),

@@ -93,7 +93,7 @@ export type PurchaseOrderRecord = {
   businessNumber: string | null
   supplierId: string
   supplierName: string | null
-  /** Dictionary code of `order_product_category`. */
+  /** Dictionary code of the `product_category` list. */
   productCategory: string | null
   ownerUserId: string | null
   ownerSnapshot: Record<string, unknown> | null
@@ -358,7 +358,7 @@ async function loadLineProductOptions(
 export type PurchaseOrderFormValues = {
   /** The business's own order number; the system `number` is assigned when the order is placed. */
   businessNumber: string
-  /** Dictionary code of `order_product_category`. */
+  /** Dictionary code of the `product_category` list. */
   productCategory: string
   ownerUserId: string
   /** Frozen display snapshot of the picked purchaser, sent by the client (see handleSubmit). */
