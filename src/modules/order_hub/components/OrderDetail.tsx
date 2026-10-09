@@ -21,7 +21,6 @@ import type { CrudField } from '@open-mercato/ui/backend/CrudForm'
 import { RelatedSection } from '@/lib/related/RelatedSection'
 import { QuickEditDialog } from '@/lib/quick-edit/QuickEditDialog'
 import { createDictionaryMap, type DictionaryMap } from '@open-mercato/core/modules/dictionaries/components/dictionaryAppearance'
-import { isPurchaseOrderStatus, purchaseOrderStatusLabel } from '@/lib/orders/purchaseOrderStatus'
 import { snapshotDisplayName } from './companyOrderDisplay'
 import {
   fields as contractQuickEditFields,
@@ -49,7 +48,7 @@ import { CompanyOrderStatusDialog } from './CompanyOrderStatusDialog'
 import { AttachmentsSection } from '@/lib/attachments/AttachmentsSection'
 import { OrderDocumentsSection } from './OrderDocumentsSection'
 import { withReturnTo } from '@/lib/navigation/returnTo'
-import OrderFieldsDrawer from './OrderFieldsDrawer'
+import { childStatusLabel } from './companyOrderChildStatus'
 import LinkedRecordPreviewDrawer from './LinkedRecordPreviewDrawer'
 import type { LinkedRecordPreviewKind, LinkedRecordPreviewTarget } from './linkedRecordPreviewSources'
 import { resolveCompanyOrderForDocument } from '../lib/companyOrderResolve'
@@ -525,7 +524,6 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   const [linkDialog, setLinkDialog] = React.useState<{ kind: CompanyOrderLinkKind; kinds?: CompanyOrderLinkKind[] } | null>(null)
   const [collaboratorsOpen, setCollaboratorsOpen] = React.useState(false)
   const [statusOpen, setStatusOpen] = React.useState(false)
-  const [fieldsOpen, setFieldsOpen] = React.useState(false)
   const [salesKindsOpen, setSalesKindsOpen] = React.useState(false)
   const [preview, setPreview] = React.useState<LinkedRecordPreviewTarget | null>(null)
   const [previewOpen, setPreviewOpen] = React.useState(false)
@@ -963,10 +961,6 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         }
         actionsContent={(
           <div className="flex flex-wrap items-center gap-2">
-            {/* Read-only, so both the owner and a collaborating organization can open it. */}
-            <Button type="button" variant="outline" onClick={() => setFieldsOpen(true)}>
-              {t('order_hub.workbench.actions.fields')}
-            </Button>
             {canWrite ? (
               <>
                 <Button asChild variant="outline">
@@ -1055,9 +1049,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
                 row.refNumber ?? row.refId.slice(0, 8),
               )}
               <span className="text-muted-foreground">{row.refCounterparty ?? '—'}</span>
-              <StatusBadge variant="neutral">
-                {childStatusLabel(t, row.kind, row.refStatus, salesStatusDictionary)}
-              </StatusBadge>
+              <ChildStatusBadge t={t} kind={row.kind} status={row.refStatus} salesDictionary={salesStatusDictionary} />
               <Button asChild variant="ghost" size="sm">
                 <Link href={withReturnTo(childHref(row.kind, row.refId, canWrite ? 'edit' : 'detail'), returnTo)}>
                   {t(canWrite ? 'order_hub.detail.section.edit' : 'order_hub.detail.orders.open')}
@@ -1124,9 +1116,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
                 row.refNumber ?? row.refId.slice(0, 8),
               )}
               <span className="text-muted-foreground">{row.refCounterparty ?? '—'}</span>
-              <StatusBadge variant="neutral">
-                {childStatusLabel(t, row.kind, row.refStatus, salesStatusDictionary)}
-              </StatusBadge>
+              <ChildStatusBadge t={t} kind={row.kind} status={row.refStatus} salesDictionary={salesStatusDictionary} />
               <Button asChild variant="ghost" size="sm">
                 <Link href={withReturnTo(childHref(row.kind, row.refId, canWrite ? 'edit' : 'detail'), returnTo)}>
                   {t(canWrite ? 'order_hub.detail.section.edit' : 'order_hub.detail.orders.open')}
@@ -1539,24 +1529,26 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           action?.(child)
         }}
       />
-
-      <OrderFieldsDrawer
-        target={{ id: head.id, number: head.number ?? null }}
-        open={fieldsOpen}
-        onOpenChange={setFieldsOpen}
-      />
     </>
   )
 }
 
-/** A child's frozen status in the hub's own words: the sales dictionary, the purchase vocabulary, or the raw value. */
-function childStatusLabel(
-  t: TranslateFn,
-  kind: CompanyOrderLinkKind,
-  status: string | null,
-  salesDictionary: DictionaryMap | null,
-): string {
-  if (!status) return '—'
-  if (kind === 'purchase_order') return isPurchaseOrderStatus(status) ? purchaseOrderStatusLabel(t, status) : status
-  return salesDictionary?.[status]?.label ?? status
+/**
+ * The status badge a linked child row shows — and nothing when the child has no status: an empty
+ * badge reading 「—」 is noise (owner 2026-10-09), so the row simply does without it.
+ */
+function ChildStatusBadge({
+  t,
+  kind,
+  status,
+  salesDictionary,
+}: {
+  t: TranslateFn
+  kind: CompanyOrderLinkKind
+  status: string | null
+  salesDictionary: DictionaryMap | null
+}) {
+  const label = childStatusLabel(t, kind, status, salesDictionary)
+  if (!label) return null
+  return <StatusBadge variant="neutral">{label}</StatusBadge>
 }
