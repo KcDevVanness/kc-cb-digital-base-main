@@ -97,6 +97,8 @@ owner 反馈（2026-10-09 01:49）：「不复用既有列表的 UI/服务端聚
 
 ### Phase 4: 收口
 
-- [ ] 4.1 Docs
-- [ ] 4.2 Broad gate
-- [ ] 4.3 PR draft → ready
+- [x] 4.1 Docs — db3454c（模块 README 重写、spec Status/AC/Changelog、状态板、计划进度表、架构决策与模块行、lesson `order-root-must-be-an-owned-record`）
+- [x] 4.2 Broad gate — 一次运行全绿：`yarn generate`(6s)/`typecheck`(5s)/`lint`(11s, 0 error)/`check-lessons`/`ds:check`/`test` **79 suites · 641 tests**/`build`(18s)。门禁拦下并修掉 1 处 `react/no-children-prop`（5286578）。
+- [x] 4.3 PR draft → ready — PR #150（base `dev`，labels `review`/`feature`/`needs-qa`/`priority-high`/`risk-medium`，assignee + 🤖 claim comment）
+- [ ] 合并后（owner 操作）：应用迁移 → `yarn mercato order_hub backfill-company-orders --apply` → `yarn mercato auth sync-role-acls`
+- **预览**：ephemeral 环境（隔离 throwaway 库）运行于 `http://127.0.0.1:5001`（admin@acme.com / secret），已用 API 种入 1 张公司订单（`CO-2026-0001`：1 采购子单 + 1 对内销售子单，阶段采购=1、对方=销售子单买方）供点击。
