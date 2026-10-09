@@ -9,6 +9,7 @@ import { DataTable } from '@open-mercato/ui/backend/DataTable'
 import { ListEmptyState } from '@open-mercato/ui/backend/filters/ListEmptyState'
 import { RowActions } from '@open-mercato/ui/backend/RowActions'
 import { Button } from '@open-mercato/ui/primitives/button'
+import { Badge } from '@open-mercato/ui/primitives/badge'
 import { StatusBadge, type StatusBadgeVariant } from '@open-mercato/ui/primitives/status-badge'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
@@ -39,6 +40,8 @@ type OrderWorkbenchRow = {
   orderDate: string | null
   etaDate: string | null
   status: string
+  /** True when the caller's organization is a collaborator on the root (list read flag). */
+  viewerIsCollaborator: boolean
 }
 
 const KIND_VALUES = ['all', 'internal_sales_order', 'external_sales_order', 'purchase_order'] as const
@@ -79,6 +82,7 @@ function toRow(item: Record<string, unknown>): OrderWorkbenchRow {
     orderDate: readText(item.orderDate),
     etaDate: readText(item.etaDate),
     status: readText(item.status) ?? 'draft',
+    viewerIsCollaborator: item.viewerIsCollaborator === true,
   }
 }
 
@@ -166,9 +170,19 @@ export default function OrderWorkbench() {
         accessorKey: 'number',
         header: t('order_hub.workbench.columns.number'),
         cell: ({ row }) => (
-          <Link href={`/backend/orders/${encodeURIComponent(row.original.id)}`} className="underline">
-            {row.original.number}
-          </Link>
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <Link href={`/backend/orders/${encodeURIComponent(row.original.id)}`} className="underline">
+              {row.original.number}
+            </Link>
+            {/* A row the caller sees as a collaborating organization, not as its owner: the marker
+                is the row's own flag from the list read, so it needs no extra request and does not
+                change any other column or filter. */}
+            {row.original.viewerIsCollaborator ? (
+              <Badge variant="info" size="sm" dot>
+                {t('order_hub.workbench.collaborator')}
+              </Badge>
+            ) : null}
+          </span>
         ),
       },
       {

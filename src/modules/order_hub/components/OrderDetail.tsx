@@ -41,6 +41,9 @@ import { readChannelId, tradeTypeFromChannelId } from '../../internal_sales/lib/
 import { useTradeTypeChannels } from '../../internal_sales/lib/tradeTypeChannels'
 import { OrderDocumentsDialog } from '../../trade_docs/components/OrderDocumentsDialog'
 import { CompanyOrderLinkDialog } from './CompanyOrderLinkDialog'
+import { CompanyOrderCollaboratorsDialog } from './CompanyOrderCollaboratorsDialog'
+import { CompanyOrderStatusDialog } from './CompanyOrderStatusDialog'
+import { AttachmentsSection } from '@/lib/attachments/AttachmentsSection'
 import { resolveCompanyOrderForDocument } from '../lib/companyOrderResolve'
 import type { CompanyOrderLinkKind } from '../data/validators'
 
@@ -79,6 +82,17 @@ type CompanyOrderHead = {
   etaDate: string | null
   status: string
   notes: string | null
+  /** The default customer/supplier frozen names (display-only here; the edit page clears them). */
+  customerName: string | null
+  supplierName: string | null
+  /**
+   * True when the caller's organization is a **collaborator** on this root: the hub then hides every
+   * entry that writes the root or its children and offers only the status/notes dialog (REQ-016).
+   * The server enforces the same split, so this only decides what is shown.
+   */
+  viewerIsCollaborator: boolean
+  /** The root's own organization; never offered as a collaborator of itself. */
+  organizationId: string | null
   updatedAt: string | null
 }
 
@@ -131,8 +145,20 @@ function toHead(item: Record<string, unknown>): CompanyOrderHead {
     etaDate: (item.etaDate ?? null) as string | null,
     status: String(item.status ?? 'draft'),
     notes: (item.notes ?? null) as string | null,
+    customerName: snapshotDisplayName(item.customerSnapshot),
+    supplierName: snapshotDisplayName(item.supplierSnapshot),
+    viewerIsCollaborator: item.viewerIsCollaborator === true,
+    organizationId: readText(item, 'organizationId', 'organization_id') || null,
     updatedAt: readText(item, 'updatedAt', 'updated_at') || null,
   }
+}
+
+/** The name frozen into a default-customer/supplier snapshot, for the header's display-only cell. */
+function snapshotDisplayName(snapshot: unknown): string | null {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return null
+  if (!('name' in snapshot)) return null
+  const name = snapshot.name
+  return typeof name === 'string' && name.trim().length > 0 ? name : null
 }
 
 function toLinkRow(item: Record<string, unknown>): LinkRow {
@@ -448,6 +474,8 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   const [documentsDialog, setDocumentsDialog] = React.useState<{ orderKind: string; orderId: string } | null>(null)
   const [pickerAction, setPickerAction] = React.useState<((child: LinkRow) => void) | null>(null)
   const [linkDialogKind, setLinkDialogKind] = React.useState<CompanyOrderLinkKind | null>(null)
+  const [collaboratorsOpen, setCollaboratorsOpen] = React.useState(false)
+  const [statusOpen, setStatusOpen] = React.useState(false)
   const [quickEdit, setQuickEdit] = React.useState<{
     config: QuickEditConfig
     recordId: string
@@ -838,6 +866,11 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   }
 
   const orderUpdatedAt = head.updatedAt
+  // A collaborator sees the same root and its children but writes neither: every entry that would
+  // edit the root, re-link a child or create a downstream document is hidden, and the status/notes
+  // dialog takes the edit action's place. The server refuses the same writes regardless of this flag.
+  const viewerIsCollaborator = head.viewerIsCollaborator
+  const canWrite = !viewerIsCollaborator
   const purchaseCreateHref = `/backend/purchasing/orders/create?companyOrderId=${encodeURIComponent(head.id)}${
     allSalesChildren.length === 1
       ? `&orderKind=${allSalesChildren[0].kind}&orderId=${encodeURIComponent(allSalesChildren[0].refId)}`
@@ -890,9 +923,22 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           </StatusBadge>
         }
         actionsContent={(
-          <Button asChild variant="outline">
-            <Link href={`/backend/orders/${encodeURIComponent(head.id)}/edit`}>{t('order_hub.companyOrders.actions.edit')}</Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {canWrite ? (
+              <>
+                <Button asChild variant="outline">
+                  <Link href={`/backend/orders/${encodeURIComponent(head.id)}/edit`}>{t('order_hub.companyOrders.actions.edit')}</Link>
+                </Button>
+                <Button type="button" variant="ghost" onClick={() => setCollaboratorsOpen(true)}>
+                  {t('order_hub.companyOrders.actions.collaborators')}
+                </Button>
+              </>
+            ) : (
+              <Button type="button" variant="outline" onClick={() => setStatusOpen(true)}>
+                {t('order_hub.companyOrders.statusEdit.action')}
+              </Button>
+            )}
+          </div>
         )}
       />
 
@@ -913,6 +959,16 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           <p className="text-xs text-muted-foreground">{t('order_hub.companyOrders.header.notes')}</p>
           <p className="text-sm font-medium">{head.notes ?? '—'}</p>
         </div>
+        {/* The default customer/supplier are the root's own start-up information; the display name
+            is the one frozen when they were set, and clearing them stays on the edit page. */}
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">{t('order_hub.companyOrders.header.customer')}</p>
+          <p className="text-sm font-medium">{head.customerName ?? '—'}</p>
+        </div>
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">{t('order_hub.companyOrders.header.supplier')}</p>
+          <p className="text-sm font-medium">{head.supplierName ?? '—'}</p>
+        </div>
       </div>
 
       {attachBlocks.map((block) => {
@@ -922,7 +978,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
             key={block.id}
             id={block.id}
             title={t(block.titleKey)}
-            action={(
+            action={canWrite ? (
               <div className="flex flex-wrap items-center gap-2">
                 <Button asChild variant="outline" size="sm">
                   <Link href={block.createHref}>{t('order_hub.detail.orders.create')}</Link>
@@ -931,7 +987,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
                   {t('order_hub.detail.orders.link')}
                 </Button>
               </div>
-            )}
+            ) : undefined}
             isLoading={linksQuery.isLoading}
             failed={linksQuery.isError}
             isEmpty={rows.length === 0}
@@ -951,9 +1007,11 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
                   <Button asChild variant="ghost" size="sm">
                     <Link href={block.openHref(row.refId)}>{t('order_hub.detail.orders.open')}</Link>
                   </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => void removeLink(row)}>
-                    {t('order_hub.detail.orders.remove')}
-                  </Button>
+                  {canWrite ? (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void removeLink(row)}>
+                      {t('order_hub.detail.orders.remove')}
+                    </Button>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -964,7 +1022,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
       <RelatedSection
         id="contracts"
         title={t('order_hub.detail.contracts.title')}
-        action={(
+        action={canWrite ? (
           <Button
             type="button"
             variant="outline"
@@ -974,7 +1032,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           >
             {t('order_hub.detail.section.add.contracts')}
           </Button>
-        )}
+        ) : undefined}
         isLoading={linksQuery.isLoading || aggregationLoading(contractLinkQueries) || (contractIds.length > 0 && contractsQuery.isLoading)}
         failed={linksQuery.isError || aggregationFailed(contractLinkQueries) || (contractIds.length > 0 && contractsQuery.isError)}
         isEmpty={contracts.length === 0}
@@ -995,10 +1053,12 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
               </Link>
               <MoneyAmount currencyCode={row.currencyCode} amount={row.total} />
               <StatusBadge variant="neutral">{row.status}</StatusBadge>
-              <RowEditButton
-                label={t('order_hub.detail.section.edit')}
-                onClick={() => void openQuickEdit(QUICK_EDIT_CONFIGS.contracts, row.id, ['order-hub-contracts'])}
-              />
+              {canWrite ? (
+                <RowEditButton
+                  label={t('order_hub.detail.section.edit')}
+                  onClick={() => void openQuickEdit(QUICK_EDIT_CONFIGS.contracts, row.id, ['order-hub-contracts'])}
+                />
+              ) : null}
             </li>
           ))}
         </ul>
@@ -1008,7 +1068,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
       <RelatedSection
         id="documents"
         title={t('order_hub.detail.documents.title')}
-        action={(
+        action={canWrite ? (
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
@@ -1038,7 +1098,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
               {t('order_hub.detail.documents.manage')}
             </Button>
           </div>
-        )}
+        ) : undefined}
         isLoading={linksQuery.isLoading || aggregationLoading(documentLinkQueries) || documentsQuery.isLoading}
         failed={linksQuery.isError || aggregationFailed(documentLinkQueries) || documentsQuery.isError}
         isEmpty={documents.length === 0}
@@ -1060,10 +1120,12 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
               </Link>
               <MoneyAmount currencyCode={row.currencyCode} amount={row.total} />
               <StatusBadge variant="neutral">{row.status}</StatusBadge>
-              <RowEditButton
-                label={t('order_hub.detail.section.edit')}
-                onClick={() => void openQuickEdit(quickEditConfigForDocument(row.kind), row.id, ['order-hub-documents'])}
-              />
+              {canWrite ? (
+                <RowEditButton
+                  label={t('order_hub.detail.section.edit')}
+                  onClick={() => void openQuickEdit(quickEditConfigForDocument(row.kind), row.id, ['order-hub-documents'])}
+                />
+              ) : null}
             </li>
           ))}
         </ul>
@@ -1073,7 +1135,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
       <RelatedSection
         id="shipments"
         title={t('order_hub.detail.shipments.title')}
-        action={(
+        action={canWrite ? (
           <Button
             type="button"
             variant="outline"
@@ -1083,7 +1145,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           >
             {t('order_hub.detail.section.add.shipment')}
           </Button>
-        )}
+        ) : undefined}
         isLoading={linksQuery.isLoading || aggregationLoading(shipmentQueries)}
         failed={linksQuery.isError || aggregationFailed(shipmentQueries)}
         isEmpty={shipments.length === 0}
@@ -1101,10 +1163,12 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
               </Link>
               <span className="text-muted-foreground">{row.containerNumber ?? '—'}</span>
               <StatusBadge variant="neutral">{row.status}</StatusBadge>
-              <RowEditButton
-                label={t('order_hub.detail.section.edit')}
-                onClick={() => void openQuickEdit(QUICK_EDIT_CONFIGS.shipments, row.id, ['order-hub-shipment-sales'])}
-              />
+              {canWrite ? (
+                <RowEditButton
+                  label={t('order_hub.detail.section.edit')}
+                  onClick={() => void openQuickEdit(QUICK_EDIT_CONFIGS.shipments, row.id, ['order-hub-shipment-sales'])}
+                />
+              ) : null}
             </li>
           ))}
         </ul>
@@ -1114,7 +1178,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
       <RelatedSection
         id="packing-lists"
         title={t('order_hub.detail.packingLists.title')}
-        action={(
+        action={canWrite ? (
           <Button asChild variant="outline" size="sm">
             <Link
               href={
@@ -1126,7 +1190,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
               {t('order_hub.detail.section.add.packingList')}
             </Link>
           </Button>
-        )}
+        ) : undefined}
         isLoading={linksQuery.isLoading || aggregationLoading(packingListQueries)}
         failed={linksQuery.isError || aggregationFailed(packingListQueries)}
         isEmpty={packingLists.length === 0}
@@ -1190,6 +1254,18 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         </ul>
       </RelatedSection>
 
+      {/* 未拆细的文件（水单/证明/盖章件…）先挂根单：the installed `attachments` module owns the bytes,
+          the permission and the organization scope; this block only frames the record's files. */}
+      <AttachmentsSection
+        entityId="order_hub:company_order"
+        recordId={head.id}
+        id="files"
+        title={t('order_hub.detail.files.title')}
+        emptyLabel={t('order_hub.detail.files.empty')}
+        messages={relatedSectionMessages}
+        canManage={canWrite}
+      />
+
       {quickEdit ? (
         <QuickEditDialog
           open
@@ -1214,6 +1290,34 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           companyOrderUpdatedAt={orderUpdatedAt}
           onSaved={async () => {
             await queryClient.invalidateQueries({ queryKey: ['order-hub-links'] })
+            await queryClient.invalidateQueries({ queryKey: ['order-hub-company-order'] })
+          }}
+        />
+      ) : null}
+
+      {collaboratorsOpen && head.organizationId ? (
+        <CompanyOrderCollaboratorsDialog
+          open
+          onOpenChange={(next) => { if (!next) setCollaboratorsOpen(false) }}
+          companyOrderId={head.id}
+          ownerOrganizationId={head.organizationId}
+          companyOrderUpdatedAt={orderUpdatedAt}
+          onSaved={async () => {
+            await queryClient.invalidateQueries({ queryKey: ['order-hub-company-order'] })
+            await queryClient.invalidateQueries({ queryKey: ['order-hub-collaborators'] })
+          }}
+        />
+      ) : null}
+
+      {statusOpen ? (
+        <CompanyOrderStatusDialog
+          open
+          onOpenChange={(next) => { if (!next) setStatusOpen(false) }}
+          companyOrderId={head.id}
+          companyOrderUpdatedAt={orderUpdatedAt}
+          initialStatus={head.status}
+          initialNotes={head.notes}
+          onSaved={async () => {
             await queryClient.invalidateQueries({ queryKey: ['order-hub-company-order'] })
           }}
         />
