@@ -20,6 +20,7 @@ import { RelatedSection } from '@/lib/related/RelatedSection'
 import { QuickEditDialog } from '@/lib/quick-edit/QuickEditDialog'
 import { createDictionaryMap, type DictionaryMap } from '@open-mercato/core/modules/dictionaries/components/dictionaryAppearance'
 import { isPurchaseOrderStatus, purchaseOrderStatusLabel } from '@/lib/orders/purchaseOrderStatus'
+import { snapshotDisplayName } from './companyOrderDisplay'
 import {
   fields as contractQuickEditFields,
   toValues as contractQuickEditValues,
@@ -165,14 +166,6 @@ function toHead(item: Record<string, unknown>): CompanyOrderHead {
     organizationId: readText(item, 'organizationId', 'organization_id') || null,
     updatedAt: readText(item, 'updatedAt', 'updated_at') || null,
   }
-}
-
-/** The name frozen into a default-customer/supplier snapshot, for the header's display-only cell. */
-function snapshotDisplayName(snapshot: unknown): string | null {
-  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return null
-  if (!('name' in snapshot)) return null
-  const name = snapshot.name
-  return typeof name === 'string' && name.trim().length > 0 ? name : null
 }
 
 function toLinkRow(item: Record<string, unknown>): LinkRow {

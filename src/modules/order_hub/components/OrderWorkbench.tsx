@@ -20,11 +20,18 @@ import { formatMoneyAmount } from '@/lib/money/format'
 import type { CompanyOrderStageSummary } from '../lib/orderStages'
 import { COMPANY_ORDER_STATUSES } from '../data/validators'
 import OrderFieldsDrawer, { type OrderFieldsTarget } from './OrderFieldsDrawer'
+import { toOrderWorkbenchRow, type OrderWorkbenchRow } from './companyOrderDisplay'
 
 /**
  * The order workbench: one row per **company order** (`order_hub_company_orders`), the root that
  * gathers a trade's children — internal/external sales and its purchase orders — plus how far each
  * one has been filled in (采购 / 发运 / 单证 / 收汇·退税).
+ *
+ * The row prints the **root's own fields** — the same ones the order page's header card shows, in
+ * the same order — so a reader can move from the table to `/backend/orders/<id>` without the columns
+ * changing meaning. Child documents stay out of the row: their numbers and counterparties are the
+ * order page's attach blocks' business, and printing the first one here would put a purchase order's
+ * supplier in a column called 对方.
  *
  * One list read (`/api/order_hub/orders`) answers the root's own columns; the stages are a second,
  * batched read keyed by company-order id (`/api/order_hub/stages?ids=…`), so the number of round
@@ -34,17 +41,6 @@ import OrderFieldsDrawer, { type OrderFieldsTarget } from './OrderFieldsDrawer'
  * Every stage cell links to the branch that holds the records: `/backend/orders/<id>#purchasing`
  * etc. on the hub.
  */
-
-type OrderWorkbenchRow = {
-  id: string
-  number: string
-  title: string | null
-  orderDate: string | null
-  etaDate: string | null
-  status: string
-  /** True when the caller's organization is a collaborator on the root (list read flag). */
-  viewerIsCollaborator: boolean
-}
 
 const KIND_VALUES = ['all', 'internal_sales_order', 'external_sales_order', 'purchase_order'] as const
 type KindFilter = (typeof KIND_VALUES)[number]
@@ -78,22 +74,6 @@ const KIND_BY_TYPE_TOKEN: Record<string, KindFilter> = {
 
 function isKindFilter(value: unknown): value is KindFilter {
   return typeof value === 'string' && (KIND_VALUES as readonly string[]).includes(value)
-}
-
-function readText(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null
-}
-
-function toRow(item: Record<string, unknown>): OrderWorkbenchRow {
-  return {
-    id: String(item.id ?? ''),
-    number: readText(item.number) ?? '',
-    title: readText(item.title),
-    orderDate: readText(item.orderDate),
-    etaDate: readText(item.etaDate),
-    status: readText(item.status) ?? 'placed',
-    viewerIsCollaborator: item.viewerIsCollaborator === true,
-  }
 }
 
 export default function OrderWorkbench() {
@@ -132,7 +112,7 @@ export default function OrderWorkbench() {
   })
 
   const rows = React.useMemo<OrderWorkbenchRow[]>(
-    () => (orders.data?.items ?? []).map(toRow).filter((row) => row.id.length > 0),
+    () => (orders.data?.items ?? []).map(toOrderWorkbenchRow).filter((row) => row.id.length > 0),
     [orders.data],
   )
 
@@ -197,19 +177,56 @@ export default function OrderWorkbench() {
         ),
       },
       {
-        id: 'childNumbers',
-        header: t('order_hub.workbench.columns.childNumbers'),
+        accessorKey: 'title',
+        header: t('order_hub.workbench.columns.title'),
         enableSorting: false,
-        cell: ({ row }) => {
-          const numbers = stageById.get(row.original.id)?.childNumbers ?? []
-          return numbers.length > 0 ? numbers.join(', ') : '—'
-        },
+        cell: ({ row }) => row.original.title ?? '—',
       },
       {
-        id: 'counterparty',
-        header: t('order_hub.workbench.columns.counterparty'),
+        accessorKey: 'orderDate',
+        header: t('order_hub.workbench.columns.orderedAt'),
         enableSorting: false,
-        cell: ({ row }) => stageById.get(row.original.id)?.counterparty ?? '—',
+        cell: ({ row }) => row.original.orderDate ?? '—',
+      },
+      {
+        accessorKey: 'etaDate',
+        header: t('order_hub.workbench.columns.etaDate'),
+        enableSorting: false,
+        cell: ({ row }) => row.original.etaDate ?? '—',
+      },
+      {
+        accessorKey: 'status',
+        header: t('order_hub.workbench.columns.status'),
+        enableSorting: false,
+        cell: ({ row }) => (
+          <StatusBadge variant={STATUS_VARIANT[row.original.status] ?? 'neutral'}>
+            {t(`order_hub.companyOrders.status.${row.original.status}`)}
+          </StatusBadge>
+        ),
+      },
+      {
+        id: 'paymentStatus',
+        header: t('order_hub.workbench.columns.paymentStatus'),
+        enableSorting: false,
+        // The root's own marker (第六轮): 已收全款 / 未收款, and `—` for a root that never recorded
+        // it — the same answer the hub's header card gives, never a guess about its money.
+        cell: ({ row }) => (
+          row.original.paymentStatus
+            ? t(`order_hub.companyOrders.paymentStatus.${row.original.paymentStatus}`, row.original.paymentStatus)
+            : '—'
+        ),
+      },
+      {
+        id: 'customer',
+        header: t('order_hub.workbench.columns.customer'),
+        enableSorting: false,
+        cell: ({ row }) => row.original.customerName ?? '—',
+      },
+      {
+        id: 'supplier',
+        header: t('order_hub.workbench.columns.supplier'),
+        enableSorting: false,
+        cell: ({ row }) => row.original.supplierName ?? '—',
       },
       {
         id: 'amount',
@@ -231,22 +248,6 @@ export default function OrderWorkbench() {
             </span>
           )
         },
-      },
-      {
-        accessorKey: 'orderDate',
-        header: t('order_hub.workbench.columns.orderedAt'),
-        enableSorting: false,
-        cell: ({ row }) => row.original.orderDate ?? '—',
-      },
-      {
-        accessorKey: 'status',
-        header: t('order_hub.workbench.columns.status'),
-        enableSorting: false,
-        cell: ({ row }) => (
-          <StatusBadge variant={STATUS_VARIANT[row.original.status] ?? 'neutral'}>
-            {t(`order_hub.companyOrders.status.${row.original.status}`)}
-          </StatusBadge>
-        ),
       },
       {
         id: 'procurement',
