@@ -1,7 +1,7 @@
-# 2026-10-09 — order-hub-layout-preview（第八轮：板块布局 / 关联预览 / 回到订单）
+# 2026-10-09 — order-hub-layout-preview（第九轮：板块布局 / 关联预览 / 回到订单）
 
-**Source doc:** `.ai/specs/2026-10-09-company-order-root.md` 的「第八轮」节（REQ-028…REQ-037）
-**Base:** 本地分支上原按「第六轮」开发、以第五轮分支为父；父分支合入 `dev` 后 rebase 到 `dev`，#157（第七轮）落 `dev` 后再 rebase 一次。落地时按已有编号顺延记作**第八轮**（第六轮 = #152 状态词表、第七轮 = #157 字段级附件槽位）。
+**Source doc:** `.ai/specs/2026-10-09-company-order-root.md` 的「第九轮」节（REQ-029…REQ-038）
+**Base:** 本地分支上原按「第六轮」开发、以第五轮分支为父；父分支合入 `dev` 后 rebase 到 `dev`，随后 #157（第七轮）与 #156（第八轮）先后落 `dev`，再两次 rebase 到新 `dev`。落地时按已有编号顺延记作**第九轮**（第六轮 = #152 状态词表、第七轮 = #157 字段级附件槽位、第八轮 = #156 工作台行改显根单字段）。
 **PR:** #154
 
 ## Goal
@@ -25,7 +25,7 @@ owner 2026-10-09 十点反馈落地（前八点为本轮主体，后两点复查
 - `src/lib/navigation/returnTo.ts`（新共享件）+ 单测。
 - 目标页 `returnTo` 消费：`purchasing`（详情/编辑）、`internal_sales`（编辑）、`trade_docs`（合同详情、单据/发票表单）、`cross_border`（发运详情、装箱单）、`export_finance`（收汇/退税档案）。
 - `purchasing`：字典 key 切换 + 停止播种 `order_product_category`；`export_finance` 投影补标签。
-- 文档：本 run record、spec 第八轮、模块 README、状态板/计划行、`business-architecture` 行、lesson。
+- 文档：本 run record、spec 第九轮、模块 README、状态板/计划行、`business-architecture` 行、lesson。
 
 ## Non-goals
 
@@ -36,27 +36,27 @@ owner 2026-10-09 十点反馈落地（前八点为本轮主体，后两点复查
 
 ## Implementation Plan
 
-### Phase 8.A: hub 板块布局与出口销售合并（REQ-028, REQ-032）
+### Phase 9.A: hub 板块布局与出口销售合并（REQ-029, REQ-033）
 
 - [ ] 1.1 板块标题（采购/出口销售/合同与单据/发运与装箱/收汇·退税/文件）+ 锚点
 - [ ] 1.2 合并销售区块（行徽标 对内/对外；关联对话框带种类选择；新建弹两类入口）
 
-### Phase 8.B: 关联预览抽屉与空徽标（REQ-033, REQ-035, REQ-036）
+### Phase 9.B: 关联预览抽屉与空徽标（REQ-034, REQ-036, REQ-037）
 
 - [ ] 2.1 `LinkedRecordPreviewDrawer`（复用 `SourcePreviewDrawer`）+ 各 kind 读法与字段映射
 - [ ] 2.2 hub 行接线：点开=预览、「编辑」=模块页（带 returnTo）
 - [ ] 2.3 全字段抽屉的分组空态
 - [ ] 2.4 无状态子单行不渲染空徽标（`companyOrderChildStatus.ts` + 单测）
 
-### Phase 8.C: 返回、表单与字典（REQ-029…REQ-031, REQ-034, REQ-037）
+### Phase 9.C: 返回、表单与字典（REQ-030…REQ-032, REQ-035, REQ-038）
 
-- [ ] 3.1 共享 `readReturnTo`/`useReturnHref` + 单测（TEST-021）
+- [ ] 3.1 共享 `readReturnTo`/`useReturnHref` + 单测（TEST-023）
 - [ ] 3.2 目标页消费 `?returnTo=`（purchasing/internal_sales/trade_docs/cross_border/export_finance）
 - [ ] 3.3 订单描述改读 `product_category` + 显示标签解析
 - [ ] 3.4 表单去「标题」；抬头标签改名
 - [ ] 3.5 hub 抬头「全字段」入口收敛到工作台行操作
 
-### Phase 8.D: 收口
+### Phase 9.D: 收口
 
 - [ ] 4.1 目标测试（jest 相关套 + 新增单测）
 - [ ] 4.2 浏览器实测（分区/预览/返回/空徽标/全字段/字典选项）
@@ -74,19 +74,19 @@ owner 2026-10-09 十点反馈落地（前八点为本轮主体，后两点复查
 
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
-### Phase 8.A: hub 板块布局与出口销售合并（REQ-028, REQ-032）
+### Phase 9.A: hub 板块布局与出口销售合并（REQ-029, REQ-033）
 
 - [x] 1.1 板块标题 + 锚点
 - [x] 1.2 合并销售区块
 
-### Phase 8.B: 关联预览抽屉与空徽标（REQ-033, REQ-035, REQ-036）
+### Phase 9.B: 关联预览抽屉与空徽标（REQ-034, REQ-036, REQ-037）
 
 - [x] 2.1 `LinkedRecordPreviewDrawer` + 来源映射
 - [x] 2.2 hub 行接线
 - [x] 2.3 全字段抽屉分组空态（第五轮投影已给数据分组，本轮浏览器验证 + 抽屉「明细行」空段修复）
 - [x] 2.4 无状态子单行不渲染空徽标（复查项；`components/companyOrderChildStatus.ts` + 4 条单测）
 
-### Phase 8.C: 返回、表单与字典（REQ-029…REQ-031, REQ-034, REQ-037）
+### Phase 9.C: 返回、表单与字典（REQ-030…REQ-032, REQ-035, REQ-038）
 
 - [x] 3.1 共享 returnTo 助手 + 单测
 - [x] 3.2 目标页消费 `?returnTo=`
@@ -94,7 +94,7 @@ owner 2026-10-09 十点反馈落地（前八点为本轮主体，后两点复查
 - [x] 3.4 表单去标题 + 标签改名
 - [x] 3.5 hub「全字段」入口收敛（复查项；工作台行操作保留）
 
-### Phase 8.D: 收口
+### Phase 9.D: 收口
 
 - [x] 4.1 目标测试（`yarn jest --config jest.config.cjs src/modules/order_hub src/lib/navigation` 全绿；宽门禁见 PR 的 Tests 段）
 - [x] 4.2 浏览器实测（六板块 / 合并销售区块徽标 / 预览抽屉 / 编辑+返回 / 伪造 returnTo 回退 / 无状态行无空徽标 / hub 无「全字段」/ 工作台抽屉四组 / 建单页无标题 / 订单描述 = Product categories）
@@ -103,4 +103,4 @@ owner 2026-10-09 十点反馈落地（前八点为本轮主体，后两点复查
 
 ## Rebase note（2026-10-09）
 
-父分支（第五轮）合入 `dev` 后 `git rebase --onto origin/dev`；随后 #157（第七轮）与 #158 落 `dev`，再次 rebase 到新 `dev`（i18n 取两边并集、`OrderDetail.tsx` 导入取并集、doc 以新 `dev` 为准重写）。本轮编号由「第六轮」顺延为**第八轮**（REQ-028…REQ-037 / TEST-021…TEST-024 / AC-025…AC-034）。
+父分支（第五轮）合入 `dev` 后 `git rebase --onto origin/dev`；随后 #157（第七轮）与 #158 落 `dev`、#159 补回第六轮记录、#156（第八轮）落 `dev`，再两次 rebase 到新 `dev`（i18n 取两边并集、`OrderDetail.tsx` 导入取并集、doc 以新 `dev` 为准重写）。本轮编号由「第六轮」顺延为**第八轮**（REQ-029…REQ-038 / TEST-023…TEST-026 / AC-026…AC-035）。
