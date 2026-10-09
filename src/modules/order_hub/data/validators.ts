@@ -157,7 +157,7 @@ export const companyOrderLinksReplaceSchema = z.object({
   updatedAt: z.string().min(1).optional(),
 })
 
-/** Attach one child; with no `companyOrderId` a sales-kind child gets a fresh draft root. */
+/** Attach one child; with no `companyOrderId` a sales-kind child gets a fresh root (已下单 / 未收款). */
 export const companyOrderLinkChildSchema = z.object({
   kind: z.enum(COMPANY_ORDER_LINK_KINDS),
   refId: z.string().uuid(),

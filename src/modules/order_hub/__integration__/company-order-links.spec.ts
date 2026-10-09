@@ -19,7 +19,7 @@ import { getTokenContext, readJsonSafe } from '@open-mercato/core/helpers/integr
  * number, counterparty and status snapshot at link time; `GET /api/order_hub/orders/links` answers
  * both the root's attach block (`?companyOrderId=`) and the reverse lookup (`?refId=`), and a
  * request naming neither is refused. `POST /api/order_hub/orders/link-child` is the idempotent
- * single attach: a sales-kind child with no target gets a fresh draft root, a purchase-kind child
+ * single attach: a sales-kind child with no target gets a fresh root, a purchase-kind child
  * cannot invent one, and an id outside the caller's organization is refused rather than stored.
  */
 
@@ -310,7 +310,7 @@ test.describe.serial('order_hub — company order links', () => {
     expect(rows[0]?.companyOrderId).toBe(companyOrderId)
   })
 
-  test('sales-kind link-child without a target creates a draft root', async () => {
+  test('sales-kind link-child without a target creates a root', async () => {
     const response = await scoped('POST', LINK_CHILD_URL, {
       kind: 'internal_sales_order',
       refId: salesOrderId2,

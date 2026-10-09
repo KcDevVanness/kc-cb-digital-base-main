@@ -337,7 +337,7 @@ export const openApi = createOrderHubCrudOpenApi({
   create: {
     schema: companyOrderCreateSchema,
     responseSchema: orderHubCreatedSchema,
-    description: 'Creates a draft company order; the server assigns the `CO-<year>-<seq>` number.',
+    description: 'Creates a company order (status 已下单, 是否已收款 未收款 by default); the server assigns the `CO-<year>-<seq>` number.',
   },
   update: {
     schema: companyOrderUpdateSchema,

@@ -87,8 +87,9 @@ export function buildCompanyOrderPayload(values: CompanyOrderFormValues): Record
     orderDate,
     etaDate,
     status: values.status,
-    // An empty select is sent as an explicit `null`: on create the command stores the fresh-order
-    // default (未收款), on update it clears the marker back to “—”.
+    // An empty select is sent as an explicit `null`: the marker reads “—” rather than an invented
+    // answer. The fresh-order default (未收款) comes from the create form's initial value; the
+    // command applies it only when the field is omitted entirely.
     paymentStatus:
       typeof values.paymentStatus === 'string' && values.paymentStatus.trim().length > 0
         ? values.paymentStatus

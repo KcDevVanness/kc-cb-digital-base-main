@@ -451,9 +451,9 @@ export type LinkChildResult = {
  *
  * - With `companyOrderId`: the target must exist in scope and not be deleted (else 422); the link is
  *   inserted only when the child is attached nowhere (the unique key is the real guard).
- * - Without: a **sales** child with no link at all gets a fresh draft root (`CO-…`, order date =
- *   today) so every app-created sales order has a root; a **purchase** child cannot invent one, so
- *   it is refused with 422 `company_order_required`.
+ * - Without: a **sales** child with no link at all gets a fresh root (`CO-…`, 已下单 / 未收款, order
+ *   date = today) so every app-created sales order has a root; a **purchase** child cannot invent one,
+ *   so it is refused with 422 `company_order_required`.
  *
  * Persisted but not flushed: the caller owns the transaction. Writes are the owner's (and, for the
  * no-target case, the caller's own organization) — see `linkChildCommand`.
