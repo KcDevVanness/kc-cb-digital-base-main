@@ -66,6 +66,29 @@ export const COMPANY_ORDER_LINK_KINDS = [
 ] as const
 export type CompanyOrderLinkKind = (typeof COMPANY_ORDER_LINK_KINDS)[number]
 
+/**
+ * The named document slots of a company order (REQ-020): the one-to-one binding between a
+ * 35-column document field and the file(s) stored for it. The codes are aligned with the peer
+ * modules' own document vocabularies (`cross_border` `EXPORT_DOC_TYPES`, `export_finance`
+ * `COLLECTION_DOC_TYPES`) so the summary projection can line a slot up with the child-derived
+ * signal of the same kind; `kc_invoice_stamp` and `purchase_slip_invoice` are fields only the
+ * order itself represents (a contract attachment and purchasing payment files are their child
+ * sources). "Other" is deliberately absent: the root's generic attachments block is that slot.
+ */
+export const COMPANY_ORDER_DOCUMENT_SLOTS = [
+  'commercial_invoice',
+  'packing_list',
+  'bill_of_lading',
+  'telex_release',
+  'customs_declaration',
+  'domestic_freight_receipt',
+  'booking_charges_receipt',
+  'purchase_slip_invoice',
+  'foreign_income_certificate',
+  'kc_invoice_stamp',
+] as const
+export type CompanyOrderDocumentSlot = (typeof COMPANY_ORDER_DOCUMENT_SLOTS)[number]
+
 /** A `date` column: a `YYYY-MM-DD` calendar day, never a timestamp. */
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a YYYY-MM-DD date')
 

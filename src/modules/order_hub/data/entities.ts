@@ -190,3 +190,59 @@ export class CompanyOrderCollaborator {
   @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
   updatedAt: Date = new Date()
 }
+
+/**
+ * One file bound to a **named document slot** of a company order (REQ-020) — the one-to-one link
+ * between a 35-column document field (KC stamp, customs declaration, collection proof, …) and the
+ * stored file.
+ *
+ * The file itself never moves: it stays in the installed `attachments` table, uploaded through that
+ * module's own route with `entity_id = 'order_hub:company_order_document'` and
+ * `record_id = this row's id` — so partitions, quota accounting and the upload safety rules keep
+ * their single home, and this table only records *which field* the file belongs to. Consequently
+ * `id` is chosen by the caller before the upload (it is the attachment's `recordId`), and
+ * `attachment_id` points back at the stored row.
+ *
+ * `file_name` is frozen at registration: the slot list must still be able to name a file whose
+ * attachment row is gone (a failed delete), which the read route reports as `missing`.
+ */
+@Entity({ tableName: 'order_hub_company_order_documents' })
+@Unique({
+  name: 'order_hub_company_order_documents_slot_file_uniq',
+  properties: ['companyOrder', 'slot', 'attachmentId'],
+})
+@Index({ name: 'order_hub_company_order_documents_order_slot_idx', properties: ['companyOrder', 'slot'] })
+export class CompanyOrderDocument {
+  [OptionalProps]?: 'createdAt' | 'updatedAt'
+
+  /** Doubles as the installed attachment's `recordId` — see the class comment. */
+  @PrimaryKey({ type: 'uuid' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  /** The **owner** organization of the root (never a collaborator's); reads widen by root visibility. */
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @ManyToOne(() => CompanyOrder, { fieldName: 'company_order_id', deleteRule: 'cascade' })
+  companyOrder!: CompanyOrder
+
+  /** One of `COMPANY_ORDER_DOCUMENT_SLOTS`. */
+  @Property({ type: 'text' })
+  slot!: string
+
+  @Property({ name: 'attachment_id', type: 'uuid' })
+  attachmentId!: string
+
+  /** Frozen at registration so a slot can still name a file whose attachment row is gone. */
+  @Property({ name: 'file_name', type: 'text' })
+  fileName!: string
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}
