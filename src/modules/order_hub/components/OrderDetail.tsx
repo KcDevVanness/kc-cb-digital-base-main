@@ -44,6 +44,7 @@ import { CompanyOrderLinkDialog } from './CompanyOrderLinkDialog'
 import { CompanyOrderCollaboratorsDialog } from './CompanyOrderCollaboratorsDialog'
 import { CompanyOrderStatusDialog } from './CompanyOrderStatusDialog'
 import { AttachmentsSection } from '@/lib/attachments/AttachmentsSection'
+import { OrderDocumentsSection } from './OrderDocumentsSection'
 import OrderFieldsDrawer from './OrderFieldsDrawer'
 import { resolveCompanyOrderForDocument } from '../lib/companyOrderResolve'
 import type { CompanyOrderLinkKind } from '../data/validators'
@@ -1281,6 +1282,16 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           ))}
         </ul>
       </RelatedSection>
+
+      {/* 单据字段级槽位（REQ-024）：每个 35 列字段一个上传位，既列本单文件也列子单来源。
+          通用文件区仍在其下（「其他文件」），锚点不变。 */}
+      <OrderDocumentsSection
+        companyOrderId={head.id}
+        canManage={canWrite}
+        title={t('order_hub.documents.title')}
+        emptyLabel={t('order_hub.documents.empty')}
+        messages={relatedSectionMessages}
+      />
 
       {/* 未拆细的文件（水单/证明/盖章件…）先挂根单：the installed `attachments` module owns the bytes
           and the upload, but its list/file routes scope by the caller's own organization, which hides

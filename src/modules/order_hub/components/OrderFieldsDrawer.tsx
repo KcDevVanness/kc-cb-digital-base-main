@@ -22,11 +22,6 @@ import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primitives/date-format'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { formatMoneyAmount } from '@/lib/money/format'
-import {
-  SHIPMENT_DOCUMENT_TYPES,
-  shipmentDocumentTypeLabel,
-  type ShipmentDocumentType,
-} from '../../cross_border/components/ShipmentForm'
 import { COLLECTION_STATUS_LABEL_KEYS, REFUND_STATUS_LABEL_KEYS } from '../../export_finance/components/labels'
 import type { CompanyOrderCurrencyAmounts, CompanyOrderFields } from '../lib/companyOrderFields'
 
@@ -177,7 +172,7 @@ function DocumentsAndFiles({ fields }: { fields: CompanyOrderFields }) {
   const t = useT()
   const byKind = fields.documents?.byKind ?? []
   const invoiceNumbers = fields.documents?.invoiceNumbers ?? []
-  const exportDocuments = fields.exportDocuments ?? []
+  const bySlot = fields.documents?.bySlot ?? []
 
   return (
     <DrawerGroup title={t('order_hub.drawer.group.documents')}>
@@ -201,30 +196,38 @@ function DocumentsAndFiles({ fields }: { fields: CompanyOrderFields }) {
         <FieldRow label={t('order_hub.drawer.fields.invoiceNo')}>
           <TextValue value={invoiceNumbers.length > 0 ? invoiceNumbers.join(', ') : null} />
         </FieldRow>
-        <FieldRow label={t('order_hub.drawer.fields.exportDocuments')}>
-          {exportDocuments.length === 0 ? (
-            <span className="text-xs text-muted-foreground">{t('order_hub.drawer.fields.noExportDocuments')}</span>
-          ) : (
-            <span className="flex flex-col gap-0.5">
-              {exportDocuments.map((document) => (
-                <span key={document.docType}>
-                  {SHIPMENT_DOCUMENT_TYPES.includes(document.docType as ShipmentDocumentType)
-                    ? shipmentDocumentTypeLabel(t, document.docType as ShipmentDocumentType)
-                    : document.docType}
-                  {' · '}
-                  {t('order_hub.drawer.fields.exportDocumentCount', { count: document.count })}
-                  {document.latestNumber ? ` · ${document.latestNumber}` : ''}
-                  {document.latestHasAttachment
-                    ? ` · ${t('order_hub.drawer.fields.hasAttachment')}`
-                    : ''}
-                </span>
-              ))}
-            </span>
-          )}
-        </FieldRow>
-        <FieldRow label={t('order_hub.drawer.fields.purchaseFiles')}>
-          <span className="tabular-nums">{fields.purchaseFiles?.attachmentCount ?? 0}</span>
-        </FieldRow>
+        {/* 每个单据字段一个槽位（REQ-023）：本单上传的文件在本位列出，子单既有来源以徽标列出。 */}
+        {bySlot.map((group) => (
+          <FieldRow key={group.slot} label={t(`order_hub.documents.slots.${group.slot}`)}>
+            {group.files.length === 0 && group.childSources.length === 0 ? (
+              <span className="text-xs text-muted-foreground">{t('order_hub.documents.noFiles')}</span>
+            ) : (
+              <span className="flex flex-col gap-0.5">
+                {group.files.map((file) => (
+                  <span key={file.attachmentId} className="flex flex-wrap items-center gap-x-2">
+                    <span className="text-xs text-muted-foreground">{t('order_hub.documents.sourceSelf')}</span>
+                    <span className="break-all">{file.fileName}</span>
+                    {file.createdAt ? (
+                      <span className="text-xs text-muted-foreground">{file.createdAt.slice(0, 10)}</span>
+                    ) : null}
+                  </span>
+                ))}
+                {group.childSources.map((source, index) => (
+                  <span
+                    key={`${source.source}-${index}`}
+                    className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground"
+                  >
+                    <span>{t(`order_hub.documents.sources.${source.source}`)}</span>
+                    {source.label ? <span className="font-medium text-foreground">{source.label}</span> : null}
+                    {typeof source.count === 'number' ? (
+                      <span>{t('order_hub.documents.sourceCount', { count: source.count })}</span>
+                    ) : null}
+                  </span>
+                ))}
+              </span>
+            )}
+          </FieldRow>
+        ))}
       </dl>
     </DrawerGroup>
   )

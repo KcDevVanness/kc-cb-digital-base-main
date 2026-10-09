@@ -3,6 +3,7 @@ import type { Kysely } from 'kysely'
 import { loadCollaboratorCompanyOrderIds } from './collaborators'
 import { derivePaymentState } from '../../purchasing/lib/orderTotals'
 import { sumAmounts } from '../../trade_docs/lib/money'
+import { COMPANY_ORDER_DOCUMENT_SLOTS, type CompanyOrderDocumentSlot } from '../data/validators'
 
 /** `$in []` is not a disjunct the planners accept; "nothing" is one impossible id. */
 const NO_MATCH_ID = '00000000-0000-0000-0000-000000000000'
@@ -18,6 +19,52 @@ const FOREIGN_INCOME_CERTIFICATE = 'foreign_income_certificate'
 const COMMERCIAL_DOCUMENT_KIND = 'commercial'
 
 const SALES_KINDS = new Set(['internal_sales_order', 'external_sales_order'])
+
+/**
+ * The child-source signals of a slot: where else (besides this order's own upload) the file a 35-
+ * column field is about can live. The projection reads the signal from the child that owns it and
+ * the UI shows it as a read-only badge with a deep link — the child's fact is never copied over.
+ */
+export type CompanyOrderDocumentSourceKind = 'contract' | 'shipment' | 'collection' | 'purchasing'
+
+/** One child-derived source of a slot's document, as the summary reports it. */
+export type CompanyOrderDocumentSlotSource = {
+  source: CompanyOrderDocumentSourceKind
+  /** The source artifact's number (`SC-…`/`CD-…`), or `''` when it carries none. */
+  label: string
+  /** How many child rows carry the signal (documents of one type, stamped contracts, …). */
+  count?: number
+}
+
+/** One file filed on the order itself under a slot (REQ-020), with its frozen name. */
+export type CompanyOrderDocumentSlotFile = {
+  attachmentId: string
+  fileName: string
+  /** ISO-8601 registration timestamp. */
+  createdAt: string
+}
+
+/** One named slot of the deal's documents: the order's own files plus the children's signals. */
+export type CompanyOrderDocumentSlotGroup = {
+  slot: CompanyOrderDocumentSlot
+  files: CompanyOrderDocumentSlotFile[]
+  childSources: CompanyOrderDocumentSlotSource[]
+}
+
+/**
+ * The `cross_border` export-document types that line up with a named slot. `so` and `other` have no
+ * slot (they are not one of the 35 columns), so their rows never become a source. The values mirror
+ * `EXPORT_DOC_TYPES`; declared locally because a cross-module projection reads facts, not modules.
+ */
+const EXPORT_DOC_SLOT_BY_TYPE: Partial<Record<string, CompanyOrderDocumentSlot>> = {
+  commercial_invoice: 'commercial_invoice',
+  packing_list: 'packing_list',
+  bill_of_lading: 'bill_of_lading',
+  telex_release: 'telex_release',
+  customs_declaration: 'customs_declaration',
+  domestic_freight_receipt: 'domestic_freight_receipt',
+  booking_charges_receipt: 'booking_charges_receipt',
+}
 
 /**
  * The 35-field summary of one company order (REQ-017), read as a scoped cross-module projection —
@@ -50,6 +97,16 @@ type CompanyOrderFieldsTables = {
     kind: string
     ref_id: string
     ref_number: string | null
+    tenant_id: string
+    organization_id: string
+  }
+  order_hub_company_order_documents: {
+    id: string
+    company_order_id: string
+    slot: string
+    attachment_id: string
+    file_name: string
+    created_at: Date | string
     tenant_id: string
     organization_id: string
   }
@@ -94,6 +151,7 @@ type CompanyOrderFieldsTables = {
   }
   trade_docs_contracts: {
     id: string
+    number: string | null
     attachment_id: string | null
     tenant_id: string
     organization_id: string
@@ -248,6 +306,12 @@ export type CompanyOrderFields = {
     byKind: CompanyOrderDocumentGroup[]
     /** The `commercial` numbers — the deal's `INV.NO`. */
     invoiceNumbers: string[]
+    /**
+     * The named slots (REQ-023): every slot of `COMPANY_ORDER_DOCUMENT_SLOTS`, in enum order, with
+     * the files this order holds for it and the child-derived signal of the same kind. Always one
+     * entry per slot so the hub can render its upload rows deterministically.
+     */
+    bySlot: CompanyOrderDocumentSlotGroup[]
   }
   exportDocuments: CompanyOrderExportDocumentGroup[]
   purchaseFiles: {
@@ -580,16 +644,25 @@ export async function loadCompanyOrderFields(
   const allContractIds = [...contractIds]
 
   let kcStamp = false
+  let stampedContractCount = 0
+  const stampedContractNumbers: string[] = []
   if (allContractIds.length > 0) {
     const contractRows = (await db
       .selectFrom('trade_docs_contracts')
-      .select(['id', 'attachment_id'])
+      .select(['id', 'number', 'attachment_id'])
       .where('id', 'in', allContractIds)
       .where('tenant_id', '=', tenantId)
       .where('organization_id', 'in', childOrganizationIds)
       .where('deleted_at', 'is', null)
-      .execute()) as Array<{ id: string; attachment_id: string | null }>
-    for (const row of contractRows) if (row.attachment_id) kcStamp = true
+      .execute()) as Array<{ id: string; number: string | null; attachment_id: string | null }>
+    for (const row of contractRows) {
+      if (!row.attachment_id) continue
+      kcStamp = true
+      // A stamped draft contract has no number yet; the slot's source is the stamp itself, so the
+      // count is what matters and the number is only a label when one exists.
+      stampedContractCount += 1
+      if (row.number) stampedContractNumbers.push(String(row.number))
+    }
   }
 
   if (allChildIds.length > 0) {
@@ -732,6 +805,7 @@ export async function loadCompanyOrderFields(
 
   // Collections: one archive per linked purchase order, plus whether the 涉外收入证明 is filed.
   const collections: CompanyOrderFields['collections'] = []
+  let foreignIncomeCertificateCount = 0
   if (purchaseIds.length > 0) {
     const rows = (await db
       .selectFrom('export_finance_collections')
@@ -753,6 +827,7 @@ export async function loadCompanyOrderFields(
         .where('organization_id', 'in', childOrganizationIds)
         .where('deleted_at', 'is', null)
         .execute()) as Array<{ collection_id: string }>
+      foreignIncomeCertificateCount = documentRows.length
       for (const row of documentRows) certificate.add(String(row.collection_id))
     }
     for (const row of rows) {
@@ -783,6 +858,60 @@ export async function loadCompanyOrderFields(
     }
   }
 
+  // Named document slots (REQ-023): the order's own files plus the child-derived signals the reads
+  // above already established, grouped by slot. No second read of any child — a slot's `childSources`
+  // is exactly the signal of the same kind, so the summary can never disagree with itself.
+  const slotSources = new Map<CompanyOrderDocumentSlot, CompanyOrderDocumentSlotSource[]>()
+  const addSlotSource = (slot: CompanyOrderDocumentSlot, source: CompanyOrderDocumentSlotSource): void => {
+    const existing = slotSources.get(slot)
+    if (existing) existing.push(source)
+    else slotSources.set(slot, [source])
+  }
+  for (const group of exportDocuments) {
+    const slot = EXPORT_DOC_SLOT_BY_TYPE[group.docType]
+    if (slot) addSlotSource(slot, { source: 'shipment', label: group.latestNumber ?? '', count: group.count })
+  }
+  if (stampedContractCount > 0) {
+    addSlotSource('kc_invoice_stamp', {
+      source: 'contract',
+      label: [...new Set(stampedContractNumbers)].sort(compareStrings).join(', '),
+      count: stampedContractCount,
+    })
+  }
+  if (foreignIncomeCertificateCount > 0) {
+    addSlotSource('foreign_income_certificate', { source: 'collection', label: '', count: foreignIncomeCertificateCount })
+  }
+  if (attachmentCount > 0) {
+    addSlotSource('purchase_slip_invoice', { source: 'purchasing', label: '', count: attachmentCount })
+  }
+
+  const slotFiles = new Map<string, CompanyOrderDocumentSlotFile[]>()
+  const documentRows = (await db
+    .selectFrom('order_hub_company_order_documents')
+    .select(['slot', 'attachment_id', 'file_name', 'created_at'])
+    .where('company_order_id', '=', companyOrderId)
+    .where('tenant_id', '=', tenantId)
+    .where('organization_id', 'in', childOrganizationIds)
+    .orderBy('created_at', 'desc')
+    .execute()) as Array<{ slot: string; attachment_id: string; file_name: string; created_at: Date | string }>
+  for (const row of documentRows) {
+    const slot = String(row.slot)
+    const file: CompanyOrderDocumentSlotFile = {
+      attachmentId: String(row.attachment_id),
+      fileName: String(row.file_name),
+      createdAt: toIsoTimestamp(row.created_at) ?? '',
+    }
+    const existing = slotFiles.get(slot)
+    if (existing) existing.push(file)
+    else slotFiles.set(slot, [file])
+  }
+
+  const bySlot: CompanyOrderDocumentSlotGroup[] = COMPANY_ORDER_DOCUMENT_SLOTS.map((slot) => ({
+    slot,
+    files: slotFiles.get(slot) ?? [],
+    childSources: slotSources.get(slot) ?? [],
+  }))
+
   return {
     order: {
       number: root.number ? String(root.number) : null,
@@ -798,7 +927,7 @@ export async function loadCompanyOrderFields(
       expectedDeliveryAt: toDateString(root.eta_date),
       shippedAt,
     },
-    documents: { byKind: documentsByKind, invoiceNumbers },
+    documents: { byKind: documentsByKind, invoiceNumbers, bySlot },
     exportDocuments,
     purchaseFiles: { attachmentCount },
     collections,
