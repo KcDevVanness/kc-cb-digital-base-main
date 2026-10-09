@@ -48,6 +48,30 @@ export class CompanyOrder {
   @Property({ type: 'text', nullable: true })
   notes?: string | null
 
+  /**
+   * The optional default customer of the deal: a scalar `parties` id plus the display name frozen
+   * at write time (the party's own `name` is encrypted, so the hub never re-reads it). Omitted at
+   * create is `null`; an explicit `null` in an update clears it — an absent key never does (the
+   * partial-update rule). Buyer side of the deal.
+   */
+  @Property({ name: 'customer_party_id', type: 'uuid', nullable: true })
+  customerPartyId?: string | null
+
+  /** `{ name, code }` frozen at write time; see `customerPartyId`. */
+  @Property({ name: 'customer_snapshot', type: 'jsonb', nullable: true })
+  customerSnapshot?: Record<string, unknown> | null
+
+  /**
+   * The optional default supplier: a scalar `purchasing_suppliers` id plus its frozen name
+   * snapshot, the counterpart pair to `customerPartyId`.
+   */
+  @Property({ name: 'supplier_id', type: 'uuid', nullable: true })
+  supplierId?: string | null
+
+  /** `{ name, code }` frozen at write time; see `supplierId`. */
+  @Property({ name: 'supplier_snapshot', type: 'jsonb', nullable: true })
+  supplierSnapshot?: Record<string, unknown> | null
+
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()
 

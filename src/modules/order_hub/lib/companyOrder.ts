@@ -2,9 +2,10 @@ import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import type { Kysely } from 'kysely'
 import { randomUUID } from 'node:crypto'
 import { SalesOrder } from '@open-mercato/core/modules/sales/data/entities'
-import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
+import { findOneWithDecryption, findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import { CompanyOrder, CompanyOrderLink } from '../data/entities'
+import { Party } from '../../parties/data/entities'
 import {
   COMPANY_ORDER_LINK_KINDS,
   type CompanyOrderLinkKind,
@@ -81,6 +82,88 @@ function toNullableString(value: unknown): string | null {
   if (value === null || value === undefined) return null
   const text = String(value)
   return text.length > 0 ? text : null
+}
+
+/** A resolved default counterparty: the scalar id plus what is frozen onto the root. */
+export type CompanyOrderNameRef = {
+  id: string
+  name: string
+  code: string | null
+}
+
+/** `{ name, code }` — the display snapshot frozen onto the root for a default customer/supplier. */
+export function freezeNameSnapshot(ref: { name: string; code?: string | null }): Record<string, unknown> {
+  return { name: ref.name, code: ref.code ?? null }
+}
+
+/** The supplier master's plaintext columns this module reads (no ORM relation to a peer module). */
+type SupplierReadTables = {
+  purchasing_suppliers: {
+    id: string
+    name: string | null
+    code: string | null
+    tenant_id: string
+    organization_id: string
+    deleted_at: Date | null
+  }
+}
+
+/**
+ * Resolves the optional default customer — a `parties` row — in the caller's scope, or `null` when
+ * it is missing, soft-deleted or owned by another organization (the caller turns a requested-but-
+ * unresolved id into a 422).
+ *
+ * `name` is an encrypted column (`parties/encryption.ts` covers the whole counterparty block), so
+ * this reads through `findOneWithDecryption` on purpose: a raw projection would freeze **ciphertext**
+ * as the display name. Unlike the peer-ref reads below, no ORM relation is created — this is a
+ * typed scoped read.
+ */
+export async function resolveCompanyOrderParty(
+  em: EntityManager,
+  scope: CompanyOrderScope,
+  partyId: string,
+): Promise<CompanyOrderNameRef | null> {
+  const party = await findOneWithDecryption(
+    em.fork(),
+    Party,
+    {
+      id: partyId,
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+      deletedAt: null,
+    } as FilterQuery<Party>,
+    {},
+    { tenantId: scope.tenantId, organizationId: scope.organizationId },
+  )
+  if (!party) return null
+  const name = typeof party.name === 'string' ? party.name.trim() : ''
+  if (!name) return null
+  return { id: String(party.id), name, code: party.code ? String(party.code) : null }
+}
+
+/**
+ * Resolves the optional default supplier — a `purchasing_suppliers` row — in the caller's scope with
+ * the same scoped raw read the purchase-order refs use (`name`/`code` are plaintext there, so no
+ * decryption and no ORM relation are involved). `null` when absent or out of scope.
+ */
+export async function resolveCompanyOrderSupplier(
+  em: EntityManager,
+  scope: CompanyOrderScope,
+  supplierId: string,
+): Promise<CompanyOrderNameRef | null> {
+  const table = 'purchasing_suppliers'
+  const row = (await (em.fork().getKysely() as unknown as Kysely<SupplierReadTables>)
+    .selectFrom(`${table} as s`)
+    .select(['s.id as id', 's.name as name', 's.code as code'])
+    .where('s.id', '=', supplierId)
+    .where('s.tenant_id', '=', scope.tenantId)
+    .where('s.organization_id', '=', scope.organizationId)
+    .where('s.deleted_at', 'is', null)
+    .executeTakeFirst()) as { id: string; name: string | null; code: string | null } | undefined
+  if (!row) return null
+  const name = typeof row.name === 'string' ? row.name.trim() : ''
+  if (!name) return null
+  return { id: String(row.id), name, code: toNullableString(row.code) }
 }
 
 /**
@@ -211,6 +294,37 @@ export async function resolveCompanyOrderIdsForRefs(
   return result
 }
 
+/**
+ * Refuses a create-time link whose child is already attached to a **live** company order in this
+ * scope. One child document belongs to one root — the manual `link-child` already treats an existing
+ * link as "already attached" (it returns the owning root rather than inserting a second row), so the
+ * one-step create must not silently double-attach it. Rows left by a soft-deleted root are ignored,
+ * so a child freed by deleting its root can be attached again.
+ */
+export async function assertCompanyOrderChildrenUnattached(
+  em: EntityManager,
+  scope: CompanyOrderScope,
+  entries: Array<{ kind: CompanyOrderLinkKind; refId: string }>,
+): Promise<void> {
+  if (entries.length === 0) return
+  const links = await em.fork().find(CompanyOrderLink, {
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+    kind: { $in: [...new Set(entries.map((entry) => entry.kind))] },
+    refId: { $in: [...new Set(entries.map((entry) => entry.refId))] },
+    companyOrder: { tenantId: scope.tenantId, organizationId: scope.organizationId, deletedAt: null },
+  } as FilterQuery<CompanyOrderLink>)
+  const attached = new Set(links.map((link) => linkKey(link.kind, String(link.refId))))
+  for (const entry of entries) {
+    if (attached.has(linkKey(entry.kind, entry.refId))) {
+      throw new CrudHttpError(422, {
+        error: `Child document is already linked to a company order: ${entry.kind} ${entry.refId}`,
+        code: 'link_already_attached',
+      })
+    }
+  }
+}
+
 /** The company order must exist in this scope and not be soft-deleted. */
 export async function loadCompanyOrder(
   em: EntityManager,
@@ -253,6 +367,10 @@ export async function createCompanyOrderFromRef(
     etaDate: null,
     status: options.status ?? 'draft',
     notes: null,
+    customerPartyId: null,
+    customerSnapshot: null,
+    supplierId: null,
+    supplierSnapshot: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   })

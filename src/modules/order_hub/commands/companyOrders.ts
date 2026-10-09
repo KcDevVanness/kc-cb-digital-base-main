@@ -18,10 +18,18 @@ import {
 } from '../data/validators'
 import {
   COMPANY_ORDER_LINK_KINDS,
+  assertCompanyOrderChildrenUnattached,
+  freezeNameSnapshot,
   linkChild,
+  linkKey,
   loadCompanyOrder,
   loadCompanyOrderRefs,
   persistCompanyOrderLink,
+  resolveCompanyOrderParty,
+  resolveCompanyOrderSupplier,
+  type CompanyOrderLinkKind,
+  type CompanyOrderNameRef,
+  type CompanyOrderRef,
   type CompanyOrderScope,
   type LinkChildResult,
 } from '../lib/companyOrder'
@@ -76,6 +84,10 @@ type CompanyOrderSnapshot = {
   etaDate: string | null
   status: string
   notes: string | null
+  customerPartyId: string | null
+  customerSnapshot: Record<string, unknown> | null
+  supplierId: string | null
+  supplierSnapshot: Record<string, unknown> | null
 }
 
 function toDateOnly(value: unknown): string | null {
@@ -95,6 +107,10 @@ function serializeCompanyOrder(order: CompanyOrder): CompanyOrderSnapshot {
     etaDate: toDateOnly(order.etaDate),
     status: order.status,
     notes: order.notes ?? null,
+    customerPartyId: order.customerPartyId ? String(order.customerPartyId) : null,
+    customerSnapshot: order.customerSnapshot ?? null,
+    supplierId: order.supplierId ? String(order.supplierId) : null,
+    supplierSnapshot: order.supplierSnapshot ?? null,
   }
 }
 
@@ -108,14 +124,20 @@ function orderFilter(scope: CompanyOrderScope, id: string): FilterQuery<CompanyO
 }
 
 /**
- * Creates the row under the scope's unique number key, retrying **once** on a collision.
+ * Creates the root, its default-customer/supplier snapshots and its initial child links in **one**
+ * `withAtomicFlush({ transaction: true })` transaction, retrying **once** on a number collision.
  *
  * The unique index is the real guarantee; two concurrent creates can compute the same `CO-…`, and
- * the loser retries with a fresh number. Each attempt runs in its own fork because a failed flush
- * leaves the request identity map holding the rejected entity — reusing it would replay the
- * collision. A second collision is a 409 rather than an unbounded loop.
+ * the loser retries with a fresh number. Each attempt runs on its own fork because a unique
+ * violation aborts that transaction (postgreSQL refuses further statements after a failed one) and
+ * leaves the identity map holding the rejected entity — a reused one would replay the collision. A
+ * second collision is a 409 rather than an unbounded loop.
+ *
+ * Resolution/validation also runs inside the transaction: a reference outside the writer's scope is
+ * a 422 that rolls the whole attempt back before anything is committed. A duplicate `(kind, refId)`
+ * in the payload is refused before the unique index sees it.
  */
-async function createCompanyOrderRow(
+async function createCompanyOrderAtomic(
   em: EntityManager,
   scope: CompanyOrderScope,
   data: {
@@ -124,25 +146,85 @@ async function createCompanyOrderRow(
     etaDate: Date | null
     status: string
     notes: string | null
+    customerPartyId: string | null
+    supplierId: string | null
+    links: Array<{ kind: CompanyOrderLinkKind; refId: string }>
   },
 ): Promise<CompanyOrder> {
+  const keys = data.links.map((link) => linkKey(link.kind, link.refId))
+  if (new Set(keys).size !== keys.length) {
+    throw new CrudHttpError(422, { error: 'The same document is listed twice in links', code: 'duplicate_link' })
+  }
+
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const number = await nextCompanyOrderNumber(em, scope)
+    const tx = em.fork()
+    let created: CompanyOrder | null = null
     try {
-      const scoped = em.fork()
-      const order = scoped.create(CompanyOrder, {
-        tenantId: scope.tenantId,
-        organizationId: scope.organizationId,
-        number,
-        title: data.title,
-        orderDate: data.orderDate,
-        etaDate: data.etaDate,
-        status: data.status,
-        notes: data.notes,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      await scoped.persist(order).flush()
+      await withAtomicFlush(
+        tx,
+        [
+          async () => {
+            const party = data.customerPartyId
+              ? await resolveCompanyOrderParty(tx, scope, data.customerPartyId)
+              : null
+            if (data.customerPartyId && !party) {
+              throw new CrudHttpError(422, {
+                error: `Default customer not found in this organization: ${data.customerPartyId}`,
+                code: 'customer_party_not_found',
+              })
+            }
+            const supplier = data.supplierId
+              ? await resolveCompanyOrderSupplier(tx, scope, data.supplierId)
+              : null
+            if (data.supplierId && !supplier) {
+              throw new CrudHttpError(422, {
+                error: `Default supplier not found in this organization: ${data.supplierId}`,
+                code: 'supplier_not_found',
+              })
+            }
+
+            const resolved: Map<string, CompanyOrderRef> = data.links.length > 0
+              ? await loadCompanyOrderRefs(tx, scope, data.links)
+              : new Map()
+            for (const link of data.links) {
+              if (!resolved.has(linkKey(link.kind, link.refId))) {
+                throw new CrudHttpError(422, {
+                  error: `Child document not found in this organization: ${link.kind} ${link.refId}`,
+                  code: 'link_not_found',
+                })
+              }
+            }
+            await assertCompanyOrderChildrenUnattached(tx, scope, data.links)
+
+            const number = await nextCompanyOrderNumber(tx, scope)
+            const order = tx.create(CompanyOrder, {
+              tenantId: scope.tenantId,
+              organizationId: scope.organizationId,
+              number,
+              title: data.title,
+              orderDate: data.orderDate,
+              etaDate: data.etaDate,
+              status: data.status,
+              notes: data.notes,
+              customerPartyId: party ? party.id : null,
+              customerSnapshot: party ? freezeNameSnapshot(party) : null,
+              supplierId: supplier ? supplier.id : null,
+              supplierSnapshot: supplier ? freezeNameSnapshot(supplier) : null,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            })
+            tx.persist(order)
+            for (const link of data.links) {
+              const ref = resolved.get(linkKey(link.kind, link.refId))
+              if (ref) persistCompanyOrderLink(tx, scope, order, ref)
+            }
+            created = order
+          },
+        ],
+        { transaction: true, label: 'order_hub.orders.create' },
+      )
+      const order = created as CompanyOrder | null
+      if (!order) throw new Error('[internal] create produced no company order')
       return order
     } catch (error) {
       if (!isUniqueViolation(error)) throw error
@@ -160,12 +242,15 @@ const createCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
     const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
 
-    const order = await createCompanyOrderRow(em, scope, {
+    const order = await createCompanyOrderAtomic(em, scope, {
       title: parsed.title ?? null,
       orderDate: parsed.orderDate ? new Date(parsed.orderDate) : new Date(),
       etaDate: parsed.etaDate ? new Date(parsed.etaDate) : null,
       status: parsed.status ?? 'draft',
       notes: parsed.notes ?? null,
+      customerPartyId: parsed.customerPartyId ?? null,
+      supplierId: parsed.supplierId ?? null,
+      links: parsed.links ?? [],
     })
 
     const identifiers = {
@@ -182,6 +267,19 @@ const createCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
       events: companyOrderCrudEvents,
       indexer: companyOrderCrudIndexer,
     })
+    // Child links created in the same transaction are a link-collection change too: announce them
+    // and drop the same caches `links.replace`/`link-child` do, so the hub's attach block is fresh.
+    if ((parsed.links ?? []).length > 0) {
+      await eventsConfig.emit('order_hub.company_order.links.updated', {
+        ...identifiers,
+        count: (parsed.links ?? []).length,
+      })
+      await invalidateCompanyOrderLinkCaches(
+        { container: ctx.container, ...scope },
+        identifiers,
+        'company-order-created-with-links',
+      )
+    }
     await invalidateCompanyOrderCaches({ container: ctx.container, ...scope }, identifiers, 'company-order-created')
 
     return order
@@ -252,6 +350,34 @@ const updateCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
       request: ctx.request ?? null,
     })
 
+    // Resolve the default customer/supplier outside the synchronous `apply` (it is async + scoped).
+    // Three states per field: absent leaves the stored pair alone, `null` clears both halves, and an
+    // id re-resolves and re-freezes the snapshot — an id outside the scope is 422 (fail closed).
+    let customer: CompanyOrderNameRef | null | undefined
+    if (parsed.customerPartyId === null) {
+      customer = null
+    } else if (typeof parsed.customerPartyId === 'string') {
+      customer = await resolveCompanyOrderParty(em, scope, parsed.customerPartyId)
+      if (!customer) {
+        throw new CrudHttpError(422, {
+          error: `Default customer not found in this organization: ${parsed.customerPartyId}`,
+          code: 'customer_party_not_found',
+        })
+      }
+    }
+    let supplier: CompanyOrderNameRef | null | undefined
+    if (parsed.supplierId === null) {
+      supplier = null
+    } else if (typeof parsed.supplierId === 'string') {
+      supplier = await resolveCompanyOrderSupplier(em, scope, parsed.supplierId)
+      if (!supplier) {
+        throw new CrudHttpError(422, {
+          error: `Default supplier not found in this organization: ${parsed.supplierId}`,
+          code: 'supplier_not_found',
+        })
+      }
+    }
+
     const updated = await de.updateOrmEntity({
       entity: CompanyOrder,
       where: orderFilter(scope, parsed.id),
@@ -261,6 +387,14 @@ const updateCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
         if (parsed.etaDate !== undefined) entity.etaDate = parsed.etaDate ? new Date(parsed.etaDate) : null
         if (parsed.status !== undefined) entity.status = parsed.status
         if (parsed.notes !== undefined) entity.notes = parsed.notes
+        if (parsed.customerPartyId !== undefined) {
+          entity.customerPartyId = customer ? customer.id : null
+          entity.customerSnapshot = customer ? freezeNameSnapshot(customer) : null
+        }
+        if (parsed.supplierId !== undefined) {
+          entity.supplierId = supplier ? supplier.id : null
+          entity.supplierSnapshot = supplier ? freezeNameSnapshot(supplier) : null
+        }
       },
     })
     if (!updated) throw notFound('Company order not found')
@@ -311,6 +445,10 @@ const updateCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
         entity.etaDate = before.etaDate ? new Date(before.etaDate) : null
         entity.status = before.status
         entity.notes = before.notes
+        entity.customerPartyId = before.customerPartyId ?? null
+        entity.customerSnapshot = before.customerSnapshot ?? null
+        entity.supplierId = before.supplierId ?? null
+        entity.supplierSnapshot = before.supplierSnapshot ?? null
       },
     })
     await emitCrudUndoSideEffects({
@@ -419,6 +557,10 @@ const deleteCompanyOrderCommand: CommandHandler<
       entity.etaDate = before.etaDate ? new Date(before.etaDate) : null
       entity.status = before.status
       entity.notes = before.notes
+      entity.customerPartyId = before.customerPartyId ?? null
+      entity.customerSnapshot = before.customerSnapshot ?? null
+      entity.supplierId = before.supplierId ?? null
+      entity.supplierSnapshot = before.supplierSnapshot ?? null
       await em.persist(entity).flush()
     } else {
       entity = await de.createOrmEntity({
@@ -433,6 +575,10 @@ const deleteCompanyOrderCommand: CommandHandler<
           etaDate: before.etaDate ? new Date(before.etaDate) : null,
           status: before.status,
           notes: before.notes,
+          customerPartyId: before.customerPartyId ?? null,
+          customerSnapshot: before.customerSnapshot ?? null,
+          supplierId: before.supplierId ?? null,
+          supplierSnapshot: before.supplierSnapshot ?? null,
           createdAt: new Date(),
           updatedAt: new Date(),
         },

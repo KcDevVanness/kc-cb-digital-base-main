@@ -24,6 +24,12 @@ export type CompanyOrderLinkKind = (typeof COMPANY_ORDER_LINK_KINDS)[number]
 /** A `date` column: a `YYYY-MM-DD` calendar day, never a timestamp. */
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a YYYY-MM-DD date')
 
+/** One create-time child link. The command resolves and freezes each inside the root's transaction. */
+export const companyOrderLinkEntrySchema = z.object({
+  kind: z.enum(COMPANY_ORDER_LINK_KINDS),
+  refId: z.string().uuid(),
+})
+
 /** No `number`, no scope: the server generates the number and derives the scope from the session. */
 export const companyOrderCreateSchema = z.object({
   title: z.string().trim().max(200).nullable().optional(),
@@ -31,6 +37,15 @@ export const companyOrderCreateSchema = z.object({
   etaDate: dateOnlySchema.nullable().optional(),
   status: z.enum(COMPANY_ORDER_STATUSES).optional(),
   notes: z.string().max(2000).nullable().optional(),
+  /**
+   * Optional default customer/supplier. A non-null id must resolve inside the writer's scope (else
+   * 422) and its display name is frozen into the paired snapshot column. `null` is the same as
+   * omitted on create.
+   */
+  customerPartyId: z.string().uuid().nullable().optional(),
+  supplierId: z.string().uuid().nullable().optional(),
+  /** Attach existing children while creating the root — one transaction, no second step. */
+  links: z.array(companyOrderLinkEntrySchema).max(20).optional(),
 })
 
 /**
@@ -45,6 +60,12 @@ export const companyOrderUpdateSchema = z.object({
   etaDate: dateOnlySchema.nullable().optional(),
   status: z.enum(COMPANY_ORDER_STATUSES).optional(),
   notes: z.string().max(2000).nullable().optional(),
+  /**
+   * Three-state like `title`: absent leaves the stored value alone, an id re-resolves and re-freezes
+   * the snapshot, and an explicit `null` clears both halves. A non-null id outside the scope is 422.
+   */
+  customerPartyId: z.string().uuid().nullable().optional(),
+  supplierId: z.string().uuid().nullable().optional(),
 })
 
 export const companyOrderListSchema = z.object({
