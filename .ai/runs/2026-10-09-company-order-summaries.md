@@ -2,7 +2,7 @@
 
 **Source doc:** `.ai/specs/2026-10-09-company-order-root.md` 的「第五轮」节（REQ-017…REQ-019）
 **Base:** `dev`（8905b6b，前四轮已合入）
-**PR:** #153（draft → ready；合并后本行更新为已合入 `dev`）
+**PR:** #153（squash 合入 `dev` → `dc119ba`，2026-10-09）
 
 ## Goal
 
