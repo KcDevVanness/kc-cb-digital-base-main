@@ -132,11 +132,14 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       if (query.id) filters.id = query.id
       if (query.status) filters.status = query.status
 
+      // The factory scopes the main query by the caller's *expanded* visible organization set
+      // (`ctx.organizationIds`), so the search/kind sub-reads must use the same set — deriving a
+      // single org from the session would drop every descendant-org row the page still shows.
       const tenantId = ctx.auth?.tenantId ?? null
-      const organizationId = ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null
-      if (!tenantId || !organizationId) {
-        // The factory applies trusted scope itself; a search/kind needs it for the sub-reads.
-        return filters
+      const organizationIds = ctx.organizationIds?.length ? ctx.organizationIds : []
+      if (!tenantId || organizationIds.length === 0) {
+        // Fail closed, exactly like the factory's own empty-scope behavior.
+        return { ...filters, id: { $in: [] } }
       }
 
       let candidateIds: Set<string> | null = null
@@ -153,7 +156,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
           .selectFrom('order_hub_company_order_links')
           .select('company_order_id')
           .where('tenant_id', '=', tenantId)
-          .where('organization_id', '=', organizationId)
+          .where('organization_id', 'in', organizationIds)
           .where('kind', '=', query.kind)
           .execute()) as Array<{ company_order_id: string }>
         narrow(rows.map((row) => String(row.company_order_id)))
@@ -168,7 +171,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
           .selectFrom('order_hub_company_orders')
           .select('id')
           .where('tenant_id', '=', tenantId)
-          .where('organization_id', '=', organizationId)
+          .where('organization_id', 'in', organizationIds)
           .where('deleted_at', 'is', null)
           .where((eb) => eb.or([eb('number', 'ilike', like), eb('title', 'ilike', like)]))
           .execute()) as Array<{ id: string }>
@@ -176,7 +179,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
           .selectFrom('order_hub_company_order_links')
           .select('company_order_id')
           .where('tenant_id', '=', tenantId)
-          .where('organization_id', '=', organizationId)
+          .where('organization_id', 'in', organizationIds)
           .where('ref_number', 'ilike', like)
           .execute()) as Array<{ company_order_id: string }>
         narrow([...rootRows.map((row) => String(row.id)), ...linkRows.map((row) => String(row.company_order_id))])
