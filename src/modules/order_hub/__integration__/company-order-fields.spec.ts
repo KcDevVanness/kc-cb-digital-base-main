@@ -1,4 +1,5 @@
 import { expect, request, test, type APIRequestContext, type APIResponse } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
 import { getAuthToken } from '@open-mercato/core/helpers/integration/api'
 import {
   apiRequestWithSelectedOrg,
@@ -49,13 +50,36 @@ type FieldsPayload = {
   order?: { number?: string | null; childNumbers?: string[] }
   amounts?: CurrencyAmounts[]
   dates?: { orderedAt?: string | null; expectedDeliveryAt?: string | null; shippedAt?: string | null }
-  documents?: { byKind?: Array<{ kind: string; numbers: string[] }>; invoiceNumbers?: string[] }
+  documents?: {
+    byKind?: Array<{ kind: string; numbers: string[] }>
+    invoiceNumbers?: string[]
+    bySlot?: SlotGroup[]
+  }
   exportDocuments?: Array<{ docType: string; count: number; latestNumber: string | null; latestHasAttachment: boolean }>
   purchaseFiles?: { attachmentCount: number }
   collections?: Array<{ status: string; hasForeignIncomeCertificate: boolean }>
   refunds?: Array<{ currencyCode: string; status: string; amount: string | null }>
   kcStamp?: boolean
 }
+
+type SlotGroup = {
+  slot: string
+  files: Array<{ attachmentId: string; fileName: string; createdAt: string }>
+  childSources: Array<{ source: string; label: string; count?: number }>
+}
+
+const SLOT_CODES = [
+  'commercial_invoice',
+  'packing_list',
+  'bill_of_lading',
+  'telex_release',
+  'customs_declaration',
+  'domestic_freight_receipt',
+  'booking_charges_receipt',
+  'purchase_slip_invoice',
+  'foreign_income_certificate',
+  'kc_invoice_stamp',
+]
 
 const isOk = (status: number) => status >= 200 && status < 300
 
@@ -81,6 +105,8 @@ test.describe.serial('order_hub — company order fields', () => {
   let piNumber: string | null = null
   let ciNumber: string | null = null
   const customsNumber = `CD-${Date.now().toString(36)}`.toUpperCase()
+  let slotDocumentId = ''
+  let slotAttachmentId = ''
   const companyOrderIds: string[] = []
   const salesOrderIds: string[] = []
   const purchaseOrderIds: string[] = []
@@ -339,6 +365,17 @@ test.describe.serial('order_hub — company order fields', () => {
     await expectOk(await scoped('POST', LINK_CHILD_URL, { kind: 'internal_sales_order', refId: salesOrderId, companyOrderId }))
     await expectOk(await scoped('POST', LINK_CHILD_URL, { kind: 'purchase_order', refId: purchaseOrderId, companyOrderId }))
 
+    // A file the order itself files under the 报关单 slot — the same family as the shipment's own
+    // customs declaration, so the summary must report both the order's file and the child source.
+    slotDocumentId = randomUUID()
+    slotAttachmentId = await uploadAttachment('order_hub:company_order_document', slotDocumentId)
+    await expectOk(await scoped('POST', '/api/order_hub/orders/documents', {
+      id: slotDocumentId,
+      companyOrderId,
+      slot: 'customs_declaration',
+      attachmentId: slotAttachmentId,
+    }))
+
     // An unrelated (sibling) organization: sees nothing of the root's deal.
     branchOrgId = await createOrganizationFixture(api, rootToken, {
       name: `Fields branch ${stamp}`,
@@ -359,6 +396,9 @@ test.describe.serial('order_hub — company order fields', () => {
   })
 
   test.afterAll(async () => {
+    if (slotDocumentId) {
+      await scoped('DELETE', `/api/order_hub/orders/documents?id=${encodeURIComponent(slotDocumentId)}`).catch(() => undefined)
+    }
     for (const id of attachmentIds) {
       await scoped('DELETE', `${ATTACHMENTS_URL}?id=${encodeURIComponent(id)}`).catch(() => undefined)
     }
@@ -430,6 +470,40 @@ test.describe.serial('order_hub — company order fields', () => {
     ])
     expect(fields.refunds).toEqual([{ currencyCode: 'CNY', status: 'applied', amount: '130.00' }])
     expect(fields.kcStamp).toBe(true)
+  })
+
+  test('reports every named document slot with its order file and child source (TEST-016)', async () => {
+    const fields = await readFields()
+    const bySlot = fields.documents?.bySlot ?? []
+
+    // One entry per slot, in the enum order the hub renders its upload rows in.
+    expect(bySlot.map((group) => group.slot)).toEqual(SLOT_CODES)
+
+    // The 报关单 slot carries both halves of the same family: the order's own uploaded file and the
+    // shipment's export document derived as a child source.
+    const customs = bySlot.find((group) => group.slot === 'customs_declaration')
+    expect(customs, 'the customs declaration slot is projected').toBeTruthy()
+    const orderFile = (customs?.files ?? []).find((file) => file.attachmentId === slotAttachmentId)
+    expect(orderFile, 'the order-uploaded file is listed under its slot').toBeTruthy()
+    expect(orderFile?.fileName).toContain(`fields-${stamp}`)
+    expect(typeof orderFile?.createdAt).toBe('string')
+    expect(orderFile?.createdAt).not.toBe('')
+    const shipmentSource = (customs?.childSources ?? []).find((source) => source.source === 'shipment')
+    expect(shipmentSource?.count).toBe(1)
+    expect(shipmentSource?.label).toBe(customsNumber)
+
+    // The other child-derived signals map to their own slots, without a second read of the child.
+    const stampSlot = bySlot.find((group) => group.slot === 'kc_invoice_stamp')
+    expect((stampSlot?.childSources ?? []).some((source) => source.source === 'contract')).toBe(true)
+    const income = bySlot.find((group) => group.slot === 'foreign_income_certificate')
+    expect((income?.childSources ?? []).some((source) => source.source === 'collection' && source.count === 1)).toBe(true)
+    const purchaseSlip = bySlot.find((group) => group.slot === 'purchase_slip_invoice')
+    expect((purchaseSlip?.childSources ?? []).some((source) => source.source === 'purchasing' && source.count === 2)).toBe(true)
+
+    // The booleans the summary already carried keep their meaning next to the slot projection.
+    expect(fields.kcStamp).toBe(true)
+    expect(fields.purchaseFiles?.attachmentCount).toBe(2)
+    expect(fields.documents?.invoiceNumbers, 'INV.NO still comes from the commercial document').toContain(ciNumber)
   })
 
   test('an unrelated organization reads an empty object', async () => {
