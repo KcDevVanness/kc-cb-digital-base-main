@@ -2,7 +2,7 @@
 
 **Source doc:** `.ai/specs/2026-10-09-company-order-root.md` 的「第七轮」节（REQ-022…REQ-027）
 **Base:** `dev`（603dd77）
-**PR:** #157
+**PR:** #157（squash 合入 `dev` → `d867630`，2026-10-09）
 
 ## Goal
 
