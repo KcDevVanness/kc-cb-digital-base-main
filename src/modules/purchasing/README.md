@@ -136,7 +136,7 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 ```bash
 yarn generate && yarn typecheck
 yarn test src/modules/purchasing
-yarn test:integration:ephemeral   # 含 purchasing/__integration__/supplier-products.spec.ts（产品库 CRUD/导入/同步/价格/字段/图片）与 supplier-code-issuance.spec.ts（供应商编码发号：连续、不复用、按组织独立、显式码不变）
+yarn test:integration:ephemeral   # 含 purchasing/__integration__/supplier-products.spec.ts（产品库 CRUD/导入/同步/价格/字段/图片）与 supplier-code-issuance.spec.ts（供应商编码发号：连续、不复用、按组织独立、显式码不变）；采购单侧的关联区块读 cross_border/__integration__/shipment-purchase-order-filter.spec.ts（`?purchaseOrderId=`：命中/未知 id 空页/跨组织空页）
 # 冒烟（dev server 在跑时）：供应商 201 → 采购单 201 → 付款 201 → 附件 200 → 绑定 200 → 列表 attachment: yes
 # 附件预览冒烟（2026-09-24）：采购单详情 → 单证行「预览」→ 图片在对话框内等比显示 / PDF 由 PDF.js 渲染到 canvas（3 页 PDF 实测 3 个 canvas、每页 960×1358、蓝色块像素数吻合、无控制台报错）/
 #   文本文件显示「此文件类型不支持预览，请下载后用本地程序打开。」+「下载」；行操作菜单与单证表单字段同样有「预览」；产品照片缩略图（aria-label 预览这张照片）点击放大
@@ -161,6 +161,10 @@ yarn test:integration:ephemeral   # 含 purchasing/__integration__/supplier-prod
 #   「类别」下拉列出 CL — 猫砂 等字典条目（手输已不可用）→ 选 CL → 生成 → 商品 SKU 得 `PK-CL001` + 拆解；
 #   类别码表读不到/为空时面板给「字典 product_category 里没有可用条目…」而不是空白下拉框；手输类别那条路已不存在，因此 `Unknown product_category value: …` 只可能来自 API 调用方
 # 生成后可手改（2026-09-24）：生成得到 `PK-CL001` 后把「商品 SKU」改成手工码（如 `DK-MANUAL-01`）→ 面板徽章变「沿用旧码」且不拦截 → 保存 → 列表与 `GET /api/purchasing/supplier-products` 回读的就是手输值（写路径不读 `rule.enforce`，`strict` 也不拦）
+# 关联区块冒烟（2026-10-09，主目录 dev）：采购单详情出现 关联订单 / 关联合同 / 关联发运单 三区块（共享 RelatedSection），抬头摘要格不再显示来源单号；无数据时三区各给空态；
+#   有合同时「关联合同」行 = 合同号 → /backend/trade-docs/contracts/<id>；有采购分摊时「关联发运单」行 = 柜号 + 状态 → /backend/cross_border/shipments/<id>；
+#   有来源锚时「关联订单」行 = 单号 + 对内/对外销售订单徽章 → /backend/orders/<id>（订单 hub，实测 ORDER-20261008-00003）；
+#   「查看全部」的落点 /backend/cross_border/shipments?purchaseOrderId=<id> 顶部给「仅显示指定来源订单的发运单」横幅且只回该单的柜（实测 1 条）
 # 已有租户需要：yarn mercato seed:defaults --module purchasing（单位字典）+ yarn mercato seed:defaults --module product_codes（品牌/类别字典 + 默认编码规则）
 #   + yarn mercato auth sync-role-acls（新权限）。漏掉 product_codes 那一步的表现是「默认品牌」下拉为空、字典库里没有 product_brand，
 #   且 product_codes_rules 为空（生成按钮没有规则可解析）——见 `.ai/lessons/module-seeded-dictionaries-need-seed-defaults.md`

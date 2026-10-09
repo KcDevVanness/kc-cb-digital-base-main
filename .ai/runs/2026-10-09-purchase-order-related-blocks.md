@@ -54,5 +54,15 @@
 - [x] 1.2 Purchase order page association blocks + i18n — fc436c3
 - [x] 1.3 Spec, module READMEs, status board — 9b6489f
 - [x] 1.4 Integration spec TEST-307 green in the ephemeral env — `yarn test:integration:ephemeral shipment-purchase-order-filter` **3 passed**
-- [x] 1.5 Broad gate green in the main tree after the local dev merge — `yarn generate` / `typecheck` / `lint`（0 error, 8 warning）/ `check-lessons` / `ds:check`（1053 files）/ `test`（76 suites · 636 tests）/ `build`（Compiled successfully）all green；浏览器冒烟进行中（dev server 合并后重编译较慢）
-- [ ] 1.6 Browser smoke on /backend/purchasing/orders/&lt;id&gt;
+- [x] 1.5 Broad gate green in the main tree after the local dev merge — `yarn generate` / `typecheck` / `lint`（0 error, 8 warning）/ `check-lessons` / `ds:check`（1053 files）/ `test`（76 suites · 636 tests）/ `build`（Compiled successfully）all green
+- [x] 1.6 Browser smoke on /backend/purchasing/orders/&lt;id&gt; — 见下方「冒烟证据」；夹具（一张带来源锚的采购单 + 一张发运单）已软删，demo 库回到可见原状
+
+## 冒烟证据（2026-10-09，主目录 dev @ :3000）
+
+- `/backend/purchasing/orders/ac8f9a59-…`（PO-2026-0003）：`关联合同` 行 `SC-2026-0002 / ¥0.00 / 已签发` → `/backend/trade-docs/contracts/ae3f51cb-…`；`关联发运单` 行（临时夹具柜号 `PO-HUB-SMOKE-01`，draft）→ `/backend/cross_border/shipments/…`；`关联订单` 空态。
+- `/backend/purchasing/orders/a78d47f3-…`（临时夹具，带来源锚 `ORDER-20261008-00003`）：`关联订单` 行 = 单号 + `对内销售订单` 徽章 → `/backend/orders/b21f9390-…`；合同/发运单两区空态。
+- `/backend/purchasing/orders/d4b26c92-…`（owner 反馈钉住的页面）：三区空态（「这张采购单没有来源销售订单。」等），摘要格不再有来源单号。
+- `/backend/cross_border/shipments?purchaseOrderId=ac8f9a59-…`：顶部横幅「仅显示指定来源订单的发运单 / 清除筛选」，只回该单的柜（显示 1 条）。
+- 夹具：`POST /api/cross_border/shipments`（采购分摊 ×1）与 `POST /api/purchasing/purchase-orders {sourceSalesOrderId}`，冒烟后 `DELETE` 软删（`live_ship=0, live_po=0`）。
+
+PR: #149（draft → ready 见 PR Progress）
