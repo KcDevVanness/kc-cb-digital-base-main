@@ -34,9 +34,11 @@ app 自有模块。**公司订单是一个真表**：`order_hub_company_orders`�
 - 一次取数：`GET /api/order_hub/orders`（分页/筛选）+ 一次 `GET /api/order_hub/stages?ids=`（本页行的四阶段计数与
   子单事实）。筛选任一变化重置页码；`?type=internal|external|purchase`（旧列表 URL 的 307 带过来的）映射到
   `kind=internal_sales_order|external_sales_order|purchase_order`。
-- 列：编号（链到 hub）/ 子单号（冻结的 `ref_number` 并集）/ 对方（**优先销售子单的买方**，否则采购子单的供应商）
-  / 下单日期 / **金额**（第五轮：`stages.amounts`，按币种显示销售金额，无销售子单时显示采购金额；`—` 表示无） / 状态（`order_hub` 常量徽章）/ 采购·发运·单证·收汇退税四格（>0 与 =0 都链到 hub 对应锚点，hub 有
-  新建入口）/ 行操作「打开」与「全字段」。
+- 列（第八轮起 = **根单自己的字段**，与详情页抬头卡同序）：编号（链到 hub，协作行带「协作」徽标）/ 标题 / 下单日期 /
+  预计交货 / 状态（`order_hub` 常量徽章）/ 是否已收款（第六轮字段：`paid_full`/`unpaid` 标签，历史行 `—`）/ 默认客户 / 默认供应商（根单冻结的 `{name}` 快照，无则 `—`）/ **金额**
+  （第五轮：`stages.amounts`，按币种显示销售金额，无销售子单时显示采购金额；`—` 表示无） / 采购·发运·单证·收汇退税四格（>0 与 =0 都链到 hub 对应锚点，hub 有
+  新建入口）/ 行操作「打开」与「全字段」。**子单号与「对方」不再成列**：子单事实（冻结单号、对端名）归详情页的关联
+  区块；搜索仍按子单号命中根单（服务端 `search` 覆盖）。
 - 「全字段」抽屉（第五轮重写）：读 `GET /api/order_hub/orders/fields?companyOrderId=` 的公司订单级汇总，四组——
   **订单**（编号/标题/状态/子单号）、**金额与日期**（按币种的销售/采购/定金/已付/应付 + 下单/预计交货/出运）、
   **单证与文件**（按 kind 的单号、INV.NO、按 `doc_type` 的发运单证计数、采购水单与发票条数）、**财务**（收汇状态与
@@ -45,7 +47,7 @@ app 自有模块。**公司订单是一个真表**：`order_hub_company_orders`�
 
 ## 详情 hub（`components/OrderDetail.tsx`，`/backend/orders/<companyOrderId>`）
 
-- 抬头卡（编号/标题/下单/预计交货/状态 + 编辑）+ 八个区块，锚点 `internal-orders` / `external-orders` /
+- 抬头卡（编号/标题/下单/预计交货/状态 + 默认客户/默认供应商 + 备注 + 编辑）+ 八个区块，锚点 `internal-orders` / `external-orders` /
   `purchasing` / `contracts` / `documents` / `shipments` / `packing-lists` / `money`（后六个沿用旧 hub 的 id，
   工作台深链可继续解析）。
 - **三个可写关联区块**（对内/对外销售订单、采购订单）：行来自 `GET /api/order_hub/orders/links?companyOrderId=&kind=`，
@@ -121,6 +123,20 @@ owner 在 `/backend/orders/create` 的口径（两件，均按 owner 原话落�
 - **汇总**：`loadCompanyOrderFields` 的 `documents.bySlot`（每个槽位：本单文件 + 子单来源信号 `contract`/`shipment`/`collection`/`purchasing`，既有 `kcStamp`/`exportDocuments` 等字段保留）。
 - **UI**：hub「单据与文件」区块（`components/OrderDocumentsSection.tsx`）逐槽位一行——文件 chips（预览/下载/删除）+ 该行独立「上传」+ 子单来源徽标（链到页内 `#contracts`/`#shipments`/`#money`）；「其他文件」仍是原通用区；协作者只读（无上传/删除）。抽屉「单证与文件」按槽位显示（哪张文件/何时/来源）。
 - **实现期修复**：无号草稿合同**已盖章但无单号**时，来源计数被漏（原先只在有单号时入列）——改为按**盖章存在**计数、单号仅作标签。
+
+## 第八轮：工作台行以根单字段为准（2026-10-09，owner 反馈）
+
+owner 看 `/backend/orders` 后反馈：`对方` 看不出是什么，整行「还是有采购单的影子数据」——`子单号`（关联子单的冻结
+`ref_number` 并集）与 `对方`（优先销售子单买方、否则采购子单供应商）都是**子单的事实**；按 owner 口径，工作台的列应当
+与订单详情页的抬头卡一致。
+
+- **行 = 根单自己的字段**（编号/标题/下单日期/预计交货/状态/是否已收款/默认客户/默认供应商），后接金额列与四个阶段列；解析抽到
+  `components/companyOrderDisplay.ts` 的 `toOrderWorkbenchRow`（非空字符串以外一律 `null` → 渲染 `—`，不让 `undefined`
+  落进单元格）；同文件的 `snapshotDisplayName` 由工作台与 hub 抬头卡共用（hub 原先自带一份本地实现，现只此一处）。
+- **`子单号`/`对方` 两列退役**：子单号在详情页的关联区块读、也能被搜索命中；「对方」这个词随之退出界面（根单的两个
+  默认往来方各有其名）。
+- **「是否已收款」列**（第六轮字段）：`paid_full`/`unpaid` 按第六轮标签渲染，`null`（迁移前的历史行）渲染 `—`。
+- 口径与证据：spec「第八轮」节（REQ-028 / TEST-021–022 / AC-025）；单测 `components/__tests__/companyOrderDisplay.test.ts`。
 
 ## 规则（有意为之）
 
