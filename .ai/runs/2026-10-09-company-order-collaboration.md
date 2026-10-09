@@ -75,16 +75,18 @@ owner 给出原飞书多维表格 35 列字段清单并定下三条口径（2026
 
 ### Phase 4.B: 协作组织白名单（REQ-014/016）
 
-- [ ] 2.1 Collaborators table + replace command
-- [ ] 2.2 Read paths merged with the collaborator set
-- [ ] 2.3 Command field whitelist for collaborators
-- [ ] 2.4 Hub dialog + collaborator view + workbench marker
-- [ ] 2.5 TEST-008 + browser segment
+- [x] 2.1 Collaborators table + replace command — 000d337（`order_hub_company_order_collaborators`：唯一 `(company_order_id, organization_id)` + 反查索引 + FK 级联；`order_hub.orders.collaborators.replace` owner-only、去重、排除根单自组织、未知组织 422、根 `updatedAt` 乐观锁；事件 `collaborators.updated` + 缓存失效）
+- [x] 2.2 Read paths merged with the collaborator set — 000d337 + 本轮修复：订单/链接列表改为**显式可见 id 集**（`organization_id ∈ 我的可见组织集` 或我是其协作组织的根单），`stages` 的根读同法、子投影用「可见根单所有者组织 ∪ 我的组织」；实测引擎在「顶层 `id` 过滤 + `$or` 子树」并存时 OR 组不再匹配 → 落地为 id 集形态（规格原记的 contingency）
+- [x] 2.3 Command field whitelist for collaborators — 000d337（`COLLABORATOR_WRITABLE_FIELDS` = id/updatedAt/status/notes；其它键 422 `collaborator_field_not_allowed`；delete/links.replace/collaborators.replace/link-child 对既有根 403 `company_order_owner_required`）
+- [x] 2.4 Hub dialog + collaborator view + workbench marker — b6cce5d（`CompanyOrderCollaboratorsDialog`（组织多选 + 成套替换 + 409 冲突条）；协作者视图只留「修改状态与备注」；工作台「协作」徽标）
+- [x] 2.5 TEST-008 + browser segment — `company-order-collaborators.spec.ts` **4/4 passed**（分支可见 + 徽标；协作者写 status 200 / 写 title 422 / delete 403；成套替换 + 409；未知组织 422）
+- 实现期修复（本轮）：① `stages` 投影里 `childOrganizationIds` 在声明前被使用 → 运行时 ReferenceError → `/api/order_hub/stages` 500（改为先读协作根单再读根单）；② 集合 scope 的 `$or` 形态在引擎里与顶层 `id` 过滤冲突（协作者 search/`?ids=` 读全空）→ 改为显式 id 集；③ **跨组织缓存失效**：CRUD 列表缓存按组织打标签，`collaborators.replace` 原先只失效所有者组织，协作者会继续看到缓存的空页 → 失效入参扩为「所有者组织 + 协作组织（含被移除的）」，update/delete/links 各写路径统一带 `rootInvalidationOrganizations`（helper 读取；失败仅退化为 TTL）。
 
 ### Phase 4.C: 文件区块（REQ-015）
 
-- [ ] 3.1 AttachmentsSection + hub files block
-- [ ] 3.2 TEST-009 + browser segment
+- [x] 3.1 AttachmentsSection + hub files block — b6cce5d（app 级共享件 `src/lib/attachments/AttachmentsSection.tsx`；hub 区块锚点 `files`，`entityId='order_hub:company_order'` + 根单 id；上传/列表/预览/下载/删除，区块级失败隔离）
+- [x] 3.2 TEST-009 + browser segment — `company-order-files.spec.ts` **1/1 passed**（上传 → 列表含该件 → 删除后不含）
+- 一致性修正（规格第四轮「写路径」节已记）：**一个子单只属于一张公司订单** —— `create.links[]` 与 `links.replace` 把子单从其它根**移动**过来（同事务删除其它根关联行并失效其缓存/发事件）；`link-child` 带显式目标沿用幂等（返回现有根）。`company-order-create-fields` 的旧断言（422 `link_already_attached`）改写为移动语义；`company-order-links` 增「attaching a child that already sits on another root moves it」回归。
 
 ### Phase 4.D: 收口
 

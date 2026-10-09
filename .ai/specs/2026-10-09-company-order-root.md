@@ -434,7 +434,7 @@
 - **REQ-012** — **建单即关联**：`order_hub.orders.create` 接受可选 `links: [{ kind, refId }]`（≤20），与建根在**同一事务**内解析、冻结快照并落关联（重复/未知/跨组织 → 422）；建单表单给出「关联已有单据」两个搜索多选（对内/对外销售单按贸易类型通道、采购单）。
 - **REQ-013** — **子单预填默认**：经 `?companyOrderId=` 进入 `internal_sales`（对内/对外）与 `purchasing` 新建表单时，读取根单默认客户/供应商作为**未填时**的买方/供应商默认；读取失败静默降级、不阻断（操作员手填优先）。
 - **REQ-014** — **协作组织**：新表 `order_hub_company_order_collaborators`（唯一 `(company_order_id, organization_id)`）；所有者可在 hub 管理（组织选择器来自 directory 可见树、排除自身组织）；被授权组织**可见**该根单，除 `status`+`notes` 外只读；命令 `order_hub.orders.collaborators.replace`（成套替换、乐观锁、仅所有者）。
-- **REQ-015** — **文件区块**：根单详情页「文件」区块复用 installed `attachments`（`entityType='order_hub:company_order'`、`recordId=根单 id`）：上传/列出/删除/预览；权限沿用 attachments 自身门禁；区块级失败隔离。
+- **REQ-015** — **文件区块**：根单详情页「文件」区块复用 installed `attachments`（表单域 `entityId='order_hub:company_order'`、`recordId=根单 id`；列表/删除/预览同模块既有路由）：上传/列出/删除/预览；权限沿用 attachments 自身门禁；区块级失败隔离。
 - **REQ-016** — **协作可见性落地**：工作台对协作行显示「协作」标记；协作组织使用者的 hub 只提供 状态/备注 编辑入口；**授权仍由服务端命令白名单强制**（UI 隐藏不代替授权）。
 
 ### 数据模型（增量）
@@ -448,9 +448,10 @@
 
 ### 读路径与写路径（协作可见性）
 
-- **列表读**（`GET /api/order_hub/orders`）：`orm.orgField: null` 关闭 factory 的单一组织过滤，scope 由 `buildFilters` 统一施加：`tenant_id` + （`organization_id ∈ 我的可见组织集` **或** 我是该根单的协作组织）。实现优先返回 `$or` 过滤；若查询引擎不接受 `$or` 子树，退化为「先取协作根单 id 集合 → `{ id: { $in } }`」——两者都只改这一个路由，且必须由集成测试证明「协作组织可见、无关组织不可见」。
+- **列表读**（`GET /api/order_hub/orders`）：`orm.orgField: null` 关闭 factory 的单一组织过滤，scope 由 `buildFilters` 统一施加为**显式可见 id 集**：先读「`organization_id ∈ 我的可见组织集` **或** 我是其协作组织的根单 id」，列表/筛选/`?id=`/`?ids=` 都在这一个集合上做交（空集 → 哨兵 id → 合法空页）。**实现期更正**：最初用 `$or` 主形式，实测引擎在「顶层 `id` 过滤 + `$or` 子树」并存时 OR 组不再匹配（协作组织的 search/`?ids=` 读全空），因此落地为 id 集形式（原记的「contingency」即此）；`links` 读同法。协作可见性由集成测试三视角证明。
 - **读投影**（`stages`/`links`）：scope 同样并上「我是协作组织」的根单集合。
 - **写**（`update`）：命令内判定「所有者组织 vs 协作组织」——协作者只接受 `status`/`notes`（含显式 `null`），payload 出现其它键 → 422；`delete`、`collaborators.replace`、`links.replace`、`link-child`（对已存在的根单）仅所有者。
+- **一个子单只属于一张公司订单**（2026-10-09 实现期口径）：`create.links[]` 与 `links.replace` 在落关联前先把这些 `(kind, refId)` 在调用方可见 scope 内的**其它**根单关联行删掉（同一事务内“移动”），因此「在另一个根上重挂同一张子单」= 搬移而不是 422；`link-child` 带显式目标时沿用幂等语义（已挂时返回现有根、不搬）。搬移会向被移出的根发 `links.updated` 并失效其缓存。
 - **权限**：协作组织使用者写状态仍需 `order_hub.manage`（租户角色配置），README 写明。
 
 ### UI
