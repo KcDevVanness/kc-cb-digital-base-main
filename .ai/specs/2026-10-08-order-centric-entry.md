@@ -84,7 +84,7 @@
 | 来源销售订单 | 采购单上的不可编辑三元组：`source_sales_order_id`（可空）、`_kind`（`internal_sales_order` \| `external_sales_order`）、`_number`（建单时冻结的快照） | `purchasing` | 解析不到 / 跨组织 → 422 `source_sales_order_not_found`；`kind`/`number` 不接受客户端直写 |
 | 填充式补充 | 从订单 hub 或工作台发起下游新建时，用查询参数把已知事实（订单、方向、币种、商品行）一次性带过去 | 各表单的预填读取 | 参数非法 → 行内提示并忽略该参数（不阻断），空表单仍可正常新建 |
 | 贸易类型 | `internal_sales_order` / `external_sales_order` 两个取值，由销售渠道推导 | `internal_sales/lib/tradeTypeChannels` | 其它取值 → 行内拒绝 `purchasing.orders.create.sourceOrder.invalid` |
-| 导航树节点 | 域（L1）→ 分支节点（L2+）→ 页面（L3+），配置可继续嵌套；节点 id 形如 `tree:orders` / `tree:module:order-workbench`。分支行的标题是链接：节点自带页面（`href`，如订单工作台）就链到它，否则链到第一个子页；右侧箭头按钮只做展开/收起 | `nav_shell/lib/navTree.ts` | 子项全被功能位过滤 → 该节点一起消失 |
+| 导航树节点 | 域（L1）→ 分支节点（L2+）→ 页面（L3+），配置可继续嵌套；节点 id 形如 `tree:orders` / `tree:module:order-workbench`。分支行的标题是链接：节点自带页面（`href`，如订单工作台）就链到它，否则链到第一个子页；右侧箭头按钮只做展开/收起。当前页标识只画一次：页面那一行带竖条 + 底色，其上的域标题与分支行只加粗（判定 `nav_shell/lib/navActive.ts`：`active` / `on-path` / `idle`）——分组行没有自己的页面时 href 取第一个子页（采购 → `/backend/purchasing/orders`），只看「本行或子行命中」会让分组行与页面行同时点亮 | `nav_shell/lib/navTree.ts` + `nav_shell/lib/navActive.ts` | 子项全被功能位过滤 → 该节点一起消失 |
 | 显示层隐藏 | `hiddenItems` 是显示开关，与页面 `requireFeatures` 无关 | `sidebarPreferencesService` | 隐藏条目不改变任何授权结果 |
 
 ## Users, Permissions, and Scope
@@ -573,6 +573,7 @@
 
 | Date | Change |
 |---|---|
+| 2026-10-09 | **侧栏当前页标识收敛（owner 复审）**——树只标一次：当前页那一行带左侧竖条 + 底色并加粗，其上的域标题与分支行只加粗（不画竖条/底色）。判定抽成纯模块 `nav_shell/lib/navActive.ts`（`hrefIsActive` / `collectActiveIds` / `resolveRowState` → `active` / `on-path` / `idle`，单测 `lib/__tests__/navActive.test.ts`）。起因：分组行没有自己的页面时 href 取第一个子页（采购 → `/backend/purchasing/orders`），旧规则「本行或子行命中即高亮」把采购、订单工作台、采购单三行一起点亮。本规格的词表「导航树节点」行、`nav_shell` README 与 `docs/dev/navigation.md` 同步；PR #147 追加提交。 |
 | 2026-10-08 | **第二轮重构 · 阶段 C + D：订单单据维度 + hub 对齐合同页**——新表 `trade_docs_order_documents`（订单自己的单据维度，多态、无外键；迁移 `Migration20261008095745_trade_docs` 已应用）、命令 `trade_docs.orders.documents.replace`（成套替换 + 订单 `updated_at` 乐观锁 + 两侧 scoped 解析）、`GET/POST /api/trade_docs/orders/documents`、单据/税票建单在同一事务写关联行（create 页带 `?orderKind=&orderId=`）、删除单据一并删关联行；hub 重排为六区块（采购单 / 购销合同 / 单据 / 发运单 / 装箱单 / 收汇·退税），块壳抽成 `src/lib/related/RelatedSection.tsx`，区块行可就地编辑头部字段（`src/lib/quick-edit/QuickEditDialog.tsx` + 五个模块字段工厂，各模块自己的 `PUT` + 行版本乐观锁），新增装箱单区块（按发运单读 `docType=packing_list`）；销售行的 `documentCount` 口径改为「订单自己的关联行 + 其发运单的出口单证」。REQ-002、Surface inventory、TEST-205、AC-002 同步改口径。 |
 | 2026-10-08 | **第二轮重构 · 阶段 A + B：菜单再分层 + 报价单合并**——公司订单域变成四层（公司订单 → 订单工作台 → 采购 / 出口销售 / 合同与单据 / 发运与装箱 → 页面），分支行的标题变成链接（节点自带页面就链到它，否则链第一个子页），箭头按钮只做展开/收起；报价单两种贸易类型合并成 `/backend/quotes` 一条列表（类型列 + 类型筛选，请求参数由 `lib/quoteListParams.ts` 纯函数产出），两个旧列表 URL 307 进来并预选类型。词表「导航树节点」行、`docs/dev/navigation.md` 与两个模块 README 同步；已知限制：新加的一层不能拖拽排序（安装层编辑器只对域顶层给把手）。 |
 | 2026-10-08 | **第二轮重构 · 阶段 E：工作台取消「只看待补」**——勾选框、`pending` 查询参数、服务端 `isOrderPending` 过滤与 `lib/orderPending.ts` 一并删除（类型 / 状态 / 关键词三个筛选与四个阶段列保留；`?pending=…` 变为未声明参数被 zod 丢弃，不再 400）。本规格的 REQ-001、J-001、UI 架构表、Surface inventory、TEST-301/303、Phase 4（Outcome/slices/exit gate）、AC-001 与词表「待补」行同步改口径；Changelog 的历史行不动。 |
