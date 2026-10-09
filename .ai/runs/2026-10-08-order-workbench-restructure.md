@@ -24,6 +24,7 @@
 | B | `/backend/quotes` 合并报价列表 | `yarn jest src/modules/internal_sales` 60 passed（含 `quoteListParams` 5 例）；两个旧 URL 307 |
 | C | 订单单据维度 | 迁移 `Migration20261008095745_trade_docs`（已应用）、`trade_docs.orders.documents.replace` + `GET/POST /api/trade_docs/orders/documents`、集成 `__integration__/order-documents.spec.ts`、`documentCount` 口径改按订单自己的关联行 |
 | D | hub 对齐合同页 + 就地编辑 + 装箱单区块 | 共享 `src/lib/related/RelatedSection.tsx`、`src/lib/quick-edit/QuickEditDialog.tsx` + 五个字段工厂；hub 六区块 |
+| A2 | owner 复审（2026-10-09）：「当前页标识」只留在页面上——分组行 / 父行只加粗（起因：分组行没有自带页面时 href 取第一个子页，采购 → `/backend/purchasing/orders`，旧规则把采购、订单工作台、采购单三行一起点亮） | 新纯规则模块 `src/modules/nav_shell/lib/navActive.ts` + `lib/__tests__/navActive.test.ts`（7 例，含「分组行与页面行同 href」回归）→ `yarn jest --config jest.config.cjs src/modules/nav_shell` **30 passed**；门禁 `EXIT=0`（`yarn generate` / `typecheck` / `lint` 0 error / `ds:check` 1053 files / `test` 76 suites · 636 tests / `build` 绿）；浏览器实测（:3000，admin@acme.com）：`/backend/purchasing/orders` 竖条 1 个（采购单），采购 / 订单工作台 无竖条无底色只加粗，域标题 公司订单 加粗；`/backend/products/items` 竖条 1 个（产品）；superadmin：`/backend/orders` 竖条 = 订单工作台（分支自带页面仍是 active），`/backend/purchasing/orders` 竖条 1 个，折叠态（紧凑）图标底色 1 个（采购单）、父行只换前景色 |
 
 ## 交付方式
 
