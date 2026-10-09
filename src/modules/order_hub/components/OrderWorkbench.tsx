@@ -18,6 +18,7 @@ import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/u
 import { useT, useLocale } from '@open-mercato/shared/lib/i18n/context'
 import { formatMoneyAmount } from '@/lib/money/format'
 import type { CompanyOrderStageSummary } from '../lib/orderStages'
+import { COMPANY_ORDER_STATUSES } from '../data/validators'
 import OrderFieldsDrawer, { type OrderFieldsTarget } from './OrderFieldsDrawer'
 
 /**
@@ -48,9 +49,17 @@ type OrderWorkbenchRow = {
 const KIND_VALUES = ['all', 'internal_sales_order', 'external_sales_order', 'purchase_order'] as const
 type KindFilter = (typeof KIND_VALUES)[number]
 
-const COMPANY_ORDER_STATUSES = ['draft', 'in_progress', 'completed', 'cancelled'] as const
-
 const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
+  // The current vocabulary (2026-10-09), in the deal's own order: everything before the goods reach
+  // the warehouse is in flight, and arrival is the success state.
+  placed: 'info',
+  in_production: 'info',
+  factory_pickup: 'info',
+  customs_declared: 'info',
+  shipped: 'info',
+  in_transit: 'info',
+  warehoused: 'success',
+  // Rows written before that vocabulary landed keep their own label and tone.
   draft: 'neutral',
   in_progress: 'info',
   completed: 'success',
@@ -82,7 +91,7 @@ function toRow(item: Record<string, unknown>): OrderWorkbenchRow {
     title: readText(item.title),
     orderDate: readText(item.orderDate),
     etaDate: readText(item.etaDate),
-    status: readText(item.status) ?? 'draft',
+    status: readText(item.status) ?? 'placed',
     viewerIsCollaborator: item.viewerIsCollaborator === true,
   }
 }

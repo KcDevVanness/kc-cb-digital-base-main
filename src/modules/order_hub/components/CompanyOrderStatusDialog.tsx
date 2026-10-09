@@ -17,7 +17,7 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
-import { COMPANY_ORDER_STATUSES } from '../data/validators'
+import { companyOrderStatusOptions } from '../data/validators'
 
 /**
  * The whole edit surface a **collaborating** organization gets on a company order (REQ-016):
@@ -126,7 +126,7 @@ export function CompanyOrderStatusDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {COMPANY_ORDER_STATUSES.map((value) => (
+                {companyOrderStatusOptions(initialStatus).map((value) => (
                   <SelectItem key={value} value={value}>
                     {t(`order_hub.companyOrders.status.${value}`)}
                   </SelectItem>

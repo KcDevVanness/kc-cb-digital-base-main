@@ -98,12 +98,16 @@ function salesKindFor(
   return null
 }
 
-/** Sales status → company-order status: draft stays draft, a cancelled/canceled sale is cancelled. */
+/**
+ * Sales status → company-order status for a backfilled (historical) root: a draft sale predates its
+ * order and a cancelled one never progressed, so both keep their own legacy label, while anything
+ * else has at least been ordered — the current vocabulary's first stage.
+ */
 function companyStatusForSalesStatus(status: string | null): string {
   const normalized = (status ?? '').toLowerCase()
   if (normalized === 'draft') return 'draft'
   if (normalized === 'canceled' || normalized === 'cancelled') return 'cancelled'
-  return 'in_progress'
+  return 'placed'
 }
 
 function toDate(value: unknown): Date {
@@ -224,6 +228,8 @@ const backfillCommand: ModuleCli = {
         const companyOrder = await createCompanyOrderFromRef(em, scope, ref, {
           orderDate: toDate(row.created_at),
           status: companyStatusForSalesStatus(row.status),
+          // Nobody recorded 是否已收款 for these roots: `null` renders as “—”, not as 未收款.
+          paymentStatus: null,
         })
         persistCompanyOrderLink(em, scope, companyOrder, ref)
         await em.flush()

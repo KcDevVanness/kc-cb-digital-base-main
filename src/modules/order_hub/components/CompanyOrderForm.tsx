@@ -18,6 +18,7 @@ import {
   resolveSupplierLabel,
 } from './companyOrderOptions'
 import { buildCompanyOrderLinks } from '@/lib/orders/companyOrderLinkPayload'
+import { COMPANY_ORDER_PAYMENT_STATUSES, companyOrderStatusOptions } from '../data/validators'
 
 /**
  * The create/edit surface for a **company order** (`order_hub_company_orders`) — the root record the
@@ -31,15 +32,14 @@ import { buildCompanyOrderLinks } from '@/lib/orders/companyOrderLinkPayload'
  * calendar day across time zones.
  *
  * The write contract matches the module's CRUD route: create sends `{title,orderDate,etaDate,status,
- * notes,customerPartyId,supplierId,links?}` and lands on the new hub; edit sends `{id,updatedAt,…}`
- * (plus the platform's version header, threaded through `initialValues.updatedAt`) so a stale save
- * surfaces the conflict bar. On edit an empty customer/supplier clears the pair (explicit `null`).
+ * paymentStatus,notes,customerPartyId,supplierId,links?}` and lands on the new hub; edit sends
+ * `{id,updatedAt,…}` (plus the platform's version header, threaded through `initialValues.updatedAt`)
+ * so a stale save surfaces the conflict bar. On edit an empty customer/supplier clears the pair
+ * (explicit `null`); the 是否已收款 select does the same for its own marker.
  */
 
 export const ORDERS_API_PATH = 'order_hub/orders'
 export const ORDERS_LIST_HREF = '/backend/orders'
-
-export const COMPANY_ORDER_STATUSES = ['draft', 'in_progress', 'completed', 'cancelled'] as const
 
 export type CompanyOrderFormValues = {
   id?: string
@@ -47,6 +47,7 @@ export type CompanyOrderFormValues = {
   orderDate: string | null
   etaDate: string | null
   status: string
+  paymentStatus: string
   notes: string | null
   customerPartyId: string | null
   supplierId: string | null
@@ -86,6 +87,12 @@ export function buildCompanyOrderPayload(values: CompanyOrderFormValues): Record
     orderDate,
     etaDate,
     status: values.status,
+    // An empty select is sent as an explicit `null`: on create the command stores the fresh-order
+    // default (未收款), on update it clears the marker back to “—”.
+    paymentStatus:
+      typeof values.paymentStatus === 'string' && values.paymentStatus.trim().length > 0
+        ? values.paymentStatus
+        : null,
     notes,
     customerPartyId: text(values.customerPartyId),
     supplierId: text(values.supplierId),
@@ -132,7 +139,7 @@ function LinkPickerField({
   )
 }
 
-function useCompanyOrderFields(t: TranslateFn, withLinks: boolean): CrudField[] {
+function useCompanyOrderFields(t: TranslateFn, withLinks: boolean, currentStatus?: string | null): CrudField[] {
   const salesLoadOptions = React.useCallback(async (query?: string): Promise<CrudFieldOption[]> => {
     const candidates = await loadSalesOrderCandidates(query)
     const internalLabel = t('order_hub.companyOrders.links.kind.internal', 'Internal sales order')
@@ -174,9 +181,21 @@ function useCompanyOrderFields(t: TranslateFn, withLinks: boolean): CrudField[] 
       label: t('order_hub.companyOrders.form.status'),
       type: 'select',
       layout: 'half',
-      options: COMPANY_ORDER_STATUSES.map((status) => ({
+      // The current vocabulary; a row written before it landed keeps its own value selectable, so an
+      // unrelated save cannot silently rewrite the status.
+      options: companyOrderStatusOptions(currentStatus).map((status) => ({
         value: status,
         label: t(`order_hub.companyOrders.status.${status}`),
+      })),
+    },
+    {
+      id: 'paymentStatus',
+      label: t('order_hub.companyOrders.form.paymentStatus'),
+      type: 'select',
+      layout: 'half',
+      options: COMPANY_ORDER_PAYMENT_STATUSES.map((value) => ({
+        value,
+        label: t(`order_hub.companyOrders.paymentStatus.${value}`),
       })),
     },
     {
@@ -235,7 +254,7 @@ function useCompanyOrderFields(t: TranslateFn, withLinks: boolean): CrudField[] 
       type: 'textarea',
       layout: 'full',
     },
-  ], [purchaseLoadOptions, salesLoadOptions, t, withLinks])
+  ], [currentStatus, purchaseLoadOptions, salesLoadOptions, t, withLinks])
 }
 
 const EMPTY_LINK_REF_ARRAYS: Pick<CompanyOrderFormValues, 'salesLinkRefs' | 'purchaseLinkRefs'> = {
@@ -251,7 +270,8 @@ function CompanyOrderCreateForm() {
     title: '',
     orderDate: '',
     etaDate: '',
-    status: 'draft',
+    status: 'placed',
+    paymentStatus: 'unpaid',
     notes: '',
     customerPartyId: '',
     supplierId: '',
@@ -306,7 +326,9 @@ function toCompanyOrderFormValues(item: Record<string, unknown>): CompanyOrderFo
     title: readProjectedText(item, 'title'),
     orderDate: readProjectedText(item, 'orderDate'),
     etaDate: readProjectedText(item, 'etaDate'),
-    status: readProjectedText(item, 'status') || 'draft',
+    status: readProjectedText(item, 'status') || 'placed',
+    // `null` (a row written before the column existed) reads as “”, which the select shows as unset.
+    paymentStatus: readProjectedText(item, 'paymentStatus'),
     notes: readProjectedText(item, 'notes'),
     customerPartyId: readProjectedText(item, 'customerPartyId'),
     supplierId: readProjectedText(item, 'supplierId'),
@@ -321,7 +343,7 @@ function CompanyOrderEditForm({ id }: { id: string }) {
   const [loading, setLoading] = React.useState(true)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [isNotFound, setIsNotFound] = React.useState(false)
-  const fields = useCompanyOrderFields(t, false)
+  const fields = useCompanyOrderFields(t, false, initial?.status ?? null)
 
   React.useEffect(() => {
     let cancelled = false
@@ -358,7 +380,8 @@ function CompanyOrderEditForm({ id }: { id: string }) {
     title: '',
     orderDate: '',
     etaDate: '',
-    status: 'draft',
+    status: 'placed',
+    paymentStatus: '',
     notes: '',
     customerPartyId: '',
     supplierId: '',

@@ -359,7 +359,7 @@ export async function loadCompanyOrder(
 }
 
 /**
- * Creates a draft company order for a resolved child, allocating the number under the scope's unique
+ * Creates a fresh company order for a resolved child, allocating the number under the scope's unique
  * key. Persisted but not flushed — the caller owns the transaction (the command's atomic flush, or
  * the CLI's per-row flush) so the number's read-your-write assumption holds.
  */
@@ -367,7 +367,7 @@ export async function createCompanyOrderFromRef(
   em: EntityManager,
   scope: CompanyOrderScope,
   ref: CompanyOrderRef,
-  options: { orderDate?: Date; status?: string } = {},
+  options: { orderDate?: Date; status?: string; paymentStatus?: string | null } = {},
 ): Promise<CompanyOrder> {
   const number = await nextCompanyOrderNumber(em, scope)
   const order = em.create(CompanyOrder, {
@@ -380,7 +380,10 @@ export async function createCompanyOrderFromRef(
     title: null,
     orderDate: options.orderDate ?? new Date(),
     etaDate: null,
-    status: options.status ?? 'draft',
+    status: options.status ?? 'placed',
+    // Absent = a fresh deal, which starts 未收款; an explicit `null` = a historical root whose
+    // payment answer nobody recorded (the CLI backfill), rendered as “—” rather than as a claim.
+    paymentStatus: options.paymentStatus === undefined ? 'unpaid' : options.paymentStatus,
     notes: null,
     customerPartyId: null,
     customerSnapshot: null,

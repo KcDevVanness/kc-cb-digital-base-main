@@ -41,9 +41,22 @@ export class CompanyOrder {
   @Property({ name: 'eta_date', type: 'date', nullable: true })
   etaDate?: Date | null
 
-  /** One of the module constants (`draft`/`in_progress`/`completed`/`cancelled`); a marker, not a dictionary. */
-  @Property({ type: 'text', default: 'draft' })
-  status: string = 'draft'
+  /**
+   * One of `COMPANY_ORDER_STATUSES` (`placed` → … → `warehoused`, 2026-10-09); a marker, not a
+   * dictionary. Rows written before that vocabulary landed may still carry a
+   * `LEGACY_COMPANY_ORDER_STATUSES` value — stored as-is and rendered with its own label.
+   */
+  @Property({ type: 'text', default: 'placed' })
+  status: string = 'placed'
+
+  /**
+   * 是否已收款: `paid_full` or `unpaid` (`COMPANY_ORDER_PAYMENT_STATUSES`). Nullable on purpose — the
+   * column was added after the first roots existed, and `null` says "never recorded" so those rows
+   * render as “—” instead of being told a story about their money. New rows get `unpaid` from the
+   * create command.
+   */
+  @Property({ name: 'payment_status', type: 'text', nullable: true })
+  paymentStatus?: string | null
 
   @Property({ type: 'text', nullable: true })
   notes?: string | null
