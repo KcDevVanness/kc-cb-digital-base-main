@@ -1,7 +1,7 @@
 # 公司订单根单化（company order as a first-class root entity）
 
 **Date**: 2026-10-09
-**Status**: Phases 1–3 Delivered（2026-10-09，PR `feat/company-order-root` off `dev`）；**第四轮 Delivered**（PR `feat/company-order-collaboration`，stacked on #150）：建单起手信息 + 建单即关联 + 子单预填默认 + 协作组织白名单（状态/备注可写）+ 文件区块。证据见「第四轮」节与 run record。证据（前三轮）：`yarn typecheck` 全仓干净；`yarn jest src/modules/order_hub` 3 suites · 28 tests；ephemeral 集成 `company-orders` 6 / `company-order-links` 9 / `company-order-backfill` 3 = **18 passed**；浏览器实测（工作台=公司订单、点进 hub、关联对话框成套替换、旧 URL 归位、「未关联」一键建根、采购/对内销售预填+自动关联、暗色/窄屏/键盘）。迁移已生成并审阅但**未应用**；升级步骤（应用迁移 + `backfill-company-orders --apply` + `auth sync-role-acls`）见模块 README。
+**Status**: Phases 1–3 Delivered（PR `feat/company-order-root`，已合入 `dev` f26112b）；**第四轮 Delivered**（PR `feat/company-order-collaboration`，已合入 `dev` 8905b6b）；**第五轮 Delivered**（PR #153，含 CSP 修复）：宽门禁全绿（82 suites · 661 tests）+ 集成 `--filter order_hub` 35 passed + 浏览器实测（工作台金额列 / 全字段抽屉 / 无号草稿可选中 / 协作账号列文件与下载）。证据（前四轮）：`yarn typecheck` 全仓干净；`yarn jest src/modules/order_hub` 3 suites · 28 tests；ephemeral 集成 `company-orders` 6 / `company-order-links` 9 / `company-order-backfill` 3 = **18 passed**；浏览器实测（工作台=公司订单、点进 hub、关联对话框成套替换、旧 URL 归位、「未关联」一键建根、采购/对内销售预填+自动关联、暗色/窄屏/键盘）。迁移已生成并审阅但**未应用**；升级步骤（应用迁移 + `backfill-company-orders --apply` + `auth sync-role-acls`）见模块 README。
 
 > owner 已批准两个结构决策（2026-10-09，见 Resolved decisions）：**容器根单**（新表 + 关联表，模块数据仍归各模块）与**全量补录**（现有渠道内销售单 1:1 生成公司订单）。本规格取代 `2026-10-08-order-centric-entry.md` 里「工作台合并三类既有列表 / 无实体」的口径（该文件的 Phase 4/REQ-001/009/010 与 Non-goals 第一条）。
 
@@ -378,6 +378,9 @@
 | REQ-014 | hub「协作组织」+ 命令 | `collaborators` 表；`collaborators.replace`；`update` 字段白名单 | Phase 4.B | TEST-008 | AC-014 |
 | REQ-015 | hub「文件」区块 | installed `attachments`（entityType/recordId） | Phase 4.C | TEST-009 | AC-015 |
 | REQ-016 | 工作台协作标记 / hub 入口收敛 | 列表 scope 并入协作集；UI 隐藏 | Phase 4.B | TEST-008 | AC-014 |
+| REQ-017 | hub 全字段入口 / 工作台金额列 | `GET /orders/fields`；`stages` 追加 `amounts` | Phase 5.A | TEST-011, TEST-014 | AC-017 |
+| REQ-018 | hub 文件区块（所有者为上传点） | `GET /orders/attachments`（+`[id]` 字节代理） | Phase 5.B | TEST-012, TEST-014 | AC-018 |
+| REQ-019 | 建单选单 / 关联对话框采购 picker | loader 合并 + 客户端回退过滤 | Phase 5.C | TEST-013, TEST-014 | AC-019 |
 
 ## Extension-Surface Traceability
 
@@ -506,6 +509,60 @@
 
 ---
 
+## 第五轮 — 35 列汇总、附件协作可见与草稿单据可选（2026-10-09）
+
+**背景**：owner 2026-10-09 确认实作三件（第 4 项「订单描述长文本」不做）：① 35 列字段汇总到公司订单视角；② 协作组织能看到所有者名下的文件（当前被 attachments 的组织作用域挡住）；③ 建单/关联选择器里**草稿采购单**（无单号）必须能被选到。
+
+### REQ（本轮）
+
+- **REQ-017 — 公司订单「全字段」汇总（只读）**：新增 scoped 只读投影（`lib/companyOrderFields.ts`，照 `orderStages.ts` 的跨模块投影法），按根单汇总并分组返回：
+  - **金额（按币种分组，跨币种一律不加总）**：`sales` = Σ 销售子单 `grand_total_gross_amount`；`purchase` = Σ 采购子单 `total`；`deposit` = Σ 采购子单 `deposit_amount`；`paid`/`outstanding` = Σ 采购付款行推导（与采购模块「应付 = 总额 − 已付」同口径）。
+  - **日期**：`orderedAt`（根单 `order_date`）；`expectedDeliveryAt`（根单 `eta_date`）；`shippedAt` = 关联发运单最早的 `departed_at`（缺失时取里程碑最新一条的 `occurred_at`）。
+  - **单据（INV.NO 等）**：关联子单的 `trade_docs_order_documents` 行 + 其合同的 PI/CI/税务发票 → 按 kind 汇总单号列表（INV.NO = `commercial` 的单号）。
+  - **发运层级单证**：关联发运单的 `cross_border_export_documents` 按 `doc_type` 汇总（`customs_declaration` 报关单 / `telex_release` 电放提单 / `domestic_freight_receipt` 国内段运费水单 / `booking_charges_receipt` 订舱运杂费水单 / `bill_of_lading` 提单 / `packing_list` 箱单）：每类给 `count` + 最近一行的 `number`/`attachmentId` 是否存在。
+  - **采购水单及发票**：关联采购子单及其付款行的附件条数（installed `attachments` 按 `entityId`/`recordId` 计数，只读）。
+  - **财务**：`collections` = 关联采购子单的收汇档案（状态 + 涉外收入证明 `doc_type` 是否存在）；`refunds` = 关联发运单的退税档案（状态 + 金额，按币种）；KC 盖章 = 关联合同的 `attachment_id` 是否存在。
+  - **接口**：`GET /api/order_hub/orders/fields?companyOrderId=`（`order_hub.view`；scope 与列表一致：所有者组织或协作组织，否则空对象）。**UI**：hub 的「全字段」入口改为渲染本投影（分组：订单 / 金额与日期 / 单证与文件 / 财务，只读，缺失项显示「—」）；工作台行新增**金额列**（`summaries` 追加 `amounts`，按币种展示销售金额，无销售子单时显示采购金额）。
+- **REQ-018 — 附件协作可见**：新增 order_hub 侧的两条只读路由，以**根单可见性**（所有者或协作组织）授权，代理 installed `attachments` 的字节：
+  - `GET /api/order_hub/orders/attachments?companyOrderId=` → 列出该根单（`entityId='order_hub:company_order'`、`recordId=根单 id`）的附件（id/文件名/大小/时间）。
+  - `GET /api/order_hub/orders/attachments/[id]?download=1` → 代理字节（同 installed 路由的头：content-type/文件名/inline 或 attachment）。
+  - 授权：先按 `companyOrderId` 可见性校验（列表路由），单文件路由按其所属记录反查根单再校验；**上传/删除仍走 installed 路由**（`attachments.manage` + 所有者组织），协作组织在 UI 上只看到列表/预览/下载。文件区块改用本模块的列表/字节路由（上传入口保持 installed）。
+- **REQ-019 — 草稿单据可选**：建单表单的采购单多选（`companyOrderOptions.ts` 的 `loadPurchaseOrderLinkOptions`）与 hub 关联对话框的采购 picker 在按单号搜不到时**回退**：并行取「无 search 的第 1 页 + 带 search 的第 1 页」，合并去重后按 `number` / 供应商名 / 标签（含无号草稿的 id 前缀）做客户端过滤；无号草稿因此可以被选到。
+
+### Integration Coverage（第五轮）
+
+| Test ID | Level | Setup / fixture | Actions | Assertions | Requirement IDs |
+|---|---|---|---|---|---|
+| TEST-011 | integration | 根单 + 销售子单（1 行）+ 采购单（定金 + 付款）+ 合同/PI + 发运单（含报关单/电放提单附件）+ 收汇/退税档案 | `GET /orders/fields?companyOrderId=` | 各分组字段与构造一致（金额按币种、定金/已付/应付、运输出运日、INV.NO 列表、按 doc_type 的计数、收汇/退税状态与金额、KC 盖章）；无关组织得到空对象 | REQ-017 |
+| TEST-012 | integration | 根单 + 1 个附件；所有者组织 + 协作组织 + 无关组织 | order_hub 附件列表/字节路由 | 所有者与协作组织都能列出并下载（字节一致）；无关组织列表空、字节 404/403；上传仍走 installed 路由（协作组织 403） | REQ-018 |
+| TEST-013 | unit | 纯函数夹具（选项合并/过滤） | loader 合并 + 过滤 | 无号草稿（供应商名/id 前缀命中）出现在候选；重复 id 去重；空输入不报错 | REQ-019 |
+| TEST-014 | UI（浏览器） | 上述夹具 | hub 全字段入口 / 协作组织看文件 / 建单选无号草稿采购单 | 三条链路各自可见结果 | REQ-017…REQ-019 |
+
+### Acceptance Criteria（第五轮）
+
+- [x] **AC-017** — hub「全字段」显示 金额(按币种)/日期/单据号(含 INV.NO)/按类型的发运单证计数/采购水单与发票条数/收汇与退税/ KC 盖章；工作台金额列与投影一致；无关组织读不到。证据：TEST-011（集成 3 passed）+ 浏览器实测（金额 `CN¥36.00 · $999.98`、四组抽屉、发运单证 `报关单·1·CD-MV0M1RC9`、`收汇 Received·证明 yes`、`退税 Applied CN¥130.00`）；不可见根返回 `{}`。
+- [x] **AC-018** — 协作组织账号能在文件区块**列出并下载**所有者的文件（字节与所有者下载一致）；上传/删除入口对协作组织不可见且服务端拒绝；无关组织读不到。证据：TEST-012（集成 4 passed）+ 浏览器实测（协作账号 Files 区块列出文件、无上传按钮）；字节 sha 一致（admin installed / admin 代理 / 协作 `?download=1`）；无关组织数据由集成断言覆盖；实测修复了 `next.config.ts` 缺 CSP 豁免的问题。
+- [x] **AC-019** — 建单表单与关联对话框的采购选择器能搜到**无单号草稿**（按供应商名或 id 前缀），且原有按单号搜索不受影响。证据：TEST-013（单测 7 passed，含合并去重与无号草稿命中）+ 浏览器实测（输入供应商名后选项含无号草稿标签 `c878e786-…`，点选成为 chip）。
+
+### Migration & Backward Compatibility（第五轮）
+
+| 契约类别 | 改动 | 判定 |
+|---|---|---|
+| API | 新增 `/api/order_hub/orders/fields`、`/api/order_hub/orders/attachments`（+`[id]`）；`stages` 响应**追加** `amounts` | 允许（新路由自由添加 / 响应只追加） |
+| DB | 无 schema 变更 | 无影响 |
+| 行为 | 文件区块改走本模块代理路由（对所有者等价）；采购 picker 回退搜索（更宽松） | **披露**（更宽松，不破坏既有选择） |
+
+### Risks（第五轮）
+
+| 风险 | 缓解 |
+|---|---|
+| 代理字节路由绕开 installed 的组织作用域 | 授权只放给「根单可见」的调用方（owner/协作），先查根单再取字节；不返回非本根单记录 id 的文件；字节与文件名沿用 installed 头 |
+| 代理响应的沙箱 CSP 被 `next.config.ts` 的全站 CSP 覆盖 | 已按 installed 文件路由同法在 `next.config.ts` 为 `'/api/order_hub/orders/attachments/:id'` 单独豁免（实测：修复后响应头为 `default-src 'none'; sandbox`） |
+| 跨币种加总 | 投影一律按币种分组返回，UI 不做换算（全站 CNY 换算由既有组件负责，本投影不参与） |
+| 汇总读放大 | 每段一次 scoped 批量查询（与 `orderStages` 同法），单根单上限由关联子单数（≤20）与既有查询约束控制 |
+
+---
+
 ## Rollout, Migration, and Rollback
 
 - **迁移生成/应用边界：** 一次迁移（两新表 + 索引/唯一键），`yarn db:generate` 生成、审阅 SQL 与 snapshot 后**提交但不应用**；本机 dev 由 dev supervisor 在下次 `yarn dev` 应用；生产走既有部署流程。
@@ -592,7 +649,9 @@
 
 | Date | Change |
 |---|---|
-| 2026-10-09 | **第四轮交付并验证**（PR #151，stacked on #150）：Phase 4.A（4 列默认客户/供应商 + `create.links[]` 同事务 + 建单表单选择器/多选 + 子单预填）、4.B（协作组织表/命令/显式可见 id 集读路径/字段白名单/UI）、4.C（`AttachmentsSection` + 文件区块）；一致性修正「一个子单一张根」（移动语义）。实现期修复 4 处：stages 的先行引用 500、`$or`+顶层 id 的读路径失效、跨组织 CRUD 列表缓存失效、31 个缺失 i18n 键。证据：宽门禁全绿（81 suites · 654 tests）；集成 6 套 **28 passed**；浏览器实测建单/文件/协作视图/协作写状态。 |
+| 2026-10-09 | **第五轮交付并验证**（PR #153）：35 列汇总（`GET /orders/fields` + `stages.amounts` + 工作台金额列 + hub「全字段」四组）、附件协作可见（order_hub 列表 + 字节代理按根单可见性授权；`AttachmentsSection` 支持自有路由；installed 上传仍 owner-only）、无号草稿可选（两页合并 + 客户端回退过滤）。宽门禁 82 suites · 661 tests；集成 `--filter order_hub` 35 passed；浏览器实测四条链路。实测发现并修复：`next.config.ts` 全站 CSP 覆盖了代理路由的沙箱 CSP，补 `source: '/api/order_hub/orders/attachments/:id'` 豁免（与 installed 文件路由同法）。 |
+| 2026-10-09 | **第五轮口径定案（owner）**：① 35 列汇总到公司订单视角（金额按币种/日期/单据号/发运单证/水单发票/收汇退税/KC 盖章）；② 协作组织可看/下载所有者文件；③ 选择器要能选到**无号草稿**采购单。「订单描述长文本」明确不做。REQ-017…REQ-019 / TEST-011…TEST-014 / AC-017…AC-019 建立。 |
+| 2026-10-09 | **第四轮交付并验证**（PR #151，已合入 `dev` 8905b6b）：Phase 4.A（4 列默认客户/供应商 + `create.links[]` 同事务 + 建单表单选择器/多选 + 子单预填）、4.B（协作组织表/命令/显式可见 id 集读路径/字段白名单/UI）、4.C（`AttachmentsSection` + 文件区块）；一致性修正「一个子单一张根」（移动语义）。实现期修复 4 处：stages 的先行引用 500、`$or`+顶层 id 的读路径失效、跨组织 CRUD 列表缓存失效、31 个缺失 i18n 键。证据：宽门禁全绿（81 suites · 654 tests）；集成 6 套 **28 passed**；浏览器实测建单/文件/协作视图/协作写状态。 |
 | 2026-10-09 | **第四轮口径定案（owner）**：建单抓起手信息（可选默认客户/供应商 + 建单即关联已有单据）、订单状态支持「协作组织白名单 + 状态/备注可写」、先加公司订单「文件」区块。REQ-011…REQ-016 / TEST-007…TEST-010 / AC-011…AC-016 建立；35 列字段归属表与「金额/单证汇总」的后续项一并记录。 |
 | 2026-10-09 | **Phases 1–3 实现并验证**：实体/迁移/命令/路由/补录 CLI（Phase 1，含 5 处实现期自修）、工作台与 hub 重写 + create/edit + 旧 URL 归位 + 删除旧聚合（Phase 2）、`?companyOrderId=` 预填与自动关联（Phase 3）。实现期发现并修复「对方」列优先级与规格不符（`lib/orderStages.ts` 两段合并 + 回归断言）。证据见 Status 行。|
 | 2026-10-09 | Initial draft — owner approved 容器根单 + 全量补录; 三阶段（数据地基 / 工作台与 hub / 预填闭环） |

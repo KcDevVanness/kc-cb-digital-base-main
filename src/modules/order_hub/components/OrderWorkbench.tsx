@@ -15,7 +15,8 @@ import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { useBackendChrome } from '@open-mercato/ui/backend/BackendChromeProvider'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
-import { useT } from '@open-mercato/shared/lib/i18n/context'
+import { useT, useLocale } from '@open-mercato/shared/lib/i18n/context'
+import { formatMoneyAmount } from '@/lib/money/format'
 import type { CompanyOrderStageSummary } from '../lib/orderStages'
 import OrderFieldsDrawer, { type OrderFieldsTarget } from './OrderFieldsDrawer'
 
@@ -88,6 +89,7 @@ function toRow(item: Record<string, unknown>): OrderWorkbenchRow {
 
 export default function OrderWorkbench() {
   const t = useT()
+  const locale = useLocale()
   const router = useRouter()
   const searchParams = useSearchParams()
   const scopeVersion = useOrganizationScopeVersion()
@@ -201,6 +203,27 @@ export default function OrderWorkbench() {
         cell: ({ row }) => stageById.get(row.original.id)?.counterparty ?? '—',
       },
       {
+        id: 'amount',
+        header: t('order_hub.workbench.columns.amount'),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const amounts = stageById.get(row.original.id)?.amounts ?? []
+          if (amounts.length === 0) return '—'
+          // The money side of the deal: the sales figure, or the purchase figure when the order has
+          // no sales child yet — each currency on its own (`¥` and `$` are never added together).
+          return (
+            <span className="tabular-nums">
+              {amounts
+                .map((amount) => {
+                  const value = amount.sales !== '0.00' ? amount.sales : amount.purchase
+                  return formatMoneyAmount(value, amount.currencyCode, locale) ?? `${amount.currencyCode} ${value}`
+                })
+                .join(' · ')}
+            </span>
+          )
+        },
+      },
+      {
         accessorKey: 'orderDate',
         header: t('order_hub.workbench.columns.orderedAt'),
         enableSorting: false,
@@ -252,7 +275,7 @@ export default function OrderWorkbench() {
         },
       },
     ]
-  }, [stageById, t])
+  }, [stageById, t, locale])
 
   const statusOptions = React.useMemo(
     () => [
@@ -323,7 +346,6 @@ export default function OrderWorkbench() {
         setPage(1)
       }}
       rowActions={(row) => {
-        const stage = stageById.get(row.id)
         return (
           <RowActions
             items={[
@@ -336,22 +358,7 @@ export default function OrderWorkbench() {
                 id: 'fields',
                 label: t('order_hub.workbench.actions.fields'),
                 onSelect: () => {
-                  setFieldsTarget({
-                    id: row.id,
-                    number: row.number,
-                    title: row.title,
-                    orderDate: row.orderDate,
-                    etaDate: row.etaDate,
-                    status: row.status,
-                    childNumbers: stage?.childNumbers ?? [],
-                    stages: stage ? {
-                      procurementCount: stage.procurementCount,
-                      shipmentCount: stage.shipmentCount,
-                      documentCount: stage.documentCount,
-                      collected: stage.collected,
-                      refunded: stage.refunded,
-                    } : null,
-                  })
+                  setFieldsTarget({ id: row.id, number: row.number })
                   setFieldsOpen(true)
                 },
               },

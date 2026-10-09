@@ -17,15 +17,15 @@ app 自有模块。**公司订单是一个真表**：`order_hub_company_orders`�
 | 层 | 内容 |
 |---|---|
 | 实体（`data/entities.ts`） | `CompanyOrder` → `order_hub_company_orders`（唯一键 `(tenant_id, organization_id, number)`；`number = CO-<年>-<4位>` 在创建时发号、撞唯一键重试一次；**默认客户/供应商** 4 列：`customer_party_id`/`customer_snapshot`、`supplier_id`/`supplier_snapshot`，可清空）；`CompanyOrderLink` → `order_hub_company_order_links`（唯一键 `(company_order_id, kind, ref_id)`；`ref_number`/`ref_counterparty`/`ref_snapshot` 在关联时冻结）；`CompanyOrderCollaborator` → `order_hub_company_order_collaborators`（唯一键 `(company_order_id, organization_id)`，协作组织白名单）。迁移 `Migration20261009024200_order_hub.ts`（两新表）+ `Migration20261009044102_order_hub.ts`（4 列追加）+ `Migration20261009051049_order_hub.ts`（协作表） |
-| API | `GET\|POST\|PUT\|DELETE /api/order_hub/orders`（`makeCrudRoute`：列表筛选 `search`（公司订单号/标题/子单号）/`status`/`kind`/`id`/`ids`，服务端分页与排序；scope = **显式可见 id 集**：我的组织集 ∪ 我协作的根单）；`GET\|POST /api/order_hub/orders/links`（GET 按 `companyOrderId` 或 `refId` 读关联——`refId` 是旧 URL 的反查；POST = 成套替换）；`POST /api/order_hub/orders/link-child`（幂等挂一张子单；销售类无目标时自动建根）；`GET\|POST /api/order_hub/orders/collaborators`（协作组织读取/成套替换，仅所有者）；`GET /api/order_hub/stages?ids=`（工作台的一次批量汇总：四阶段计数 + `counterparty`/`childNumbers`/`kinds`；ids 为公司订单 id，1–200） |
+| API | `GET\|POST\|PUT\|DELETE /api/order_hub/orders`（`makeCrudRoute`：列表筛选 `search`（公司订单号/标题/子单号）/`status`/`kind`/`id`/`ids`，服务端分页与排序；scope = **显式可见 id 集**：我的组织集 ∪ 我协作的根单）；`GET\|POST /api/order_hub/orders/links`（GET 按 `companyOrderId` 或 `refId` 读关联——`refId` 是旧 URL 的反查；POST = 成套替换）；`POST /api/order_hub/orders/link-child`（幂等挂一张子单；销售类无目标时自动建根）；`GET\|POST /api/order_hub/orders/collaborators`（协作组织读取/成套替换，仅所有者）；`GET /api/order_hub/orders/fields?companyOrderId=`（第五轮：35 列只读汇总；不可见根 → `{}`，不 404）；`GET /api/order_hub/orders/attachments?companyOrderId=` + `GET /api/order_hub/orders/attachments/<id>[?download=1]`（第五轮：文件名/元数据列表与字节代理，按**根单可见性**授权，头与 installed 文件路由一致）；`GET /api/order_hub/stages?ids=`（工作台的一次批量汇总：四阶段计数 + `counterparty`/`childNumbers`/`kinds`/`amounts`（第五轮按币种追加）；ids 为公司订单 id，1–200） |
 | 命令 | `order_hub.orders.create\|update\|delete`（可撤销、乐观锁、软删；create 可带 `links[]` 与默认客户/供应商，同事务落库）、`order_hub.orders.links.replace`（成套替换 + **移动**语义：子单只属于一张公司订单）、`order_hub.orders.link-child`（幂等）、`order_hub.orders.collaborators.replace`（仅所有者、成套替换、根版本乐观锁；协作者写其它字段 422 `collaborator_field_not_allowed`，owner-only 动作 403 `company_order_owner_required`） |
 | CLI | `yarn mercato order_hub backfill-company-orders [--apply] [--tenant=] [--organization=]`——按 `(tenant, organization)` 扫描带贸易类型渠道的销售单，1:1 建根并冻结快照；再把带 `source_sales_order_id` 的采购单挂到对应根。dry-run 默认、幂等（重跑 `created=0`）、跨组织边界由 scope 决定 |
 | 页面 | `/backend/orders`（工作台，`navHidden`：入口走导航树「公司订单 → 订单工作台」）；`/backend/orders/create`、`/backend/orders/<id>/edit`（CrudForm，`navHidden`）；`/backend/orders/<id>`（详情 hub，`navHidden`，同时承担旧销售单 URL 的解析落点） |
 | 权限 | 读 `order_hub.view`（工作台/hub/links/stages）；写 `order_hub.manage`（CRUD、关联替换、link-child、create/edit 页）。**协作组织**的写只放开 `status`/`notes`（服务端白名单），其余 owner-only。`setup.ts` 默认授予 `superadmin`/`admin`；既有租户用 `yarn mercato auth sync-role-acls` 补授 `order_hub.manage` |
 | 事件 | `order_hub.company_order.created\|updated\|deleted`、`order_hub.company_order.links.updated`（`clientBroadcast`） |
-| 共享件 | `src/lib/related/RelatedSection.tsx`（区块壳）、`src/lib/quick-edit/QuickEditDialog.tsx`（下游区块就地编辑，字段工厂仍在各模块 `lib/*QuickEdit.ts`）、`src/lib/attachments/AttachmentsSection.tsx`（文件区块壳，app 级共享）、`src/lib/orders/companyOrderParams.ts`（`?companyOrderId=` 解析，两个建单表单共用）、`internal_sales` 的贸易类型通道解析（`lib/tradeTypeChannelIds.ts` / `tradeTypeChannels.server.ts`） |
-| 单元 | `lib/__tests__/companyOrder.test.ts`、`lib/__tests__/companyOrderResolve.test.ts`、`commands/__tests__/companyOrders.test.ts` |
-| 集成 | `__integration__/company-orders.spec.ts`（CRUD/搜索/状态/kind/跨组织/祖先组织可见）、`company-order-links.spec.ts`（替换+快照+幂等+自动建根+反查+汇总口径+**移动**）、`company-order-backfill.spec.ts`（CLI dry-run/apply/重跑）、`company-order-create-fields.spec.ts`（建单带默认客户/供应商与 `links[]`）、`company-order-collaborators.spec.ts`（协作可见/字段白名单/成套替换/409）、`company-order-files.spec.ts`（附件上传/列表/删除） |
+| 共享件 | `src/lib/related/RelatedSection.tsx`（区块壳）、`src/lib/quick-edit/QuickEditDialog.tsx`（下游区块就地编辑，字段工厂仍在各模块 `lib/*QuickEdit.ts`）、`src/lib/attachments/AttachmentsSection.tsx`（文件区块壳，app 级共享；第五轮起可用 `listHref`/`fileHref` 指向调用方自己的路由，默认仍是 installed 的 `/api/attachments`）、`src/lib/orders/companyOrderParams.ts`（`?companyOrderId=` 解析，两个建单表单共用）、`internal_sales` 的贸易类型通道解析（`lib/tradeTypeChannelIds.ts` / `tradeTypeChannels.server.ts`） |
+| 单元 | `lib/__tests__/companyOrder.test.ts`、`lib/__tests__/companyOrderResolve.test.ts`、`commands/__tests__/companyOrders.test.ts`、`components/__tests__/companyOrderOptions.test.ts`（选项合并/回退过滤） |
+| 集成 | `__integration__/company-orders.spec.ts`（CRUD/搜索/状态/kind/跨组织/祖先组织可见）、`company-order-links.spec.ts`（替换+快照+幂等+自动建根+反查+汇总口径+**移动**）、`company-order-backfill.spec.ts`（CLI dry-run/apply/重跑）、`company-order-create-fields.spec.ts`（建单带默认客户/供应商与 `links[]`）、`company-order-collaborators.spec.ts`（协作可见/字段白名单/成套替换/409）、`company-order-files.spec.ts`（附件上传/列表/删除）、`company-order-fields.spec.ts`（35 列汇总/币种分组/不可见根空对象）、`company-order-attachment-access.spec.ts`（所有者/协作/无关三视角的列表与字节） |
 
 ## 工作台（`components/OrderWorkbench.tsx`）
 
@@ -33,10 +33,12 @@ app 自有模块。**公司订单是一个真表**：`order_hub_company_orders`�
   子单事实）。筛选任一变化重置页码；`?type=internal|external|purchase`（旧列表 URL 的 307 带过来的）映射到
   `kind=internal_sales_order|external_sales_order|purchase_order`。
 - 列：编号（链到 hub）/ 子单号（冻结的 `ref_number` 并集）/ 对方（**优先销售子单的买方**，否则采购子单的供应商）
-  / 下单日期 / 状态（`order_hub` 常量徽章）/ 采购·发运·单证·收汇退税四格（>0 与 =0 都链到 hub 对应锚点，hub 有
+  / 下单日期 / **金额**（第五轮：`stages.amounts`，按币种显示销售金额，无销售子单时显示采购金额；`—` 表示无） / 状态（`order_hub` 常量徽章）/ 采购·发运·单证·收汇退税四格（>0 与 =0 都链到 hub 对应锚点，hub 有
   新建入口）/ 行操作「打开」与「全字段」。
-- 「全字段」抽屉：有关联采购子单 → 读第一张采购子单的 `GET /api/export_finance/order-files` 投影（订单/单证与文件/
-  财务三组，任一组 403 只在组内提示）；否则为公司订单抬头 + 子单号 + 四计数。
+- 「全字段」抽屉（第五轮重写）：读 `GET /api/order_hub/orders/fields?companyOrderId=` 的公司订单级汇总，四组——
+  **订单**（编号/标题/状态/子单号）、**金额与日期**（按币种的销售/采购/定金/已付/应付 + 下单/预计交货/出运）、
+  **单证与文件**（按 kind 的单号、INV.NO、按 `doc_type` 的发运单证计数、采购水单与发票条数）、**财务**（收汇状态与
+  涉外收入证明、退税状态与金额、KC 盖章）；只读，缺失显示 `—`，整块失败在抽屉内提示 + 重试。
 - 「新建订单」→ `/backend/orders/create`（按 `order_hub.manage` 显隐；chrome payload 未就绪时不隐藏）。
 
 ## 详情 hub（`components/OrderDetail.tsx`，`/backend/orders/<companyOrderId>`）
@@ -84,8 +86,14 @@ yarn mercato order_hub backfill-company-orders --apply      # 幂等落库；重
 
 - **建单抓起手信息**：`/backend/orders/create` 增加 默认客户（`parties` buyer 选项源）、默认供应商（`purchasing/suppliers`）与「关联已有单据」两个搜索多选（销售单按贸易类型通道、采购单）；保存时 `links[]` 与根单**同一事务**落库（未知/跨组织 422）。默认客户/供应商只是**录入默认**，子单创建后各自持有真源；经 `?companyOrderId=` 进入 `internal_sales`/`purchasing` 新建表单时按这两个默认预填（字段为空才填）。
 - **协作组织白名单**：根单详情页「协作组织」对话框（组织多选、排除自身组织、成套替换 + 版本锁）；被加入的组织**可见**该根单（工作台带「协作」徽标、hub 只读），且只能通过「修改状态与备注」写 `status`/`notes`（服务端白名单，其余字段 422；`delete`/关联/协作维护等 owner-only 动作 403）。读路径说明：列表 scope 是**显式可见 id 集**（我的组织集 ∪ 我协作的根单）——用 id 集而非 `$or`，因为引擎在「顶层 `id` 过滤 + `$or`」并存时 OR 组不再匹配。
-- **文件区块**：hub 的「文件」区块复用 installed `attachments`（表单域 `entityId='order_hub:company_order'`、`recordId=根单 id`），上传/列表/预览/下载/删除；共享壳 `src/lib/attachments/AttachmentsSection.tsx`（app 级，只做展示与调用，权限仍由 attachments 的路由裁决）。未拆细的水单/证明/盖章件先挂这里，后续逐个拆到模块时再迁移。注意 attachments 自带组织作用域：**协作组织看不到所有者组织名下的文件**。
+- **文件区块**：hub 的「文件」区块复用 installed `attachments`（表单域 `entityId='order_hub:company_order'`、`recordId=根单 id`），上传/列表/预览/下载/删除；共享壳 `src/lib/attachments/AttachmentsSection.tsx`（app 级，只做展示与调用，权限仍由 attachments 的路由裁决）。未拆细的水单/证明/盖章件先挂这里，后续逐个拆到模块时再迁移。注意 attachments 自带组织作用域：**协作组织看不到所有者组织名下的文件**——第五轮已用本模块的列表/字节代理路由解决（见下节）。
 - **一个子单只属于一张公司订单**：`create.links[]` 与 `links.replace` 会把已在其它根上的子单**移动**过来（同事务删旧关联并失效其缓存）；`link-child` 带显式目标沿用幂等（返回现有根）。
+
+## 第五轮：35 列汇总、附件协作可见与草稿单据可选（2026-10-09）
+
+- **35 列汇总到公司订单视角**：新只读投影 `lib/companyOrderFields.ts`（跨模块 scoped 读，照 `lib/orderStages.ts` 的方法；每次读都带 `tenant_id` + 组织集，协作根额外并入所有者组织做纵深防御）→ `GET /api/order_hub/orders/fields?companyOrderId=`。金额**一律按币种分组**（销售/采购/定金/已付/应付，应付口径用采购模块的 `derivePaymentState`，绝不做跨币种加总）；日期（下单/预计交货/出运=关联发运单最早 `departed_at`，缺失取里程碑最新一条）；单据按 kind 的单号 + INV.NO（`commercial`）；发运单证按 `doc_type` 计数与最近单号/附件在否；采购水单及发票条数（installed `attachments` 按 `purchasing:purchase_order` / `purchasing:purchase_payment` 计数）；收汇（状态 + 涉外收入证明）、退税（状态 + 金额）、KC 盖章（合同的 `attachment_id`）。不可见根返回 `{}`（不 404，不确认他组织 id 存在）。`stages` 追加 `amounts`（工作台金额列用），全部只增不改。
+- **附件协作可见**：`GET /api/order_hub/orders/attachments?companyOrderId=`（列表）与 `GET /api/order_hub/orders/attachments/<id>[?download=1]`（字节代理，复用 `StorageDriverFactory`，头/文件名/CSP/缓存策略与 installed 文件路由逐项一致）。授权 = **根单可见性**（所有者组织或协作组织；无关组织列表空、字节 404）；列表行只按 tenant + `entity_id='order_hub:company_order'` + `record_id=根单` 读（installed 的组织作用域正是协作组织看不到文件的原因）。hub 文件区块改走本模块两条路由（`AttachmentsSection` 新增 `listHref`/`fileHref` 可选属性，其它调用方行为不变）；**上传/删除仍走 installed `POST/DELETE /api/attachments` 且只对所有者显示**——协作组织的写被 installed 的 `attachments.manage` 挡下（403）；若给协作组织补授 `attachments.manage`，installed 的上传会把行写在其**自己组织**下，不会进入所有者的文件列表（UI 因此始终对协作组织隐藏上传入口）。字节路由的沙箱 CSP（`default-src 'none'; sandbox`）在 `next.config.ts` 里与 installed 文件路由一样**单独豁免**全站 CSP——不豁免会被 `/:path*` 规则覆盖（实测踩过，见 run record）。
+- **草稿单据可选**：`companyOrderOptions.mergePurchaseOrderCandidates` 把「无 search 的第 1 页」与「带 search 的第 1 页」合并去重，再按 单号 / 供应商名 / 打印标签（无号草稿的标签带 id 前缀）客户端过滤、单号全等优先——**无号草稿**因此可以在建单表单与关联对话框里被搜到；空输入不报错。
 
 ## 规则（有意为之）
 
@@ -106,6 +114,8 @@ yarn jest --config jest.config.cjs src/modules/order_hub
 JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral company-orders
 JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral company-order-links
 JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral company-order-backfill
+JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral company-order-fields
+JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral company-order-attachment-access
 yarn mercato auth sync-role-acls   # 既有租户补授 order_hub.manage
 ```
 

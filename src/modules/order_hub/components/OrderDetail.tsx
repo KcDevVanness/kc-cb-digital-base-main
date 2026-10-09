@@ -44,6 +44,7 @@ import { CompanyOrderLinkDialog } from './CompanyOrderLinkDialog'
 import { CompanyOrderCollaboratorsDialog } from './CompanyOrderCollaboratorsDialog'
 import { CompanyOrderStatusDialog } from './CompanyOrderStatusDialog'
 import { AttachmentsSection } from '@/lib/attachments/AttachmentsSection'
+import OrderFieldsDrawer from './OrderFieldsDrawer'
 import { resolveCompanyOrderForDocument } from '../lib/companyOrderResolve'
 import type { CompanyOrderLinkKind } from '../data/validators'
 
@@ -476,6 +477,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   const [linkDialogKind, setLinkDialogKind] = React.useState<CompanyOrderLinkKind | null>(null)
   const [collaboratorsOpen, setCollaboratorsOpen] = React.useState(false)
   const [statusOpen, setStatusOpen] = React.useState(false)
+  const [fieldsOpen, setFieldsOpen] = React.useState(false)
   const [quickEdit, setQuickEdit] = React.useState<{
     config: QuickEditConfig
     recordId: string
@@ -924,6 +926,10 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         }
         actionsContent={(
           <div className="flex flex-wrap items-center gap-2">
+            {/* Read-only, so both the owner and a collaborating organization can open it. */}
+            <Button type="button" variant="outline" onClick={() => setFieldsOpen(true)}>
+              {t('order_hub.workbench.actions.fields')}
+            </Button>
             {canWrite ? (
               <>
                 <Button asChild variant="outline">
@@ -1254,8 +1260,11 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         </ul>
       </RelatedSection>
 
-      {/* 未拆细的文件（水单/证明/盖章件…）先挂根单：the installed `attachments` module owns the bytes,
-          the permission and the organization scope; this block only frames the record's files. */}
+      {/* 未拆细的文件（水单/证明/盖章件…）先挂根单：the installed `attachments` module owns the bytes
+          and the upload, but its list/file routes scope by the caller's own organization, which hides
+          the owner's files from a collaborator. This block reads through this module's routes, which
+          authorize on the root; upload still posts to the installed route, and a collaborator's
+          `canManage={false}` hides the write controls. */}
       <AttachmentsSection
         entityId="order_hub:company_order"
         recordId={head.id}
@@ -1264,6 +1273,8 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         emptyLabel={t('order_hub.detail.files.empty')}
         messages={relatedSectionMessages}
         canManage={canWrite}
+        listHref={(recordId) => `/api/order_hub/orders/attachments?companyOrderId=${encodeURIComponent(recordId)}`}
+        fileHref="/api/order_hub/orders/attachments"
       />
 
       {quickEdit ? (
@@ -1346,6 +1357,12 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           setPickerAction(null)
           action?.(child)
         }}
+      />
+
+      <OrderFieldsDrawer
+        target={{ id: head.id, number: head.number ?? null }}
+        open={fieldsOpen}
+        onOpenChange={setFieldsOpen}
       />
     </>
   )

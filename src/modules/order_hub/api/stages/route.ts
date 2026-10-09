@@ -39,6 +39,15 @@ const stageItemSchema = z.object({
   counterparty: z.string().nullable().optional(),
   childNumbers: z.array(z.string()).optional(),
   kinds: z.array(z.string()).optional(),
+  amounts: z
+    .array(
+      z.object({
+        currencyCode: z.string(),
+        sales: z.string(),
+        purchase: z.string(),
+      }),
+    )
+    .optional(),
 })
 
 const stagesResponseSchema = z.object({ items: z.array(stageItemSchema) })
@@ -91,7 +100,7 @@ export const openApi: OpenApiRouteDoc = {
     GET: {
       summary: 'Project the fill progress of a batch of company orders',
       description:
-        'Returns one entry per company order the caller may see, for the requested company order ids (at most 200, comma-separated). Ids outside the caller’s organization produce no entry. Each count is the union of the company order’s linked children.',
+        'Returns one entry per company order the caller may see, for the requested company order ids (at most 200, comma-separated). Ids outside the caller’s organization produce no entry. Each count is the union of the company order’s linked children; `amounts` carries the sales/purchase totals grouped by currency.',
       query: stagesQuerySchema,
       responses: [
         { status: 200, description: 'One entry per visible company order', schema: stagesResponseSchema },
