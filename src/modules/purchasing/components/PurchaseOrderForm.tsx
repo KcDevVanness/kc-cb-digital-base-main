@@ -18,7 +18,8 @@ import {
   PurchaseOrderStatusBadge,
   purchaseOrderStatusLabel as orderStatusLabel,
 } from '@/lib/orders/purchaseOrderStatus'
-import { pushWithFlash } from '@open-mercato/ui/backend/utils/flash'
+import { pushWithFlash, withFlash } from '@open-mercato/ui/backend/utils/flash'
+import { parseCompanyOrderParam } from '@/lib/orders/companyOrderParams'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
 import { FieldLabel } from '@open-mercato/ui/primitives/label'
@@ -917,6 +918,13 @@ export default function PurchaseOrderForm() {
    * pair is reported inline and the form opens empty — a mistyped link must not block the page.
    */
   const sourceParam = React.useMemo(() => parseSourceOrderParams(searchParams), [searchParams])
+  /**
+   * `?companyOrderId=` — the company order's purchase block hands the operator here with the root
+   * already known, so a saved order is attached back to it. It coexists with the `?orderKind=&orderId=`
+   * source pair above: that pair fills the form and freezes the source anchor, this one only records
+   * the root link after the save. A malformed value is reported inline and treated as absent.
+   */
+  const companyOrderParam = React.useMemo(() => parseCompanyOrderParam(searchParams), [searchParams])
   const [prefillState, setPrefillState] = React.useState<
     { status: 'idle' } | { status: 'loading' } | { status: 'ready'; values: PurchaseOrderFormValues; skipped: number }
   >(sourceParam.status === 'ok' ? { status: 'loading' } : { status: 'idle' })
@@ -1011,6 +1019,41 @@ export default function PurchaseOrderForm() {
       const result = await createCrud<{ id?: string }>(ORDERS_API_PATH, payload)
       const createdId = typeof result.result?.id === 'string' ? result.result.id : null
       if (createdId) {
+        // A purchase order created from a company order's block is attached back to that root and
+        // lands on it (at the purchase anchor), so the operator sees the row they just created.
+        if (companyOrderParam.status === 'ok') {
+          try {
+            await readApiResultOrThrow(
+              '/api/order_hub/orders/link-child',
+              {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  kind: 'purchase_order',
+                  refId: createdId,
+                  companyOrderId: companyOrderParam.companyOrderId,
+                }),
+              },
+              { errorMessage: t('purchasing.orders.form.companyOrder.linkFailed') },
+            )
+            // `withFlash` drops the fragment, so the anchor is appended after it.
+            router.push(
+              `${withFlash(
+                `/backend/orders/${encodeURIComponent(companyOrderParam.companyOrderId)}`,
+                t('purchasing.orders.form.saved'),
+                'success',
+              )}#purchasing`,
+            )
+          } catch (linkError) {
+            // The order exists; a failed attach must not strand it. Keep the order's own page and
+            // say the link still needs a hand.
+            const message = linkError instanceof Error && linkError.message
+              ? linkError.message
+              : t('purchasing.orders.form.companyOrder.linkFailed')
+            pushWithFlash(router, `${ORDERS_LIST_HREF}/${encodeURIComponent(createdId)}`, message, 'warning')
+          }
+          return
+        }
         // The detail page is the only surface that shows the lines, totals and payments a
         // freshly placed order needs, so the create flow hands the user straight to it.
         pushWithFlash(
@@ -1031,19 +1074,25 @@ export default function PurchaseOrderForm() {
       )
       throw error
     }
-  }, [router, t])
+  }, [companyOrderParam, router, t])
 
   if (prefillState.status === 'loading') {
     return <p className="text-sm text-muted-foreground">{t('purchasing.orders.form.sourceOrder.loading')}</p>
   }
 
   const invalidSourceParam = sourceParam.status === 'invalid'
+  const invalidCompanyOrderParam = companyOrderParam.status === 'invalid'
 
   return (
     <>
       {invalidSourceParam ? (
         <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
           {t('purchasing.orders.create.sourceOrder.invalid')}
+        </p>
+      ) : null}
+      {invalidCompanyOrderParam ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('purchasing.orders.create.companyOrder.invalid')}
         </p>
       ) : null}
       {prefillState.status === 'ready' && prefillState.skipped > 0 ? (

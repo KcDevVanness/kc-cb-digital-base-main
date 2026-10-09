@@ -367,6 +367,8 @@
   "purchasing.orders.form.sourceOrder.label": "Source sales order",
   "purchasing.orders.form.sourceOrder.open": "Open the order",
   "purchasing.orders.create.sourceOrder.invalid": "The source order parameters are invalid; opening a plain new order",
+  "purchasing.orders.create.companyOrder.invalid": "The company order link is invalid; opening a plain new order",
+  "purchasing.orders.form.companyOrder.linkFailed": "The purchase order was saved, but it could not be linked to the company order — link it from the company order page",
   "purchasing.orders.form.lines.priceLoadFailed": "The supplier price could not be read — type the unit price",
   "purchasing.orders.list.sourceOrderFilter": "Showing only purchase orders raised for {number}",
   "purchasing.orders.list.sourceOrderFilterUnknown": "Showing only purchase orders of the given source order",

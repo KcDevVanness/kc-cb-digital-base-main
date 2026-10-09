@@ -367,6 +367,8 @@
   "purchasing.orders.form.sourceOrder.label": "来源销售订单",
   "purchasing.orders.form.sourceOrder.open": "打开订单详情",
   "purchasing.orders.create.sourceOrder.invalid": "来源订单参数无效，已按新建处理",
+  "purchasing.orders.create.companyOrder.invalid": "公司订单链接参数无效，已按新建处理",
+  "purchasing.orders.form.companyOrder.linkFailed": "采购单已保存，但关联公司订单失败，请在公司订单页手动关联",
   "purchasing.orders.form.lines.priceLoadFailed": "供应商供货价读取失败，请手动填写单价",
   "purchasing.orders.list.sourceOrderFilter": "仅显示来源订单 {number} 的采购单",
   "purchasing.orders.list.sourceOrderFilterUnknown": "仅显示指定来源订单的采购单",
