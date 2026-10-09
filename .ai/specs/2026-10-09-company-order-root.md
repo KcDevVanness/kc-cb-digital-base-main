@@ -285,7 +285,7 @@
 | `POST` | `/api/order_hub/orders` | `order_hub.manage` | create schema（无 number/scope） | 201 `{id,number}` + `order_hub.company_order.created` | 400/403/409 | REQ-001 |
 | `PUT` | `/api/order_hub/orders` | `order_hub.manage` | `{id,…,updatedAt}` | 200 + `.updated` | 404/409（乐观锁）/400 | REQ-001 |
 | `DELETE` | `/api/order_hub/orders` | `order_hub.manage` | `{id,updatedAt}` | 200 + `.deleted` | 404/409 | REQ-001 |
-| `GET` | `/api/order_hub/orders/links` | `order_hub.view` | `{companyOrderId,kind?,page,pageSize}` | `{items:[{id,kind,refId,refNumber,refCounterparty,refSnapshot,updatedAt}],total}` | 400/403 | REQ-003 |
+| `GET` | `/api/order_hub/orders/links` | `order_hub.view` | `{companyOrderId?,refId?,kind?,page,pageSize}`（`companyOrderId` 与 `refId` 至少一个，都缺 → 400；`refId` 是旧 URL/未关联状态的反查） | `{items:[{id,kind,refId,refNumber,refCounterparty,refSnapshot,updatedAt}],total}` | 400/403 | REQ-003, REQ-007 |
 | `POST` | `/api/order_hub/orders/links` | `order_hub.manage` | `{companyOrderId,kind,refs:[{refId}],updatedAt}` → `order_hub.orders.links.replace` | 200 `{ok,count}` + `.links.updated` | 422（跨组织/未知/重复）/409/400 | REQ-003, REQ-004 |
 | `POST` | `/api/order_hub/orders/link-child` | `order_hub.manage` | `{kind,refId,companyOrderId?}` → `order_hub.orders.link-child` | 200 `{companyOrderId,linked,created}` | 422（引用无效）/403 | REQ-004, REQ-006 |
 | `GET` | `/api/order_hub/stages` | `order_hub.view` | `ids=<companyOrderId,…>`（1–200） | `{items:[{id,procurementCount,shipmentCount,documentCount,collected,refunded,counterparty?,childNumbers?,kinds?}]}` | 400 越界/非法 | REQ-002, REQ-009 |
