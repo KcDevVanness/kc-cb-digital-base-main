@@ -12,6 +12,7 @@ import { useSidebarCollapse } from '@open-mercato/ui/backend/AppShell'
 import { useBackendChrome } from '@open-mercato/ui/backend/BackendChromeProvider'
 import { Input } from '@open-mercato/ui/primitives/input'
 import type { NavTreeGroup, NavTreeItem, NavTreePayload } from '../lib/treeTypes'
+import { collectActiveIds, resolveRowState, type NavRowState } from '../lib/navActive'
 
 /**
  * The app's sidebar navigation tree: 域 → 模块 → 页面, rendered from `/api/nav_shell/tree`.
@@ -25,6 +26,10 @@ import type { NavTreeGroup, NavTreeItem, NavTreePayload } from '../lib/treeTypes
  * surviving entries against the `grantedFeatures` the chrome payload shipped — a second, independent
  * reading of the same rule — and skips that check when the payload says the caller is unrestricted
  * (`featureFiltered: false`), so an admin never loses an entry the server deliberately kept.
+ *
+ * The open page is marked once: `lib/navActive.ts` decides which row carries the marker (the open
+ * page) and which rows only sit above it and are bolded — see the module for why one "active" style
+ * is not enough.
  */
 
 type SidebarNavTreeProps = {
@@ -35,25 +40,28 @@ type TreeRow = { item: NavTreeItem; depth: number }
 
 /**
  * Indentation by depth, as classes rather than a computed `paddingLeft`: the design-system check
- * rejects inline styles, and the tree is four levels deep in the widest branch (域 → 订单工作台 →
- * 业务组 → 页面); deeper nesting saturates at the last step.
+ * rejects inline styles, and the tree is three levels deep in the widest branch (域 → 业务组 → 页面);
+ * deeper nesting saturates at the last step.
  */
 const DEPTH_PADDING = ['pl-2', 'pl-5', 'pl-8', 'pl-11'] as const
 
-function hrefIsActive(pathname: string | null, href: string): boolean {
-  if (!pathname) return false
-  return pathname === href || pathname.startsWith(`${href}/`)
+/**
+ * Row styling per activity state: only the current page carries the marker (the bar and the filled
+ * background), while the rows above it are bolded. A branch row shares the href of its first page
+ * (采购 → `/backend/purchasing/orders`, the same href 采购单 publishes), so one "active" style lit
+ * both rows and the marker stopped naming the open page.
+ */
+const ROW_TONE: Record<NavRowState, string> = {
+  active: 'bg-muted font-semibold text-foreground',
+  'on-path': 'font-semibold text-foreground hover:bg-muted',
+  idle: 'font-medium text-muted-foreground hover:bg-muted',
 }
 
-function collectActiveIds(items: NavTreeItem[], pathname: string | null, into: Set<string>): boolean {
-  let hasActive = false
-  for (const item of items) {
-    const childActive = item.children ? collectActiveIds(item.children, pathname, into) : false
-    const selfActive = hrefIsActive(pathname, item.href)
-    if (childActive) into.add(item.id ?? item.href)
-    if (childActive || selfActive) hasActive = true
-  }
-  return hasActive
+/** Compact rows are icons alone — no text to bold, so an ancestor keeps just the foreground tone. */
+const COMPACT_TONE: Record<NavRowState, string> = {
+  active: 'bg-muted text-foreground',
+  'on-path': 'text-foreground hover:bg-muted',
+  idle: 'text-muted-foreground hover:bg-muted',
 }
 
 function filterItems(
@@ -115,11 +123,10 @@ export default function SidebarNavTree({ variant = 'desktop' }: SidebarNavTreePr
     [queryActive, queryNorm],
   )
 
-  const activeIds = React.useMemo(() => {
-    const into = new Set<string>()
-    for (const group of tree.data?.groups ?? []) collectActiveIds(group.items, pathname, into)
-    return into
-  }, [pathname, tree.data?.groups])
+  const activeIds = React.useMemo(
+    () => collectActiveIds(tree.data?.groups.flatMap((group) => group.items) ?? [], pathname),
+    [pathname, tree.data?.groups],
+  )
 
   const groups = React.useMemo(() => {
     if (!tree.data) return []
@@ -159,8 +166,7 @@ export default function SidebarNavTree({ variant = 'desktop' }: SidebarNavTreePr
     const children = item.children ?? []
     const hasChildren = children.length > 0
     const open = isOpen(key)
-    const selfActive = hrefIsActive(pathname, item.href)
-    const active = selfActive || activeIds.has(key)
+    const rowState = resolveRowState(pathname, item, activeIds)
     const padding = DEPTH_PADDING[Math.min(depth, DEPTH_PADDING.length - 1)]
 
     if (compact) {
@@ -172,7 +178,7 @@ export default function SidebarNavTree({ variant = 'desktop' }: SidebarNavTreePr
                 href={item.href}
                 title={item.title}
                 aria-label={item.title}
-                className={`flex h-10 w-10 items-center justify-center rounded-lg ${active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                className={`flex h-10 w-10 items-center justify-center rounded-lg ${COMPACT_TONE[rowState]}`}
               >
                 {renderIcon(item, 'size-4')}
               </Link>
@@ -195,7 +201,7 @@ export default function SidebarNavTree({ variant = 'desktop' }: SidebarNavTreePr
               href={item.href}
               title={item.title}
               aria-label={item.title}
-              className={`flex h-10 w-10 items-center justify-center rounded-lg ${active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`flex h-10 w-10 items-center justify-center rounded-lg ${COMPACT_TONE[rowState]}`}
             >
               {renderIcon(item, 'size-4')}
             </Link>
@@ -213,9 +219,9 @@ export default function SidebarNavTree({ variant = 'desktop' }: SidebarNavTreePr
       <div key={key} className="flex flex-col gap-1">
         {hasChildren ? (
           <div
-            className={`relative flex w-full items-center rounded-lg text-sm font-medium ${padding} ${active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            className={`relative flex w-full items-center rounded-lg text-sm ${padding} ${ROW_TONE[rowState]}`}
           >
-            {active ? (
+            {rowState === 'active' ? (
               <span aria-hidden className="absolute left-0 top-2 h-5 w-1 rounded-r bg-foreground" />
             ) : null}
             <Link href={item.href} className="flex min-w-0 flex-1 items-center gap-2 py-2 pr-2">
@@ -238,9 +244,9 @@ export default function SidebarNavTree({ variant = 'desktop' }: SidebarNavTreePr
         ) : (
           <Link
             href={item.href}
-            className={`relative flex w-full items-center gap-2 rounded-lg py-2 pr-3 text-sm font-medium ${padding} ${active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            className={`relative flex w-full items-center gap-2 rounded-lg py-2 pr-3 text-sm ${padding} ${ROW_TONE[rowState]}`}
           >
-            {active ? (
+            {rowState === 'active' ? (
               <span aria-hidden className="absolute left-0 top-2 h-5 w-1 rounded-r bg-foreground" />
             ) : null}
             {renderIcon(item, 'size-4')}
@@ -303,8 +309,9 @@ export default function SidebarNavTree({ variant = 'desktop' }: SidebarNavTreePr
 
       {groups.map((group) => {
         const open = isOpen(group.id ?? group.name)
-        const active = group.items.some(
-          (item) => hrefIsActive(pathname, item.href) || activeIds.has(item.id ?? item.href),
+        // The domain of the open page is bolded like the rows above it — the marker stays on the page.
+        const holdsOpenPage = group.items.some(
+          (item) => resolveRowState(pathname, item, activeIds) !== 'idle',
         )
         return (
           <div key={group.id ?? group.name} className="flex flex-col gap-1 border-b pb-2 last:border-b-0">
@@ -313,7 +320,7 @@ export default function SidebarNavTree({ variant = 'desktop' }: SidebarNavTreePr
                 type="button"
                 onClick={() => toggle(group.id ?? group.name, open)}
                 aria-expanded={open}
-                className={`flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-left text-xs font-medium uppercase tracking-wider ${active ? 'text-foreground' : 'text-muted-foreground/70'} hover:bg-muted`}
+                className={`flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-left text-xs uppercase tracking-wider ${holdsOpenPage ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground/70'} hover:bg-muted`}
               >
                 <span className="flex min-w-0 items-center gap-2">
                   {renderIcon({ href: group.id ?? group.name, title: group.name, iconName: group.iconName }, 'size-3.5')}
