@@ -5,8 +5,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FormHeader } from '@open-mercato/ui/backend/forms'
+import { SectionHeader } from '@open-mercato/ui/backend/SectionHeader'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { Button } from '@open-mercato/ui/primitives/button'
+import { Badge } from '@open-mercato/ui/primitives/badge'
 import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-badge'
 import { ComboboxInput, type ComboboxOption } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@open-mercato/ui/primitives/dialog'
@@ -46,7 +48,10 @@ import { CompanyOrderCollaboratorsDialog } from './CompanyOrderCollaboratorsDial
 import { CompanyOrderStatusDialog } from './CompanyOrderStatusDialog'
 import { AttachmentsSection } from '@/lib/attachments/AttachmentsSection'
 import { OrderDocumentsSection } from './OrderDocumentsSection'
+import { withReturnTo } from '@/lib/navigation/returnTo'
 import OrderFieldsDrawer from './OrderFieldsDrawer'
+import LinkedRecordPreviewDrawer from './LinkedRecordPreviewDrawer'
+import type { LinkedRecordPreviewKind, LinkedRecordPreviewTarget } from './linkedRecordPreviewSources'
 import { resolveCompanyOrderForDocument } from '../lib/companyOrderResolve'
 import type { CompanyOrderLinkKind } from '../data/validators'
 
@@ -184,11 +189,17 @@ function toLinkRow(item: Record<string, unknown>): LinkRow {
   }
 }
 
-/** Where a linked child opens: the two sales kinds under their own ledger, the purchase under its own. */
-function childOpenHref(kind: CompanyOrderLinkKind, refId: string): string {
-  if (kind === 'purchase_order') return `/backend/purchasing/orders/${encodeURIComponent(refId)}`
+/**
+ * Where a linked child opens: `edit` is the module's own edit page, `detail` its read-only detail
+ * page (the two sales kinds have only the edit surface; a purchase order has both).
+ */
+function childHref(kind: CompanyOrderLinkKind, refId: string, surface: 'edit' | 'detail'): string {
+  const id = encodeURIComponent(refId)
+  if (kind === 'purchase_order') {
+    return surface === 'edit' ? `/backend/purchasing/orders/${id}/edit` : `/backend/purchasing/orders/${id}`
+  }
   const ledger = kind === 'external_sales_order' ? '/backend/external-sales' : '/backend/internal-sales'
-  return `${ledger}/orders/${encodeURIComponent(refId)}/edit`
+  return `${ledger}/orders/${id}/edit`
 }
 
 function childCreatePayloadHref(base: string, child: LinkRow): string {
@@ -273,26 +284,57 @@ function documentKindLabelKey(kind: DocumentRow['kind']): string {
   return kind === 'tax_invoice' ? 'order_hub.detail.documents.kind.taxInvoice' : `trade_docs.documents.kind.${kind}`
 }
 
-function documentEditHref(kind: DocumentRow['kind'], id: string): string {
-  const listHref = kind === 'tax_invoice'
-    ? '/backend/trade-docs/invoices'
-    : kind === 'commercial'
-      ? '/backend/trade-docs/commercial-invoices'
-      : '/backend/trade-docs/proformas'
-  return `${listHref}/${encodeURIComponent(id)}/edit`
+/**
+ * A block row's document number. It is a button, not a link: clicking opens the record's read-only
+ * preview in the right-side drawer instead of leaving the page — 「编辑」 is the action that leaves.
+ */
+function PreviewNumber({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Button type="button" variant="link" size="sm" onClick={onClick}>
+      {label}
+    </Button>
+  )
 }
 
-/**
- * The attach blocks' shape: the two sales families and the purchase family, each with its own
- * read/create/row targets, so the three blocks are rendered by one map instead of three copies.
- */
-type AttachBlock = {
-  kind: CompanyOrderLinkKind
-  id: string
-  titleKey: string
-  emptyKey: string
-  createHref: string
-  openHref: (refId: string) => string
+/** The 新建 choice the merged 出口销售 block needs: each kind has its own create entry. */
+function SalesKindDialog({
+  open,
+  onOpenChange,
+  onPick,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onPick: (kind: 'internal_sales_order' | 'external_sales_order') => void
+}) {
+  const t = useT()
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{t('order_hub.detail.sales.chooseKind.title')}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">{t('order_hub.detail.sales.chooseKind.body')}</p>
+        <ul className="flex flex-col gap-2">
+          {(['internal_sales_order', 'external_sales_order'] as const).map((kind) => (
+            <li key={kind}>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => onPick(kind)}
+              >
+                {t(
+                  kind === 'external_sales_order'
+                    ? 'order_hub.companyOrders.links.kind.external'
+                    : 'order_hub.companyOrders.links.kind.internal',
+                )}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 /**
@@ -480,10 +522,13 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
 
   const [documentsDialog, setDocumentsDialog] = React.useState<{ orderKind: string; orderId: string } | null>(null)
   const [pickerAction, setPickerAction] = React.useState<((child: LinkRow) => void) | null>(null)
-  const [linkDialogKind, setLinkDialogKind] = React.useState<CompanyOrderLinkKind | null>(null)
+  const [linkDialog, setLinkDialog] = React.useState<{ kind: CompanyOrderLinkKind; kinds?: CompanyOrderLinkKind[] } | null>(null)
   const [collaboratorsOpen, setCollaboratorsOpen] = React.useState(false)
   const [statusOpen, setStatusOpen] = React.useState(false)
   const [fieldsOpen, setFieldsOpen] = React.useState(false)
+  const [salesKindsOpen, setSalesKindsOpen] = React.useState(false)
+  const [preview, setPreview] = React.useState<LinkedRecordPreviewTarget | null>(null)
+  const [previewOpen, setPreviewOpen] = React.useState(false)
   const [quickEdit, setQuickEdit] = React.useState<{
     config: QuickEditConfig
     recordId: string
@@ -879,37 +924,23 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   // dialog takes the edit action's place. The server refuses the same writes regardless of this flag.
   const viewerIsCollaborator = head.viewerIsCollaborator
   const canWrite = !viewerIsCollaborator
+  /** Everything this page links to carries it, so the module page's 「返回」 lands back on this hub. */
+  const returnTo = `/backend/orders/${encodeURIComponent(head.id)}`
   const purchaseCreateHref = `/backend/purchasing/orders/create?companyOrderId=${encodeURIComponent(head.id)}${
     allSalesChildren.length === 1
       ? `&orderKind=${allSalesChildren[0].kind}&orderId=${encodeURIComponent(allSalesChildren[0].refId)}`
       : ''
   }`
-  const attachBlocks: AttachBlock[] = [
-    {
-      kind: 'internal_sales_order',
-      id: 'internal-orders',
-      titleKey: 'order_hub.detail.internalOrders.title',
-      emptyKey: 'order_hub.detail.internalOrders.empty',
-      createHref: `/backend/internal-sales/orders/create?companyOrderId=${encodeURIComponent(head.id)}`,
-      openHref: (refId) => childOpenHref('internal_sales_order', refId),
-    },
-    {
-      kind: 'external_sales_order',
-      id: 'external-orders',
-      titleKey: 'order_hub.detail.externalOrders.title',
-      emptyKey: 'order_hub.detail.externalOrders.empty',
-      createHref: `/backend/external-sales/orders/create?companyOrderId=${encodeURIComponent(head.id)}`,
-      openHref: (refId) => childOpenHref('external_sales_order', refId),
-    },
-    {
-      kind: 'purchase_order',
-      id: 'purchasing',
-      titleKey: 'order_hub.detail.purchaseOrders.title',
-      emptyKey: 'order_hub.detail.section.empty.purchase',
-      createHref: purchaseCreateHref,
-      openHref: (refId) => childOpenHref('purchase_order', refId),
-    },
-  ]
+  const salesRows = links.filter((link) => isSalesKind(link.kind))
+  const purchaseRows = links.filter((link) => link.kind === 'purchase_order')
+  const openPreview = (target: LinkedRecordPreviewTarget) => {
+    setPreview(target)
+    setPreviewOpen(true)
+  }
+  // The row's number is a preview trigger everywhere on this page; the label stays the row's own.
+  const previewNumber = (target: LinkedRecordPreviewTarget, label: string) => (
+    <PreviewNumber label={label} onClick={() => openPreview(target)} />
+  )
 
   const shipmentsViewAllHref = salesChildren.length === 1
     ? `${SHIPMENTS_HREF}?salesOrderId=${encodeURIComponent(salesChildren[0].refId)}`
@@ -964,10 +995,6 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           <p className="text-sm font-medium">{head.etaDate ?? '—'}</p>
         </div>
         <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">{t('order_hub.companyOrders.header.title')}</p>
-          <p className="text-sm font-medium">{head.title ?? '—'}</p>
-        </div>
-        <div className="space-y-1">
           <p className="text-xs text-muted-foreground">{t('order_hub.companyOrders.header.notes')}</p>
           <p className="text-sm font-medium">{head.notes ?? '—'}</p>
         </div>
@@ -993,53 +1020,129 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         </div>
       </div>
 
-      {attachBlocks.map((block) => {
-        const rows = links.filter((link) => link.kind === block.kind)
-        return (
-          <RelatedSection
-            key={block.id}
-            id={block.id}
-            title={t(block.titleKey)}
-            action={canWrite ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button asChild variant="outline" size="sm">
-                  <Link href={block.createHref}>{t('order_hub.detail.orders.create')}</Link>
+      {/* 采购 (owner 2026-10-09 板块布局): the board headings mirror the sidebar tree, so a block and
+          the ledger it writes into read as the same area of the business. */}
+      <SectionHeader title={t('order_hub.detail.groups.purchasing')} className="pt-1" />
+
+      <RelatedSection
+        id="purchasing"
+        title={t('order_hub.detail.purchaseOrders.title')}
+        action={canWrite ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href={withReturnTo(purchaseCreateHref, returnTo)}>{t('order_hub.detail.orders.create')}</Link>
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setLinkDialog({ kind: 'purchase_order' })}>
+              {t('order_hub.detail.orders.link')}
+            </Button>
+          </div>
+        ) : undefined}
+        isLoading={linksQuery.isLoading}
+        failed={linksQuery.isError}
+        isEmpty={purchaseRows.length === 0}
+        emptyLabel={t('order_hub.detail.section.empty.purchase')}
+        onRetry={() => void linksQuery.refetch()}
+        framed
+        messages={relatedSectionMessages}
+      >
+        <ul className="flex flex-col gap-2">
+          {purchaseRows.map((row) => (
+            <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
+              {/* A collaborator reads the same row but reaches the purchase order's own page
+                  instead of its edit form — the root's write gate is not theirs. */}
+              {previewNumber(
+                { kind: 'purchase_order', refId: row.refId, label: row.refNumber },
+                row.refNumber ?? row.refId.slice(0, 8),
+              )}
+              <span className="text-muted-foreground">{row.refCounterparty ?? '—'}</span>
+              <StatusBadge variant="neutral">
+                {childStatusLabel(t, row.kind, row.refStatus, salesStatusDictionary)}
+              </StatusBadge>
+              <Button asChild variant="ghost" size="sm">
+                <Link href={withReturnTo(childHref(row.kind, row.refId, canWrite ? 'edit' : 'detail'), returnTo)}>
+                  {t(canWrite ? 'order_hub.detail.section.edit' : 'order_hub.detail.orders.open')}
+                </Link>
+              </Button>
+              {canWrite ? (
+                <Button type="button" variant="ghost" size="sm" onClick={() => void removeLink(row)}>
+                  {t('order_hub.detail.orders.remove')}
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setLinkDialogKind(block.kind)}>
-                  {t('order_hub.detail.orders.link')}
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </RelatedSection>
+
+      {/* One block for both sales kinds (owner 2026-10-09): the company order is the main view, so
+          the operator no longer picks a block by kind — every child row says which kind it is, and
+          the kind is chosen at the moment one is linked or created. */}
+      <SectionHeader title={t('order_hub.detail.groups.sales')} className="pt-1" />
+
+      <RelatedSection
+        id="sales"
+        title={t('order_hub.detail.sales.title')}
+        action={canWrite ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setSalesKindsOpen(true)}>
+              {t('order_hub.detail.orders.create')}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setLinkDialog({
+                  kind: 'internal_sales_order',
+                  kinds: ['internal_sales_order', 'external_sales_order'],
+                })
+              }
+            >
+              {t('order_hub.detail.orders.link')}
+            </Button>
+          </div>
+        ) : undefined}
+        isLoading={linksQuery.isLoading}
+        failed={linksQuery.isError}
+        isEmpty={salesRows.length === 0}
+        emptyLabel={t('order_hub.detail.sales.empty')}
+        onRetry={() => void linksQuery.refetch()}
+        framed
+        messages={relatedSectionMessages}
+      >
+        <ul className="flex flex-col gap-2">
+          {salesRows.map((row) => (
+            <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
+              <Badge variant="info" size="sm">
+                {t(
+                  row.kind === 'external_sales_order'
+                    ? 'order_hub.detail.sales.kind.external'
+                    : 'order_hub.detail.sales.kind.internal',
+                )}
+              </Badge>
+              {previewNumber(
+                { kind: row.kind, refId: row.refId, label: row.refNumber },
+                row.refNumber ?? row.refId.slice(0, 8),
+              )}
+              <span className="text-muted-foreground">{row.refCounterparty ?? '—'}</span>
+              <StatusBadge variant="neutral">
+                {childStatusLabel(t, row.kind, row.refStatus, salesStatusDictionary)}
+              </StatusBadge>
+              <Button asChild variant="ghost" size="sm">
+                <Link href={withReturnTo(childHref(row.kind, row.refId, canWrite ? 'edit' : 'detail'), returnTo)}>
+                  {t(canWrite ? 'order_hub.detail.section.edit' : 'order_hub.detail.orders.open')}
+                </Link>
+              </Button>
+              {canWrite ? (
+                <Button type="button" variant="ghost" size="sm" onClick={() => void removeLink(row)}>
+                  {t('order_hub.detail.orders.remove')}
                 </Button>
-              </div>
-            ) : undefined}
-            isLoading={linksQuery.isLoading}
-            failed={linksQuery.isError}
-            isEmpty={rows.length === 0}
-            emptyLabel={t(block.emptyKey)}
-            onRetry={() => void linksQuery.refetch()}
-            framed
-            messages={relatedSectionMessages}
-          >
-            <ul className="flex flex-col gap-2">
-              {rows.map((row) => (
-                <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
-                  <Link className="font-medium underline" href={block.openHref(row.refId)}>
-                    {row.refNumber ?? row.refId.slice(0, 8)}
-                  </Link>
-                  <span className="text-muted-foreground">{row.refCounterparty ?? '—'}</span>
-                  <StatusBadge variant="neutral">{childStatusLabel(t, block.kind, row.refStatus, salesStatusDictionary)}</StatusBadge>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link href={block.openHref(row.refId)}>{t('order_hub.detail.orders.open')}</Link>
-                  </Button>
-                  {canWrite ? (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => void removeLink(row)}>
-                      {t('order_hub.detail.orders.remove')}
-                    </Button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </RelatedSection>
-        )
-      })}
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </RelatedSection>
+
+      <SectionHeader title={t('order_hub.detail.groups.contracts')} className="pt-1" />
 
       <RelatedSection
         id="contracts"
@@ -1050,7 +1153,11 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
             variant="outline"
             size="sm"
             disabled={allSalesChildren.length === 0}
-            onClick={() => resolveSalesTarget((child) => router.push(childCreatePayloadHref(`${CONTRACTS_HREF}/create`, child)))}
+            onClick={() =>
+              resolveSalesTarget((child) =>
+                router.push(withReturnTo(childCreatePayloadHref(`${CONTRACTS_HREF}/create`, child), returnTo)),
+              )
+            }
           >
             {t('order_hub.detail.section.add.contracts')}
           </Button>
@@ -1070,9 +1177,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         <ul className="flex flex-col gap-2">
           {contracts.map((row) => (
             <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
-              <Link className="font-medium underline" href={`${CONTRACTS_HREF}/${encodeURIComponent(row.id)}`}>
-                {row.number ?? row.id.slice(0, 8)}
-              </Link>
+              {previewNumber({ kind: 'contract', refId: row.id, label: row.number }, row.number ?? row.id.slice(0, 8))}
               <MoneyAmount currencyCode={row.currencyCode} amount={row.total} />
               <StatusBadge variant="neutral">{row.status}</StatusBadge>
               {canWrite ? (
@@ -1100,8 +1205,11 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
               onClick={() =>
                 resolveSalesTarget((child) =>
                   router.push(
-                    childCreatePayloadHref(`${DOCUMENTS_HREF}/create`, child) +
-                      (soleContract ? `&contractId=${encodeURIComponent(soleContract)}` : ''),
+                    withReturnTo(
+                      childCreatePayloadHref(`${DOCUMENTS_HREF}/create`, child) +
+                        (soleContract ? `&contractId=${encodeURIComponent(soleContract)}` : ''),
+                      returnTo,
+                    ),
                   ),
                 )
               }
@@ -1137,9 +1245,16 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           {documents.map((row) => (
             <li key={`${row.kind}-${row.id}`} className="flex flex-wrap items-center gap-3 text-sm">
               <span className="text-muted-foreground">{t(documentKindLabelKey(row.kind))}</span>
-              <Link className="font-medium underline" href={documentEditHref(row.kind, row.id)}>
-                {row.number ?? row.id.slice(0, 8)}
-              </Link>
+              {previewNumber(
+                {
+                  kind: row.kind === 'tax_invoice' ? 'tax_invoice' : 'document',
+                  refId: row.id,
+                  label: row.number,
+                  // A PI and a CI are one table with two edit pages, so the row says which one it is.
+                  variant: row.kind,
+                },
+                row.number ?? row.id.slice(0, 8),
+              )}
               <MoneyAmount currencyCode={row.currencyCode} amount={row.total} />
               <StatusBadge variant="neutral">{row.status}</StatusBadge>
               {canWrite ? (
@@ -1154,6 +1269,8 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         <TruncationHint truncated={truncated} />
       </RelatedSection>
 
+      <SectionHeader title={t('order_hub.detail.groups.shipping')} className="pt-1" />
+
       <RelatedSection
         id="shipments"
         title={t('order_hub.detail.shipments.title')}
@@ -1163,7 +1280,11 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
             variant="outline"
             size="sm"
             disabled={allSalesChildren.length === 0}
-            onClick={() => resolveSalesTarget((child) => router.push(childCreatePayloadHref(`${SHIPMENTS_HREF}/create`, child)))}
+            onClick={() =>
+              resolveSalesTarget((child) =>
+                router.push(withReturnTo(childCreatePayloadHref(`${SHIPMENTS_HREF}/create`, child), returnTo)),
+              )
+            }
           >
             {t('order_hub.detail.section.add.shipment')}
           </Button>
@@ -1180,9 +1301,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         <ul className="flex flex-col gap-2">
           {shipments.map((row) => (
             <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
-              <Link className="font-medium underline" href={`${SHIPMENTS_HREF}/${encodeURIComponent(row.id)}`}>
-                {row.number ?? row.id.slice(0, 8)}
-              </Link>
+              {previewNumber({ kind: 'shipment', refId: row.id, label: row.number }, row.number ?? row.id.slice(0, 8))}
               <span className="text-muted-foreground">{row.containerNumber ?? '—'}</span>
               <StatusBadge variant="neutral">{row.status}</StatusBadge>
               {canWrite ? (
@@ -1203,11 +1322,12 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         action={canWrite ? (
           <Button asChild variant="outline" size="sm">
             <Link
-              href={
+              href={withReturnTo(
                 soleContract
                   ? `${PACKING_LISTS_HREF}/create?contractId=${encodeURIComponent(soleContract)}`
-                  : `${PACKING_LISTS_HREF}/create`
-              }
+                  : `${PACKING_LISTS_HREF}/create`,
+                returnTo,
+              )}
             >
               {t('order_hub.detail.section.add.packingList')}
             </Link>
@@ -1225,9 +1345,10 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         <ul className="flex flex-col gap-2">
           {packingLists.map((row) => (
             <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
-              <Link className="font-medium underline" href={`${PACKING_LISTS_HREF}/${encodeURIComponent(row.id)}`}>
-                {row.documentNumber ?? row.id.slice(0, 8)}
-              </Link>
+              {previewNumber(
+                { kind: 'packing_list', refId: row.id, label: row.documentNumber },
+                row.documentNumber ?? row.id.slice(0, 8),
+              )}
               <span className="text-muted-foreground">
                 {t('order_hub.detail.packingLists.shipment')} {row.shipmentNumber ?? row.shipmentId.slice(0, 8)}
               </span>
@@ -1256,21 +1377,33 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           {collectionRows.map((row) => (
             <li key={`collection-${row.purchaseOrderId}`} className="flex flex-wrap items-center gap-3 text-sm">
               <span className="text-muted-foreground">{t('order_hub.detail.money.collection')}</span>
-              <Link className="font-medium underline" href={`/backend/export-finance/orders/${encodeURIComponent(row.purchaseOrderId)}`}>
-                {row.purchaseOrderNumber ?? row.purchaseOrderId.slice(0, 8)}
-              </Link>
+              {previewNumber(
+                { kind: 'collection', refId: row.purchaseOrderId, label: row.purchaseOrderNumber },
+                row.purchaseOrderNumber ?? row.purchaseOrderId.slice(0, 8),
+              )}
               <span>{t(`export_finance.collection.status.${row.collectionStatus}`)}</span>
               {row.amount ? <MoneyAmount currencyCode={row.currencyCode} amount={row.amount} /> : null}
+              <Button asChild variant="ghost" size="sm">
+                <Link href={withReturnTo(`/backend/export-finance/orders/${encodeURIComponent(row.purchaseOrderId)}`, returnTo)}>
+                  {t('order_hub.detail.orders.open')}
+                </Link>
+              </Button>
             </li>
           ))}
           {refundRows.map((row) => (
             <li key={`refund-${row.shipmentId}`} className="flex flex-wrap items-center gap-3 text-sm">
               <span className="text-muted-foreground">{t('order_hub.detail.money.refund')}</span>
-              <Link className="font-medium underline" href={`/backend/export-finance/containers/${encodeURIComponent(row.shipmentId)}`}>
-                {row.shipmentNumber ?? row.shipmentId.slice(0, 8)}
-              </Link>
+              {previewNumber(
+                { kind: 'refund', refId: row.shipmentId, label: row.shipmentNumber },
+                row.shipmentNumber ?? row.shipmentId.slice(0, 8),
+              )}
               <span>{t(`export_finance.refund.status.${row.taxRefundStatus}`)}</span>
               {row.taxRefundAmount ? <MoneyAmount currencyCode={row.currencyCode} amount={row.taxRefundAmount} /> : null}
+              <Button asChild variant="ghost" size="sm">
+                <Link href={withReturnTo(`/backend/export-finance/containers/${encodeURIComponent(row.shipmentId)}`, returnTo)}>
+                  {t('order_hub.detail.orders.open')}
+                </Link>
+              </Button>
             </li>
           ))}
         </ul>
@@ -1318,12 +1451,13 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         />
       ) : null}
 
-      {linkDialogKind ? (
+      {linkDialog ? (
         <CompanyOrderLinkDialog
           open
-          onOpenChange={(next) => { if (!next) setLinkDialogKind(null) }}
+          onOpenChange={(next) => { if (!next) setLinkDialog(null) }}
           companyOrderId={head.id}
-          kind={linkDialogKind}
+          kind={linkDialog.kind}
+          kinds={linkDialog.kinds}
           companyOrderUpdatedAt={orderUpdatedAt}
           onSaved={async () => {
             await queryClient.invalidateQueries({ queryKey: ['order-hub-links'] })
@@ -1331,6 +1465,20 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           }}
         />
       ) : null}
+
+      <SalesKindDialog
+        open={salesKindsOpen}
+        onOpenChange={setSalesKindsOpen}
+        onPick={(kind) => {
+          setSalesKindsOpen(false)
+          router.push(
+            withReturnTo(
+              `/backend/${kind === 'external_sales_order' ? 'external-sales' : 'internal-sales'}/orders/create?companyOrderId=${encodeURIComponent(head.id)}`,
+              returnTo,
+            ),
+          )
+        }}
+      />
 
       {collaboratorsOpen && head.organizationId ? (
         <CompanyOrderCollaboratorsDialog
@@ -1373,6 +1521,13 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           }}
         />
       ) : null}
+
+      <LinkedRecordPreviewDrawer
+        target={preview}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        returnTo={returnTo}
+      />
 
       <SalesChildPickerDialog
         open={pickerAction !== null}

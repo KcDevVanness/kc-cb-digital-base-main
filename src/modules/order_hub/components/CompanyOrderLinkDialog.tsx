@@ -16,6 +16,13 @@ import {
 } from '@open-mercato/ui/primitives/dialog'
 import { IconButton } from '@open-mercato/ui/primitives/icon-button'
 import { FieldLabel } from '@open-mercato/ui/primitives/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@open-mercato/ui/primitives/select'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { useTradeTypeChannels } from '../../internal_sales/lib/tradeTypeChannels'
 import type { SalesTradeType } from '../../internal_sales/lib/tradeType'
@@ -90,6 +97,7 @@ export function CompanyOrderLinkDialog({
   onOpenChange,
   companyOrderId,
   kind,
+  kinds,
   companyOrderUpdatedAt,
   onSaved,
 }: {
@@ -97,6 +105,12 @@ export function CompanyOrderLinkDialog({
   onOpenChange: (open: boolean) => void
   companyOrderId: string
   kind: CompanyOrderLinkKind
+  /**
+   * Every kind this dialog may switch between. The merged 出口销售 block passes both sales kinds and
+   * lets the operator pick one; a block that owns a single kind leaves it out and the kind stays the
+   * caller's fixed value (a row is then just a child picker).
+   */
+  kinds?: CompanyOrderLinkKind[]
   /** The root's version the dialog rendered with; the replace command locks on it. */
   companyOrderUpdatedAt: string | null
   /** Called after a successful replace (and after a conflict refresh) so the hub re-reads its rows. */
@@ -104,6 +118,11 @@ export function CompanyOrderLinkDialog({
 }) {
   const t = useT()
   const { channels } = useTradeTypeChannels('order')
+  const availableKinds = React.useMemo(
+    () => (kinds && kinds.length > 0 ? kinds : [kind]),
+    [kind, kinds],
+  )
+  const [activeKind, setActiveKind] = React.useState<CompanyOrderLinkKind>(kind)
   const [rows, setRows] = React.useState<LinkRow[]>([])
   const [labels, setLabels] = React.useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = React.useState(false)
@@ -115,6 +134,11 @@ export function CompanyOrderLinkDialog({
   const loadFailedMessage = t('order_hub.companyOrders.links.loadFailed')
   const saveFailedMessage = t('order_hub.companyOrders.links.saveFailed')
 
+  // Re-entering the dialog starts on the caller's kind again; switching is a within-open choice.
+  React.useEffect(() => {
+    if (open) setActiveKind(kind)
+  }, [kind, open])
+
   // Re-read on open and on every reload request: see the replace-all note above.
   React.useEffect(() => {
     if (!open) return
@@ -123,7 +147,7 @@ export function CompanyOrderLinkDialog({
     setLoadError(null)
     void fetchCrudList<Record<string, unknown>>(LINKS_API_PATH, {
       companyOrderId,
-      kind,
+      kind: activeKind,
       pageSize: MAX_LINKS,
     })
       .then((payload) => {
@@ -160,7 +184,7 @@ export function CompanyOrderLinkDialog({
     return () => {
       stale = true
     }
-  }, [companyOrderId, kind, loadFailedMessage, open, reloadToken])
+  }, [activeKind, companyOrderId, loadFailedMessage, open, reloadToken])
 
   /**
    * The one option source this dialog offers, over the kind's owning module list.
@@ -171,7 +195,7 @@ export function CompanyOrderLinkDialog({
   const loadSuggestions = React.useCallback(
     async (query?: string): Promise<ComboboxOption[]> => {
       const term = query?.trim()
-      const tradeType = TRADE_TYPE_BY_KIND[kind]
+      const tradeType = TRADE_TYPE_BY_KIND[activeKind]
       if (tradeType) {
         const channelId = channels[tradeType]
         // No channel yet: the organization has not been seeded, so the picker can offer nothing.
@@ -204,7 +228,7 @@ export function CompanyOrderLinkDialog({
         label: purchaseOrderCandidateLabel(candidate),
       }))
     },
-    [channels, kind],
+    [activeKind, channels],
   )
 
   const addRow = React.useCallback(() => {
@@ -236,7 +260,7 @@ export function CompanyOrderLinkDialog({
         LINKS_API_PATH,
         {
           companyOrderId,
-          kind,
+          kind: activeKind,
           refs,
           ...(companyOrderUpdatedAt ? { updatedAt: companyOrderUpdatedAt } : {}),
         },
@@ -262,7 +286,7 @@ export function CompanyOrderLinkDialog({
     } finally {
       setIsSaving(false)
     }
-  }, [companyOrderId, companyOrderUpdatedAt, kind, onOpenChange, onSaved, rows, saveFailedMessage, t])
+  }, [activeKind, companyOrderId, companyOrderUpdatedAt, onOpenChange, onSaved, rows, saveFailedMessage, t])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -275,9 +299,34 @@ export function CompanyOrderLinkDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>{companyOrderLinkKindTitle(t, kind)}</DialogTitle>
+          <DialogTitle>{companyOrderLinkKindTitle(t, activeKind)}</DialogTitle>
           <DialogDescription>{t('order_hub.companyOrders.links.body')}</DialogDescription>
         </DialogHeader>
+        {/* One kind per replace: the dialog owned a fixed kind before the merged 出口销售 block, and
+            switching here re-reads that kind's stored set before it can be saved. */}
+        {availableKinds.length > 1 ? (
+          <div className="space-y-1.5">
+            <FieldLabel htmlFor="company-order-link-kind">
+              {t('order_hub.companyOrders.links.kindLabel')}
+            </FieldLabel>
+            <Select
+              value={activeKind}
+              disabled={isSaving}
+              onValueChange={(next) => setActiveKind(next as CompanyOrderLinkKind)}
+            >
+              <SelectTrigger id="company-order-link-kind">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {availableKinds.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {companyOrderLinkKindTitle(t, option)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
         <div className="space-y-3">
           {isLoading ? (
             <p className="text-sm text-muted-foreground">{t('order_hub.companyOrders.links.loading')}</p>
@@ -297,7 +346,7 @@ export function CompanyOrderLinkDialog({
                 <div key={row.key} className="grid items-end gap-2 sm:grid-cols-12">
                   <div className="space-y-1.5 sm:col-span-11">
                     <FieldLabel htmlFor={`company-order-link-${row.key}`}>
-                      {t(KIND_ROW_KEYS[kind])}
+                      {t(KIND_ROW_KEYS[activeKind])}
                     </FieldLabel>
                     <ComboboxInput
                       value={row.refId}
