@@ -57,6 +57,7 @@ import {
   writeStoredCurrency,
 } from '../lib/currencyDefault'
 import { parseCompanyOrderParam } from '@/lib/orders/companyOrderParams'
+import { loadCompanyOrderDefaults } from '@/lib/orders/companyOrderDefaults'
 import { SALES_STATUS_DRAFT, SALES_STATUS_SENT } from '../lib/salesStatus'
 import { useSalesStatusEntries } from '../lib/salesStatusEntries'
 import {
@@ -991,9 +992,55 @@ function SentQuoteNotice({ values, t }: { values?: Record<string, unknown>; t: T
   )
 }
 
+/**
+ * Seeds the buyer from the company order this create was opened from (`?companyOrderId=`).
+ *
+ * Headless (renders nothing): the create form mounts with its empty values and the root read lands
+ * asynchronously, so this watches the form's own values through a bare group. It only fills a field
+ * the operator has **not** touched (an empty `buyerRef`/`customerName`) — a hand-typed buyer is never
+ * overwritten. The link ref is seeded only when the entry's trade type matches a party buyer
+ * (external); an internal sale's buyer is a sibling organization, so only the printed name is filled
+ * there. A failed root read leaves the form exactly as it opened (the reader swallows and logs).
+ */
+function CompanyOrderBuyerPrefill({
+  values,
+  setValue,
+  companyOrderId,
+  tradeType,
+}: {
+  values?: Record<string, unknown>
+  setValue: (id: string, value: unknown) => void
+  companyOrderId: string
+  tradeType: SalesTradeType
+}) {
+  const valuesRef = React.useRef(values)
+  valuesRef.current = values
+
+  React.useEffect(() => {
+    let cancelled = false
+    void loadCompanyOrderDefaults(companyOrderId).then((defaults) => {
+      if (cancelled || !defaults) return
+      const current = valuesRef.current ?? {}
+      const currentRef = typeof current.buyerRef === 'string' ? current.buyerRef.trim() : ''
+      const currentName = typeof current.customerName === 'string' ? current.customerName.trim() : ''
+      if (!currentRef && defaults.customerPartyId && tradeType === 'external') {
+        setValue('buyerRef', encodeBuyerRef({ kind: 'party', id: defaults.customerPartyId }))
+      }
+      if (!currentName && defaults.customerName) {
+        setValue('customerName', defaults.customerName)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [companyOrderId, setValue, tradeType])
+
+  return null
+}
+
 function useGroups(
   t: TranslateFn,
-  { withQuoteLoad = false, mode = 'create' as 'create' | 'edit', autoLoadFrom = null, tradeType = 'internal' as SalesTradeType, channelIds = {} }: {
+  { withQuoteLoad = false, mode = 'create' as 'create' | 'edit', autoLoadFrom = null, tradeType = 'internal' as SalesTradeType, channelIds = {}, companyOrderId = null }: {
     withQuoteLoad?: boolean
     mode?: 'create' | 'edit'
     autoLoadFrom?: string | null
@@ -1001,9 +1048,26 @@ function useGroups(
     tradeType?: SalesTradeType
     /** The organization's trade-type channels, so the quote picker offers this entry's own type. */
     channelIds?: TradeTypeChannelMap
+    /** The root this create was opened from (`?companyOrderId=`), for the buyer default prefill. */
+    companyOrderId?: string | null
   } = {},
 ): CrudFormGroup[] {
   return React.useMemo<CrudFormGroup[]>(() => [
+    ...(mode === 'create' && companyOrderId
+      ? [{
+          id: 'company-order-defaults',
+          column: 1 as const,
+          bare: true,
+          component: (context: CrudFormGroupComponentProps) => (
+            <CompanyOrderBuyerPrefill
+              values={context.values}
+              setValue={context.setValue}
+              companyOrderId={companyOrderId}
+              tradeType={tradeType}
+            />
+          ),
+        }]
+      : []),
     ...(withQuoteLoad
       ? [{
           id: 'quote-load',
@@ -1038,7 +1102,7 @@ function useGroups(
       bare: true,
       component: (context) => <InternalSalesLinesEditor {...context} t={t} />,
     },
-  ], [autoLoadFrom, channelIds, mode, t, tradeType, withQuoteLoad])
+  ], [autoLoadFrom, channelIds, companyOrderId, mode, t, tradeType, withQuoteLoad])
 }
 
 /**
@@ -1099,6 +1163,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
     autoLoadFrom: fromQuote,
     tradeType: entryTradeType,
     channelIds: channels,
+    companyOrderId: companyOrderParam.status === 'ok' ? companyOrderParam.companyOrderId : null,
   })
 
   const handleSubmit = React.useCallback(async (values: InternalSalesFormValues) => {

@@ -20,6 +20,7 @@ import {
 } from '@/lib/orders/purchaseOrderStatus'
 import { pushWithFlash, withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { parseCompanyOrderParam } from '@/lib/orders/companyOrderParams'
+import { formatSupplierLabel, loadCompanyOrderDefaults } from '@/lib/orders/companyOrderDefaults'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
 import { FieldLabel } from '@open-mercato/ui/primitives/label'
@@ -820,6 +821,7 @@ function SupplierCurrencyDefault({ values, setValue }: CrudFormGroupComponentPro
 function useOrderFields(
   t: TranslateFn,
   pickerOptions: React.RefObject<Record<string, CrudFieldOption[]>>,
+  supplierSeed: CrudFieldOption | null = null,
 ): CrudField[] {
   return React.useMemo<CrudField[]>(() => [
     {
@@ -844,6 +846,10 @@ function useOrderFields(
       type: 'select',
       required: true,
       layout: 'half',
+      // A seeded supplier (a company-order default, REQ-013) is not on the loaded page, so it is
+      // added as a static option — otherwise the select would render its blank placeholder and read
+      // as "no supplier" while the value is actually set.
+      options: supplierSeed ? [supplierSeed] : undefined,
       loadOptions: (query) => loadSupplierOptions(t('purchasing.orders.form.loadFailed'), query),
     },
     {
@@ -898,7 +904,7 @@ function useOrderFields(
       type: 'textarea',
       layout: 'half',
     },
-  ], [t, pickerOptions])
+  ], [supplierSeed, t, pickerOptions])
 }
 
 export default function PurchaseOrderForm() {
@@ -906,7 +912,6 @@ export default function PurchaseOrderForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const pickerOptionsRef = React.useRef<Record<string, CrudFieldOption[]>>({})
-  const fields = useOrderFields(t, pickerOptionsRef)
 
   /**
    * `?orderKind=&orderId=` — the order hub and the workbench hand the operator here with the sales
@@ -920,32 +925,38 @@ export default function PurchaseOrderForm() {
   const sourceParam = React.useMemo(() => parseSourceOrderParams(searchParams), [searchParams])
   /**
    * `?companyOrderId=` — the company order's purchase block hands the operator here with the root
-   * already known, so a saved order is attached back to it. It coexists with the `?orderKind=&orderId=`
-   * source pair above: that pair fills the form and freezes the source anchor, this one only records
-   * the root link after the save. A malformed value is reported inline and treated as absent.
+   * already known, so a saved order is attached back to it and the root's default supplier seeds the
+   * form. It coexists with the `?orderKind=&orderId=` source pair above: that pair fills the lines
+   * and freezes the source anchor, this one seeds the supplier and records the root link after the
+   * save. A malformed value is reported inline and treated as absent.
    */
   const companyOrderParam = React.useMemo(() => parseCompanyOrderParam(searchParams), [searchParams])
+  /** The seeded supplier option, so the picker renders its label rather than a blank (raw-id fallback). */
+  const [supplierSeed, setSupplierSeed] = React.useState<CrudFieldOption | null>(null)
+  const fields = useOrderFields(t, pickerOptionsRef, supplierSeed)
   const [prefillState, setPrefillState] = React.useState<
     { status: 'idle' } | { status: 'loading' } | { status: 'ready'; values: PurchaseOrderFormValues; skipped: number }
-  >(sourceParam.status === 'ok' ? { status: 'loading' } : { status: 'idle' })
+  >(sourceParam.status === 'ok' || companyOrderParam.status === 'ok' ? { status: 'loading' } : { status: 'idle' })
 
   React.useEffect(() => {
-    if (sourceParam.status !== 'ok') return
+    const hasSource = sourceParam.status === 'ok'
+    const hasCompanyOrder = companyOrderParam.status === 'ok'
+    if (!hasSource && !hasCompanyOrder) return
     let cancelled = false
     const load = async () => {
-      const params = new URLSearchParams({ orderId: sourceParam.id, pageSize: '500' })
-      try {
-        const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
-          `${SALES_ORDER_LINES_API_PATH}?${params.toString()}`,
-          undefined,
-          { fallback: { items: [] }, errorMessage: t('purchasing.orders.form.sourceOrder.loadFailed') },
-        )
-        if (cancelled) return
-        const copy = salesOrderLinesToPurchaseLines(payload.items ?? [])
-        setPrefillState({
-          status: 'ready',
-          skipped: copy.skipped,
-          values: {
+      let values: PurchaseOrderFormValues = { ...EMPTY_ORDER_VALUES }
+      let skipped = 0
+      if (hasSource) {
+        const params = new URLSearchParams({ orderId: sourceParam.id, pageSize: '500' })
+        try {
+          const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
+            `${SALES_ORDER_LINES_API_PATH}?${params.toString()}`,
+            undefined,
+            { fallback: { items: [] }, errorMessage: t('purchasing.orders.form.sourceOrder.loadFailed') },
+          )
+          const copy = salesOrderLinesToPurchaseLines(payload.items ?? [])
+          skipped = copy.skipped
+          values = {
             ...EMPTY_ORDER_VALUES,
             sourceSalesOrderId: sourceParam.id,
             lines: copy.lines.map((seed) => ({
@@ -954,24 +965,31 @@ export default function PurchaseOrderForm() {
               catalogProductId: seed.catalogProductId ?? '',
               quantity: seed.quantity,
             })),
-          },
-        })
-      } catch {
-        if (cancelled) return
-        // The anchor is still valid even when the lines could not be read: keep it and let the
-        // operator add the lines by hand rather than dropping the link they arrived with.
-        setPrefillState({
-          status: 'ready',
-          skipped: 0,
-          values: { ...EMPTY_ORDER_VALUES, sourceSalesOrderId: sourceParam.id },
-        })
+          }
+        } catch {
+          // The anchor is still valid even when the lines could not be read: keep it and let the
+          // operator add the lines by hand rather than dropping the link they arrived with.
+          values = { ...EMPTY_ORDER_VALUES, sourceSalesOrderId: sourceParam.id }
+        }
       }
+      if (hasCompanyOrder) {
+        const defaults = await loadCompanyOrderDefaults(companyOrderParam.companyOrderId)
+        // Only when the operator has not chosen one — this resolves before the form mounts, so the
+        // only non-empty supplier here would come from the source prefill (which never sets one).
+        if (defaults?.supplierId && !values.supplierId) {
+          values = { ...values, supplierId: defaults.supplierId }
+          const name = defaults.supplierName ?? defaults.supplierId
+          setSupplierSeed({ value: defaults.supplierId, label: formatSupplierLabel(name, defaults.supplierCode) })
+        }
+      }
+      if (cancelled) return
+      setPrefillState({ status: 'ready', values, skipped })
     }
     void load()
     return () => {
       cancelled = true
     }
-  }, [sourceParam, t])
+  }, [companyOrderParam, sourceParam, t])
 
   const groups = React.useMemo<CrudFormGroup[]>(() => [
     {
