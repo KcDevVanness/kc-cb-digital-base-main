@@ -19,6 +19,12 @@ import {
 
 const ENTITY_ID = 'order_hub:company_order' as const
 
+/**
+ * A uuid no row can carry: an empty `id $in []` is rejected by the query-engine path the factory
+ * uses for a projected list, so "match nothing" is expressed as a single impossible id instead.
+ */
+const NO_MATCH_ID = '00000000-0000-0000-0000-000000000000'
+
 // The search/kind sub-reads touch this module's own two tables; the handle is cast once because
 // MikroORM types `getKysely()`'s DB generic as `never`.
 type CompanyOrderSearchTables = {
@@ -139,7 +145,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       const organizationIds = ctx.organizationIds?.length ? ctx.organizationIds : []
       if (!tenantId || organizationIds.length === 0) {
         // Fail closed, exactly like the factory's own empty-scope behavior.
-        return { ...filters, id: { $in: [] } }
+        return { ...filters, id: { $in: [NO_MATCH_ID] } }
       }
 
       let candidateIds: Set<string> | null = null
@@ -185,7 +191,10 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         narrow([...rootRows.map((row) => String(row.id)), ...linkRows.map((row) => String(row.company_order_id))])
       }
 
-      if (candidateIds) filters.id = { $in: [...candidateIds] }
+      if (candidateIds) {
+        const ids = [...candidateIds]
+        filters.id = { $in: ids.length > 0 ? ids : [NO_MATCH_ID] }
+      }
       return filters
     },
     transformItem: (item: Record<string, unknown>) => ({
