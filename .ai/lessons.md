@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 60 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 61 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -88,3 +88,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [A dictionary-backed status is written by entry id, never by value — and its labels are tenant data](lessons/dictionary-status-writes-need-entry-ids.md) — area:module-data,backend-ui; module:internal_sales,cross_border; topic:dictionary,status-lifecycle,engine-contract,event-emission,i18n-labels
 - [A sidebar row's link is not its identity: mark the open page, bold the path above it](lessons/nav-row-link-is-not-its-identity.md) — area:backend-ui; module:nav_shell,platform; topic:navigation,sidebar,active-state,branch-row,href-prefix
 - [A business root the operator clicks must be its own record, not an aggregation of other modules' lists](lessons/order-root-must-be-an-owned-record.md) — area:module-data,architecture,backend-ui; module:order_hub; topic:aggregation-vs-entity,root-record,link-table,frozen-snapshot,owner-feedback,row-identity
+- [A page opened from another page must carry where it came from, in a parameter that is whitelisted](lessons/opened-page-returns-to-its-origin.md) — area:backend-ui,module-data; module:order_hub,purchasing,internal_sales,trade_docs,cross_border,export_finance; topic:navigation,return-to,back-link,cross-module-jump,open-redirect,hub
