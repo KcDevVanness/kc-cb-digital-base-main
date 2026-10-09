@@ -68,6 +68,7 @@ type OrderRow = {
   orderDate: Date
   etaDate: Date | null
   status: string
+  paymentStatus: string | null
   notes: string | null
   createdAt: Date
   updatedAt: Date
@@ -83,6 +84,7 @@ type OrderSnapshot = {
   orderDate: string
   etaDate: string | null
   status: string
+  paymentStatus: string | null
   notes: string | null
 }
 
@@ -96,6 +98,7 @@ function makeOrder(overrides: Partial<OrderRow> = {}): OrderRow {
     orderDate: new Date('2026-01-01T00:00:00.000Z'),
     etaDate: null,
     status: 'draft',
+    paymentStatus: 'unpaid',
     notes: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-10-01T00:00:00.000Z'),
@@ -114,6 +117,7 @@ function makeSnapshot(overrides: Partial<OrderSnapshot> = {}): OrderSnapshot {
     orderDate: '2026-01-01',
     etaDate: null,
     status: 'draft',
+    paymentStatus: 'unpaid',
     notes: null,
     ...overrides,
   }
@@ -213,6 +217,13 @@ describe('order_hub company order commands', () => {
 
     const order = await createCompanyOrderCommand.execute({ title: 'Deal' }, ctx)
     expect(order.number).toBe('CO-2026-0001')
+    // The two fresh-order defaults the owner specified: 已下单 / 未收款.
+    expect(order.status).toBe('placed')
+    expect(order.paymentStatus).toBe('unpaid')
+
+    // An explicit `null` is the caller saying "not recorded" — it must not be folded into 未收款.
+    const unrecorded = await createCompanyOrderCommand.execute({ title: 'Deal', paymentStatus: null }, ctx)
+    expect(unrecorded.paymentStatus).toBeNull()
 
     de.deleteOrmEntity.mockResolvedValue(order)
     await createCompanyOrderCommand.undo?.({
@@ -247,15 +258,21 @@ describe('order_hub company order commands', () => {
       return entity
     })
     const updated = await updateCompanyOrderCommand.execute(
-      { id: ORDER_ID, updatedAt: '2026-10-01T00:00:00.000Z', title: 'New' },
+      { id: ORDER_ID, updatedAt: '2026-10-01T00:00:00.000Z', title: 'New', paymentStatus: 'paid_full' },
       ctx,
     )
     expect(updated.title).toBe('New')
+    expect(updated.paymentStatus).toBe('paid_full')
   })
 
   it('update undo restores the before-snapshot fields through updateOrmEntity apply', async () => {
     const { ctx, de } = createHarness()
-    const applied = makeOrder({ title: 'New', status: 'completed', etaDate: new Date('2026-05-01T00:00:00.000Z') })
+    const applied = makeOrder({
+      title: 'New',
+      status: 'completed',
+      paymentStatus: 'paid_full',
+      etaDate: new Date('2026-05-01T00:00:00.000Z'),
+    })
     de.updateOrmEntity.mockImplementation(async (args: { apply: (entity: OrderRow) => void }) => {
       args.apply(applied)
       return applied
@@ -264,28 +281,37 @@ describe('order_hub company order commands', () => {
     await updateCompanyOrderCommand.undo?.({
       input: { id: ORDER_ID },
       ctx,
-      logEntry: { snapshotBefore: makeSnapshot({ title: 'Old', status: 'draft', etaDate: null }) },
+      logEntry: {
+        snapshotBefore: makeSnapshot({ title: 'Old', status: 'draft', paymentStatus: 'unpaid', etaDate: null }),
+      },
     })
 
     expect(applied.title).toBe('Old')
     expect(applied.status).toBe('draft')
+    expect(applied.paymentStatus).toBe('unpaid')
     expect(applied.etaDate).toBeNull()
   })
 
   it('delete undo clears deletedAt on the surviving row and restores the header', async () => {
     const { ctx, em } = createHarness()
-    const surviving = makeOrder({ deletedAt: new Date(), title: 'Deleted', status: 'cancelled' })
+    const surviving = makeOrder({
+      deletedAt: new Date(),
+      title: 'Deleted',
+      status: 'cancelled',
+      paymentStatus: 'paid_full',
+    })
     em.findOne.mockResolvedValue(surviving)
 
     await deleteCompanyOrderCommand.undo?.({
       input: { body: { id: ORDER_ID } },
       ctx,
-      logEntry: { snapshotBefore: makeSnapshot({ title: 'Kept', status: 'draft' }) },
+      logEntry: { snapshotBefore: makeSnapshot({ title: 'Kept', status: 'draft', paymentStatus: 'unpaid' }) },
     })
 
     expect(surviving.deletedAt).toBeNull()
     expect(surviving.title).toBe('Kept')
     expect(surviving.status).toBe('draft')
+    expect(surviving.paymentStatus).toBe('unpaid')
     expect(em.persist).toHaveBeenCalledWith(surviving)
     expect(em.flush).toHaveBeenCalled()
   })
@@ -369,6 +395,13 @@ describe('order_hub company order commands', () => {
     await expect(
       updateCompanyOrderCommand.execute(
         { id: ORDER_ID, updatedAt: '2026-10-01T00:00:00.000Z', title: 'Renamed by a collaborator' },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ status: 422, body: { code: 'collaborator_field_not_allowed' } })
+    // 是否已收款 is the owner's marker too: it sits outside the status/notes whitelist.
+    await expect(
+      updateCompanyOrderCommand.execute(
+        { id: ORDER_ID, updatedAt: '2026-10-01T00:00:00.000Z', paymentStatus: 'paid_full' },
         ctx,
       ),
     ).rejects.toMatchObject({ status: 422, body: { code: 'collaborator_field_not_allowed' } })

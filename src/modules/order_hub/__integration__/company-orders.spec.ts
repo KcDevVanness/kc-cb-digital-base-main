@@ -34,6 +34,7 @@ type CompanyOrderRow = {
   number: string
   title?: string | null
   status?: string | null
+  paymentStatus?: string | null
   updatedAt?: string | null
   updated_at?: string | null
 }
@@ -123,7 +124,7 @@ test.describe.serial('order_hub — company orders', () => {
     await api.dispose()
   })
 
-  test('creates a draft with a server-assigned CO-<year>-<seq> number', async () => {
+  test('creates a placed order with a server-assigned CO-<year>-<seq> number', async () => {
     const created = await createOrder({ title: `Company order number ${stamp}` })
     expect(created.status, created.body).toBe(201)
     expect(created.id, 'the create response carries the new id').toBeTruthy()
@@ -132,31 +133,52 @@ test.describe.serial('order_hub — company orders', () => {
     const row = await readOrder(created.id)
     expect(row, 'the created order is readable back').toBeTruthy()
     expect(row?.number).toBe(created.number)
-    expect(row?.status, 'a fresh order defaults to draft').toBe('draft')
+    expect(row?.status, 'a fresh order defaults to 已下单 (placed)').toBe('placed')
+    expect(row?.paymentStatus, 'a fresh order starts 未收款 (unpaid)').toBe('unpaid')
     expect(row?.updatedAt, 'the list row carries the optimistic-lock version').toBeTruthy()
   })
 
   test('lists by search and narrows further by status', async () => {
-    const draft = await createOrder({ title: `Company order draft ${stamp}`, status: 'draft' })
-    const done = await createOrder({ title: `Company order done ${stamp}`, status: 'completed' })
-    expect(draft.status, draft.body).toBe(201)
-    expect(done.status, done.body).toBe(201)
+    const placed = await createOrder({ title: `Company order placed ${stamp}`, status: 'placed' })
+    const arrived = await createOrder({ title: `Company order arrived ${stamp}`, status: 'warehoused' })
+    expect(placed.status, placed.body).toBe(201)
+    expect(arrived.status, arrived.body).toBe(201)
 
     const bySearch = await listOrderIds(`search=${encodeURIComponent(stamp)}&pageSize=100`)
-    expect(bySearch).toContain(draft.id)
-    expect(bySearch).toContain(done.id)
+    expect(bySearch).toContain(placed.id)
+    expect(bySearch).toContain(arrived.id)
 
     // The root's own number is a searchable column too.
-    const byNumber = await listOrderIds(`search=${encodeURIComponent(draft.number)}&pageSize=100`)
-    expect(byNumber).toContain(draft.id)
+    const byNumber = await listOrderIds(`search=${encodeURIComponent(placed.number)}&pageSize=100`)
+    expect(byNumber).toContain(placed.id)
 
-    const drafts = await listOrderIds(`search=${encodeURIComponent(stamp)}&status=draft&pageSize=100`)
-    expect(drafts).toContain(draft.id)
-    expect(drafts, 'the completed fixture is filtered out by status').not.toContain(done.id)
+    const placedOnly = await listOrderIds(`search=${encodeURIComponent(stamp)}&status=placed&pageSize=100`)
+    expect(placedOnly).toContain(placed.id)
+    expect(placedOnly, 'the warehoused fixture is filtered out by status').not.toContain(arrived.id)
 
-    const completed = await listOrderIds(`search=${encodeURIComponent(stamp)}&status=completed&pageSize=100`)
-    expect(completed).toContain(done.id)
-    expect(completed).not.toContain(draft.id)
+    const arrivedOnly = await listOrderIds(`search=${encodeURIComponent(stamp)}&status=warehoused&pageSize=100`)
+    expect(arrivedOnly).toContain(arrived.id)
+    expect(arrivedOnly).not.toContain(placed.id)
+  })
+
+  test('still accepts and filters a pre-2026-10-09 (legacy) status value', async () => {
+    // Backward compatibility: rows written with the retired vocabulary stay writable, readable and
+    // filterable — an edit that echoes them back must not 400.
+    const created = await createOrder({
+      title: `Company order legacy ${stamp}`,
+      status: 'in_progress',
+      paymentStatus: 'paid_full',
+    })
+    expect(created.status, created.body).toBe(201)
+
+    const row = await readOrder(created.id)
+    expect(row?.status, 'the legacy status is stored and read back as-is').toBe('in_progress')
+    expect(row?.paymentStatus, 'an explicit 已收全款 round-trips').toBe('paid_full')
+
+    const legacy = await listOrderIds(
+      `search=${encodeURIComponent(`Company order legacy ${stamp}`)}&status=in_progress&pageSize=100`,
+    )
+    expect(legacy).toContain(created.id)
   })
 
   test('updates with the rendered version and refuses a stale one', async () => {
@@ -170,7 +192,8 @@ test.describe.serial('order_hub — company orders', () => {
       id: created.id,
       updatedAt: version,
       title: `Company order lock updated ${stamp}`,
-      status: 'in_progress',
+      status: 'shipped',
+      paymentStatus: 'paid_full',
     })
     expect(fresh.status(), await fresh.text()).toBe(200)
     expect((await readJsonSafe<{ ok?: boolean }>(fresh))?.ok).toBe(true)
@@ -185,7 +208,8 @@ test.describe.serial('order_hub — company orders', () => {
 
     const after = await readOrder(created.id)
     expect(after?.title, 'the fresh write landed').toBe(`Company order lock updated ${stamp}`)
-    expect(after?.status).toBe('in_progress')
+    expect(after?.status).toBe('shipped')
+    expect(after?.paymentStatus).toBe('paid_full')
   })
 
   test('soft-deletes so the row leaves the list', async () => {
