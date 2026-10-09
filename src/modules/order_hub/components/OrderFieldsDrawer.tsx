@@ -21,9 +21,7 @@ import { SectionHeader } from '@open-mercato/ui/backend/SectionHeader'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primitives/date-format'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
-import { createDictionaryMap, type DictionaryMap } from '@open-mercato/core/modules/dictionaries/components/dictionaryAppearance'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
-import { useSalesStatusEntries } from '../../internal_sales/lib/salesStatusEntries'
 import { BUSINESS_STATUS_LABEL_KEYS, COLLECTION_STATUS_LABEL_KEYS, ORDER_CHECKLIST_LABEL_KEYS, REFUND_STATUS_LABEL_KEYS } from '../../export_finance/components/labels'
 import type { OrderChecklistKey } from '../../export_finance/lib/orderFileProjection'
 
@@ -31,11 +29,12 @@ import type { OrderChecklistKey } from '../../export_finance/lib/orderFileProjec
  * The 「全字段」 drawer of the order workbench: every field of one company order, without the
  * workbench table having to grow a 35-column lineup.
  *
- * Purchase rows are the order-file projection read back on demand (`export_finance/order-files`,
- * the same source `/backend/export-finance/orders` renders), split into the three groups an operator
- * thinks in — 订单 / 单证与文件 / 财务 — each with a 「去填写」 link straight to the branch that fills
- * that group. A sales row needs no read at all: the workbench already holds the head fields and the
- * stage counts, so the drawer is the head block plus the four downstream branches.
+ * A company order that holds a purchase child is the order-file projection read back on demand
+ * (`export_finance/order-files`, the same source `/backend/export-finance/orders` renders), split
+ * into the three groups an operator thinks in — 订单 / 单证与文件 / 财务 — each with a 「去填写」 link
+ * straight to the branch that fills that group. A header-only company order needs no projection
+ * read: the workbench already holds the head fields and the stage counts, so the drawer is the head
+ * block plus the four downstream branches.
  *
  * The drawer owns only the read state, this layout and the "not recorded" fallbacks; the words stay
  * in the module catalogs (`order_hub.drawer.*`, plus the branch names the workbench columns already
@@ -43,29 +42,22 @@ import type { OrderChecklistKey } from '../../export_finance/lib/orderFileProjec
  */
 
 /** The one company order this drawer is showing. Built by the workbench from the row the user clicked. */
-export type OrderFieldsTarget =
-  | { kind: 'purchase'; id: string; number: string | null }
-  | {
-      kind: 'sales'
-      id: string
-      number: string | null
-      tradeType: 'internal' | 'external'
-      head: {
-        buyer: string | null
-        currencyCode: string
-        total: string
-        status: string | null
-        orderedAt: string | null
-        lineCount: number
-      } | null
-      stages: {
-        procurementCount: number
-        shipmentCount: number
-        documentCount: number
-        collected: boolean
-        refunded: boolean
-      } | null
-    }
+export type OrderFieldsTarget = {
+  id: string
+  number: string | null
+  title: string | null
+  orderDate: string | null
+  etaDate: string | null
+  status: string
+  childNumbers: string[]
+  stages: {
+    procurementCount: number
+    shipmentCount: number
+    documentCount: number
+    collected: boolean
+    refunded: boolean
+  } | null
+}
 
 export type OrderFieldsDrawerProps = {
   target: OrderFieldsTarget | null
@@ -381,56 +373,49 @@ function ForbiddenGroups() {
   )
 }
 
-function SalesFields({
-  target,
-  statusDictionary,
-}: {
-  target: Extract<OrderFieldsTarget, { kind: 'sales' }>
-  statusDictionary: DictionaryMap | null
-}) {
+function CompanyOrderFields({ target }: { target: OrderFieldsTarget }) {
   const t = useT()
-  const head = target.head
   const stages = target.stages
-  const statusLabel = head?.status ? (statusDictionary?.[head.status]?.label ?? head.status) : null
+  const childNumbers = target.childNumbers.length > 0 ? target.childNumbers.join(', ') : null
 
   return (
     <div className="flex flex-col gap-5">
-      <DrawerGroup title={t('order_hub.drawer.sales.heading')}>
+      <DrawerGroup title={t('order_hub.drawer.companyOrder.heading')}>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-          <FieldRow label={t('order_hub.drawer.sales.buyer')}>
-            <TextValue value={head?.buyer ?? null} />
+          <FieldRow label={t('order_hub.drawer.companyOrder.number')}>
+            <TextValue value={target.number} />
           </FieldRow>
-          <FieldRow label={t('order_hub.drawer.sales.currency')}>
-            <TextValue value={head?.currencyCode ?? null} />
+          <FieldRow label={t('order_hub.drawer.companyOrder.title')}>
+            <TextValue value={target.title} />
           </FieldRow>
-          <FieldRow label={t('order_hub.drawer.sales.total')}>
-            {head ? <MoneyAmount currencyCode={head.currencyCode} amount={head.total} /> : <EmptyValue />}
+          <FieldRow label={t('order_hub.drawer.companyOrder.orderDate')}>
+            <DateValue value={target.orderDate} />
           </FieldRow>
-          <FieldRow label={t('order_hub.drawer.sales.status')}>
-            <TextValue value={statusLabel} />
+          <FieldRow label={t('order_hub.drawer.companyOrder.etaDate')}>
+            <DateValue value={target.etaDate} />
           </FieldRow>
-          <FieldRow label={t('order_hub.drawer.sales.orderedAt')}>
-            <DateValue value={head?.orderedAt ?? null} />
+          <FieldRow label={t('order_hub.drawer.companyOrder.status')}>
+            <span>{t('order_hub.companyOrders.status.' + target.status)}</span>
           </FieldRow>
-          <FieldRow label={t('order_hub.drawer.sales.lineCount')}>
-            <TextValue value={head ? String(head.lineCount) : null} />
+          <FieldRow label={t('order_hub.drawer.companyOrder.childNumbers')}>
+            <TextValue value={childNumbers} />
           </FieldRow>
         </dl>
       </DrawerGroup>
 
-      {/* The branch names are the workbench's own column words, so the drawer and the table that opened it agree. */}
-      <DrawerGroup title={t('order_hub.drawer.sales.branches')}>
+      {/* The stage names mirror the workbench's progress column, so the drawer and the table agree. */}
+      <DrawerGroup title={t('order_hub.drawer.companyOrder.progress')}>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-          <FieldRow label={t('order_hub.workbench.columns.procurement')}>
+          <FieldRow label={t('order_hub.drawer.companyOrder.procurement')}>
             {stages ? <span className="tabular-nums">{stages.procurementCount}</span> : <EmptyValue />}
           </FieldRow>
-          <FieldRow label={t('order_hub.workbench.columns.shipment')}>
+          <FieldRow label={t('order_hub.drawer.companyOrder.shipment')}>
             {stages ? <span className="tabular-nums">{stages.shipmentCount}</span> : <EmptyValue />}
           </FieldRow>
-          <FieldRow label={t('order_hub.workbench.columns.documents')}>
+          <FieldRow label={t('order_hub.drawer.companyOrder.documents')}>
             {stages ? <span className="tabular-nums">{stages.documentCount}</span> : <EmptyValue />}
           </FieldRow>
-          <FieldRow label={t('order_hub.workbench.columns.money')}>
+          <FieldRow label={t('order_hub.drawer.companyOrder.money')}>
             {stages ? (
               <span>
                 {stages.collected
@@ -453,21 +438,32 @@ function SalesFields({
 
 export default function OrderFieldsDrawer({ target, open, onOpenChange }: OrderFieldsDrawerProps) {
   const t = useT()
-  const purchaseId = target?.kind === 'purchase' ? target.id : null
-  const { entries: salesStatusEntries } = useSalesStatusEntries()
-  const statusDictionary = React.useMemo<DictionaryMap | null>(
-    () => (salesStatusEntries.length > 0 ? createDictionaryMap(salesStatusEntries) : null),
-    [salesStatusEntries],
-  )
+
+  // The purchase child this company order may hold — a header-only company order has none, and the
+  // failed read is treated as "no purchase child" so the company-order variant still renders.
+  const purchaseChildQuery = useQuery({
+    queryKey: ['order-hub', 'fields', 'purchase-child', target?.id],
+    enabled: open && Boolean(target),
+    retry: false,
+    queryFn: () =>
+      fetchCrudList<Record<string, unknown>>('order_hub/orders/links', {
+        companyOrderId: target!.id,
+        kind: 'purchase_order',
+        pageSize: 1,
+      }),
+  })
+  const purchaseRefId = purchaseChildQuery.isError
+    ? null
+    : ((purchaseChildQuery.data?.items[0]?.refId as string | undefined) ?? null)
 
   const purchaseQuery = useQuery({
-    queryKey: ['order-hub', 'fields', 'purchase', purchaseId],
-    enabled: open && Boolean(purchaseId),
+    queryKey: ['order-hub', 'fields', 'purchase', purchaseRefId],
+    enabled: open && Boolean(purchaseRefId),
     // One read on open; a permission answer is final and a transient failure gets a manual retry.
     retry: false,
     queryFn: async () => {
       const response = await fetchCrudList<OrderFileItem>(ORDER_FILES_API_PATH, {
-        purchaseOrderId: purchaseId,
+        purchaseOrderId: purchaseRefId,
         pageSize: 1,
       })
       return response.items[0] ?? null
@@ -476,7 +472,6 @@ export default function OrderFieldsDrawer({ target, open, onOpenChange }: OrderF
 
   if (!target) return null
 
-  const isPurchase = target.kind === 'purchase'
   const forbidden = errorStatus(purchaseQuery.error) === 403
   const subtitle = target.number ?? undefined
 
@@ -488,7 +483,9 @@ export default function OrderFieldsDrawer({ target, open, onOpenChange }: OrderF
           {subtitle ? <DrawerDescription>{subtitle}</DrawerDescription> : null}
         </DrawerHeader>
         <DrawerBody>
-          {isPurchase ? (
+          {purchaseChildQuery.isLoading ? (
+            <LoadingMessage label={t('order_hub.drawer.loading')} />
+          ) : purchaseRefId ? (
             purchaseQuery.isLoading ? (
               <LoadingMessage label={t('order_hub.drawer.loading')} />
             ) : forbidden ? (
@@ -506,30 +503,22 @@ export default function OrderFieldsDrawer({ target, open, onOpenChange }: OrderF
               <PurchaseFields item={purchaseQuery.data ?? null} />
             )
           ) : (
-            <SalesFields target={target} statusDictionary={statusDictionary} />
+            <CompanyOrderFields target={target} />
           )}
         </DrawerBody>
         <DrawerFooter>
           <DrawerClose asChild>
             <Button variant="outline">{t('order_hub.drawer.close')}</Button>
           </DrawerClose>
-          {isPurchase ? (
+          {purchaseRefId ? (
             <Button asChild>
-              <Link href={`/backend/export-finance/orders/${target.id}`}>
+              <Link href={`/backend/export-finance/orders/${purchaseRefId}`}>
                 {t('order_hub.drawer.openOrderFile')}
               </Link>
             </Button>
           ) : (
             <Button asChild>
-              <Link
-                href={
-                  target.tradeType === 'external'
-                    ? `/backend/external-sales/orders/${target.id}`
-                    : `/backend/internal-sales/orders/${target.id}`
-                }
-              >
-                {t('order_hub.drawer.openHub')}
-              </Link>
+              <Link href={`/backend/orders/${target.id}`}>{t('order_hub.drawer.openCompanyOrder')}</Link>
             </Button>
           )}
         </DrawerFooter>

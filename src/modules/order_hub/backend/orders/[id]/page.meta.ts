@@ -1,10 +1,11 @@
 export const metadata = {
   requireAuth: true,
-  // The gate the hub carried at its old URLs: the reads behind it (`/api/sales/orders`,
-  // `/api/sales/order-lines`) gate on the plural `sales.orders.view`, so a non-superadmin role needs
-  // that id as well.
-  requireFeatures: ['sales.order.view'],
-  pageTitle: 'Sales order',
+  // Company orders are a first-class resource now; the gate is the module's own read feature. The
+  // old hub predated the root entity and borrowed the sales order's read feature because the reads
+  // behind it (`/api/sales/orders`, `/api/sales/order-lines`) gate on the plural
+  // `sales.orders.view` — this page no longer reads those tables directly.
+  requireFeatures: ['order_hub.view'],
+  pageTitle: 'Company order',
   pageTitleKey: 'order_hub.detail.title',
   pageGroup: 'Company orders',
   pageGroupKey: 'nav_shell.tree.domain.orders',
@@ -14,7 +15,7 @@ export const metadata = {
   navHidden: true,
   breadcrumb: [
     { label: 'Order workbench', labelKey: 'order_hub.workbench.title', href: '/backend/orders' },
-    { label: 'Sales order', labelKey: 'order_hub.detail.title' },
+    { label: 'Company order', labelKey: 'order_hub.detail.title' },
   ],
 }
 
