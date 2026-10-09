@@ -17,6 +17,7 @@ owner 已确认（本轮问答）：① 用这 7 个**替换**；② 按业务�
 
 ## Scope
 
+- **Rebase 说明**：本单元从 8905b6b 切出后，第五轮（PR #153 / `dc119ba`）先合入 `dev`；开 PR 前已 rebase 到 `origin/dev`（603dd77），冲突仅两处文档（spec / README 的「第五轮/第六轮」段与 changelog），按「两段新增取并集」解决，功能文件自动合并。
 - `order_hub`：`data/{validators,entities}.ts`、`commands/companyOrders.ts`、`api/orders/route.ts`、`lib/companyOrder.ts`、
   `cli.ts`、`components/{CompanyOrderForm,CompanyOrderStatusDialog,OrderWorkbench,OrderDetail}.tsx`、i18n；
   迁移 `Migration20261009064750_order_hub.ts`（`payment_status` 列 + `status` 默认值）。
@@ -66,9 +67,10 @@ owner 已确认（本轮问答）：① 用这 7 个**替换**；② 按业务�
 ## Evidence
 
 - 单测：`yarn jest --config jest.config.cjs src/modules/order_hub` → **5 suites · 29 tests passed**（含新 `data/__tests__/validators.test.ts` 4 例）。
-- 集成（ephemeral，生产模式 + 一次性库）：`JWT_SECRET=<random> yarn test:integration:ephemeral company-orders` → **7 passed**
-  （默认 `placed`/`unpaid`、旧值可写可读可筛、`shipped`+`paid_full` 更新、版本锁、软删、跨组织不可见）。
-- 宽门禁：`yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test && yarn build` → 全绿（82 suites · 658 tests；lint 仅既有 warning）。
+- 集成（ephemeral，生产模式 + 一次性库）：`JWT_SECRET=<random> yarn test:integration:ephemeral --filter order_hub` → **36 passed**
+  （第五轮 35 + 本轮新增 1；本轮覆盖：默认 `placed`/`unpaid`、旧值可写可读可筛、`shipped`+`paid_full` 更新、版本锁、软删、跨组织不可见）。
+- 宽门禁（rebase 到含第五轮的 `origin/dev` 后的合并树）：`yarn generate && yarn typecheck && yarn lint && node scripts/check-lessons.mjs && yarn ds:check && yarn test && yarn build`
+  → 全绿（**83 suites · 665 tests**；lint 0 error；ds:check 1089 files）。
 - 浏览器（主目录 dev，重启 runtime 后实测）：`/backend/orders/create` 状态下拉 = 这 7 个值（默认已下单）、是否已收款 = 已收全款/未收款（默认未收款）；
   建单 `CO-2026-0002` → hub 抬头 `已报关` + `是否已收款 已收全款`，DB 回读 `status='customs_declared', payment_status='paid_full'`；
   工作台徽章新词表（`已报关`）与旧值（`进行中`）并存。
