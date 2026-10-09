@@ -1,7 +1,7 @@
 # 公司订单为中心的入口改造（订单工作台 + 填入式补充 + 自绘多级导航树）
 
 **Date**: 2026-10-08
-**Status**: Delivered — Phases 1–5 implemented and verified (2026-10-08). Entry rework delivered (2026-10-08): the tree collapses the order entries onto one domain plus four read-only ledgers, the workbench pages server-side through `GET /api/order_hub/orders`, and the order hub moved to `/backend/orders/<id>` (the old list/detail URLs redirect there)。**第二轮（2026-10-08，PR #147）**：报价单合并成一条工作台（`/backend/quotes`）、订单获得自己的单据维度（`trade_docs_order_documents`）、hub 变六区块且区块内可就地编辑、公司订单域四层、工作台取消「只看待补」
+**Status**: Delivered — Phases 1–5 implemented and verified (2026-10-08). Entry rework delivered (2026-10-08): the tree collapses the order entries onto one domain plus four read-only ledgers, the workbench pages server-side through `GET /api/order_hub/orders`, and the order hub moved to `/backend/orders/<id>` (the old list/detail URLs redirect there)。**第二轮（2026-10-08，PR #147）**：报价单合并成一条工作台（`/backend/quotes`）、订单获得自己的单据维度（`trade_docs_order_documents`）、hub 变六区块且区块内可就地编辑、公司订单域四层、工作台取消「只看待补」。**第三轮（2026-10-09）**：采购单详情页读作 hub——「关联订单 / 关联合同 / 关联发运单」三区块（共享 `RelatedSection`，读侧只读）、发运单列表新增 `?purchaseOrderId=` 过滤（REQ-013 / TEST-307）
 
 ## TLDR
 
@@ -41,8 +41,9 @@
 - **REQ-008** — 下游新建表单的预填：发运单预填销售分摊（缺官方目录链接的行跳过并提示）与来源采购单的采购分摊；合同预填方向/币种/商品行；PI/CI 预填方向/币种并自动执行既有「从订单复制行」。
 - **REQ-009** — 阶段投影 API `GET /api/order_hub/stages?ids=<uuid,…>`：按订单 id 批量返回采购数 / 发运数 / 单证件数 / 是否收汇 / 是否退税；全部 scoped（tenant + 组织及后代 + 软删过滤）；未知 id 不出现在结果里。
 - **REQ-010** — 工作台每行的「全字段」抽屉：采购订单行复用既有 `export_finance` 投影（订单 / 单证与文件 / 财务三组），销售订单行为抬头 + 四分支计数；分组无权限时组内提示而不影响其余组。
-- **REQ-011** — 录入减负：买方内联快速新建客户（复用 `parties` 写路径）、订单与采购单的币种智能默认、行内数量/单价 `inputMode="decimal"` + blur 内联错误、（条件项）零行草稿。
+- **REQ-011** — 录入减负：买方内联快速新建客户（复用 `parties` 写路径）、订单与采购单的币种智能默认、行内数量/单价 `inputMode="decimal"` + blur 内联错误、（条件项）零行草案。
 - **REQ-012** — 本规格与状态板同步：`.ai/specs/` 落档本文件、`docs/plans/README.md` 状态板加一行；实现落地时同 PR 更新对应 `docs/dev/*`、模块 README 与本文件的 Phase 状态。
+- **REQ-013** — 采购单详情页（`/backend/purchasing/orders/<id>`，工作台采购行的「打开详情」落点）读作 hub：明细行后给出三个关联区块——关联订单（来源销售订单）/ 关联合同（覆盖本单的购销合同）/ 关联发运单（携带本单货物的发运单），壳一律复用共享 `RelatedSection`；读侧保持只读（挂单关系写在合同页自己的「管理订单关联」里），发运单列表新增 `?purchaseOrderId=` 过滤（scoped 投影 + 可清除横幅），发运单区块的「查看全部」指向它。
 
 ## Non-goals
 
@@ -276,6 +277,7 @@
 | 发运单/合同/PI-CI 新建（新增预填参数） | 从订单带入事实 | 既有 create 页 | `src/modules/example/components/TodoForm.tsx` | 既有表单 | 同上 + 缺目录链接提示 | REQ-008 |
 | 采购单列表（`?sourceSalesOrderId=` 横幅） | 单张订单的采购单 | `GET /api/purchasing/purchase-orders` | `src/modules/example/components/TodosTable.tsx`（列/筛选） | `DataTable` + 可清除横幅 | loading、empty、error、清除横幅 | REQ-006 |
 | 发运单列表（`?salesOrderId=` 横幅） | 单张订单的发运单 | `GET /api/cross_border/shipments` | 同上 | 同上 | 同上 | REQ-007 |
+| `/backend/purchasing/orders/<id>` | 采购单详情 hub：抬头 + 明细 + 关联订单/关联合同/关联发运单三区块 + 单证 + 阶段付款 | `GET /api/purchasing/purchase-orders\|lines\|payments\|documents`、`GET /api/trade_docs/contracts/orders` → `contracts`、`GET /api/cross_border/shipments?purchaseOrderId=` | `src/modules/order_hub/components/OrderDetail.tsx`（hub 六区块）+ `src/modules/trade_docs/components/ContractDetail.tsx` | `Page`、`PageBody`、`FormHeader`、`DataTable`、`RelatedSection` | 每区 loading、empty、error(+重试)；读侧只读、无冲突态 | REQ-013 |
 
 **Custom-component exceptions and their rationale:** ① 导航树是注入件而非某项 `DataTable`/`CrudForm`——框架壳没有多级导航的原语，且注入位是官方给定的扩展点；② 工作台页面是自绘组合页（`boss_cockpit` 同类先例），因为它在客户端合并四个来源、并需要逐源失败隔离，`DataTable` 仍承担表格渲染；③ 「全字段」抽屉复用 `SourcePreviewDrawer` 外壳而不是 `DataTable` 展开行（见 Design Decisions）。三者之外不引入任何自定义表格/表单原语。
 
@@ -304,7 +306,7 @@
 | `GET` | `/api/order_hub/orders` | auth + `order_hub.view` | `page`≥1、`pageSize` 1–100、`type ∈ {all,internal,external,purchase}`、可选 `status`/`search`/`pending` | `200 { items: OrderRow[], total, page, pageSize, totalIsCapped?, unavailableSources? }` | 400（非法参数）、401、403；某源读不了 → 该源不出行并列入 `unavailableSources`（对端 401 原样透传） | REQ-001, REQ-009 |
 | `GET` | `/api/purchasing/purchase-orders`（既有，扩展） | auth + `purchasing.orders.view` | 新增可选 `sourceSalesOrderId` | 既有列表 + 新增三列 | 既有行为不变 | REQ-006 |
 | `POST`/`PUT` | `/api/purchasing/purchase-orders`（既有，扩展） | auth + `purchasing.orders.manage` | 新增可选 `sourceSalesOrderId`（update 语义：缺省不改、`null` 清空） | 既有 201/200 + 冻结的来源三列 | 422 `source_sales_order_not_found`；既有 409 乐观锁不变 | REQ-006 |
-| `GET` | `/api/cross_border/shipments`（既有，扩展） | auth + `cross_border.shipments.view` | 新增可选 `salesOrderId` | 既有列表（空集 → 空列表） | 既有行为不变 | REQ-007 |
+| `GET` | `/api/cross_border/shipments`（既有，扩展） | auth + `cross_border.shipments.view` | 新增可选 `salesOrderId`、`purchaseOrderId` | 既有列表（空集 → 空列表） | 既有行为不变 | REQ-007, REQ-013 |
 | 预填参数 | create 页查询串 `?orderKind=&orderId=` | 目标页面自身 feature | `orderKind ∈ {internal_sales_order, external_sales_order}` | 表单预填（一次性） | 非法值 → 行内 `purchasing.orders.create.sourceOrder.invalid`；解析不到订单 → 不预填、表单照常 | REQ-006, REQ-008 |
 | `StageItem` | 形状 | — | — | `{ id, source: 'sales_order'\|'purchase_order', procurementCount, shipmentCount, documentCount, collected, refunded }` | 未知/跨组织 id 不出现在 `items` | REQ-009 |
 
@@ -349,6 +351,7 @@
 | TEST-304 | unit | 纯函数：币种默认解析 + `localStorage` 键构造；行内小数校验 | 报价币种 > 上次币种 > 现状；用户改过不覆盖；供应商默认币种 | 优先级正确；键 = `om:internalSales:currency:<orgId>:<tradeType>`；5 位小数行内报错且提交被拦 | REQ-011 |
 | TEST-305 | UI | 浏览器：订单新建页 + 采购单新建页 | 内联建档→自动选中；连续两次建单币种记忆；采购单选供应商带币种；数量 5 位小数 blur | 建档后自动选中；币种记忆；供应商币种；行内错误 | REQ-011 |
 | TEST-306 | integration | `sales.orders.create` 是否接受零行集合 | 直接调命令传空行集 | 接受 → 放开「至少一行」；不接受 → 保持至少一行并记录在 Resolved decisions | REQ-011 |
+| TEST-307 | integration | 发运单 ×2 + 两张已下单采购单（各一张柜）+ 第二组织 | `GET /api/cross_border/shipments?purchaseOrderId=` 命中/空集/跨组织 | 命中只回携带该采购单货物的发运单（不含另一张采购单的柜）；未知 id → 空列表；跨组织不泄露 | REQ-013 |
 
 ## Implementation Phases
 
@@ -428,6 +431,7 @@
 | REQ-010 | `/backend/orders` 行操作抽屉 | `GET /api/export_finance/order-files` | Phase 4 | TEST-303 | AC-010 |
 | REQ-011 | J-006, 订单/采购单新建页 | `POST /api/parties`、`GET /api/purchasing/suppliers/[id]`、`sales.orders.create` | Phase 5 | TEST-304, TEST-305, TEST-306 | AC-011 |
 | REQ-012 | 本文档 | `.ai/specs/**`、`docs/plans/README.md`、各模块 README | Phase 1–5 | TEST-102（覆盖测试即登记证明） | AC-012 |
+| REQ-013 | `/backend/purchasing/orders/[id]`、`/backend/cross_border/shipments?purchaseOrderId=` | `GET /api/cross_border/shipments` 新增可选 `purchaseOrderId`；`trade_docs/contracts/orders` + `trade_docs/contracts` 只读 | 第三轮 | TEST-307 | AC-013 |
 
 ## Extension-Surface Traceability
 
@@ -534,6 +538,7 @@
 - [ ] **AC-010** — 工作台采购行的「全字段」抽屉三组数值与 `/backend/export-finance/orders/<id>` 同值，页脚「在订单档案中打开」可达；销售行抽屉为抬头 + 四分支计数并可打开订单详情；无 `export_finance.orders.view` 时该组显示无权限文案而其余组照常。
 - [ ] **AC-011** — 订单新建页「新建客户」建档后自动选中；同组织同入口连续两次建单，第二次币种 = 上次选择；采购单选供应商后币种 = 供应商默认币种（未手改时）；数量输 5 位小数 blur 即行内报错且提交被拦。
 - [ ] **AC-012** — 本文件与 `docs/plans/README.md` 状态板一致；每个 Phase 落地时同步更新对应 `docs/dev/*`、模块 README 与本文件的 Phase/Changelog。
+- [ ] **AC-013** — 采购单详情页在明细行后按 关联订单 → 关联合同 → 关联发运单 给出三个区块：有数据时每行可点入（订单 → `/backend/orders/<id>`、合同 → 合同详情、发运单 → 发运单详情），无数据时给空态文案，读失败时该区块显示错误与重试而其余区块照常；发运单超过预览条数时「查看全部」进入带 `?purchaseOrderId=` 横幅的发运单列表。
 - [ ] Every listed backend surface matches its recorded Open Mercato reference and uses the canonical shell/components, shared API helpers, semantic tokens, and complete loading, empty, error, conflict, keyboard, accessibility, responsive, light-mode, and dark-mode states.
 - [ ] Every affected API and UI path has self-contained integration coverage and the configured validation gate passes.
 
@@ -573,6 +578,7 @@
 
 | Date | Change |
 |---|---|
+| 2026-10-09 | **第三轮：采购单详情页补关联区块 + 发运单 `?purchaseOrderId=` 过滤**——`/backend/purchasing/orders/<id>` 在明细行后给出 关联订单（来源销售订单，只读，链 `/backend/orders/<id>`）/ 关联合同（`trade_docs/contracts/orders?orderKind=purchase_order` → `contracts?ids=`，行链合同详情）/ 关联发运单（`cross_border/shipments?purchaseOrderId=`，超过预览条数时「查看全部」带同款过滤横幅）三区块，壳复用 `src/lib/related/RelatedSection.tsx`（`framed`），i18n 新增 `purchasing.orders.detail.{related,sourceOrder,contracts,shipments}.*`；来源单号从抬头摘要格移入关联订单区块（同一事实只留一处）；`cross_border` 新增 `loadShipmentIdsForPurchaseOrder`（scoped 只读采购分摊表）+ `shipments` 列表可选 `purchaseOrderId` + 列表页横幅；REQ-013 / TEST-307 / AC-013 建立。 |
 | 2026-10-09 | **侧栏当前页标识收敛（owner 复审）**——树只标一次：当前页那一行带左侧竖条 + 底色并加粗，其上的域标题与分支行只加粗（不画竖条/底色）。判定抽成纯模块 `nav_shell/lib/navActive.ts`（`hrefIsActive` / `collectActiveIds` / `resolveRowState` → `active` / `on-path` / `idle`，单测 `lib/__tests__/navActive.test.ts`）。起因：分组行没有自己的页面时 href 取第一个子页（采购 → `/backend/purchasing/orders`），旧规则「本行或子行命中即高亮」把采购、订单工作台、采购单三行一起点亮。本规格的词表「导航树节点」行、`nav_shell` README 与 `docs/dev/navigation.md` 同步；PR #147 追加提交。 |
 | 2026-10-08 | **第二轮重构 · 阶段 C + D：订单单据维度 + hub 对齐合同页**——新表 `trade_docs_order_documents`（订单自己的单据维度，多态、无外键；迁移 `Migration20261008095745_trade_docs` 已应用）、命令 `trade_docs.orders.documents.replace`（成套替换 + 订单 `updated_at` 乐观锁 + 两侧 scoped 解析）、`GET/POST /api/trade_docs/orders/documents`、单据/税票建单在同一事务写关联行（create 页带 `?orderKind=&orderId=`）、删除单据一并删关联行；hub 重排为六区块（采购单 / 购销合同 / 单据 / 发运单 / 装箱单 / 收汇·退税），块壳抽成 `src/lib/related/RelatedSection.tsx`，区块行可就地编辑头部字段（`src/lib/quick-edit/QuickEditDialog.tsx` + 五个模块字段工厂，各模块自己的 `PUT` + 行版本乐观锁），新增装箱单区块（按发运单读 `docType=packing_list`）；销售行的 `documentCount` 口径改为「订单自己的关联行 + 其发运单的出口单证」。REQ-002、Surface inventory、TEST-205、AC-002 同步改口径。 |
 | 2026-10-08 | **第二轮重构 · 阶段 A + B：菜单再分层 + 报价单合并**——公司订单域变成四层（公司订单 → 订单工作台 → 采购 / 出口销售 / 合同与单据 / 发运与装箱 → 页面），分支行的标题变成链接（节点自带页面就链到它，否则链第一个子页），箭头按钮只做展开/收起；报价单两种贸易类型合并成 `/backend/quotes` 一条列表（类型列 + 类型筛选，请求参数由 `lib/quoteListParams.ts` 纯函数产出），两个旧列表 URL 307 进来并预选类型。词表「导航树节点」行、`docs/dev/navigation.md` 与两个模块 README 同步；已知限制：新加的一层不能拖拽排序（安装层编辑器只对域顶层给把手）。 |
