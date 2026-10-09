@@ -11,7 +11,7 @@ app 自有模块。把多张采购单**拼柜**成一张发运单，跟踪在途
 | API | `GET|POST|PUT|DELETE /api/cross_border/shipments`、`/shipments/documents`；`GET /shipments/allocations`（只读：分摊只经发运单 create/update 写入，超发校验在那里）；`GET /shipments/sales-allocations?shipmentId=`（只读，同样只经发运单命令写入）；`GET|POST /shipments/milestones`（POST = 前进里程碑）；动作路由 `POST /shipments/{depart,receive,close,cancel}`（同路径的 GET 列表只为 CRUD 工厂解析作用域，不是 UI 契约）；**新增（2026-09-29）** `GET /shipments/contracts?shipmentId=|contractId=`（只读：关联只经发运单命令写入）与 `GET /shipments/documents/lines?documentId=`（只读：明细只经单证命令写入）；列表新增 `?contractId=` 过滤（发运单按关联表、单证按关联发运单） |
 | 命令 | `cross_border.shipments.{create,update,delete,depart,receive,close,cancel,advance-milestone}`、`cross_border.documents.{create,update,delete}`（`salesAllocations`/`allocations` 与 **`contracts[]`** 都是**整体替换**语义；`documents` 的载荷新增可选 **`lines[]`**，同样整体替换，仅 `packing_list` 允许；销售行必须能经商品主数据的 `catalog_product_id` 桥接到官方目录，否则 422） |
 | 后台页面 | `/backend/cross_border/shipments`（列表/新建/详情：**关联合同**、采购分摊、**销售分摊**、节点时间线、单证）；**`/backend/cross_border/packing-lists`（装箱单（PL）台账，2026-09-29）** 跨发运单列出全部 `packing_list` 单证（单号/发运单/签发日/文件/备注），另有 **`/…/packing-lists/{create,[id],[id]/edit}` 三个页面**（2026-09-29 起：登记/详情/编辑，明细行编辑器 + 「从合同引用商品行」；原登记对话框已退役）；发运单表单的「关联合同」行编辑器与详情区块（`components/{ShipmentForm,ShipmentDetail}.tsx`），**两个分摊编辑器与装箱单明细编辑器都带「从合同引用商品」**（`components/{ShipmentForm,PackingListForm}.tsx`） |
-| 读缝（跨模块） | `lib/shipmentSalesReads.ts`：`readShipmentSalesAllocations` / `readShipmentPurchaseAllocations` / `loadSalesOrderLines`（其他模块读分摊只走这里，不直接碰本模块实体）；`lib/contractReads.ts`：`loadContractRefs`（写入前解析合同号/方向快照）与 `loadShipmentIdsForContract`（`?contractId=` 过滤） |
+| 读缝（跨模块） | `lib/shipmentSalesReads.ts`：`readShipmentSalesAllocations` / `readShipmentPurchaseAllocations` / `loadSalesOrderLines` / `loadShipmentIdsForSalesOrder`（`?salesOrderId=` 过滤）/ `loadShipmentIdsForPurchaseOrder`（`?purchaseOrderId=` 过滤，2026-10-09）（其他模块读分摊只走这里，不直接碰本模块实体）；`lib/contractReads.ts`：`loadContractRefs`（写入前解析合同号/方向快照）与 `loadShipmentIdsForContract`（`?contractId=` 过滤） |
 | 事件 | `cross_border.shipment.{created,updated,departed,received,closed,cancelled,deleted,milestone_recorded}`、`cross_border.export_document.{created,updated,deleted}` |
 | 权限 | `cross_border.shipments.view|manage`、`cross_border.shipments.receive`、`cross_border.documents.manage` |
 | 迁移 | `migrations/Migration20260921092726_cross_border.ts`（发运单 / 分摊 / 里程碑 / 出口单证四表）、`Migration20260922082558_cross_border.ts`（发运单头 `container_type` / `container_number` / `seal_number` / `booking_number`）、`Migration20260928030727_cross_border.ts`（销售分摊表 `cross_border_shipment_sales_allocations` + 作用域索引 + 唯一键 `(shipment_id, sales_order_line_id)`）、`Migration20260928073630_cross_border.ts`（销售分摊 `unit_price` 收窄为 `numeric(18,4)`）、`Migration20260929073318_cross_border.ts`（合同关联表 + 装箱单明细表，只增） |
@@ -87,13 +87,16 @@ yarn mercato test:integration shipment-contracts   # __integration__/shipment-co
 
 - `installed-inputs-have-no-component-override.md` — 详情页里复用安装组件时的边界。
 
-## 按来源销售订单筛选发运单（2026-10-08）
+## 按来源订单筛选发运单（2026-10-08、2026-10-09）
 
 - 列表支持 `GET /api/cross_border/shipments?salesOrderId=<uuid>`：经本模块的销售分摊表
   （`cross_border_shipment_sales_allocations.sales_order_id`）解析去重的发运单 id，再窄化分页；
   列表页顶部给可清除的筛选横幅。
 - `lib/shipmentSalesReads.ts` 的 `loadShipmentIdsForSalesOrder` 是同一套 scoped 只读（读作用域 =
   可见组织集，软删发运单不计）。
+- **采购单侧同理（2026-10-09）**：`GET /api/cross_border/shipments?purchaseOrderId=<uuid>` 经采购分摊表
+  （`cross_border_shipment_allocations.purchase_order_id`，读函数 `loadShipmentIdsForPurchaseOrder`）解析去重的
+  发运单 id —— 采购单详情页的「关联发运单」区块与它的「查看全部」都走这个入口，列表页横幅对两个参数同样显示。
 - **空结果不再是 500**：`lib/linkIdFilter.ts` 把「链接表解析出空集」表达成匹配不到任何行的过滤器。
   此前 `{ $in: [] }` 会以 `in ()` 到达 Postgres 并抛语法错误——`?contractId=`（发运单列表与装箱单列表）
   与新的 `?salesOrderId=` 三个入口都受影响，现在都返回空页。
