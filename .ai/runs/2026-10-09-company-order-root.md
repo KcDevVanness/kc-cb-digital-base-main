@@ -67,12 +67,12 @@ owner 反馈（2026-10-09 01:49）：「不复用既有列表的 UI/服务端聚
 
 ### Phase 1: 数据与接口地基
 
-- [ ] 1.1 Entities, validators, migration
-- [ ] 1.2 Commands, events, cache invalidation
-- [ ] 1.3 API routes (orders / links / link-child / stages)
-- [ ] 1.4 orderStages re-keyed to company orders
-- [ ] 1.5 Backfill CLI
-- [ ] 1.6 Unit + integration specs green
+- [x] 1.1 Entities, validators, migration — c614a90（`Migration20261009024200_order_hub.ts`：仅两张新表 + 索引/唯一键/级联 FK，未应用）
+- [x] 1.2 Commands, events, cache invalidation — bda0d3c（create/update/delete 可撤销 + 乐观锁；links.replace 成套替换；link-child 幂等 + 销售类自动建根、采购类 422）
+- [x] 1.3 API routes (orders / links / link-child / stages) — b91ed67（含 links `?refId=` 反查；`order_hub.manage`）
+- [x] 1.4 orderStages re-keyed to company orders — bda0d3c（并集口径；`source` 字段保留为派生值）
+- [x] 1.5 Backfill CLI — bd8b864（dry-run 默认 / `--apply` / `--tenant` / `--organization`；复用 link-child 的建单+快照函数）
+- [x] 1.6 Unit + integration specs green — 103ab4d / dac2a4c / 4292ad1 / 2ec0b6b / 79346a0 / 1de9d56。证据：`yarn jest src/modules/order_hub` **3 suites · 28 tests passed**；`yarn typecheck` 全仓干净；`yarn db:generate` 复跑 `order_hub: no changes`；ephemeral 集成 **company-orders 6 / company-order-links 7 / company-order-backfill 3 = 16 passed, 0 failed**（`JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral <spec>` 逐套跑）。实现中修正 5 处自身缺陷：CLI 直接 import `.server.ts` 会把 `next/server` 拉进 CLI bundle（抽出 HTTP-free `internal_sales/lib/tradeTypeChannelIds.ts`）；search/kind 子读用单组织而非工厂的可见组织集（改为 `ctx.organizationIds`）；空候选集 `id $in []` 触发查询引擎 500（改不可能 uuid 哨兵）；自动建根在 flush 前读 id 返回 "undefined"（改 create 时 `randomUUID()`）；补录 CLI 写完不清缓存（补失效）。旧聚合/stages 两个 spec 属旧契约，Phase 2 删除。
 
 ### Phase 2: 工作台与公司订单页
 
