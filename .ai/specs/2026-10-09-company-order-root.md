@@ -226,7 +226,23 @@
 └────────────────────────────────────────────────────────────────┘
 ```
 
-- **Behavior:** 三个关联区块的「关联…」打开对话框（种类已定；搜索选择器；成套替换；保存带 `updatedAt`）；「移除」即时替换（去掉该行）；下游区块按子单并集读，多子单时「新建」先选目标子单（单子单直连，无子单时禁用并提示）。锚点 id：`internal-orders`/`external-orders`/`purchasing`/`contracts`/`documents`/`shipments`/`packing-lists`/`money`（后六个沿用旧 hub 的锚点 id）。
+**区块读法映射（实现依据；「子单集」= 该 kind 的关联行 `refId` 集合）：**
+
+| 区块（锚点 id） | 读 | 新建预填 | 行落点 |
+|---|---|---|---|
+| 对内销售订单（`internal-orders`） | `GET /api/order_hub/orders/links?companyOrderId=&kind=internal_sales_order`（冻结快照） | `/backend/internal-sales/orders/create?companyOrderId=` | `/backend/internal-sales/orders/<refId>/edit` |
+| 对外销售订单（`external-orders`） | 同上 `kind=external_sales_order` | `/backend/external-sales/orders/create?companyOrderId=` | `/backend/external-sales/orders/<refId>/edit` |
+| 采购订单（`purchasing`） | 同上 `kind=purchase_order` | `/backend/purchasing/orders/create?companyOrderId=[&orderKind=&orderId=<唯一销售子单>]` | `/backend/purchasing/orders/<refId>` |
+| 购销合同（`contracts`） | 每个子单 `trade_docs/contracts/orders?orderKind=&orderId=` → 合并去重 → `trade_docs/contracts?ids=` | `/backend/trade-docs/contracts/create?orderKind=&orderId=`（目标子单解析，见下） | `/backend/trade-docs/contracts/<id>` |
+| 单据（`documents`） | 每个销售子单 `trade_docs/orders/documents?orderKind=&orderId=` → 合并 → `trade_docs/documents?ids=` + `trade_docs/invoices?ids=`；`单据关联` 对话框沿用既有 `OrderDocumentsDialog` | `/backend/trade-docs/proformas/create?orderKind=&orderId=[&contractId=<唯一合同>]` | `/backend/trade-docs/{proformas,commercial-invoices,invoices}/<id>/edit` |
+| 发运单（`shipments`） | 销售子单 `cross_border/shipments?salesOrderId=` + 采购子单 `cross_border/shipments?purchaseOrderId=` → 按 id 去重 | `/backend/cross_border/shipments/create?orderKind=&orderId=` | `/backend/cross_border/shipments/<id>` |
+| 装箱单（`packing-lists`） | 对发运单集合 `cross_border/shipments/documents?shipmentId=&docType=packing_list` | `/backend/cross_border/packing-lists/create?contractId=<唯一合同>`（无唯一合同则不带参数） | `/backend/cross_border/packing-lists/<id>` |
+| 收汇·退税（`money`） | 采购子单 `export_finance/collections?purchaseOrderId=&pageSize=1` + 发运单集合 `export_finance/refunds?shipmentId=&pageSize=1`（只读汇总，沿用现状） | 无（只读） | 收汇 → `/backend/export-finance/orders/<purchaseOrderId>`；退税 → `/backend/export-finance/containers/<shipmentId>` |
+
+- **「目标子单解析」**：区块「新建」在子单集为空时禁用并提示（先关联/新建销售或采购订单）；恰 1 个时直连并带 `?orderKind=&orderId=`；>1 个时先弹选择器（用关联行的冻结单号/对方）再跳。带 `?orderKind=&orderId=` 的既有预填语义不变（目标模块自己的解析）。
+- **「查看全部」**：恰 1 个相关子单时带该子单过滤（沿用现状）；多于 1 个时落到不带过滤的台账页（单值过滤表达不了并集）。
+- **就地编辑**：下游区块（采购单/合同/单据/税务发票/发运单）沿用既有 `QuickEditDialog` 与各模块字段工厂；三个订单区块的行不就地编辑，给「打开」。
+- **多区块失败隔离**：每区块独立 query + 独立 loading/error/retry（`RelatedSection`），子单数上限 20（超出只读前 20 并在区块尾部提示，防 N×M 扇出失控）。
 - **Responsive / a11y / i18n / theming:** 同工作台；对话框完整键盘支持；每区块的 aria-labelledby 指向区块标题。
 
 ## Data Models
