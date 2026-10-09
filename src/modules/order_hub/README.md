@@ -1,166 +1,113 @@
-# `order_hub` — 订单工作台
+# `order_hub` — 公司订单（根单 + 订单工作台 + 详情 hub）
 
-app 自有模块。**以公司订单为根的一屏总览**：三类订单（对内销售 / 对外销售 / 采购）在同一张表上，
-每行带四个填充阶段（采购 / 发运 / 单证 / 收汇·退税）。需求见
-[`.ai/specs/2026-10-08-order-centric-entry.md`](../../../../.ai/specs/2026-10-08-order-centric-entry.md)
-（Phase 4 / REQ-001、REQ-009、REQ-010）。
+app 自有模块。**公司订单是一个真表**：`order_hub_company_orders`（根记录：编号/标题/下单日期/预计交货/状态/备注）
++ `order_hub_company_order_links`（关联表：`kind` ∈ `internal_sales_order` / `external_sales_order` /
+`purchase_order`，带冻结快照）。订单工作台每行 = 一张公司订单，点进 `/backend/orders/<companyOrderId>`；详情页按
+**购销合同的方式**给出「关联已有 / 预填新建」：对内/对外销售订单与采购订单是三个可写关联区块，下游（购销合同 /
+单据 / 发运单 / 装箱单 / 收汇·退税）按关联子单的**并集只读**展示。需求与验收见
+[`.ai/specs/2026-10-09-company-order-root.md`](../../../../.ai/specs/2026-10-09-company-order-root.md)（取代
+`2026-10-08-order-centric-entry.md` 的工作台/详情口径）。
 
-无实体、无迁移、无写路径：一个聚合路由在服务端读三个来源并合并分页，行操作只是跳转（详情 / hub / 全字段抽屉）。
+> 为什么不是「聚合列表」：2026-10-09 owner 反馈——工作台此前是 sales/purchase 两张既有列表的 UI/服务端聚合，
+> 行身份是**别人的单据**（采购行点开就是采购单模块页），也无法像合同页那样把不同模块的数据关联式填入同一张单；
+> 本模块因此改为「新表存数据 + 表间关联」。
 
 ## 表面
 
 | 层 | 内容 |
 |---|---|
-| 页面 | `/backend/orders`（工作台，`navHidden`：入口只走导航树「公司订单 → 订单工作台」，路由仍可直达） |
-| 页面 | `/backend/orders/<id>`（订单详情 hub，`navHidden`：由工作台行、采购单来源链接与旧详情 URL 的 301/307 进入） |
-| API | `GET /api/order_hub/orders`（聚合列表，见下） |
-| API | `GET /api/order_hub/stages?ids=<uuid,…>`（1–200 个，超限 400；`order_hub.view`） |
-| 权限 | 工作台 `order_hub.view`；订单 hub `sales.order.view`（与其读的 `/api/sales/orders`、`/api/sales/order-lines` 同门禁）。`setup.ts` 默认授予 `superadmin`/`admin`；既有租户用 `yarn mercato auth sync-role-acls` 补授 `order_hub.view` |
-| 共用件 | `@/lib/orders/purchaseOrderStatus`（采购状态徽章与文案映射，`purchasing` 的列表/详情与工作台共用；词条仍在 `purchasing` 的 i18n）、`@/lib/related/RelatedSection`（区块壳，合同详情页与 hub 共用）、`@/lib/quick-edit/QuickEditDialog`（区块内就地编辑，字段工厂在各模块 `lib/*QuickEdit.ts`） |
-| 单元 | `lib/__tests__/mergeOrders.test.ts`（跨源归并、去重、截断、分页切片、合计、两个行映射、`compareByCreatedAtDesc` 排序） |
-| 集成 | `__integration__/order-hub-stages.spec.ts`（阶段投影）与 `__integration__/order-hub-aggregate.spec.ts`（聚合列表分页、合计、筛选、跨组织） |
-
-## 聚合列表（`api/orders/route.ts` → 客户端 `lib/mergeOrders.ts`）
-
-工作台不再在浏览器合并：**一个请求**打到聚合路由，路由把调用方的凭证原样转发给每个来源自己的列表路由——
-`GET /api/sales/orders`（按贸易类型通道各一次）与 `GET /api/purchasing/purchase-orders`。解密因此留在拥有它的模块里
-（买方名是加密列，只有 sales 的路由解密），本路由既不读对方表也不复制对方的过滤逻辑。
-
-| 参数 | 口径 |
-|---|---|
-| `page` / `pageSize` | 页码 ≥1（默认 1）、每页 1–100（默认 20）；非法值 400 |
-| `type` | `all`（默认）/ `internal` / `external` / `purchase`；只读选中的来源 |
-| `status` | 可选，精确匹配合并行的 `status`（安装层销售列表没有状态过滤，故在窗口内过滤） |
-| `search` | 可选，透传给各来源的列表路由 |
-
-**扫描窗口**：每个来源按 `pageSize=100`、`created_at desc` 从第 1 页向上取，直到累计行数 ≥ `page * pageSize`、
-该来源 `total` 用尽，或达到 `MAX_SCAN_PER_SOURCE = 500`。合并 = 按来源顺序展平 → 同 id 去重（保留先出现者）→
-按 `createdAt desc` 排序 → 取前 `page * pageSize` 行；随后批量接一次阶段投影，再做 `status` 过滤，
-最后 `slicePage`。**来源顺序是去重与同时间戳的稳定 tiebreak**，改动它会改变分页。
-
-**`total` 口径（重要）**：不加 `status` 时是三个来源 `total` 的精确和；
-加了任一过滤时只统计**扫描窗口内**命中的行数，是下界，需配合 `totalIsCapped`
-（任一来源在自己的 `total` 前停下，或对端自己报了 `OM_LIST_COUNT_CAP`）——UI 用它提示「收窄筛选」。
-
-**降级**：某个来源调用方无权读取（例如没有 `purchasing.orders.view`）或读取失败时，**不让整个响应失败**——
-该来源不出行，名字进 `unavailableSources`，工作台在工具栏提示「部分来源不可用」；对端 401 则原样返回。
-
-**ACL**：本路由 `order_hub.view`；每个来源是否可见由对端自己的功能位裁决（`sales.orders.view` /
-`purchasing.orders.view`），本路由不代替它们授权。
-
-## 阶段投影（`lib/orderStages.ts`）
-
-一次请求按 id 批量读，每个阶段一次 scoped 查询（tenant + 组织及后代 + 软删过滤），因此**别的组织的
-id 直接不出现**——响应不确认外部记录是否存在。
-
-| 字段 | 口径 |
-|---|---|
-| `procurementCount` | 销售行：`source_sales_order_id = id` 且状态非 `cancelled` 的采购单数；采购行恒 0 |
-| `shipmentCount` | 经销售分摊（销售行）或采购分摊（采购行）关联的**去重**发运单数，软删发运单不计 |
-| `documentCount` | **销售行**：本单自己的关联行数（`trade_docs_order_documents`）+ 其发运单的出口单证数；**采购行**：其关联合同的 PI/CI + 税务发票数 + 其发运单的出口单证数（采购单没有自己的单据区块，其发票就是合同的） |
-| `collected` | 销售行：任一关联采购单的收汇档案 `collection_status = 'received'`；采购行：本单自己的 |
-| `refunded` | 任一关联发运单存在退税档案 |
-
-跨模块读用**一次性 cast + 注释**声明投影表（`.ai/lessons/kysely-bare-handles-tables-away.md`），
-不引入别的模块的实体。
+| 实体（`data/entities.ts`） | `CompanyOrder` → `order_hub_company_orders`（唯一键 `(tenant_id, organization_id, number)`；`number = CO-<年>-<4位>` 在创建时发号、撞唯一键重试一次）；`CompanyOrderLink` → `order_hub_company_order_links`（唯一键 `(company_order_id, kind, ref_id)`；`ref_number`/`ref_counterparty`/`ref_snapshot` 在关联时冻结）。迁移 `migrations/Migration20261009024200_order_hub.ts`（**只建这两张表 + 索引/唯一键/FK**） |
+| API | `GET\|POST\|PUT\|DELETE /api/order_hub/orders`（`makeCrudRoute`：列表筛选 `search`（公司订单号/标题/子单号）/`status`/`kind`/`id`/`ids`，服务端分页与排序；`?id=` 即详情）；`GET\|POST /api/order_hub/orders/links`（GET 按 `companyOrderId` 或 `refId` 读关联——`refId` 是旧 URL 的反查；POST = 成套替换）；`POST /api/order_hub/orders/link-child`（幂等挂一张子单；销售类无目标时自动建根）；`GET /api/order_hub/stages?ids=`（工作台的一次批量汇总：四阶段计数 + `counterparty`/`childNumbers`/`kinds`；ids 为公司订单 id，1–200） |
+| 命令 | `order_hub.orders.create\|update\|delete`（可撤销、乐观锁、软删）、`order_hub.orders.links.replace`（成套替换：跨组织/未知引用 422、重复 422、过期版本 409、非撤销型）、`order_hub.orders.link-child`（幂等：唯一键兜底；`purchase_order` 无目标 → 422 `company_order_required`） |
+| CLI | `yarn mercato order_hub backfill-company-orders [--apply] [--tenant=] [--organization=]`——按 `(tenant, organization)` 扫描带贸易类型渠道的销售单，1:1 建根并冻结快照；再把带 `source_sales_order_id` 的采购单挂到对应根。dry-run 默认、幂等（重跑 `created=0`）、跨组织边界由 scope 决定 |
+| 页面 | `/backend/orders`（工作台，`navHidden`：入口走导航树「公司订单 → 订单工作台」）；`/backend/orders/create`、`/backend/orders/<id>/edit`（CrudForm，`navHidden`）；`/backend/orders/<id>`（详情 hub，`navHidden`，同时承担旧销售单 URL 的解析落点） |
+| 权限 | 读 `order_hub.view`（工作台/hub/links/stages）；写 `order_hub.manage`（CRUD、关联替换、link-child、create/edit 页）。`setup.ts` 默认授予 `superadmin`/`admin`；既有租户用 `yarn mercato auth sync-role-acls` 补授 `order_hub.manage` |
+| 事件 | `order_hub.company_order.created\|updated\|deleted`、`order_hub.company_order.links.updated`（`clientBroadcast`） |
+| 共享件 | `src/lib/related/RelatedSection.tsx`（区块壳）、`src/lib/quick-edit/QuickEditDialog.tsx`（下游区块就地编辑，字段工厂仍在各模块 `lib/*QuickEdit.ts`）、`src/lib/orders/companyOrderParams.ts`（`?companyOrderId=` 解析，两个建单表单共用）、`internal_sales` 的贸易类型通道解析（`lib/tradeTypeChannelIds.ts` / `tradeTypeChannels.server.ts`） |
+| 单元 | `lib/__tests__/companyOrder.test.ts`、`lib/__tests__/companyOrderResolve.test.ts`、`commands/__tests__/companyOrders.test.ts` |
+| 集成 | `__integration__/company-orders.spec.ts`（CRUD/搜索/状态/kind/跨组织/祖先组织可见）、`company-order-links.spec.ts`（替换+快照+幂等+自动建根+反查+汇总口径）、`company-order-backfill.spec.ts`（CLI dry-run/apply/重跑） |
 
 ## 工作台（`components/OrderWorkbench.tsx`）
 
-- **一个取数**：`useQuery(['order-hub-orders', page, pageSize, type, status, search, scopeVersion])`
-  打 `/api/order_hub/orders`；类型 / 状态 / 搜索都是请求参数，任一变更都会把页码重置为 1。
-- **单源失败不影响其余**：由聚合路由的 `unavailableSources` 表达，行内错误 + 重试只重取这一个请求。
-- **分页**：`DataTable` 用服务端的 `page / pageSize / total / totalPages`，页码可选 20 / 50 / 100；
-  `totalIsCapped` 时工具栏展示「已到扫描上限」提示。
-- **状态筛选选项**：租户的 `sales.order_status` 字典条目与采购状态枚举（`PURCHASE_ORDER_STATUSES`）的并集——
-  不再由当前页的行派生（服务端分页后一页并不持有全部状态）。
-- **阶段单元格**：计数 > 0 → 链到 hub 对应分区 / 采购单详情；= 0 且有写权限 → 直达预填新建
-  （`?orderKind=&orderId=`）；采购行的「采购」列恒 `—`。
-- **新建入口**：只有一个「新建订单」按钮，按 `sales.orders.manage` 显隐（chrome payload 未就绪时不隐藏，
-  宁可多显示一个页面门禁本就会拦的按钮）；点击弹窗选贸易类型 → 对内 / 对外销售建单页。**采购单的建单入口
-  在采购台账页与订单详情的采购分区，不在这里**（D7）。
-- **「全字段」抽屉**：采购行读既有投影 `GET /api/export_finance/order-files?purchaseOrderId=&pageSize=1`
-  分三组（订单 / 单证与文件 / 财务），每组标题右侧「去填写」链、页脚「在订单档案中打开」；销售行 = 抬头 +
-  四分支计数，页脚「打开订单详情」。该组无权限（403）→ 组内无权限文案，其余组照常；读失败 → 抽屉内错误 +
-  重试，列表不受影响。**不新增聚合 API**：35 个字段的口径只有 `export_finance` 一处。
+- 一次取数：`GET /api/order_hub/orders`（分页/筛选）+ 一次 `GET /api/order_hub/stages?ids=`（本页行的四阶段计数与
+  子单事实）。筛选任一变化重置页码；`?type=internal|external|purchase`（旧列表 URL 的 307 带过来的）映射到
+  `kind=internal_sales_order|external_sales_order|purchase_order`。
+- 列：编号（链到 hub）/ 子单号（冻结的 `ref_number` 并集）/ 对方（**优先销售子单的买方**，否则采购子单的供应商）
+  / 下单日期 / 状态（`order_hub` 常量徽章）/ 采购·发运·单证·收汇退税四格（>0 与 =0 都链到 hub 对应锚点，hub 有
+  新建入口）/ 行操作「打开」与「全字段」。
+- 「全字段」抽屉：有关联采购子单 → 读第一张采购子单的 `GET /api/export_finance/order-files` 投影（订单/单证与文件/
+  财务三组，任一组 403 只在组内提示）；否则为公司订单抬头 + 子单号 + 四计数。
+- 「新建订单」→ `/backend/orders/create`（按 `order_hub.manage` 显隐；chrome payload 未就绪时不隐藏）。
 
-## 订单详情 hub（`components/OrderDetail.tsx`，页面 `/backend/orders/<id>`）
+## 详情 hub（`components/OrderDetail.tsx`，`/backend/orders/<companyOrderId>`）
 
-订单为根的**唯一填写面**：抬头 + 明细行 + 六个后续区块，顺序与合同详情页一致——
-**采购单 / 购销合同 / 单据 / 发运单 / 装箱单 / 收汇·退税**（2026-10-08 重排）。每个区块自带预填新建入口与
-「查看全部」台账链接（链接在区块尾部，与合同页同一版式：行数超过预览页才出现），并且**区块内可就地编辑**
-关联记录的头部字段。它是 `internal_sales` 旧 hub 的原样迁移（共用件仍 `import` 自 `internal_sales/lib`，
-不复制）。
+- 抬头卡（编号/标题/下单/预计交货/状态 + 编辑）+ 八个区块，锚点 `internal-orders` / `external-orders` /
+  `purchasing` / `contracts` / `documents` / `shipments` / `packing-lists` / `money`（后六个沿用旧 hub 的 id，
+  工作台深链可继续解析）。
+- **三个可写关联区块**（对内/对外销售订单、采购订单）：行来自 `GET /api/order_hub/orders/links?companyOrderId=&kind=`，
+  显示冻结快照；「打开」→ 销售单编辑页（`/backend/{internal,external}-sales/orders/<refId>/edit`）/ 采购单详情页；
+  「移除」= 用当前 `updatedAt` 做一次成套替换；「关联…」打开 `CompanyOrderLinkDialog`（成套替换、保存带版本、409 走
+  平台冲突条并重读、跨组织/未知 422）；「新建」带 `?companyOrderId=`（采购单在恰有一张销售子单时另带
+  `&orderKind=&orderId=`，让来源锚一起写）。
+- **五个下游只读区块**（合同/单据/发运/装箱/收汇·退税）：按**子单集合并集**读各模块既有 API（每个子单一次，按 id
+  去重，子单数上限 20，超出在区块尾部提示）；每区块独立 query、独立 loading/error(+重试)；下游行沿用
+  `QuickEditDialog` 就地改头部字段；「新建」的目标子单解析：无子单时禁用并提示，恰一个直连，多个先弹选择器。
+  「查看全部」：恰一个相关子单时带该子单过滤，否则落到不带过滤的台账页（单值过滤表达不了并集）。
+- **失败隔离**：某区块读失败只在该区块显示错误 + 重试，其余照常。
 
-- **贸易类型来自单据数据，不来自路径**：读抬头（`GET /api/sales/orders?id=<id>&pageSize=1`）的
-  `channelId`，用 `useTradeTypeChannels('order')` 的通道映射经 `tradeTypeFromChannelId` 判定；标记缺失或
-  无法识别时按 `internal` 渲染（块内合同 kind 用 `internal_sales_order`）——与工作台同一口径。抬头读或
-  通道映射未就绪时保持 loading，链接不会在首帧后翻转。
-- **块锚点**：分区 `<section id>` 为 `purchasing` / `contracts` / `documents` / `shipments` / `packing-lists` /
-  `money`，工作台行内的深链（`/backend/orders/<id>#purchasing` 等）因此可解析——重排只改顺序，不改 id。
-- **块壳共用**：六个区块（和合同详情页的区块）都用 `src/lib/related/RelatedSection.tsx`：一个标题 + 动作，
-  下面恰好是 loading / error(+重试) / empty / rows 之一，尾部是「查看全部」（仅在传入 `viewAllHref` 且非空时）。
-- **就地编辑（2026-10-08）**：采购单 / 合同 / 单据（PI、CI）/ 税务发票 / 发运单的每一行都有「编辑」，打开
-  `src/lib/quick-edit/QuickEditDialog.tsx`——弹窗**只改头部字段**，走各模块自己的 `PUT`（字段工厂：
-  `purchasing/lib/purchaseOrderQuickEdit.ts`、`trade_docs/lib/{contractQuickEdit,documentQuickEdit,invoiceQuickEdit}.ts`、
-  `cross_border/lib/shipmentQuickEdit.ts`），带该行的 `updated_at` 乐观锁；保存成功后只失效本区块的查询。
-  打开弹窗时按 id **重读一次该记录**：区块行只有展示列，弹窗要用完整字段初始化（缺失字段会被保存成空），
-  锁也要用操作者真正在编辑的版本。状态流转、行集合、金额、单据之间的关联都不在这里改——合同↔订单的关联仍在
-  合同页的「管理订单关联」，单据↔订单的关联在「单据」区块的「管理单据关联」。
-- **装箱单区块（2026-10-08）**：装箱单挂在发运单上，所以按本订单的发运单逐单读
-  `cross_border/shipments/documents?shipmentId=<id>&docType=packing_list`（与收汇/退税同一读法），行进入
-  `/backend/cross_border/packing-lists/<id>`；「新建装箱单」在订单恰好只有一张合同时带
-  `?contractId=<合同 id>`（`PackingListForm` 会把该合同的发运单收窄成单个候选），否则不带预填，空态文案说明
-  先要有发运单/合同。行上没有「编辑」：装箱单的行来自合同，在它自己的页面改。
-- **台账链接**：「查看全部」指向该分支的只读列表——采购 `/backend/purchasing/orders`、合同
-  `/backend/trade-docs/contracts`、单据 `/backend/trade-docs/proformas`、发运 `/backend/cross_border/shipments`、
-  装箱单 `/backend/cross_border/packing-lists`、收汇·退税 `/backend/export-finance/orders`。
-- **写路径**：只写两样——订单自己的状态（确认 / 作废，走 `internal_sales/lib/salesStatusWrite.ts`，与列表同
-  一个写实现）与关联记录的头部字段（`QuickEditDialog` + 各模块自己的 `PUT`）；其余一律交给各自模块的命令与页面。
-- **「单据」区块读法（2026-10-08）**：不再靠合同推导，改读 `trade_docs/orders/documents?orderKind=&orderId=`，
-  再用 `ids=` 一次读活单据（`trade_docs/documents`）与税票（`trade_docs/invoices`）拿到**当前**单号/状态/金额；
-  关联行对应的单据已被删时不渲染该行（活数据自然过滤）。区块动作 =「新建单据」（带 `?orderKind=&orderId=`，
-  订单恰好只有一张合同时再带 `&contractId=`）+「管理单据关联」（`trade_docs/components/OrderDocumentsDialog.tsx`，
-  成套替换、每次打开重读、携带订单版本，过期 409）+「查看全部」。阶段投影的 `documentCount` 与它同源
-  （`lib/orderStages.ts` 的 `linkedDocumentCountFor`）。
-- **失败隔离**：每个分区独立 react-query，某分区读失败只在该分区显示错误 + 重试，其余照常。
-- **门禁**：`sales.order.view`（与旧 hub 相同）；页面 `navHidden`，不进树。
+## 关联与预填（写入闭环）
+
+- **关联的唯一事实来源**是本模块的关联表：成套替换（对话框）与单条幂等挂载（建单表单）都写
+  `order_hub_company_order_links`，快照在关联时冻结（对端改名不回写；对端被硬删时冻结值仍显示、实时读自然为空）。
+- `?companyOrderId=` 已接入 `internal_sales`（对内/对外同一表单）与 `purchasing` 的新建表单：保存成功后调用
+  `POST /api/order_hub/orders/link-child`，再落到公司订单页（采购单带 `#purchasing`）。关联调用失败**不阻断已创建的
+  单据**：仍落到公司订单页并给出警告闪讯；参数非法 → 行内提示并忽略。销售类子单在**没有** `companyOrderId` 时
+  由 `link-child` 自动建一张草稿根（报价→订单、直接访问建单页等旧入口因此不悬空）。
+- **旧 URL 归位**（`lib/companyOrderResolve.ts`）：`/backend/orders/<salesOrderId>`（老通知/收藏/采购来源链接/旧列表
+  重定向）先按公司订单 id 读，读不到则用 `orders/links?refId=` 反查并 `replace` 到公司订单页；仍找不到时显示
+  「该单据尚未关联公司订单」状态，给「新建公司订单并关联」（按销售单渠道推导 kind 后 `link-child`）与「关联到已有
+  公司订单」两个入口，不留 404 空白。
+
+## 补录（升级步骤）
+
+```bash
+yarn mercato order_hub backfill-company-orders              # dry-run：打印每个 scope 的待建/跳过计数与样例
+yarn mercato order_hub backfill-company-orders --apply      # 幂等落库；重跑 created=0
+```
+
+- 只处理**带贸易类型渠道**的销售单（与两个销售入口列表同口径）；未标记的历史单先用
+  `yarn mercato internal_sales backfill-trade-type --apply` 归类，再跑本命令。
+- 同一笔生意的对内 + 对外两张销售单会各自生成一张根（1:1）；合并靠详情页的「关联…」成套替换把子单搬到同一根下。
+- 新迁移在部署时应用（本机 dev 由 dev supervisor 在下次 `yarn dev` 应用）；**迁移 + `--apply` 之前工作台是空的**。
 
 ## 规则（有意为之）
 
-- **服务端合并，凭证转发**：聚合路由调用各来源自己的列表路由（而非读它们的表），买方名始终在 sales 模块内解密，
-  加密列不会以密文形态跨到前端或本模块；来源的过滤逻辑只有一份。
-- **`total` 是精确时精确、过滤时是下界**：见上表；UI 用 `totalIsCapped` 说明何时该收窄筛选。
-- **落地页不变**：`/backend` 仍是仪表盘；工作台是导航树里的一个一级入口。
-- **未标记贸易类型的历史销售单不列出**：与两个入口列表同口径，用
-  `yarn mercato internal_sales backfill-trade-type --apply` 归类。
-- **阶段投影不缓存**：一次屏幕一次读，缓存会让「刚补的那一步」看起来没生效。
+- **根单不持有业务数据**：客户/币种/金额/明细仍在销售单与采购单里；根单只持有编号/标题/日期/状态/备注与关联。
+- **无跨模块 ORM 关系**：对端一律标量 id + 冻结快照；跨模块读是 scoped 只读投影（列名本地声明，见
+  `lib/orderStages.ts` 与 lesson `kysely-bare-handle-types-tables-away`）。
+- **销售单对方名的解密**：`sales_orders.customer_snapshot` 是加密列，关联快照必须走
+  `findWithDecryption` 读（`lib/companyOrder.ts`），直读 SQL 会把密文冻结进快照。
+- **写缓存**：关联集合与订单列表是两类缓存资源，命令提交后两者都显式失效（含补录 CLI——它不经过请求路径）。
+- **状态是模块常量**（`draft` / `in_progress` / `completed` / `cancelled`），不是销售引擎的字典：根单状态是操作员
+  自己的标记；子单状态仍归各自引擎/模块。
+- **未标记贸易类型的销售单不出现在工作台**（与两个销售入口列表同口径）。
 
 ## 验证
 
 ```bash
 yarn jest --config jest.config.cjs src/modules/order_hub
-yarn mercato test:integration order_hub-stages
-yarn mercato test:integration order_hub-aggregate
-yarn mercato auth sync-role-acls   # 既有租户补授 order_hub.view
+JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral company-orders
+JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral company-order-links
+JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral company-order-backfill
+yarn mercato auth sync-role-acls   # 既有租户补授 order_hub.manage
 ```
 
-浏览器：树里「公司订单 → 订单工作台」可进入；底部是页码控件、翻页内容变化、`共 N 条` 与接口 `total` 一致；
-类型 / 状态 / 关键词任一变更只发一次聚合请求；三类订单都列出且阶段列与订单 hub 一致；
-阶段为 0 的格子点击直达预填新建；「新建订单」按 manage 功能位显隐、弹窗选贸易类型后进入对应建单页；
-采购行「全字段」三组与 `/backend/export-finance/orders/<id>` 同值、无 `export_finance.orders.view` 时该组显示
-无权限文案；`/backend` 仍是仪表盘。
-
-订单 hub 六区块与就地编辑（2026-10-08）：区块顺序为 采购单 → 购销合同 → 单据 → 发运单 → 装箱单 → 收汇·退税；
-点任一区块行的「编辑」→ 弹窗打开并预填该行现值（头部字段）→ 改一个字段保存 → 弹窗关闭、行内值更新、该区块
-重新取数；用过期版本重放同一次 `PUT` → 出现 409 冲突条且弹窗不丢输入；订单无发运单时装箱单区块为空态并说明
-先建发运单/合同，订单恰好一张合同时「新建装箱单」落在带 `?contractId=` 的建单页。
-
-订单 hub「单据」区块（2026-10-08）：打开一张订单，区块只列 `trade_docs_order_documents` 里的关联单据
-（行显示当前状态/金额，已删单据的关联行不出现）；「管理单据关联」加一张、删一张 → 区块行数随之变化
-（过期订单版本保存 → 409 且不丢输入）；带 `?orderKind=&orderId=` 的新建单据页建一张 → 刷新后自动出现在区块里；
-工作台该行「单证」列数值 = 关联数 + 其发运单的出口单证数。
+浏览器（2026-10-09 实测，ephemeral 环境）：工作台行=公司订单（`CO-…`，子单号/对方/四阶段列）；点行进
+`/backend/orders/<companyOrderId>`；「关联…」成套替换后区块与工作台计数同步；hub 三个「新建」带
+`?companyOrderId=` 且保存后自动关联并跳回（采购单 `#purchasing`）；旧 `/backend/orders/<salesOrderId>` 归位；
+「未关联」态可一键建根并关联；暗色与窄屏（390×844）正常；对话框 Esc 关闭。
 
 ## 回滚
 
-删除 `src/modules/order_hub/`、从 `src/modules.ts` 移除该模块、去掉 `nav_shell` 的
-`NAV_TREE` 里「订单工作台」那一条。既有列表、hub、预填与权限位都不受影响。
+回退本次改动即恢复旧实现所需的全部文件已随本 PR 删除（`lib/mergeOrders.ts` 与旧聚合路由）；两张新表可保留
+（不被旧逻辑读取），如需彻底清理：先删 `order_hub_company_order_links` 再删 `order_hub_company_orders`。

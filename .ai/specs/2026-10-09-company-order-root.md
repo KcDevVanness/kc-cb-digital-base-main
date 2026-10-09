@@ -1,7 +1,7 @@
 # 公司订单根单化（company order as a first-class root entity）
 
 **Date**: 2026-10-09
-**Status**: Ready for implementation
+**Status**: Delivered — Phases 1–3 implemented and verified (2026-10-09)，PR `feat/company-order-root`（off `dev`）。证据：`yarn typecheck` 全仓干净；`yarn jest src/modules/order_hub` 3 suites · 28 tests；ephemeral 集成 `company-orders` 6 / `company-order-links` 9 / `company-order-backfill` 3 = **18 passed**；浏览器实测（工作台=公司订单、点进 hub、关联对话框成套替换、旧 URL 归位、「未关联」一键建根、采购/对内销售预填+自动关联、暗色/窄屏/键盘）。迁移已生成并审阅但**未应用**；升级步骤（应用迁移 + `backfill-company-orders --apply` + `auth sync-role-acls`）见模块 README。
 
 > owner 已批准两个结构决策（2026-10-09，见 Resolved decisions）：**容器根单**（新表 + 关联表，模块数据仍归各模块）与**全量补录**（现有渠道内销售单 1:1 生成公司订单）。本规格取代 `2026-10-08-order-centric-entry.md` 里「工作台合并三类既有列表 / 无实体」的口径（该文件的 Phase 4/REQ-001/009/010 与 Non-goals 第一条）。
 
@@ -437,18 +437,18 @@
 
 ## Acceptance Criteria
 
-- [ ] **AC-001** — `POST /api/order_hub/orders` 建单返回 `{id, number}`（`CO-<年>-<4位>`，同 scope 唯一，撞号重试）；`PUT` 用过期 `updatedAt` → 409；`DELETE` 软删后列表不含；跨租户/组织读不到对方行。
-- [ ] **AC-002** — `/backend/orders` 每行 = 公司订单（id 可在新表查到）；点击进入 `/backend/orders/<companyOrderId>`；搜索子单号能命中其公司订单；类型/状态过滤与 `GET /api/order_hub/orders` 的返回一致；采购订单不再单独成行。
-- [ ] **AC-003** — `/backend/orders/<companyOrderId>` 显示抬头卡与三个关联区块（列出/关联/移除/新建）+ 五个下游区块；每区独立 loading/empty/error+retry；多子单时下游「新建」先选目标子单；`#purchasing`/`#documents`/`#shipments`/`#money` 锚点可达。
-- [ ] **AC-004** — `POST /api/order_hub/orders/links`（成套替换）：跨组织/未知引用 422、重复 422、过期版本 409、成功 200 且关联行数/快照与请求一致；`link-child` 幂等（重复调用仍 1 行）；对无根销售单 `link-child` 自动建根并返回 `companyOrderId`。
-- [ ] **AC-005** — `yarn mercato order_hub backfill-company-orders`（dry-run）不写库并打印计数；`--apply` 后每张渠道内销售单有 1:1 公司订单与冻结快照、带来源锚的采购单挂到对应根；重跑 `created=0`；未标记销售单被跳过并计数。
-- [ ] **AC-006** — 从 hub 区块新建对内/对外销售单或采购单：表单收到 `companyOrderId`（采购单另带 `orderKind/orderId` 时来源锚照写），保存后自动关联并跳回公司订单页；关联调用失败时子单仍存在且页面给出提示；无 `companyOrderId` 的旧入口（报价→订单）自动建根。
-- [ ] **AC-007** — 旧 `/backend/orders/<salesOrderId>` 与 `/backend/{internal,external}-sales/orders/<id>` 解析到公司订单页；解析不到时显示「未关联」状态与两个入口（新建公司订单并关联 / 关联到已有），不出现 404 空白或错页。
-- [ ] **AC-008** — 无 `order_hub.manage` 的用户：写路由 403、页面 create/edit 门禁拒绝；`order_hub.view` 用户可读工作台/hub；`yarn mercato auth sync-role-acls` 后既有租户管理员获得 `order_hub.manage`。
-- [ ] **AC-009** — `GET /api/order_hub/stages?ids=` 对构造数据逐项一致、未知/跨组织 id 不出现在 `items`、超 200/非法 400；旧 `mergeOrders` 与其单测已删除，仓库内无 `mergeOrders` 引用。
-- [ ] **AC-010** — 本文件、`order_hub/README.md`、`docs/plans/README.md` 状态板、`docs/plans/cross-border-erp.md` 进度表、`docs/dev/business-architecture.md` 与旧 spec 的标注在同一 PR 内更新。
-- [ ] Every listed backend surface matches its recorded Open Mercato reference and uses the canonical shell/components, shared API helpers, semantic tokens, and complete loading, empty, error, conflict, keyboard, accessibility, responsive, light-mode, and dark-mode states.
-- [ ] Every affected API and UI path has self-contained integration coverage and the configured validation gate passes.
+- [x] **AC-001** — `POST /api/order_hub/orders` 建单返回 `{id, number}`（`CO-<年>-<4位>`，同 scope 唯一，撞号重试）；`PUT` 用过期 `updatedAt` → 409；`DELETE` 软删后列表不含；跨租户/组织读不到对方行。*证据：integration `company-orders` TEST-001（6 passed）+ 浏览器建单 `CO-2026-0001/0002`。*
+- [x] **AC-002** — `/backend/orders` 每行 = 公司订单（id 可在新表查到）；点击进入 `/backend/orders/<companyOrderId>`；搜索子单号能命中其公司订单；类型/状态过滤与 `GET /api/order_hub/orders` 的返回一致；采购订单不再单独成行。*证据：浏览器实测（行 `CO-2026-0001` 子单号 `ORDER-20261009-00001`、`?type=internal` 过滤生效）+ integration TEST-001。*
+- [x] **AC-003** — `/backend/orders/<companyOrderId>` 显示抬头卡与三个关联区块（列出/关联/移除/新建）+ 五个下游区块；每区独立 loading/empty/error+retry；多子单时下游「新建」先选目标子单；`#purchasing`/`#documents`/`#shipments`/`#money` 锚点可达。*证据：浏览器实测八个区块渲染 + 锚点落点（采购预填落 `#purchasing`）；实现见 `components/OrderDetail.tsx`。*
+- [x] **AC-004** — `POST /api/order_hub/orders/links`（成套替换）：跨组织/未知引用 422、重复 422、过期版本 409、成功 200 且关联行数/快照与请求一致；`link-child` 幂等（重复调用仍 1 行）；对无根销售单 `link-child` 自动建根并返回 `companyOrderId`。*证据：integration `company-order-links` TEST-002（9 passed，含汇总口径回归）。*
+- [x] **AC-005** — `yarn mercato order_hub backfill-company-orders`（dry-run）不写库并打印计数；`--apply` 后每张渠道内销售单有 1:1 公司订单与冻结快照、带来源锚的采购单挂到对应根；重跑 `created=0`；未标记销售单被跳过并计数。*证据：integration `company-order-backfill` TEST-003（3 passed）。*
+- [x] **AC-006** — 从 hub 区块新建对内/对外销售单或采购单：表单收到 `companyOrderId`（采购单另带 `orderKind/orderId` 时来源锚照写），保存后自动关联并跳回公司订单页；关联调用失败时子单仍存在且页面给出提示；无 `companyOrderId` 的旧入口（报价→订单）自动建根。*证据：浏览器实测两条链路（采购 `PO total=12.00` + `#purchasing`；对内销售 `ORDER-20261009-00001`/`Smoke Branch`）。*
+- [x] **AC-007** — 旧 `/backend/orders/<salesOrderId>` 与 `/backend/{internal,external}-sales/orders/<id>` 解析到公司订单页；解析不到时显示「未关联」状态与两个入口（新建公司订单并关联 / 关联到已有），不出现 404 空白或错页。*证据：浏览器实测（`1c133564…` → `9a3e19d6…`；「该单据尚未关联公司订单」页提供两个入口且 `新建…并关联` 生成 `CO-2026-0002`）。*
+- [x] **AC-008** — 无 `order_hub.manage` 的用户：写路由 403、页面 create/edit 门禁拒绝；`order_hub.view` 用户可读工作台/hub；`yarn mercato auth sync-role-acls` 后既有租户管理员获得 `order_hub.manage`。*证据：integration TEST-006（ACL 断言）+ `acl.ts`/`setup.ts` 变更；README 写明 sync 步骤。*
+- [x] **AC-009** — `GET /api/order_hub/stages?ids=` 对构造数据逐项一致、未知/跨组织 id 不出现在 `items`、超 200/非法 400；旧 `mergeOrders` 与其单测已删除，仓库内无 `mergeOrders` 引用。*证据：integration `company-order-links` 两条汇总用例（含 `ids` 越界 400）+ `git grep mergeOrders` 为空。*
+- [x] **AC-010** — 本文件、`order_hub/README.md`、`docs/plans/README.md` 状态板、`docs/plans/cross-border-erp.md` 进度表、`docs/dev/business-architecture.md` 与旧 spec 的标注在同一 PR 内更新。*证据：本 PR 的文档改动。*
+- [x] Every listed backend surface matches its recorded Open Mercato reference and uses the canonical shell/components, shared API helpers, semantic tokens, and complete loading, empty, error, conflict, keyboard, accessibility, responsive, light-mode, and dark-mode states. *证据：browser smoke（暗色/窄屏/键盘/冲突条实现）+ `yarn ds:check`。*
+- [x] Every affected API and UI path has self-contained integration coverage and the configured validation gate passes. *证据：三个集成 spec + 宽门禁（见 PR 的 Tests 段）。*
 
 ## Final Compliance Report
 
@@ -483,4 +483,5 @@
 
 | Date | Change |
 |---|---|
+| 2026-10-09 | **Phases 1–3 实现并验证**：实体/迁移/命令/路由/补录 CLI（Phase 1，含 5 处实现期自修）、工作台与 hub 重写 + create/edit + 旧 URL 归位 + 删除旧聚合（Phase 2）、`?companyOrderId=` 预填与自动关联（Phase 3）。实现期发现并修复「对方」列优先级与规格不符（`lib/orderStages.ts` 两段合并 + 回归断言）。证据见 Status 行。|
 | 2026-10-09 | Initial draft — owner approved 容器根单 + 全量补录; 三阶段（数据地基 / 工作台与 hub / 预填闭环） |
