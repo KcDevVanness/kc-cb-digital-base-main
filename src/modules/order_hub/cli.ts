@@ -4,6 +4,7 @@ import type { ModuleCli } from '@open-mercato/shared/modules/registry'
 import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
 import { resolveTradeTypeChannelIds } from '../internal_sales/lib/tradeTypeChannelIds'
 import { CompanyOrder, CompanyOrderLink } from './data/entities'
+import { invalidateCompanyOrderLinkCaches } from './lib/cacheInvalidation'
 import {
   createCompanyOrderFromRef,
   linkKey,
@@ -194,6 +195,7 @@ const backfillCommand: ModuleCli = {
       let created = 0
       let skipped = 0
       const examples: string[] = []
+      const touchedCompanyOrderIds: string[] = []
 
       for (const row of salesRows) {
         totalScanned += 1
@@ -226,6 +228,7 @@ const backfillCommand: ModuleCli = {
         persistCompanyOrderLink(em, scope, companyOrder, ref)
         await em.flush()
         linkKeys.add(linkKey(kind, String(row.id)))
+        touchedCompanyOrderIds.push(String(companyOrder.id))
         created += 1
         if (examples.length < 5) examples.push(`${kind} ${examplesLabel} → ${companyOrder.number}`)
       }
@@ -274,7 +277,19 @@ const backfillCommand: ModuleCli = {
         persistCompanyOrderLink(em, { tenantId: scope.tenantId, organizationId: scope.organizationId }, targetCompanyOrder, ref)
         await em.flush()
         linkKeys.add(linkKey('purchase_order', String(purchase.id)))
+        touchedCompanyOrderIds.push(String(targetCompanyOrder.id))
         purchasesLinked += 1
+      }
+
+      // A CLI writer runs in its own process, so the CRUD list cache the running app holds is not
+      // cleared by the factory: name both collections explicitly, like every in-app writer does.
+      if (apply && touchedCompanyOrderIds.length > 0) {
+        const identifierId = touchedCompanyOrderIds[0]!
+        await invalidateCompanyOrderLinkCaches(
+          { container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+          { id: identifierId, tenantId: scope.tenantId, organizationId: scope.organizationId },
+          'backfill-company-orders',
+        )
       }
 
       totalCreated += created
