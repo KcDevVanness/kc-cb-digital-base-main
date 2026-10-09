@@ -54,5 +54,5 @@
 - [x] 1.2 Purchase order page association blocks + i18n — fc436c3
 - [x] 1.3 Spec, module READMEs, status board — 9b6489f
 - [x] 1.4 Integration spec TEST-307 green in the ephemeral env — `yarn test:integration:ephemeral shipment-purchase-order-filter` **3 passed**
-- [ ] 1.5 Broad gate green in the main tree after the local dev merge
+- [x] 1.5 Broad gate green in the main tree after the local dev merge — `yarn generate` / `typecheck` / `lint`（0 error, 8 warning）/ `check-lessons` / `ds:check`（1053 files）/ `test`（76 suites · 636 tests）/ `build`（Compiled successfully）all green；浏览器冒烟进行中（dev server 合并后重编译较慢）
 - [ ] 1.6 Browser smoke on /backend/purchasing/orders/&lt;id&gt;
