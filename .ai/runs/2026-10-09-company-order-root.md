@@ -76,18 +76,24 @@ owner 反馈（2026-10-09 01:49）：「不复用既有列表的 UI/服务端聚
 
 ### Phase 2: 工作台与公司订单页
 
-- [ ] 2.1 Workbench rewrite
-- [ ] 2.2 Company-order hub rewrite
-- [ ] 2.3 create/edit pages
-- [ ] 2.4 Legacy URL resolution
-- [ ] 2.5 Delete mergeOrders + tests
+- [x] 2.1 Workbench rewrite — b8453de（行=公司订单、类型/状态/搜索、阶段列、全字段抽屉、新建订单）
+- [x] 2.2 Company-order hub rewrite — b8453de（抬头 + 对内/对外/采购三关联区块 + 五下游并集区块 + 锚点 + 关联对话框）
+- [x] 2.3 create/edit pages — 00761f3（CrudForm + `navHidden` + `order_hub.manage` 门禁）
+- [x] 2.4 Legacy URL resolution — 00761f3（`lib/companyOrderResolve.ts`；未关联态：新建并关联 / 关联到已有）
+- [x] 2.5 Delete mergeOrders + tests — e194bab（含旧聚合/stages 两个 spec）
+- **浏览器实测（2026-10-09，ephemeral :5001，admin@acme.com）**：工作台列出公司订单（`CO-2026-0001/0002`，子单号/对方/状态/四阶段列）；`新建订单` → 建单 → 落到 `/backend/orders/<companyOrderId>`（`CO-2026-0001`，8 个区块）；`关联…` 成套替换（挂上采购单 `6c576e30` → 区块出行、工作台采购列=1）；旧 `/backend/orders/<salesOrderId>` → 解析跳到公司订单页；「未关联」态 → `新建公司订单并关联` → 生成 `CO-2026-0002` 并挂住销售单；暗色（`html.dark`）与 390×844 窄屏渲染正常；对话框 Esc 关闭。
+- **实测发现并修掉 1 处缺陷**：`对方` 列优先级实现与规格不符（按关联创建顺序取，而非「先销售子单、后采购子单」）→ `lib/orderStages.ts` 两段收集合并；回归断言进 `company-order-links.spec.ts`（`summaries count the child union and prefer the sales counterparty`）。
 
 ### Phase 3: 预填与自动关联
 
-- [ ] 3.1 internal_sales prefill + link
-- [ ] 3.2 purchasing prefill + link
-- [ ] 3.3 Hub block create flows + link dialogs
-- [ ] 3.4 Browser smoke
+- [x] 3.1 internal_sales prefill + link — 8110e18（`order_hub/orders/link-child` + 落点公司订单页；失败保单据 + 警告）
+- [x] 3.2 purchasing prefill + link — 82c634d（同上 + `#purchasing` 锚点；`?orderKind=&orderId=` 来源预填不变）
+- [x] 3.3 Hub block create flows + link dialogs — b8453de（三个「新建」链接带 `?companyOrderId=`，唯一销售子单时采购单另带来源）
+- [x] 3.4 Browser smoke — 见下
+- **浏览器实测（2026-10-09，ephemeral :5001）**：
+  - 采购：hub「采购订单 → 新建」→ `/backend/purchasing/orders/create?companyOrderId=…` → 填供应商（币种自动 CNY）+ 一行（数量 1 × 12）→ 保存 → 自动 `link-child`（关联行冻结供应商名）+ 落 `/backend/orders/<co>#purchasing`（PO `total=12.00`）。
+  - 对内销售：hub「对内销售订单 → 新建」→ `/backend/internal-sales/orders/create?companyOrderId=…` → 选关联组织买方（Smoke Branch）+ CNY + 一行商品 → 保存 → 自动 `link-child`（`internal_sales_order` + 冻结 `ORDER-20261009-00001`/`Smoke Branch`）+ 落公司订单页；区块出行。
+  - 前置：fresh 库只有 1 个组织，为驱动内部买方先建了子组织（冒烟数据，随容器销毁）。
 
 ### Phase 4: 收口
 
