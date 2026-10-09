@@ -44,6 +44,7 @@ import { CompanyOrderLinkDialog } from './CompanyOrderLinkDialog'
 import { CompanyOrderCollaboratorsDialog } from './CompanyOrderCollaboratorsDialog'
 import { CompanyOrderStatusDialog } from './CompanyOrderStatusDialog'
 import { AttachmentsSection } from '@/lib/attachments/AttachmentsSection'
+import OrderFieldsDrawer from './OrderFieldsDrawer'
 import { resolveCompanyOrderForDocument } from '../lib/companyOrderResolve'
 import type { CompanyOrderLinkKind } from '../data/validators'
 
@@ -476,6 +477,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   const [linkDialogKind, setLinkDialogKind] = React.useState<CompanyOrderLinkKind | null>(null)
   const [collaboratorsOpen, setCollaboratorsOpen] = React.useState(false)
   const [statusOpen, setStatusOpen] = React.useState(false)
+  const [fieldsOpen, setFieldsOpen] = React.useState(false)
   const [quickEdit, setQuickEdit] = React.useState<{
     config: QuickEditConfig
     recordId: string
@@ -924,6 +926,10 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         }
         actionsContent={(
           <div className="flex flex-wrap items-center gap-2">
+            {/* Read-only, so both the owner and a collaborating organization can open it. */}
+            <Button type="button" variant="outline" onClick={() => setFieldsOpen(true)}>
+              {t('order_hub.workbench.actions.fields')}
+            </Button>
             {canWrite ? (
               <>
                 <Button asChild variant="outline">
@@ -1346,6 +1352,12 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
           setPickerAction(null)
           action?.(child)
         }}
+      />
+
+      <OrderFieldsDrawer
+        target={{ id: head.id, number: head.number ?? null }}
+        open={fieldsOpen}
+        onOpenChange={setFieldsOpen}
       />
     </>
   )
