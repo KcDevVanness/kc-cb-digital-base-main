@@ -188,6 +188,29 @@ export const companyOrderLinkChildSchema = z.object({
 })
 
 /**
+ * Register one stored attachment into a named document slot (REQ-021). `id` is chosen by the caller
+ * **before** the upload — it is the installed attachment's `recordId` — and becomes the slot row's
+ * primary key; the command refuses an `attachmentId` that is not filed under this module's document
+ * entity with exactly that record id, or that belongs to another tenant.
+ */
+export const companyOrderDocumentAttachSchema = z.object({
+  id: z.string().uuid(),
+  companyOrderId: z.string().uuid(),
+  slot: z.enum(COMPANY_ORDER_DOCUMENT_SLOTS),
+  attachmentId: z.string().uuid(),
+})
+
+/** The slot list of one root (REQ-021); the read is authorized by the root's visibility. */
+export const companyOrderDocumentsListSchema = z.object({
+  companyOrderId: z.string().uuid(),
+})
+
+/** Detach one slot row by its own id (REQ-021); owner-only, like every other root write. */
+export const companyOrderDocumentDeleteSchema = z.object({
+  id: z.string().uuid(),
+})
+
+/**
  * The collaborator list of one root (REQ-014). `companyOrderId` is the dialog's only read; the
  * reverse direction (which roots an organization collaborates on) is not a page.
  */
@@ -214,6 +237,9 @@ export type CompanyOrderListQuery = z.infer<typeof companyOrderListSchema>
 export type CompanyOrderLinksListQuery = z.infer<typeof companyOrderLinksListSchema>
 export type CompanyOrderLinksReplaceInput = z.infer<typeof companyOrderLinksReplaceSchema>
 export type CompanyOrderLinkChildInput = z.infer<typeof companyOrderLinkChildSchema>
+export type CompanyOrderDocumentAttachInput = z.infer<typeof companyOrderDocumentAttachSchema>
+export type CompanyOrderDocumentsListQuery = z.infer<typeof companyOrderDocumentsListSchema>
+export type CompanyOrderDocumentDeleteQuery = z.infer<typeof companyOrderDocumentDeleteSchema>
 export type CompanyOrderCollaboratorsListQuery = z.infer<typeof companyOrderCollaboratorsListSchema>
 export type CompanyOrderCollaboratorsReplaceInput = z.infer<typeof companyOrderCollaboratorsReplaceSchema>
 
@@ -229,3 +255,9 @@ export type CompanyOrderCollaboratorsReplaceInput = z.infer<typeof companyOrderC
 export const COMPANY_ORDER_OWNER_REQUIRED_CODE = 'company_order_owner_required' as const
 export const COMPANY_ORDER_COLLABORATOR_FIELD_CODE = 'collaborator_field_not_allowed' as const
 export const COMPANY_ORDER_COLLABORATOR_ORGANIZATION_CODE = 'collaborator_organization_not_found' as const
+/**
+ * The attachment a slot registration points at is not a document-entity file of this tenant with the
+ * expected record id (422, fail closed) — the registration would otherwise reference a foreign or
+ * unrelated file.
+ */
+export const COMPANY_ORDER_DOCUMENT_ATTACHMENT_CODE = 'company_order_document_attachment_invalid' as const
