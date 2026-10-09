@@ -394,7 +394,7 @@ CLI：order_hub sync-collaborators [--apply] [--prune]（历史重建/清手工�
 | Platform-native reuse and extension points were chosen before custom code | pass | Reuse 表：引擎、`RelatedSection`、`CompanyOrderLinkDialog`、`companyOrderResolve` 两入口、既有 CLI 模式 |
 | UI contracts identify references, canonical components, and theme/state coverage | pass | 上表逐面给出最近参考、组件、状态（含明暗/窄屏/键盘） |
 | Every phase has dependencies, bounded slices, tests, value, and an observable exit gate | pass | Phase 1–3 各节 |
-| Verdict | **Ready for implementation** | 三条 owner 决定已记录（Resolved decisions）；无阻塞开放问题 |
+| Verdict | **Blocked — owner implementation approval pending**（三条 owner 口径已记录于 Resolved decisions；其余矩阵全过。收到确认后把 Status 改为 `Ready for implementation` 并开始 Phase 1） |
 
 ## Open Questions
 
