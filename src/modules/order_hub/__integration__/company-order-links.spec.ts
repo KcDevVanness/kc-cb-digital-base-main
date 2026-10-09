@@ -404,4 +404,21 @@ test.describe.serial('order_hub — company order links', () => {
     const tooMany = await scoped('GET', `/api/order_hub/stages?ids=${ids}`)
     expect(tooMany.status()).toBe(400)
   })
+
+  test('attaching a child that already sits on another root moves it', async () => {
+    const otherRoot = await createCompanyOrder()
+    const moved = await scoped('POST', LINKS_URL, {
+      companyOrderId: otherRoot,
+      kind: 'purchase_order',
+      refs: [{ refId: purchaseOrderId }],
+    })
+    expect(moved.status(), await moved.text()).toBe(200)
+
+    const rows = await listLinks(`refId=${encodeURIComponent(purchaseOrderId)}`)
+    expect(rows, 'one child belongs to one root — exactly one link row remains').toHaveLength(1)
+    expect(rows[0]?.companyOrderId, 'and it points at the root that attached it last').toBe(otherRoot)
+    // The old root keeps its other children — only *this* child left it.
+    const oldRootRows = await listLinks(`companyOrderId=${encodeURIComponent(companyOrderId)}`)
+    expect(oldRootRows.filter((row) => row.refId === purchaseOrderId), 'the old root lost that child').toHaveLength(0)
+  })
 })

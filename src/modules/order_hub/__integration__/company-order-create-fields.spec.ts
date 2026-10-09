@@ -266,7 +266,7 @@ test.describe.serial('order_hub — company order create fields', () => {
     expect(foreign.status(), 'a head-office reference is not visible in the branch').toBe(422)
   })
 
-  test('refuses a duplicate payload entry and a child already attached to another root', async () => {
+  test('refuses a duplicate payload entry and moves a child already attached to another root', async () => {
     const duplicate = await createCompanyOrder({
       links: [
         { kind: 'purchase_order', refId: purchaseOrderId2 },
@@ -275,15 +275,24 @@ test.describe.serial('order_hub — company order create fields', () => {
     })
     expect(duplicate.status(), 'the same document twice is refused before the unique index sees it').toBe(422)
 
-    // A root that owns the child, then a second root trying to reuse it.
+    // A root that owns the child, then a second root reusing it: attaching is a **move** (one child
+    // belongs to one root), so the first root loses its link row in the same transaction.
     const first = await createCompanyOrder({ links: [{ kind: 'internal_sales_order', refId: salesOrderId2 }] })
     expect(first.status(), await first.text()).toBe(201)
     const firstId = String((await readJsonSafe<IdPayload>(first))?.id ?? '')
     companyOrderIds.push(firstId)
 
     const reuse = await createCompanyOrder({ links: [{ kind: 'internal_sales_order', refId: salesOrderId2 }] })
-    expect(reuse.status(), 'one child belongs to one root').toBe(422)
-    expect((await readJsonSafe<{ code?: string }>(reuse))?.code).toBe('link_already_attached')
+    expect(reuse.status(), 'the same child can be attached to a new root by moving it').toBe(201)
+    const reuseId = String((await readJsonSafe<IdPayload>(reuse))?.id ?? '')
+    companyOrderIds.push(reuseId)
+    expect(reuseId).not.toBe(firstId)
+
+    const branchOfRef = await scoped('GET', `${LINKS_URL}?refId=${encodeURIComponent(salesOrderId2)}`)
+    const rows = (await readJsonSafe<ListPayload<LinkRow>>(branchOfRef))?.items ?? []
+    expect(rows, 'the moved child has exactly one link row').toHaveLength(1)
+    expect(rows[0]?.companyOrderId, 'and it points at the root that attached it last').toBe(reuseId)
+    expect(await listLinks(firstId), 'the first root no longer holds the child').toHaveLength(0)
   })
 
   test('an explicit null clears the defaults; an absent key leaves them alone', async () => {
