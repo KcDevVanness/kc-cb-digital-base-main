@@ -181,7 +181,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       const em = ctx.container.resolve('em') as EntityManager
       const db = em.fork().getKysely() as unknown as Kysely<CompanyOrderSearchTables>
 
-      // The roots this caller's organizations collaborate on — the second disjunct of the scope, and
+      // The roots this caller's organizations collaborate on — the second half of the scope, and
       // the reason the search/kind sub-reads below cannot simply filter the link table by the
       // caller's own organizations (a collaborator's link rows carry the owner's organization).
       const collaboratorRootIds = await loadCollaboratorCompanyOrderIds(em, tenantId, organizationIds)
@@ -190,21 +190,28 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       const collaboratorIds = collaboratorRootIds.length > 0 ? collaboratorRootIds : [NO_MATCH_ID]
 
       filters.tenant_id = tenantId
-      // The scope, in the primary `$or` form: the caller's visible organizations **or** the roots
-      // they collaborate on. The equivalent id-set contingency (first read every visible root id,
-      // then `filters.id = { $in: <that set> }`) is what the sub-reads below effectively use; it is
-      // only a contingency for an engine that rejects an `$or` subtree, because it costs a full id
-      // read on every list.
-      filters.$or = [
-        { organization_id: { $in: organizationIds } },
-        { id: { $in: collaboratorIds } },
-      ]
-
-      let candidateIds: Set<string> | null = null
+      // The scope is applied as an **explicit id set** (the contingency this route documented while
+      // the primary form was an `$or`): the engine mishandles a top-level `id` filter combined with
+      // an `$or` subtree — with `id` present the OR group stops matching, which silently broke both
+      // the search narrowing and the generic `?ids=` read for a collaborating organization. Reading
+      // the visible ids first also keeps every later narrowing an intersection over one set, so the
+      // soft-delete filter stays the engine's job (a soft-deleted root is not dropped here).
+      const visibleRootRows = (await db
+        .selectFrom('order_hub_company_orders')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where((eb) => eb.or([
+          eb('organization_id', 'in', organizationIds),
+          eb('id', 'in', collaboratorIds),
+        ]))
+        .execute()) as Array<{ id: string }>
+      let candidateIds = new Set(visibleRootRows.map((row) => String(row.id)))
       const narrow = (ids: string[]) => {
         const next = new Set(ids)
-        candidateIds = candidateIds ? new Set([...candidateIds].filter((id) => next.has(id))) : next
+        candidateIds = new Set([...candidateIds].filter((id) => next.has(id)))
       }
+
+      if (query.id) narrow([query.id])
 
       if (query.kind) {
         const rows = (await db
@@ -249,19 +256,10 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         narrow([...rootRows.map((row) => String(row.id)), ...linkRows.map((row) => String(row.company_order_id))])
       }
 
-      if (candidateIds) {
-        // The annotation is load-bearing: `candidateIds` is only ever assigned inside `narrow` above,
-        // so the compiler's flow analysis narrows it to the declared initializer (`null`) here and
-        // the spread alone would come out as `never[]`.
-        const ids: string[] = [...candidateIds]
-        // Intersect with an explicit `?id=` rather than replacing it: the hub's single-row read
-        // (`?id=` + pageSize 1) must not be widened by a stray search term.
-        if (query.id) {
-          filters.id = { $in: ids.includes(query.id) ? [query.id] : [NO_MATCH_ID] }
-        } else {
-          filters.id = { $in: ids.length > 0 ? ids : [NO_MATCH_ID] }
-        }
-      }
+      // The visible set (already intersected with `?id=`, the kind filter and the search term above)
+      // is the whole scope filter; an empty set still answers a valid, empty page rather than
+      // widening to the tenant.
+      filters.id = { $in: candidateIds.size > 0 ? [...candidateIds] : [NO_MATCH_ID] }
       return filters
     },
     transformItem: (item: Record<string, unknown>) => ({

@@ -1,5 +1,9 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
 import type { Kysely } from 'kysely'
+import { loadCollaboratorCompanyOrderIds } from './collaborators'
+
+/** `$in []` is not a disjunct the planners accept; "nothing" is one impossible id. */
+const NO_MATCH_ID = '00000000-0000-0000-0000-000000000000'
 
 /**
  * The stage projection behind the order workbench: for a batch of **company orders**, how far each
@@ -176,10 +180,16 @@ export async function loadCompanyOrderSummaries(
   const tenantId = scope.tenantId
   const organizationIds = [...scope.organizationIds]
 
+  // The roots this caller's organizations collaborate on, read **before** the root read: the root
+  // read's scope is "my organizations' roots OR the roots they collaborate on", and the widened
+  // owner-organization set below is derived from that read — so it cannot feed this predicate.
+  const collaboratorRootIds = await loadCollaboratorCompanyOrderIds(em, tenantId, organizationIds)
+  const collaboratorIds = collaboratorRootIds.length > 0 ? collaboratorRootIds : [NO_MATCH_ID]
+
   // Only company orders that exist in scope (and are not deleted) can have a summary entry. The
   // scope is the caller's own organization set **plus the roots its organizations collaborate on**
-  // (REQ-016) — one module-local read of the collaborator table, the same predicate the workbench
-  // list applies, so an id from an unrelated organization still produces no entry at all.
+  // (REQ-016) — the same predicate the workbench list applies, so an id from an unrelated
+  // organization still produces no entry at all.
   const orderRows = (await db
     .selectFrom('order_hub_company_orders')
     .select(['id', 'organization_id'])
@@ -187,16 +197,8 @@ export async function loadCompanyOrderSummaries(
     .where('tenant_id', '=', tenantId)
     .where('deleted_at', 'is', null)
     .where((eb) => eb.or([
-      eb('organization_id', 'in', childOrganizationIds),
-      eb(
-        'id',
-        'in',
-        eb
-          .selectFrom('order_hub_company_order_collaborators')
-          .select('company_order_id')
-          .where('tenant_id', '=', tenantId)
-          .where('organization_id', 'in', childOrganizationIds),
-      ),
+      eb('organization_id', 'in', organizationIds),
+      eb('id', 'in', collaboratorIds),
     ]))
     .execute()) as Array<{ id: string; organization_id: string }>
   const visibleIds = orderRows.map((row) => String(row.id))

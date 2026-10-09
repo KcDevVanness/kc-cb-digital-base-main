@@ -42,6 +42,7 @@ import {
   assertCollaboratorOrganizationsExist,
   forbiddenCollaboratorFields,
   collaboratorFieldRefused,
+  loadCompanyOrderCollaboratorOrganizationIds,
   ownerRequired,
   resolveCompanyOrderAccess,
 } from '../lib/collaborators'
@@ -78,6 +79,29 @@ function ensureCompanyOrderScope(ctx: CommandRuntimeContext): CompanyOrderScope 
     tenantId,
     organizationId,
     organizationIds: expanded.length > 0 ? Array.from(new Set(expanded)) : [organizationId],
+  }
+}
+
+/**
+ * Every organization whose cached company-order list can show this root: its owner organization and
+ * the organizations that collaborate on it.
+ *
+ * The CRUD list cache is keyed per organization, so a write through one organization's session (a
+ * collaborator writing status, an HQ user editing an HQ root) leaves the *other* organizations'
+ * cached pages stale unless their tags are cleared too. A failed read here only delays that clearing
+ * to the cache TTL and must never fail the already-committed write.
+ */
+async function rootInvalidationOrganizations(
+  em: EntityManager,
+  scope: CompanyOrderScope,
+  companyOrderId: string,
+): Promise<string[]> {
+  try {
+    const root = await em.fork().findOne(CompanyOrder, { id: companyOrderId, tenantId: scope.tenantId })
+    const collaborators = await loadCompanyOrderCollaboratorOrganizationIds(em, scope, companyOrderId)
+    return [root ? String(root.organizationId) : "", ...collaborators].filter((id) => id.length > 0)
+  } catch {
+    return []
   }
 }
 
@@ -330,10 +354,12 @@ const createCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
     for (const movedFromId of movedFrom) {
       const movedIdentifiers = { id: movedFromId, tenantId: scope.tenantId, organizationId: scope.organizationId }
       await eventsConfig.emit('order_hub.company_order.links.updated', { ...movedIdentifiers, count: 0, movedTo: identifiers.id })
+      const movedOrgs = await rootInvalidationOrganizations(em, scope, movedFromId)
       await invalidateCompanyOrderLinkCaches(
         { container: ctx.container, ...scope },
         movedIdentifiers,
         'company-order-child-moved',
+        movedOrgs,
       )
     }
     await invalidateCompanyOrderCaches({ container: ctx.container, ...scope }, identifiers, 'company-order-created')
@@ -479,7 +505,13 @@ const updateCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
       events: companyOrderCrudEvents,
       indexer: companyOrderCrudIndexer,
     })
-    await invalidateCompanyOrderCaches({ container: ctx.container, ...scope }, identifiers, 'company-order-updated')
+    const updatedOrgs = await rootInvalidationOrganizations(em, scope, String(updated.id))
+    await invalidateCompanyOrderCaches(
+      { container: ctx.container, ...scope },
+      identifiers,
+      'company-order-updated',
+      updatedOrgs,
+    )
 
     return updated
   },
@@ -573,6 +605,9 @@ const deleteCompanyOrderCommand: CommandHandler<
       request: ctx.request ?? null,
     })
 
+    // Read the visibility set before the row (and its cascaded collaborator rows) is gone: the
+    // collaborators' cached lists must drop the root too.
+    const deletedOrgs = await rootInvalidationOrganizations(em, scope, id)
     const removed = await de.deleteOrmEntity({
       entity: CompanyOrder,
       where: orderFilter(scope, id),
@@ -591,7 +626,12 @@ const deleteCompanyOrderCommand: CommandHandler<
       events: companyOrderCrudEvents,
       indexer: companyOrderCrudIndexer,
     })
-    await invalidateCompanyOrderCaches({ container: ctx.container, ...scope }, identifiers, 'company-order-deleted')
+    await invalidateCompanyOrderCaches(
+      { container: ctx.container, ...scope },
+      identifiers,
+      'company-order-deleted',
+      deletedOrgs,
+    )
 
     return removed
   },
@@ -752,10 +792,12 @@ const replaceCompanyOrderLinksCommand: CommandHandler<
       kind: parsed.kind,
       count: parsed.refs.length,
     })
+    const replaceOrgs = await rootInvalidationOrganizations(em, scope, String(companyOrder.id))
     await invalidateCompanyOrderLinkCaches(
       { container: ctx.container, ...scope },
       identifiers,
       'company-order-links-replaced',
+      replaceOrgs,
     )
     for (const movedFromId of movedFrom) {
       const movedIdentifiers = { id: movedFromId, tenantId: scope.tenantId, organizationId: scope.organizationId }
@@ -765,10 +807,12 @@ const replaceCompanyOrderLinksCommand: CommandHandler<
         count: 0,
         movedTo: identifiers.id,
       })
+      const movedOrgs = await rootInvalidationOrganizations(em, scope, movedFromId)
       await invalidateCompanyOrderLinkCaches(
         { container: ctx.container, ...scope },
         movedIdentifiers,
         'company-order-child-moved',
+        movedOrgs,
       )
     }
 
@@ -828,10 +872,12 @@ const linkChildCommand: CommandHandler<Record<string, unknown>, LinkChildResult>
       refId: parsed.refId,
       count: 1,
     })
+    const linkChildOrgs = await rootInvalidationOrganizations(em, scope, result.companyOrderId)
     await invalidateCompanyOrderLinkCaches(
       { container: ctx.container, ...scope },
       identifiers,
       'company-order-link-child',
+      linkChildOrgs,
     )
 
     return result
@@ -879,6 +925,9 @@ const replaceCompanyOrderCollaboratorsCommand: CommandHandler<
     const requested = Array.from(new Set(parsed.organizationIds))
       .filter((id) => id !== String(companyOrder.organizationId))
     await assertCollaboratorOrganizationsExist(em, scope.tenantId, requested)
+    // The set being replaced: an organization that lost the row needs its cached list cleared just
+    // as much as one that gained it.
+    const previous = await loadCompanyOrderCollaboratorOrganizationIds(em, scope, String(companyOrder.id))
 
     await withAtomicFlush(
       em,
@@ -914,6 +963,7 @@ const replaceCompanyOrderCollaboratorsCommand: CommandHandler<
       { container: ctx.container, ...scope },
       identifiers,
       'company-order-collaborators-replaced',
+      [...previous, ...requested],
     )
 
     return {

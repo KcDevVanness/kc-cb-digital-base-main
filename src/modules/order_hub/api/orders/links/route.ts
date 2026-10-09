@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { EntityManager } from '@mikro-orm/postgresql'
+import type { Kysely } from 'kysely'
 import { makeCrudRoute } from '@open-mercato/shared/lib/crud/factory'
 import { badRequest } from '@open-mercato/shared/lib/crud/errors'
 import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
@@ -13,6 +14,15 @@ import { createOrderHubCrudOpenApi, orderHubOkSchema } from '../../openapi'
 import { loadCollaboratorCompanyOrderIds } from '../../../lib/collaborators'
 
 const ENTITY_ID = 'order_hub:company_order_link' as const
+
+/** The one cross-table read this route's scope needs; the handle is cast once (see the orders route). */
+type VisibilityRootTable = {
+  order_hub_company_orders: {
+    id: string
+    tenant_id: string
+    organization_id: string
+  }
+}
 
 /**
  * A uuid no row can carry: an empty `id $in []` is rejected by the query-engine path the factory
@@ -104,11 +114,26 @@ export const { metadata, GET, POST } = makeCrudRoute({
       }
       const em = ctx.container.resolve('em') as EntityManager
       const collaboratorRootIds = await loadCollaboratorCompanyOrderIds(em, tenantId, organizationIds)
+      const collaboratorIds = collaboratorRootIds.length > 0 ? collaboratorRootIds : [NO_MATCH_ID]
+      // The same explicit visible-root-id scope the orders list applies: the engine mishandles a
+      // top-level `id` filter next to an `$or` subtree, and the factory's generic `?id=`/`?ids=`
+      // params must stay intersective rather than silently matching nothing.
+      const visibleRoots = (await (em.fork().getKysely() as unknown as Kysely<VisibilityRootTable>)
+        .selectFrom('order_hub_company_orders')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where((eb) => eb.or([
+          eb('organization_id', 'in', organizationIds),
+          eb('id', 'in', collaboratorIds),
+        ]))
+        .execute()) as Array<{ id: string }>
+      const visibleRootIds = visibleRoots.map((row) => String(row.id))
       filters.tenant_id = tenantId
-      filters.$or = [
-        { organization_id: { $in: organizationIds } },
-        { company_order_id: { $in: collaboratorRootIds.length > 0 ? collaboratorRootIds : [NO_MATCH_ID] } },
-      ]
+      // A collaborator reads the attach block of a root whose links belong to the owner's
+      // organization, so the root — not the link row's own organization — is what the scope keys on.
+      filters.company_order_id = query.companyOrderId
+        ? (visibleRootIds.includes(query.companyOrderId) ? query.companyOrderId : NO_MATCH_ID)
+        : { $in: visibleRootIds.length > 0 ? visibleRootIds : [NO_MATCH_ID] }
       return filters
     },
     transformItem: (item: Record<string, unknown>) => ({
