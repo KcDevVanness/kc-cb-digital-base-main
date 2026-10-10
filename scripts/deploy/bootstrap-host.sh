@@ -141,7 +141,11 @@ OM_INIT_SUPERADMIN_PASSWORD=${ADMIN_PASSWORD}
 # Sized for a t4g.micro (2 vCPU / 1 GiB). Change these together with the
 # instance size, otherwise V8 hits its heap ceiling while RAM is still free —
 # and lower them when shrinking, or the OOM killer takes the container.
-NODE_OPTIONS=--max-old-space-size=384
+# `NODE_OPTIONS` caps the long-running server; `INIT_NODE_OPTIONS` caps the
+# one-off init/bootstrap phase, which loads every module at once and V8-OOMs at
+# the server cap (measured at 384 — see docs/deploy/cicd.md).
+NODE_OPTIONS=--max-old-space-size=512
+INIT_NODE_OPTIONS=--max-old-space-size=2048
 DB_POOL_MAX=5
 REDIS_MAXMEMORY=128mb
 EOF
