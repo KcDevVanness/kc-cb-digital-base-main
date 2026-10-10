@@ -224,7 +224,9 @@ async function main() {
       title: node.title,
       body: node.body,
       state: node.state,
-      parent: parentEntry ? parentEntry.id : undefined,
+      // `create --parent` only resolves an issue identifier (SP-123); a raw uuid
+      // is rejected with linear_issue_required (verified 2026-10-08).
+      parent: parentEntry ? parentEntry.identifier : undefined,
     }
 
     try {
