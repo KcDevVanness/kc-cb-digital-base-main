@@ -39,7 +39,7 @@
 ## 流水线（`.github/workflows/deploy.yml`）
 
 ```
-push production ─┬─ build  ── docker build --target runner ──▶ ghcr.io/kcdevvanness/kc-cb-digital-base-main:<sha>
+push production ─┬─ build  ── docker build --target runner --platform linux/arm64 ──▶ ghcr.io/kcdevvanness/kc-cb-digital-base-main:<sha>
                  │                                            ghcr.io/kcdevvanness/kc-cb-digital-base-main:production
                  └─ deploy ── ssh ──▶ 主机 git fetch + checkout <sha>（无需 docker login：包可公开拉取）
                                       docker compose -f docker-compose.deploy.yml pull app
@@ -48,9 +48,15 @@ push production ─┬─ build  ── docker build --target runner ──▶ g
 ```
 
 **构建为什么在 CI 而不在主机上**：`yarn build` 用 `--max-old-space-size=8192`，
-而部署主机是 2 vCPU 的实例。在主机上构建会长时间占满 CPU 并需要数 GB 堆内存，
+而部署主机是 1 GiB 内存的 `t4g.micro`。在主机上构建会长时间占满 CPU 并需要数 GB 堆内存，
 所以主机只做三件事——
 拉代码、拉镜像、起容器。
+
+**镜像平台（2026-10-10 起）**：主机是 aarch64（t4g 家族），流水线只构建 `linux/arm64`，
+build job 跑在 `ubuntu-24.04-arm`（公共仓库免费的**原生** arm64 runner；在 amd64 runner 上
+用 QEMU 模拟 arm64 会让这个体量的 Next.js 构建慢数倍）。换回 x86 实例时，把
+`platforms` 与 `runs-on` 一起改回，否则 `up -d` 会以 `exec format error` 失败——
+旧实例上的 amd64 镜像在新主机上跑不起来，就是这个原因。
 
 **GHCR 鉴权**：该 package 目前**公开可拉取**，主机 `pull` 不需要凭据，部署脚本里没有
 `docker login`（早期曾用当次运行的 `GITHUB_TOKEN` 登录，token 随运行过期后反而让后续
@@ -71,9 +77,10 @@ pull 报 `denied`，故已移除）。若将来把 package 改为私有，主机
 
 | 项 | 值 |
 |---|---|
+| 主机 | `t4g.micro`（2 vCPU / **1 GiB**，aarch64，Amazon Linux 2023），60 GB gp3 根卷；SSH 用户 `ec2-user`（沿用 `KC_DEV_SP_CB_Digital_Base` key pair） |
 | 目录 | `/opt/kc-cb-digital-base`（`APP_DIR`） |
 | compose 文件 | `docker-compose.deploy.yml`（与 `fullapp` 的区别：`image:` 取代 `build:`，多一个 `caddy`） |
-| `.env` | `/opt/kc-cb-digital-base/.env`，**不在 git 里**，首次部署前必须手工创建 |
+| `.env` | `/opt/kc-cb-digital-base/.env`，**不在 git 里**，由 `bootstrap-host.sh` 首次生成（或手工按下方清单创建） |
 | 公网地址 | **Elastic IP `18.163.244.11`，不要释放**——自动分配的公网 IPv4 每次 stop/start 都会换，域名与 `DEPLOY_HOST` 会同时失效。见 [host-access.md](./host-access.md) |
 | 对外端口 | `80` / `443` 由 `caddy` 容器占用并终结 TLS |
 | app 端口 | `APP_PORT`（`3000`），只绑 `127.0.0.1`——给部署健康探针和排障用，不对公网 |
@@ -125,17 +132,24 @@ runner 镜像的 `NODE_ENV=production` 烤死在 `Dockerfile` 里，没有 env �
 
 主机上（一次性，之后由流水线接管）：
 
-1. 加 4 GB `/swapfile` 并 `vm.swappiness=10`。EC2 默认无 swap；t3.small 那档内存
-   （2 GB）在稳态下就会把 1.5 GB 压在 swap 里，索引重建时更会顶到 2 GB
-2. 装 Docker：Ubuntu 26.04（`resolute`）官方源里**没有** `docker.io`，用 Docker 官方 apt 源
-3. `git clone` 仓库到 `/opt/kc-cb-digital-base`
-4. 按上面的清单创建 `.env`（`APP_DOMAIN` 的 A 记录必须先指向本机）
-5. 仓库 secrets：`DEPLOY_HOST`、`DEPLOY_USER`、`DEPLOY_SSH_KEY`（私钥全文）
+一条命令（幂等，可重跑）：`APP_DOMAIN=<域名> bash scripts/deploy/bootstrap-host.sh`。它做的事：
+
+1. 加 8 GB `/swapfile` 并 `vm.swappiness=10`。EC2 默认无 swap；1 GiB 内存的宿主机稳态下
+   就会把大半个工作集压在 swap 里——t3.small（2 GB）时代的实测是稳态 1.5 GB、
+   索引重建顶到 2 GB，内存减半后只会更多
+2. 装 Docker：Amazon Linux 2023 官方源有 `docker`（25.x）但**没有 compose 插件包**，
+   所以 engine 走 `dnf`、compose 走其 GitHub release 的 CLI 插件二进制；
+   Ubuntu 26.04（`resolute`）官方源里**没有** `docker.io`，走 Docker 官方 apt 源。
+   两条路径脚本按发行版自动选择
+3. `git clone` 仓库到 `/opt/kc-cb-digital-base`（AL2023 基础镜像不含 git，脚本会先装）
+4. 生成 `.env` 与 `.admin-credentials`（`APP_DOMAIN` 的 A 记录必须先指向本机）
+5. 仓库 secrets：`DEPLOY_HOST`、`DEPLOY_USER`、`DEPLOY_SSH_KEY`（私钥全文；AL2023 的
+   用户是 `ec2-user`，Ubuntu 镜像上才是 `ubuntu`）
 
 换公网域名：
 
 ```bash
-ssh -i <key> ubuntu@<host> 'bash -s' < scripts/deploy/set-domain.sh app.example.com
+ssh -i <key> ec2-user@<host> 'bash -s' < scripts/deploy/set-domain.sh app.example.com
 # 然后推 production 让容器按新域名重建
 ```
 
@@ -184,14 +198,14 @@ ssh -i <key> ubuntu@<host> 'bash -s' < scripts/deploy/set-domain.sh app.example.
 docker exec <postgres容器> pg_dump -U postgres -Fc <db> > local-db.dump
 
 # 2. 传到主机
-scp local-db.dump ubuntu@<host>:/tmp/local-db.dump
+scp local-db.dump ec2-user@<host>:/tmp/local-db.dump
 
 # 3. 对齐密钥（走文件传递，值不进 argv、不进 shell history）
-scp align-secrets.txt ubuntu@<host>:/tmp/ && \
-ssh ubuntu@<host> 'bash scripts/deploy/align-secrets.sh /tmp/align-secrets.txt'
+scp align-secrets.txt ec2-user@<host>:/tmp/ && \
+ssh ec2-user@<host> 'bash scripts/deploy/align-secrets.sh /tmp/align-secrets.txt'
 
 # 4. 替换数据库：自动做安全备份 → 停 app → DROP/CREATE 库 → 还原 → 起 app
-ssh ubuntu@<host> 'bash scripts/deploy/restore-db-from-dump.sh /tmp/local-db.dump'
+ssh ec2-user@<host> 'bash scripts/deploy/restore-db-from-dump.sh /tmp/local-db.dump'
 ```
 
 附件字节不在库里，要单独搬：
@@ -217,7 +231,7 @@ sudo find /var/lib/docker/volumes/kc-cb-digital-base_attachments_storage/_data \
 常常已不是当前密码（本地跑久了会被改过），拿它登录会得到 401：
 
 ```bash
-ssh ubuntu@<host> "cd /opt/kc-cb-digital-base && \
+ssh ec2-user@<host> "cd /opt/kc-cb-digital-base && \
   docker compose -f docker-compose.deploy.yml exec -T app \
   sh -lc \"yarn mercato auth set-password --email superadmin@acme.com --password '<新值>'\""
 ```
@@ -285,8 +299,9 @@ git push --force origin <good-sha>:production
 - `INSTALL_CHROMIUM=0`：镜像不含 Chromium，Documents 的 PDF 导出返回 503。
   需要时给 `docker/build-push-action` 加 `build-args: INSTALL_CHROMIUM=1`，镜像增大约 400 MB。
 - `NEXT_PUBLIC_DOCUMENTS_COLLAB_URL` 未设置：文档退化为单人编辑，不跑 `documents-collab` sidecar。
-- 内存调优写在 `docker-compose.deploy.yml` 里，当前按 **t3.large（2 vCPU / 8 GB）** 取值：
-  `--max-old-space-size=3072`、`DB_POOL_MAX=20`、`shared_buffers=1GB`、redis `maxmemory=512mb`。
+- 内存调优写在 `docker-compose.deploy.yml` 里，当前按 **t4g.micro（2 vCPU / 1 GiB）** 取值：
+  `--max-old-space-size=384`、`DB_POOL_MAX=5`、`shared_buffers=128MB`、redis `maxmemory=128mb`、
+  Meilisearch `MEILI_MAX_INDEXING_MEMORY=268435456`（256 MiB，compose 给的是字节）。
   **换实例规格必须同步调这些值**：调小了 V8 会在内存还有余量时先撞堆上限，
   调大了则会让 app 和 Postgres 互相抢内存。`.env` 里的同名变量会覆盖 compose 默认值，
   所以两处都要改
@@ -300,8 +315,8 @@ git push --force origin <good-sha>:production
 gh run list --repo KcDevVanness/kc-cb-digital-base-main --workflow deploy
 
 # 主机上：容器与健康检查
-ssh -i <key> ubuntu@<host> 'cd /opt/kc-cb-digital-base && docker compose -f docker-compose.deploy.yml ps'
-ssh -i <key> ubuntu@<host> 'curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/api/healthz'  # 期望 200
+ssh -i <key> ec2-user@<host> 'cd /opt/kc-cb-digital-base && docker compose -f docker-compose.deploy.yml ps'
+ssh -i <key> ec2-user@<host> 'curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/api/healthz'  # 期望 200
 
 # 公网入口（证书 + 反代 + 应用链路）
 curl -s -o /dev/null -w '%{http_code}\n' https://<APP_DOMAIN>/api/healthz   # 期望 200
@@ -312,7 +327,7 @@ curl -sS -D - -o /dev/null -X POST https://<APP_DOMAIN>/api/auth/login \
   --data-urlencode "email=<admin>" --data-urlencode "password=<pw>" | grep -i set-cookie
 
 # 部署的确实是目标提交
-ssh -i <key> ubuntu@<host> 'git -C /opt/kc-cb-digital-base log --oneline -1'
+ssh -i <key> ec2-user@<host> 'git -C /opt/kc-cb-digital-base log --oneline -1'
 ```
 
 注意 `/api/auth/login` 只接受 **form-urlencoded**（框架用 `req.formData()` 解析），

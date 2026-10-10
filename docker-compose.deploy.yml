@@ -1,9 +1,10 @@
 # Production compose for the AWS deployment host.
 #
-# Difference from `docker-compose.fullapp.yml`: the app image is pulled from the
-# registry instead of built on the host. The deployment host is a 2 GB instance
-# and `next build` needs an 8 GB heap, so building happens in GitHub Actions
-# (`.github/workflows/deploy.yml`) and the host only runs the result.
+# Difference from `docker-compose.fullapp.yml`: the app image is pulled from
+# the registry instead of built on the host. The deployment host is a
+# t4g.micro (2 vCPU / 1 GiB, aarch64) and `next build` needs an 8 GB heap, so
+# building happens in GitHub Actions (`.github/workflows/deploy.yml`) and the
+# host only runs the result.
 #
 # Usage on the host (from the repository root, which holds the gitignored `.env`):
 #   docker compose -f docker-compose.deploy.yml pull app
@@ -17,7 +18,7 @@
 name: kc-cb-digital-base
 
 # The default json-file driver has no size cap, and this host's root volume is
-# ~28 GB shared with Postgres. An app that logs as much as this one can fill it
+# ~60 GB shared with Postgres. An app that logs as much as this one can fill it
 # over months, so every service is capped at 30 MB of logs.
 x-logging: &default-logging
   driver: json-file
@@ -55,12 +56,13 @@ services:
       NODE_ENV: production
       DEPLOY_ENV: ${DEPLOY_ENV:-production}
       PORT: ${CONTAINER_PORT:-3000}
-      # t3.large (2 vCPU / 8 GB): cap the V8 heap well below total RAM so GC
+      # t4g.micro (2 vCPU / 1 GiB): cap the V8 heap well below total RAM so GC
       # runs instead of the OOM killer, while leaving room for Postgres, Redis,
-      # Meilisearch and Caddy. Raise only alongside the instance size.
-      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=3072}
+      # Meilisearch and Caddy — the rest of the working set lives in the 8 GB
+      # swapfile. Raise only alongside the instance size.
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=384}
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-open-mercato}
-      DB_POOL_MAX: ${DB_POOL_MAX:-20}
+      DB_POOL_MAX: ${DB_POOL_MAX:-5}
       DB_POOL_MIN: ${DB_POOL_MIN:-2}
       DB_POOL_ACQUIRE_TIMEOUT: ${DB_POOL_ACQUIRE_TIMEOUT:-6000}
       DB_POOL_IDLE_TIMEOUT: ${DB_POOL_IDLE_TIMEOUT:-3000}
@@ -132,16 +134,16 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-open-mercato}
-    # Sized for the 8 GB host: the planner's footprint has to stay inside the
+    # Sized for the 1 GiB host: the planner's footprint has to stay inside the
     # memory the app, Redis and Meilisearch leave behind.
     command:
       - postgres
       - -c
-      - shared_buffers=1GB
+      - shared_buffers=128MB
       - -c
-      - effective_cache_size=3GB
+      - effective_cache_size=384MB
       - -c
-      - max_connections=100
+      - max_connections=50
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -159,7 +161,7 @@ services:
     volumes:
       - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
       - redis_data:/data
-    command: redis-server /usr/local/etc/redis/redis.conf --maxmemory ${REDIS_MAXMEMORY:-512mb}
+    command: redis-server /usr/local/etc/redis/redis.conf --maxmemory ${REDIS_MAXMEMORY:-128mb}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -176,6 +178,9 @@ services:
       MEILI_ENV: development
       MEILI_MASTER_KEY: ${MEILISEARCH_MASTER_KEY:-meilisearch-dev-key}
       MEILI_NO_ANALYTICS: "true"
+      # Bytes. Meilisearch defaults to 2/3 of RAM, which on the 1 GiB host
+      # would let indexing crowd out Postgres and the app.
+      MEILI_MAX_INDEXING_MEMORY: ${MEILI_MAX_INDEXING_MEMORY:-268435456}
     volumes:
       - meilisearch_data:/meili_data
     healthcheck:

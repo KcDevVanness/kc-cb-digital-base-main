@@ -13,7 +13,10 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/kc-cb-digital-base}"
 COMPOSE_FILE="docker-compose.deploy.yml"
-HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-900}"
+# Generous on purpose: a first boot on the 1 GiB host runs the whole schema
+# initialization through swap before `/api/healthz` answers, and a healthy
+# deploy leaves this wait as soon as the probe passes.
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-1800}"
 HEALTH_PATH="${HEALTH_PATH:-/api/healthz}"
 
 : "${TARGET_SHA:?TARGET_SHA is required}"
