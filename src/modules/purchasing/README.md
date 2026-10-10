@@ -4,6 +4,13 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 收货回写（数量进 `wms`）。需求见 [`docs/prd/cross-border-erp.md`](../../../docs/prd/cross-border-erp.md)，
 阶段证据见 [`docs/plans/cross-border-erp.md`](../../../docs/plans/cross-border-erp.md)。
 
+> **2026-10-10 单一商品存储改造**（[spec](../../../.ai/specs/2026-10-10-catalog-single-store.md)）：
+> 商品身份/变体/价格/分类全部落官方 `catalog`，本模块的**供应商产品库保留为供应商方向**的表——
+> 它的商品指针由 `product_id` 改名为 **`catalog_product_id`**（迁移 `Migration20261010081055_sourcing.ts`，
+> 放在 sourcing 链内，见 `.ai/lessons/cross-module-rename-migration-ordering.md`）；采购单行不再有 `product_id`，
+> 只引用 `catalog_product_id` 或 `supplier_product_id`。「建商品档案 / 同步字段到商品」改为经
+> `products/lib/store.ts` 写 catalog；SKU 手填（发号面板与 `/api/product_codes/*` 已删除，旧码只登记别名）。
+
 ## 表面
 
 | 层 | 内容 |
@@ -15,7 +22,7 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 | 事件 | `purchasing.supplier.{created,updated,deleted}`、`purchasing.supplier_product.{created,updated,deleted}`、`purchasing.supplier_product_prices.updated`、`purchasing.purchase_order.{created,updated,placed,shipped,received,closed,cancelled,deleted}`、`purchasing.purchase_payment.{recorded,deleted}`；单证 CRUD 侧效另发 `purchasing.purchase_order_document.{created,updated,deleted}`（`commands/orders.ts` 的 `purchaseOrderDocumentCrudEvents`，实体 `purchase_order_document`；这三个 id 目前未登记在 `events.ts`）；本模块还**订阅** `order_hub.company_order.order_fields_updated`（根单的订单描述/采购负责人镜像到采购单，见「根单持有字段与镜像订阅」） |
 | 权限 | `purchasing.suppliers.view|manage`、`purchasing.supplier-products.view|manage|promote`、`purchasing.orders.view|manage`、`purchasing.payments.manage` |
 | 命令公共件 | `commands/shared.ts`：本模块唯一的 `ensureScope`（可信作用域、缺组织 fail closed）与产品库的实体 id / 资源类型 / 事件与索引桥配置 |
-| 迁移 | `migrations/Migration20260921081717_purchasing.ts`（`purchasing_suppliers`）、`Migration20260921085348_purchasing.ts`（订单 / 行 / 付款三表）、`Migration20260921100702_purchasing.ts`（付款 `attachment_id`）、`Migration20260922073530_purchasing.ts`（行 `product_id` + `catalog_product_id` 放开 NOT NULL）、`Migration20260922082559_purchasing.ts`（`purchasing_purchase_order_documents` 表 + 单头 `business_number`/`product_category`/`owner_*`/`customer_*`）、`Migration20260922103027_purchasing.ts`（行 `supplier_product_id`）、`Migration20260924041621_purchasing.ts`（供应商 `brand_value`）、`Migration20260928073630_purchasing.ts`（订单/行/付款金额列收窄为 `numeric(18,2)`）、`Migration20261008042809_purchasing.ts`（采购单来源销售订单三列 + 索引）、`Migration20260929063626_purchasing.ts`（`purchasing_supplier_bank_accounts` 供应商银行账户表）；产品库的表由 `sourcing` 侧的迁移建出并在 `Migration20260923043000_sourcing.ts` **改名为 `purchasing_*`**（含 `Migration20260923044000_sourcing.ts` 的 pkey 改名），数据原样保留 |
+| 迁移 | `migrations/Migration20260921081717_purchasing.ts`（`purchasing_suppliers`）、`Migration20260921085348_purchasing.ts`（订单 / 行 / 付款三表）、`Migration20260921100702_purchasing.ts`（付款 `attachment_id`）、`Migration20260922073530_purchasing.ts`（行 `product_id` + `catalog_product_id` 放开 NOT NULL）、`Migration20260922082559_purchasing.ts`（`purchasing_purchase_order_documents` 表 + 单头 `business_number`/`product_category`/`owner_*`/`customer_*`）、`Migration20260922103027_purchasing.ts`（行 `supplier_product_id`）、`Migration20260924041621_purchasing.ts`（供应商 `brand_value`）、`Migration20260928073630_purchasing.ts`（订单/行/付款金额列收窄为 `numeric(18,2)`）、`Migration20261008042809_purchasing.ts`（采购单来源销售订单三列 + 索引）、`Migration20260929063626_purchasing.ts`（`purchasing_supplier_bank_accounts` 供应商银行账户表）；产品库的表由 `sourcing` 侧的迁移建出并在 `Migration20260923043000_sourcing.ts` **改名为 `purchasing_*`**（含 `Migration20260923044000_sourcing.ts` 的 pkey 改名），数据原样保留；**单一存储改造**：`Migration20261010081054_purchasing.ts`（采购行 drop `product_id`）+ `Migration20261010081055_sourcing.ts`（库行 `product_id` → `catalog_product_id`，放在 sourcing 链内以避开模块顺序陷阱） |
 
 ## 采购单的来源销售订单（2026-10-08）
 
@@ -51,26 +58,24 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 - 关联区块（来源订单 / 关联合同 / 关联发运单）**不在采购单详情页**：来源单号回到抬头摘要格，合同与发运单
   的关联面归各自模块与公司订单。`cross_border` 的 `?purchaseOrderId=` 过滤保留（发运单列表自己的入口）。
 
-## 商品引用：自建商品主数据优先（REQ-017）
+## 商品引用：catalog 单一存储（2026-10-10）
 
-采购单行现在引用**自建商品主数据** `products_products.id`（列 `purchasing_purchase_order_lines.product_id`，可空，2026-09-22 迁移加列），
+采购单行引用**官方 catalog 商品**（列 `purchasing_purchase_order_lines.catalog_product_id`；旧的 `product_id` 列已随单一存储改造删除），
 选择器读 `GET /api/products/items`（按当前组织收敛），行的显示快照（`product_snapshot` 的 title/sku/unit/model/spec）在写入时从该商品冻结。
 
-- **一行恰好一个商品引用**（三种，互斥且不可混用）：
-  - `supplier_product_id` → **供应商产品库行**（`purchasing_supplier_products`，2026-09-22 加列、2026-09-23 随产品库移交改名）。采购员在行编辑器里从**一个搜索框**里选品：
-    该供应商的产品库与商品库同时搜，产品库结果排在前面，每条建议的**标签以来源开头**（`本供应商产品库 · 货号 — 品名` / `商品库 · SKU — 品名`，键 `lines.source.*`），选中哪条就写哪条引用——
-    2026-09-23 之前是两个选择器 + 「改从商品库选择」切换按钮，业务上看不懂"现在在哪个库"；
-    来源 2026-09-24 起放标签首段（owner 实测反馈「分不清哪个是供应商哪个是自建产品」：同一货品在两个库里各一条、货号与品名完全相同，只靠标签下方的小字来源分辨不出来），标签下面那行只剩「未建档」这类代价提示。
-    产品库行已同步过商品时按商品主数据解析（并带上目录桥接），未同步时行上 `product_id`/`catalog_product_id` 均为 null，
-    只冻结供应商快照（`title`/`sku`/`unit`/`spec` + `supplierSku`）。**同行的产品库行必须属于本单供应商**，否则 **422 `supplier_product_supplier_mismatch`**。
-  - `product_id` → 商品主数据（上面那段）。
-  - `catalog_product_id` → 历史行（切换前写入），照常可读可显示。
-  - 三个都缺 → 400；`supplier_product_id` 与另两个同时出现 → 400。
-- **编辑草稿会重新解析**：保存草稿时行会按现在的规则重新解析，所以产品库行**后来**同步成商品后，再保存一次草稿就会自动补上 `product_id` 与目录桥。
+- **一行恰好一个商品引用**（互斥且不可混用）：
+  - `supplier_product_id` → **供应商产品库行**（`purchasing_supplier_products`）。采购员在行编辑器里从**一个搜索框**里选品：
+    该供应商的产品库与商品库同时搜，产品库结果排在前面，每条建议的**标签以来源开头**（`本供应商产品库 · 货号 — 品名` / `商品库 · SKU — 品名`，键 `lines.source.*`）；
+    来源 2026-09-24 起放标签首段（owner 实测反馈「分不清哪个是供应商哪个是自建产品」），标签下面那行只剩「未建档」这类代价提示。
+    产品库行**已建档**时按 catalog 商品解析；未建档时行上 `catalog_product_id` 为 null，只冻结供应商快照（`title`/`sku`/`unit`/`spec` + `supplierSku`）。
+    **同行的产品库行必须属于本单供应商**，否则 **422 `supplier_product_supplier_mismatch`**。
+  - `catalog_product_id` → catalog 商品（上面那段）。
+  - 两个都缺 → 400；两个同时出现 → 400。
+- **编辑草稿会重新解析**：保存草稿时行会按现在的规则重新解析，所以产品库行**后来**建档后，再保存一次草稿就会自动补上 `catalog_product_id`。
   冻结的是 `product_snapshot` 的内容，不是解析规则；已下单（非草稿）的单不重算。
 - **`supplierSku` 是快照键**：产品库行的 `item_no ?? supplier_sku`，展示用，随快照透传到发运分摊（历史快照没有该键，读侧按 null）。
-- **收货需要变体**：`wms.inventory.receive` 按变体级入账，发运分摊时会校验该行是否有目录链接——没有链接的商品可下单但**不能发运/收货**，
-  报错会直接说明"先把供应商产品同步成商品并补官方目录链接"；补链接的地方是 `products` 的「官方目录链接」字段（产品库页也有「同步为商品」按钮）。
+- **收货需要变体**：`wms.inventory.receive` 按变体级入账，发运分摊时会校验该 catalog 商品是否有**启用的变体**——没有变体的商品可下单但**不能发运/收货**，
+  报错直接说明要先给这个商品建一个启用的变体；变体在自有商品库页（`/backend/products/items`）维护。
 - 供应商列表的行操作里有「产品库」入口，直达 `/backend/purchasing/supplier-products?supplierId=<id>`（实体与页面都归本模块）。
 
 ## 供应商产品库（产品明细表）
@@ -85,18 +90,18 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 
 | 关注点 | 约定 |
 |---|---|
-| 单件物理数据（2026-09-24） | 表单分组「装箱、重量与体积」= 每箱数量 + 单件毛重（G.W.）+ 单件净重（N.W.）+ 单件体积 + MOQ。毛重/净重/体积三个字段**都可留空**（供应商表印了才填），单位固定 kg / **整数 cm³**（`numeric(16,0)`，表单显示 `88642` 而非 `88642.000000`）；毛重与净重都是**单件**口径（整箱口径 2026-09-23 已删），体积按供应商印的数照录、不由产品尺寸推算。同步为商品时 `unitNetWeight`/`unitGrossWeight`/`unitVolume` → 商品主数据的 `net_weight`/`gross_weight`/`volume`（商品侧同样是 cm³、同样只记录不推算） |
-| 商品 SKU 与品牌（2026-09-24） | 「商品 SKU」= 我方编码（本供应商下唯一，建档时写入商品主数据的 SKU）；「供应商货号」= 对方表格上印的号。表单的编码面板调 `product_codes`：`POST /api/product_codes/generate` 发号（`dryRun: true` 只试算不占号）、`GET /api/product_codes/parse` 拆解（规范编码 / 手工编码 / 沿用旧码三态，永不报错），「改用规范编码」把旧码登记为别名，供应商产品库与商品库的搜索都能按旧码命中。品牌取「行的品牌 → 供应商默认品牌」（`brand_value`，字典 `product_brand`），两者都没有时按钮禁用并给出提示。**三件套一个卡片（2026-09-24）**：新建/编辑页把「商品 SKU 与品牌」独立成一张卡片——`品牌（编码前缀）`（CrudForm 字段，可清空、带帮助文本）+ `商品 SKU`（`type: 'custom'` 字段，生成器就在字段内部：`类别` 下拉 + `生成` / `改用规范编码` + 拆解行 + 提示），品牌→类别→生成→SKU 的关系在视觉上是一个板块；供应商与品名留在「商品标识」卡片。面板**不再**另设品牌控件（同一值两个控件会被读成两个品牌，owner 2026-09-24 反馈「好像有两个地方重复」），只在品牌留空时显示一行「品牌留空，用供应商默认品牌：PK — PetKit」。`类别` 从字典 `product_category` 里选（`CODE — name`，不再手输）——它此前是自由文本，输入字典外的值（中文标签「猫砂」、任意字母）只会在点「生成」时拿到 400 `Unknown product_category value: …`，而发号命令本来就照字典校验，所以这个拒绝属于选择器而不是报错横幅；两个码表共用 loader `lib/codeListOptions.ts`（`product_brand` / `product_category` 一份实现、按字典 key 缓存）。**手输编码是一等公民（2026-09-24，owner：「生成后也可以自定义修改…这个品牌+类别的方式只是一个工具」）**：生成只把值写进「商品 SKU」，那一格始终可改（自定义字段内就是一个普通 `<Input>`，没有 readOnly），面板只按解析结果贴标签（规范编码 / 手工编码 / 沿用旧码）而**从不拦截**——写路径里没有任何地方读 `rule.enforce`，`strict` 目前是规则上的一个字段、不是闸门；规则描述的是**一种**品牌的编码形状，规则外的品牌照旧手输。两处已知边界：① 手输码要能「建商品档案」必须满足商品主数据的 `SKU_PATTERN`（`^[A-Za-z0-9._\-/]{1,64}$`，库行本身只校验 1–120 字符），否则建档 422；② 已建档行仍可改行上的编码，但 `sync-fields` **不写** `sku`（`changedProductFields` 里没有它），所以行上的码与商品主数据的 SKU 会分叉——只有「改用规范编码」在建档后被禁用（不能让主数据的 SKU 在已打印的单据背后被换掉）。**默认品牌是字典值、写入即校验**（2026-09-24）：下拉只列 `product_brand` 的条目、不接受手输，命令里也照 `defaultCurrencyCode` 的先例校验（`purchasing.suppliers.create/update` → `assertDictionaryValue`），否则 API 调用方可以存进一个永远无法生成的品牌，而失败要到点「生成」时才暴露；清空品牌（`null`）始终允许，改成一个**新**值才校验——字典里被删掉的旧值不会因此锁死供应商。字典由 `product_codes` 播种（品牌 SP/DK/PK、类别 CL/TP/LB/LS/CB），业务在**字典库**页面维护。**迁移落点**：`purchasing_suppliers.brand_value` 在 purchasing 的迁移里加；`purchasing_supplier_products.brand_value` 必须由 **sourcing** 的迁移加（该表由 sourcing 改名而来，而模块顺序 purchasing 在前）——见 `.ai/lessons/cross-module-rename-migration-ordering.md` |
+| 单件物理数据（2026-09-24） | 表单分组「装箱、重量与体积」= 每箱数量 + 单件毛重（G.W.）+ 单件净重（N.W.）+ 单件体积 + MOQ。毛重/净重/体积三个字段**都可留空**（供应商表印了才填），单位固定 kg / **整数 cm³**（`numeric(16,0)`，表单显示 `88642` 而非 `88642.000000`）；毛重与净重都是**单件**口径（整箱口径 2026-09-23 已删），体积按供应商印的数照录、不由产品尺寸推算。建商品档案时 `unitNetWeight`/`unitGrossWeight`/`unitVolume` → catalog 商品的自定义字段 `unit_net_weight`/`unit_gross_weight`/`unit_volume`（同样是 cm³、同样只记录不推算） |
+| 商品 SKU 与品牌（2026-09-24；2026-10-10 起 SKU 手填） | 「商品 SKU」= 我方编码（本供应商下唯一，建档时写进 catalog 商品的 `sku`）；「供应商货号」= 对方表格上印的号。**编码发号已停用**（单一存储改造）：`/api/product_codes/generate|parse` 与表单里的编码面板已删除，SKU 由操作员**手输**；旧码仍可搜索，靠 `product_codes_aliases`（`target_kind='product'`）在商品/产品库列表搜索里兜底。手输码要能「建商品档案」必须满足 `SKU_PATTERN`（`^[A-Za-z0-9._\-/]{1,64}$`；库行本身只校验 1–120 字符），否则建档 422。品牌取「行的品牌 → 供应商默认品牌」（`brand_value`，字典 `product_brand`，字典由 `product_codes` 播种、业务在字典库维护）；**默认品牌是字典值、写入即校验**（`purchasing.suppliers.create/update` → `assertDictionaryValue`），清空始终允许、改成**新**值才校验。**迁移落点**：`purchasing_suppliers.brand_value` 在 purchasing 的迁移里加；`purchasing_supplier_products.brand_value` 由 **sourcing** 的迁移加（该表由 sourcing 改名而来，模块顺序 purchasing 在前）——见 `.ai/lessons/cross-module-rename-migration-ordering.md` |
 | 唯一键 | `(tenant, organization, supplier_id, supplier_sku)`，**含软删行**（货号永久占用）：查重必须一起查已删行，否则唯一索引把可读的 409 变成 500 |
 | 价格 | **表单只录一条供货价**（2026-09-24，owner 在新建页反馈「只有一种类型…新增多条好像意义不大了」）：`币种 + 单价 + 折扣`，填的就是该货号在售的**基准** `supplier_cost` 行（列表列与建档路径解析的那一行，比法唯一实现于 `lib/priceKinds.ts` 的 `comparePriceBaseRows`/`pickBasePriceRow`）；其余行（其它币种/起订量档、已停用的旧价、历史 `company_offer`）在「其它价格行（只读）」里列出并**原样提交回去**，所以保存不改写历史；已停用的价绝不回填（否则下次保存会把它悄悄复活）；清空单价 = 停用该价（不删除）。数据层仍是价格表：一行 = `price_kind × 币种 × 起订量`；`supplier_cost` = **供应商供货价**（供应商报给我们的价）。整组提交（`replace-prices`），载荷里消失的行**停用不删**，币种必须存在于币种字典。**折扣在产品库行上**（`purchasing_supplier_products.discount_percent`，`numeric(3,0)`，**0–100 的整数**、可空）：同供应商不同货号折扣不同，所以按货号一条，不是按价格行、也不是按供应商；**不收小数**（owner 2026-09-24 在新建页反馈「价格-折扣，只有使用整数，不需要保留小数点」；与 `unit_volume` 同一种收窄——0 位小数的 `nullableDecimalSchema(0)` + `Migration20260924054410_sourcing` 的 `numeric(3,0)`，表单 `inputMode="numeric"`，库里读回 `5` 而不是 `5.0000`）；折后价 = 单价 ×（1 − 折扣），六位小数，唯一实现 `lib/priceKinds.ts` 的 `netUnitPrice`（表单预览、列表列、建档写入共用）。`company_offer` = **本公司报价**：2026-09-24 起**不再在产品库录入**（表单只为新行提供供货价，已存在的行照常显示与提交），列表的该列改为只读展示**已建档商品**的 `internal`（内部结算价）档基准价——我们的对外报价是商品属性，主流 ERP（Odoo supplierinfo 的 price+discount 对 list_price/pricelist、SAP 采购信息记录对销售条件）都不把它挂在供应商记录上 |
 | 单位 | 读字典 `supplier_product_unit`（`setup.ts` 播种，11 个海关常用码；`value` = 码、`label` = 纯中文名）；表单走全 app 唯一的 loader `products/lib/unitOptions.ts`，它把选项渲染成 `PCS — 件`（码在前，因为记录存的是码），字典没有的码仍可手输 |
 | 图片 | `image_attachment_ids` 有序数组；文件走 `attachments`（`entityId = purchasing:purchasing_supplier_product` + 行 id），**先建行后绑图**，绑定走行更新（受乐观锁保护）；解绑只删 id，文件留在附件库。**新建页**先选图（本地 blob 预览）再点保存：提交时先建行、再上传、再带版本回写列表，一步完成；编辑页仍是选中即上传。图片失败不回滚行，页面跳到该行的编辑页提示重试 |
-| 同步为商品（界面文案「建商品档案」） | `purchasing.supplier-products.promote` 按 SKU 建/更新 `products_products`，`name_zh ?? name` → 商品名、`name_en` → 英文名；价格优先用产品库里的 `supplier_cost`（没有才回退到最新报价行）——**两条路径都先打折**，写进 `purchase`（成本价）档的是**折后价**（报价行没有自己的折扣，用的是产品库行上那个）；整组价格提交以保住 `internal`/`export`；幂等（已同步返回 `skipped`），软删商品的 SKU 直接 422。列表行操作的文案改为「**建商品档案**」，确认框写明"建过档才能发运、收货"——原来的「同步为商品」看不出这一步是发运/收货的前置 |
-| 关联已有商品 / 换绑 / 解除关联（2026-09-23） | `purchasing.supplier-products.link`：`{ id, productId }`，`productId: null` = 解除。**只写 `product_id` 这一列**，不改商品任何字段与价格——供应商编码 ≠ 我们 SKU 时，这是唯一不产生重复商品档案的做法。目标商品的**作用域与存活检查在写 `product_id` 的同一个事务里**（`select … for update` 锁住商品行；这是跨模块标量 ID、没有外键，所以只能这么做）：跨组织 → 404 `product_not_found`，已软删（或在选择与写入之间被删）→ 422 `product_deleted`，两种都不落任何写入。命令里刻意**不先经 EM 读取该行**（写入走原生 Kysely，预载的实体会让副作用读到陈旧的 identity map） |
-| 同步字段到商品（2026-09-23） | `purchasing.supplier-products.sync-fields`：`promote` 对已关联行是幂等的（`skipped`），所以产品库改完名字/规格/供货价后用这个动作推回商品。与 `promote` **共用同一段写入**（`lib/supplierProductPromotion.ts` 的 `applySupplierProductToMaster`）：只写非空且变化的字段 + 合并 `purchase` 价格档，返回 `fieldsChanged[]` / `priceChanged` 让界面说清写了什么；官方目录链接、`internal`/`export` 价、变体一律不碰。未关联 → 422 `supplier_product_not_linked`，商品已删 → 422 `product_deleted` |
+| 建商品档案（原「同步为商品」，2026-10-10 起写 catalog） | `purchasing.supplier-products.promote` 按 SKU 建/更新 **catalog 商品**（经 `products/lib/store.ts`：`createStoreProduct`/`updateStoreProduct`），`name_zh ?? name` → 商品名、`name_en` → 英文名；价格优先用产品库里的 `supplier_cost`（没有才回退到最新报价行）——**两条路径都先打折**，写进 `purchase`（成本价）档的是**折后价**（报价行没有自己的折扣，用的是产品库行上那个）；整组价格提交以保住 `internal`/`export`；幂等（已建档返回 `skipped`），SKU 属于已软删商品时 422（`catalog_products.sku` 的唯一性含软删行，store 的可见读不到它，故命令另做一次原始探测）。列表行操作的文案是「**建商品档案**」，确认框写明"建过档才能发运、收货"；回填的是库行的 `catalog_product_id` |
+| 关联已有商品 / 换绑 / 解除关联（2026-09-23；2026-10-10 指向 catalog） | `purchasing.supplier-products.link`：`{ id, productId }`（request/response 的 `productId` 键名保留），`productId: null` = 解除。**只写 `catalog_product_id` 这一列**，不改商品任何字段与价格——供应商编码 ≠ 我们 SKU 时，这是唯一不产生重复商品档案的做法。目标商品的**作用域与存活检查在写这一列的同一个事务里**（`select … for update` 锁住 `catalog_products` 行；这是跨模块标量 ID、没有外键，所以只能这么做）：跨组织 → 404 `product_not_found`，已软删（或在选择与写入之间被删）→ 422 `product_deleted`，两种都不落任何写入 |
+| 同步字段到商品（2026-09-23；2026-10-10 起写 catalog） | `purchasing.supplier-products.sync-fields`：`promote` 对已关联行是幂等的（`skipped`），所以产品库改完名字/规格/供货价后用这个动作推回商品。与 `promote` **共用同一段写入**（`lib/supplierProductPromotion.ts`）：只写非空且变化的字段（`changedProductFields` + 与当前 `StoreProduct` 的 merge，保证 store 的原生载荷不会清空未提交的列）+ 合并 `purchase` 价格档（整组提交，消失的行以 `ends_at` 关窗），返回 `fieldsChanged[]` / `priceChanged` 让界面说清写了什么；`internal`/`export` 价、变体一律不碰。未关联 → 422 `supplier_product_not_linked`，商品已删 → 422 `product_deleted` |
 | 停用 / 启用（2026-09-30） | 列表行操作直接改 `status`（`active`/`inactive`），走既有 `purchasing.supplier-products.update` 命令——乐观锁 + `purchasing.supplier_product.updated` 事件 + 索引副作用；载荷只带更新契约的必填字段（`supplierSku`/`name`/`unit`）+ `status`，命令对未提交字段保持不动，**编码、价格、图片、历史全保留，什么都不删**。列表默认按 `status=active` 读，因此停用行立刻离开默认视图，切「停用」筛选可见，并可在同一处一键恢复 |
 | 批量建商品档案（2026-09-23） | `purchasing.supplier-products.promote-batch`：`{ ids: uuid[1..100] }`，**逐行隔离**（与报价导入同款）：某行失败（SKU 属于已删商品、未知 id）只记进 `failed[{ id, code, message }]`，其余照常落库；重复 id 折叠为首次出现，折叠后为空 → 400 |
-| 建档状态（2026-09-23） | 列表筛选 `GET …?linked=all\|linked\|unlinked` **按库里的 `product_id` 服务端过滤**（不是按实时解析出来的名称——否则商品被删后这行会悄悄掉出「已建档」桶）；列表项多一个 `productDeleted`：`product_id` 有值但解析不到活商品（被删或不在本作用域）时，单元格显示「关联的商品已删除」，动作换成换绑/解除（`promote` 会 skip、`sync-fields` 会 422，都不该再点） |
+| 建档状态（2026-09-23；2026-10-10 指向 catalog） | 列表筛选 `GET …?linked=all\|linked\|unlinked` **按库里的 `catalog_product_id` 服务端过滤**（不是按实时解析出来的名称——否则商品被删后这行会悄悄掉出「已建档」桶）；列表项多一个 `productDeleted`：`catalog_product_id` 有值但解析不到活商品（被删或不在本作用域）时，单元格显示「关联的商品已删除」，动作换成换绑/解除（`promote` 会 skip、`sync-fields` 会 422，都不该再点） |
 | 动作的权限面（2026-09-23） | 写商品主数据的三个动作（建商品档案 / 批量建商品档案 / 同步字段到商品）要 `purchasing.supplier-products.promote`；三个关联动作（关联已有商品 / 换绑 / 解除关联）要 `…manage`。客户端用 `useBackendChrome()` + `hasFeature` 只决定**要不要显示**，服务端始终是权威（403） |
 | 采购单行选择器的建档标记（2026-09-23） | 合并选择器里，产品库行的描述带上建档状态：未建档的行仍可选（先谈价后建档是合法顺序），但选项上直接写「未建档：建过档才能发运、收货」，不再让后果留到发运分摊时才暴露。`loadSupplierProductOptions` 因此返回 `SupplierProductOption`（多一个 `linked`），而 `loadOwnedProductOptions` 从 `PurchaseOrderForm.tsx` 挪到 `orderFormOptions.ts`——订单行选择器与产品库的「关联已有商品」共用同一个商品候选源 |
 | 导出列语言 | 产品库列表的 CSV/JSON 导出表头只用英文：CRUD 工厂的 `header` 是静态字符串，这个接缝上没有按请求本地化的口子，混排中英表头是唯一不能接受的做法 |
