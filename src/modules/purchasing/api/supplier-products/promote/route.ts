@@ -14,7 +14,7 @@ const promoteListSchema = z.object({
 })
 
 const promoteResponseSchema = z.object({
-  productId: z.string().uuid(),
+  catalogProductId: z.string().uuid(),
   action: z.enum(['created', 'updated', 'skipped']),
   priceSkipped: z.boolean(),
 })
@@ -45,12 +45,12 @@ export const { metadata, POST } = makeCrudRoute({
 
 export const openApi: OpenApiRouteDoc = {
   tag: purchasingTag,
-  summary: 'Sync a supplier product into the product master',
+  summary: 'Create or sync a supplier product into the catalog store',
   methods: {
     POST: {
-      summary: 'Sync a supplier product into the product master',
+      summary: 'Create or sync a supplier product into the catalog store',
       description:
-        'Creates the product master row for this supplier code, or updates the existing one by SKU, and merges a `purchase`-tier price row from the most recent quotation line that quoted the code (the other price tiers are preserved). Backfills `product_id` on the library row. Idempotent: a row that already carries `product_id` reports `action: "skipped"` and writes nothing.',
+        'Creates the catalog product for this supplier code, or updates the existing one by SKU, and merges a `purchase`-tier price row from the library’s own supply price (after discount), falling back to the most recent quotation line that quoted the code (the other price tiers are preserved). Backfills `catalog_product_id` on the library row. Idempotent: a row that already carries `catalog_product_id` reports `action: "skipped"` and writes nothing.',
       requestBody: { schema: supplierProductPromoteSchema },
       responses: [{ status: 200, description: 'Sync finished', schema: promoteResponseSchema }],
       errors: [...purchasingCommandErrors],

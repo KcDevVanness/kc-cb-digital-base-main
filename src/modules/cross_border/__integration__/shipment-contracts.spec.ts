@@ -170,35 +170,16 @@ test.describe.serial('cross_border — shipment contracts and packing-list lines
     })
     viewerToken = await getAuthToken(api, viewerEmail, VIEWER_PASSWORD)
 
-    // The allocation guard refuses a purchase line that is not bridged to the installed catalog, so
-    // the catalog product, the product master row and the committed purchase order all have to
-    // exist before a shipment can be created at all.
-    const catalogSku = `CB-LINKS-${stamp}`.toUpperCase()
-    const createdCatalog = await apiRequestWithSelectedOrg(api, 'POST', '/api/catalog/products', {
-      token: rootToken,
-      selectedOrgId: hqOrgId,
-      data: {
-        title: `CB links product ${stamp}`,
-        sku: catalogSku,
-        description: 'Long enough description for the catalog create validation in QA automation flows.',
-      },
-    })
-    const catalogBody = await readJsonSafe<Record<string, unknown>>(createdCatalog)
-    catalogProductId = String(
-      [catalogBody?.id, (catalogBody?.item as Record<string, unknown>)?.id].find(
-        (value): value is string => typeof value === 'string' && value.length > 0,
-      ) ?? '',
-    )
-    expect(catalogProductId, 'the catalog product fixture resolved an id').toBeTruthy()
-
+    // One action creates the catalog product and its default variant; the returned id is the
+    // catalog product id every downstream document reference uses.
     const product = await apiCall('POST', '/api/products/items', {
       sku: `CB-LINKS-${stamp}`.toUpperCase(),
       name: `CB links product ${stamp}`,
-      catalogProductId,
       unit: 'PCS',
     })
     expect(product.status(), 'POST /api/products/items should return 201').toBe(201)
     productId = String((await readJsonSafe<IdPayload>(product))?.id ?? '')
+    catalogProductId = productId
     expect(productId).toBeTruthy()
 
     const supplier = await apiCall('POST', '/api/purchasing/suppliers', {

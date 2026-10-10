@@ -17,7 +17,7 @@ import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimi
 import { Button } from '@open-mercato/ui/primitives/button'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
-import { useOrganizationNames } from '../../products/components/useOrganizationNames'
+import { useOrganizationNames } from '@/lib/orgs/useOrganizationNames'
 import type { OurPartyProfileRecord } from './OurPartyForm'
 
 const API_PATH = 'our_parties/profiles'

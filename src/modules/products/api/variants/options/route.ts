@@ -1,133 +1,133 @@
-import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
+import type { EntityManager } from '@mikro-orm/postgresql'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthFromCookies } from '@open-mercato/shared/lib/auth/server'
-import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
-import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern'
-import { createLogger } from '@open-mercato/shared/lib/logger'
-import { resolveOrganizationScopeForRequest } from '@open-mercato/core/modules/directory/utils/organizationScope'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
-import { ProductsProduct, ProductsVariant } from '../../../data/entities'
-import { productsErrorSchema, productsTag } from '../../openapi'
+import { createLogger } from '@open-mercato/shared/lib/logger'
+import { getStoreProduct, listStoreProducts, type StoreProduct, type StoreVariant } from '../../../lib/store'
+import { resolveProductRouteScope } from '../../../lib/routeSupport'
 
-const logger = createLogger('products')
+const logger = createLogger('products').child({ component: 'variant-options-route' })
+
+const productsTag = 'Products'
+
+const productsErrorSchema = z.object({ error: z.string() }).passthrough()
 
 const MAX_OPTIONS = 50
+
+/** One page of the store's read model; the option walk never asks for more than the store caps at. */
+const OPTION_PAGE_SIZE = 200
+
+/**
+ * How many pages the by-id walk may read before it gives up. An edit form resolves the labels of a
+ * handful of SKUs it already holds, so the walk normally stops on its first page; the bound keeps a
+ * stale id from turning one option read into a scan of the whole organization.
+ */
+const MAX_OPTION_PAGES = 10
 
 export const metadata = {
   GET: { requireAuth: true, requireFeatures: ['products.items.view'] },
 }
 
 /**
- * Scoped option source for SKU pickers — the app-owned counterpart of the catalog variant picker.
+ * Whether a variant answers a type-ahead term.
  *
- * It exists before its consumer on purpose (REQ-V-004): the deferred wms round resolves a receipt's
- * variant from here, so that work becomes a consumer-only change instead of a second authoring pass.
- *
- * Three call shapes:
- *   - `?search=<term>` — type-ahead over the plaintext columns (`code`, `name`, `barcode`); a LIKE
- *     never matches ciphertext, and these columns are not encrypted.
+ * The store's read model searches products (SKU, title, legacy alias), not variants, so a term is
+ * matched against the product a variant belongs to as well as against the variant's own code, name
+ * and barcode: an operator typing a product name wants that product's SKUs.
+ */
+function matchesVariant(product: StoreProduct, variant: StoreVariant, term: string): boolean {
+  if (term.length === 0) return true
+  return [product.sku, product.name, variant.sku, variant.name ?? '', variant.barcode ?? ''].some((value) =>
+    value.toLowerCase().includes(term),
+  )
+}
+
+/**
+ * Three call shapes, read through the product store:
+ *   - `?search=<term>` — type-ahead over the products of the selected organization and their SKUs.
  *   - `?ids=<uuid,uuid>` — resolves the labels of already-selected SKUs, which an edit form has as
  *     ids but cannot display.
- *   - `?productId=<uuid>` — narrows to one product's SKUs.
+ *   - `?productId=<uuid>` — one product's SKUs.
  *
- * Reads expand to the caller's readable organizations; an `organizationId` outside that set is
- * ignored rather than accepted, so the parameter can never widen what the caller may see. Variants
- * whose product is gone are left out: a picker must not offer a SKU of a deleted product, and the
- * label has no product name to show for it.
+ * The store has no variant-by-id read, so the `ids` shape walks the organization's products page by
+ * page until every requested variant has been matched (bounded; see `MAX_OPTION_PAGES`). A variant
+ * whose product is gone is never offered, and the option value stays the variant id, which is the
+ * id a document stores.
  */
 export async function GET(request: Request) {
-  const container = await createRequestContainer()
-  const auth = await getAuthFromCookies()
-  if (!auth?.tenantId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const resolved = await resolveProductRouteScope(request)
+  if (!resolved.ok) return resolved.response
+  const { em, tenantId, selectedOrganizationId } = resolved.scope
+  const scope = { tenantId, organizationId: selectedOrganizationId }
 
   const url = new URL(request.url)
-  const requestedOrganizationId = (url.searchParams.get('organizationId') ?? '').trim()
-  const organizationScope = await resolveOrganizationScopeForRequest({ container, auth, request })
-  const readableIds = organizationScope?.filterIds?.length
-    ? organizationScope.filterIds
-    : organizationScope?.selectedId
-      ? [organizationScope.selectedId]
-      : auth.orgId
-        ? [auth.orgId]
-        : []
-  if (readableIds.length === 0) {
-    return NextResponse.json(
-      { error: 'Select an organization to access this resource', code: 'organization_scope_required' },
-      { status: 400 },
-    )
-  }
-  // Pickers narrow the read to the organization the operator is working in (the same rule every
-  // other option source follows); reads otherwise expand to the caller's descendant organizations.
-  const scopeIds = requestedOrganizationId.length > 0 && readableIds.includes(requestedOrganizationId)
-    ? [requestedOrganizationId]
-    : readableIds
-
   const search = (url.searchParams.get('search') ?? '').trim()
   const productId = (url.searchParams.get('productId') ?? '').trim()
+  if (productId.length > 0 && !z.string().uuid().safeParse(productId).success) {
+    return NextResponse.json({ error: 'Invalid product id' }, { status: 400 })
+  }
   const requestedIds = (url.searchParams.get('ids') ?? '')
     .split(',')
     .map((value) => value.trim())
     .filter((value) => value.length > 0)
 
-  const where: Record<string, unknown> = {
-    tenantId: auth.tenantId,
-    organizationId: { $in: scopeIds },
-    deletedAt: null,
-    product: { tenantId: auth.tenantId, organizationId: { $in: scopeIds }, deletedAt: null },
-  }
-  if (productId.length > 0) {
-    if (!z.string().uuid().safeParse(productId).success) {
-      return NextResponse.json({ error: 'Invalid product id' }, { status: 400 })
-    }
-    where.product = { id: productId, tenantId: auth.tenantId, organizationId: { $in: scopeIds }, deletedAt: null }
-  }
-  if (requestedIds.length > 0) {
-    where.id = { $in: requestedIds }
-  } else if (search.length > 0) {
-    // Escaped LIKE on plaintext columns only; the escape keeps a typed `%` from widening the filter.
-    const term = `%${escapeLikePattern(search)}%`
-    where.$or = [{ code: { $ilike: term } }, { name: { $ilike: term } }, { barcode: { $ilike: term } }]
-  }
-
   try {
-    const em = container.resolve('em') as EntityManager
-    const rows = await em.fork().find(
-      ProductsVariant,
-      where as FilterQuery<ProductsVariant>,
-      { orderBy: { sortOrder: 'asc', createdAt: 'asc' }, limit: MAX_OPTIONS },
-    )
-
-    const productIds = [...new Set(rows.map((row) => String(row.product.id)))].filter(
-      (value) => value.length > 0,
-    )
-    const products = productIds.length
-      ? await em.fork().find(ProductsProduct, {
-          id: { $in: productIds },
-          tenantId: auth.tenantId,
-          organizationId: { $in: scopeIds },
-          deletedAt: null,
-        } as FilterQuery<ProductsProduct>)
-      : []
-    const productNames = new Map(products.map((product) => [String(product.id), product.name]))
-
-    const items = rows.map((row) => {
-      const productName = productNames.get(String(row.product.id))
-      const sku = `${row.code} — ${row.name}`
-      return { value: String(row.id), label: productName ? `${productName} · ${sku}` : sku }
-    })
+    const products = await loadCandidateProducts({ em, scope, productId, requestedIds, search })
+    const wanted = new Set(requestedIds)
+    const term = search.toLowerCase()
+    const items = products
+      .flatMap((product) =>
+        product.variants
+          .filter((variant) => (wanted.size > 0 ? wanted.has(variant.id) : matchesVariant(product, variant, term)))
+          .map((variant) => ({
+            value: variant.id,
+            label: variant.name ? `${product.name} · ${variant.sku} — ${variant.name}` : `${product.name} · ${variant.sku}`,
+          })),
+      )
+      .slice(0, MAX_OPTIONS)
     return NextResponse.json({ items })
-  } catch (err) {
-    logger.error('Failed to resolve product variant options', { err })
+  } catch (error) {
+    logger.error('Failed to resolve product variant options', { err: error })
     return NextResponse.json({ error: 'Could not load the product variants' }, { status: 500 })
   }
 }
 
-export const productVariantOptionsResponseSchema = z.object({
-  items: z.array(z.object({ value: z.string(), label: z.string() })),
-})
+async function loadCandidateProducts(input: {
+  em: EntityManager
+  scope: { tenantId: string; organizationId: string }
+  productId: string
+  requestedIds: string[]
+  search: string
+}): Promise<StoreProduct[]> {
+  const { em, scope, productId, requestedIds, search } = input
+  if (productId.length > 0) {
+    const product = await getStoreProduct({ em, scope, id: productId })
+    return product ? [product] : []
+  }
+
+  const remaining = new Set(requestedIds)
+  const products: StoreProduct[] = []
+  let page = 1
+  for (;;) {
+    const { items, total } = await listStoreProducts({
+      em,
+      scope,
+      // Ids win over the term, the same precedence the picker's call shapes have always had.
+      search: remaining.size > 0 ? null : search || null,
+      status: 'all',
+      page,
+      pageSize: OPTION_PAGE_SIZE,
+    })
+    for (const product of items) {
+      products.push(product)
+      for (const variant of product.variants) remaining.delete(variant.id)
+    }
+    if (remaining.size === 0 || items.length === 0 || products.length >= total || page >= MAX_OPTION_PAGES) {
+      return products
+    }
+    page += 1
+  }
+}
 
 export const openApi: OpenApiRouteDoc = {
   tag: productsTag,
@@ -135,11 +135,18 @@ export const openApi: OpenApiRouteDoc = {
   methods: {
     GET: {
       summary: 'List product variant options',
-      description:
-        'Scoped SKU option source for pickers: `<product name> · <variant code> — <variant name>`, filtered by code/name/barcode, by ids or by product.',
       tags: [productsTag],
+      query: z.object({
+        search: z.string().optional(),
+        ids: z.string().optional(),
+        productId: z.string().uuid().optional(),
+      }),
       responses: [
-        { status: 200, description: 'Available product variant options.', schema: productVariantOptionsResponseSchema },
+        {
+          status: 200,
+          description: 'Available product variant options.',
+          schema: z.object({ items: z.array(z.object({ value: z.string(), label: z.string() })) }),
+        },
       ],
       errors: [
         { status: 400, description: 'Malformed product id or missing organization scope', schema: productsErrorSchema },

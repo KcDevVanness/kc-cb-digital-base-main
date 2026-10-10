@@ -85,9 +85,8 @@ import QuoteLoadPanel from './QuoteLoadPanel'
  * The documents themselves stay where they belong — the installed `sales` chain owns numbering,
  * statuses, totals, shipments and invoices, and this module drives that chain through its public
  * API (`POST /api/sales/{quotes,orders}`) instead of reimplementing it. What this module owns is the
- * **flow and the pickers**: lines reference the app-owned product master
- * (`products_products.id`, see .ai/specs/2026-09-22-products-and-trade-docs.md), so the operator
- * chooses from the products the business actually maintains instead of the installed catalog.
+ * **flow and the pickers**: lines reference a catalog product (the single product store's id), so the operator
+ * chooses from the products the business actually maintains instead of any other list.
  *
  * The **buyer** is the second picker this module owns. An internal sale goes from the group's main
  * entity to a branch — both are organizations in the platform's organization tree

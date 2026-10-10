@@ -276,51 +276,17 @@ test.describe.serial('trade_docs — commercial invoices', () => {
     })
     viewerToken = await getAuthToken(api, viewerEmail, VIEWER_PASSWORD)
 
-    // The product master row and its catalog link are what bridge a sales/purchase line to the
-    // catalog product the CI draws its line from; the shipment command refuses a line that is not
-    // bridged, so both halves have to exist before any allocation can be written. The catalog row
-    // is created through the real route with the organization selected: the installed catalog
-    // refuses a write that carries no organization context.
-    const catalogSku = `CI-CAT-${stamp}`.toUpperCase()
-    const createdCatalog = await apiRequestWithSelectedOrg(api, 'POST', '/api/catalog/products', {
-      token: rootToken,
-      selectedOrgId: hqOrgId,
-      data: {
-        title: `CI E2E product ${stamp}`,
-        sku: catalogSku,
-        description:
-          'Long enough description for SEO checks in QA automation flows. This text keeps the create validation satisfied.',
-      },
-    })
-    const createdCatalogBody = await readJsonSafe<Record<string, unknown>>(createdCatalog)
-    expect(
-      createdCatalog.ok(),
-      `POST /api/catalog/products answered ${createdCatalog.status()} ${JSON.stringify(createdCatalogBody)}`,
-    ).toBeTruthy()
-    const directCatalogId = [createdCatalogBody?.id, (createdCatalogBody?.item as Record<string, unknown>)?.id].find(
-      (value): value is string => typeof value === 'string' && value.length > 0,
-    )
-    catalogProductId = directCatalogId ?? ''
-    if (!catalogProductId) {
-      const catalogList = await apiRequestWithSelectedOrg(
-        api,
-        'GET',
-        `/api/catalog/products?search=${encodeURIComponent(catalogSku)}&pageSize=20`,
-        { token: rootToken, selectedOrgId: hqOrgId },
-      )
-      const catalogPage = await readJsonSafe<ListPayload<Record<string, unknown>>>(catalogList)
-      catalogProductId = String((catalogPage?.items ?? []).find((item) => item.sku === catalogSku)?.id ?? '')
-    }
-    expect(catalogProductId, 'the catalog product fixture resolved an id').toBeTruthy()
-
+    // One action creates the catalog product and its default variant; the returned id is the
+    // catalog product id that sales/purchase lines, allocations and the CI all reference.
+    const productSku = `CI-E2E-${stamp}`.toUpperCase()
     const product = await apiCall('POST', '/api/products/items', {
-      sku: `CI-E2E-${stamp}`.toUpperCase(),
+      sku: productSku,
       name: `CI E2E product ${stamp}`,
-      catalogProductId,
       unit: 'PCS',
     })
     expect(product.status(), 'POST /api/products/items should return 201').toBe(201)
     productId = String((await readJsonSafe<IdPayload>(product))?.id ?? '')
+    catalogProductId = productId
     expect(productId).toBeTruthy()
 
     const supplier = await apiCall('POST', '/api/purchasing/suppliers', {
@@ -364,12 +330,12 @@ test.describe.serial('trade_docs — commercial invoices', () => {
     salesOrderAId = await createSaleOrder('USD')
     salesOrderLineAId = await createSaleOrderLine(salesOrderAId, productId as string, 'USD', '10', '12.5', {
       title: `CI E2E product A ${stamp}`,
-      sku: catalogSku,
+      sku: productSku,
     })
     salesOrderBId = await createSaleOrder('USD')
     salesOrderLineBId = await createSaleOrderLine(salesOrderBId, productId as string, 'USD', '10', '30', {
       title: `CI E2E product B ${stamp}`,
-      sku: catalogSku,
+      sku: productSku,
     })
   })
 

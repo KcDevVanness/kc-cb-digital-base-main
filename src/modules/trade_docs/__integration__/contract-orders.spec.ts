@@ -161,37 +161,19 @@ test.describe.serial('trade_docs — contract order links', () => {
     supplierId = String((await readJsonSafe<IdPayload>(supplier))?.id ?? '')
     expect(supplierId).toBeTruthy()
 
-    // A purchase-order line must name a product, and the app-owned master is bridged to the
-    // installed catalog product exactly like the shipment suite's fixture does.
-    const catalogSku = `TD-ORD-${stamp}`.toUpperCase()
-    const createdCatalog = await apiRequestWithSelectedOrg(api, 'POST', '/api/catalog/products', {
-      token: rootToken,
-      selectedOrgId: hqOrgId,
-      data: {
-        title: `TD orders product ${stamp}`,
-        sku: catalogSku,
-        description: 'Long enough description for the catalog create validation in QA automation flows.',
-      },
-    })
-    expect(createdCatalog.status(), 'POST /api/catalog/products should return 201').toBe(201)
-    const catalogBody = await readJsonSafe<Record<string, unknown>>(createdCatalog)
-    catalogProductId = String(
-      [catalogBody?.id, (catalogBody?.item as Record<string, unknown>)?.id].find(
-        (value): value is string => typeof value === 'string' && value.length > 0,
-      ) ?? '',
-    )
-    expect(catalogProductId, 'the catalog product fixture resolved an id').toBeTruthy()
-
+    // A purchase-order line names a catalog product; one action creates that product and its
+    // default variant, and the returned id is what the line and every downstream document use.
+    const productSku = `TD-ORD-${stamp}`.toUpperCase()
     const product = await apiCall('POST', '/api/products/items', {
-      sku: catalogSku,
+      sku: productSku,
       name: `TD orders product ${stamp}`,
-      catalogProductId,
       unit: 'PCS',
     })
     expect(product.status(), 'POST /api/products/items should return 201').toBe(201)
     const productBody = await readJsonSafe<IdPayload>(product)
     productId = String(productBody?.id ?? productBody?.item?.id ?? '')
-    expect(productId, 'the app-owned product fixture resolved an id').toBeTruthy()
+    catalogProductId = productId
+    expect(productId, 'the product fixture resolved an id').toBeTruthy()
 
     const purchaseOrder = await apiCall('POST', '/api/purchasing/purchase-orders', {
       supplierId,

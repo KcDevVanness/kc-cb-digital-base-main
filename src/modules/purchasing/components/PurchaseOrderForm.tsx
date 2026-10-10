@@ -287,16 +287,14 @@ async function fetchSupplierDefaultCurrency(supplierId: string): Promise<string>
  * line while lines are added and removed; `productLabel` only ever seeds the picker's display
  * for a product that is not on the first page of options, and is never submitted.
  *
- * A line is picked either from the product master or from the supplier's own library, and the two
- * references are never sent together — but the operator picks from **one** search box: the source
- * travels in the picker's option value (`lib/orderLinePicker.ts`), not in a mode the operator has to
- * understand, and the payload still carries ids only.
+ * A line is picked either from the catalog product store or from the supplier's own library, and
+ * the two references are never sent together — but the operator picks from **one** search box: the
+ * source travels in the picker's option value (`lib/orderLinePicker.ts`), not in a mode the operator
+ * has to understand, and the payload still carries ids only.
  */
 export type PurchaseOrderLineValues = {
   key: string
-  /** Reference to the app-owned product master (`products_products.id`). */
-  productId: string
-  /** Legacy reference kept only so an existing draft that carries one can still be saved. */
+  /** Reference to the catalog product store (`catalog_products.id`). */
   catalogProductId: string
   /** Reference to a supplier product library row (`purchasing_supplier_products.id`). */
   supplierProductId: string
@@ -401,7 +399,6 @@ function newLineKey(): string {
 function createEmptyLine(): PurchaseOrderLineValues {
   return {
     key: newLineKey(),
-    productId: '',
     catalogProductId: '',
     supplierProductId: '',
     productLabel: '',
@@ -420,7 +417,6 @@ function readLines(value: unknown): PurchaseOrderLineValues[] {
     const line = entry as Record<string, unknown>
     return [{
       key: typeof line.key === 'string' && line.key.length ? line.key : newLineKey(),
-      productId: readText(line, 'productId'),
       catalogProductId: readText(line, 'catalogProductId'),
       supplierProductId: readText(line, 'supplierProductId'),
       productLabel: readText(line, 'productLabel'),
@@ -477,16 +473,11 @@ export function buildPurchaseOrderPayload(values: PurchaseOrderFormValues): Reco
     notes: toOptionalText(values.notes),
     sourceSalesOrderId: toOptionalText(values.sourceSalesOrderId),
     lines: values.lines.map((line) => {
-      // A library line carries exactly one reference and the command rejects a mix, so both master
-      // references are dropped the moment the operator picks from the library.
+      // A line carries exactly one reference and the command rejects a mix, so the catalog reference
+      // is dropped the moment the operator picks from the supplier library.
       const supplierProductId = line.supplierProductId.trim()
-      const ownedProductId = line.productId.trim()
       return {
-        productId: supplierProductId ? undefined : ownedProductId,
-        // Sent only when the line has no other reference, so the API's "at least one reference"
-        // rule is satisfied for a new line, a library line and a legacy draft line alike.
-        catalogProductId:
-          (supplierProductId || ownedProductId) ? undefined : line.catalogProductId.trim() || undefined,
+        catalogProductId: supplierProductId ? undefined : line.catalogProductId.trim() || undefined,
         supplierProductId: supplierProductId || undefined,
         quantity: toOptionalNumber(line.quantity) ?? 0,
         unitPrice: toOptionalNumber(line.unitPrice) ?? 0,
@@ -568,16 +559,16 @@ export function PurchaseOrderLinesEditor({
   React.useEffect(() => {
     if (!supplierId) return
     const targets = lines.filter(
-      (line) => line.productId.trim().length > 0 && line.unitPrice.trim().length === 0 && !autoPricedLineKeys.current.has(line.key),
+      (line) => line.catalogProductId.trim().length > 0 && line.unitPrice.trim().length === 0 && !autoPricedLineKeys.current.has(line.key),
     )
     if (targets.length === 0) return
     let cancelled = false
-    const productIds = Array.from(new Set(targets.map((line) => line.productId.trim())))
+    const catalogProductIds = Array.from(new Set(targets.map((line) => line.catalogProductId.trim())))
     const load = async () => {
       const prices: Record<string, string> = {}
       await Promise.all(
-        productIds.map(async (productId) => {
-          const params = new URLSearchParams({ supplierId, productId, page: '1', pageSize: '1' })
+        catalogProductIds.map(async (catalogProductId) => {
+          const params = new URLSearchParams({ supplierId, catalogProductId, page: '1', pageSize: '1' })
           try {
             const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
               `${SUPPLIER_PRODUCTS_API_PATH}?${params.toString()}`,
@@ -588,7 +579,7 @@ export function PurchaseOrderLinesEditor({
             if (!cell || typeof cell !== 'object') return
             const record = cell as Record<string, unknown>
             const price = record.netUnitPrice ?? record.unitPrice
-            if (typeof price === 'string' && price.length > 0) prices[productId] = price
+            if (typeof price === 'string' && price.length > 0) prices[catalogProductId] = price
           } catch {
             // A supplier without a price for this product is normal: leave the cell empty.
           }
@@ -597,9 +588,9 @@ export function PurchaseOrderLinesEditor({
       if (cancelled) return
       let changed = false
       const next = lines.map((line) => {
-        const productId = line.productId.trim()
-        if (!productId || line.unitPrice.trim().length > 0) return line
-        const price = prices[productId]
+        const catalogProductId = line.catalogProductId.trim()
+        if (!catalogProductId || line.unitPrice.trim().length > 0) return line
+        const price = prices[catalogProductId]
         if (!price) return line
         autoPricedLineKeys.current.add(line.key)
         changed = true
@@ -935,7 +926,6 @@ export default function PurchaseOrderForm() {
             sourceSalesOrderId: sourceParam.id,
             lines: copy.lines.map((seed) => ({
               ...createEmptyLine(),
-              productId: seed.productId ?? '',
               catalogProductId: seed.catalogProductId ?? '',
               quantity: seed.quantity,
             })),

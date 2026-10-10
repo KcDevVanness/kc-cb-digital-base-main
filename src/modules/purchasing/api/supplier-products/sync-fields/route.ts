@@ -14,7 +14,7 @@ const syncFieldsListSchema = z.object({
 })
 
 const syncFieldsResponseSchema = z.object({
-  productId: z.string().uuid(),
+  catalogProductId: z.string().uuid(),
   fieldsChanged: z.array(z.string()),
   priceChanged: z.boolean(),
 })
@@ -31,7 +31,7 @@ export const { metadata, POST } = makeCrudRoute({
     softDeleteField: 'deletedAt',
   },
   indexer: { entityType: ENTITY_ID },
-  list: { schema: syncFieldsListSchema, entityId: ENTITY_ID, fields: ['id', 'supplier_sku', 'product_id'] },
+  list: { schema: syncFieldsListSchema, entityId: ENTITY_ID, fields: ['id', 'supplier_sku', 'catalog_product_id'] },
   actions: {
     create: {
       commandId: 'purchasing.supplier-products.sync-fields',

@@ -38,13 +38,13 @@
 - **集成底座（3，官方 `@open-mercato/core`）**：`integrations`（外部 id 映射与 provider 注册）、
   `data_sync`（流式导入导出运行、游标、进度）、`progress`（`data_sync` 起 run 时解析 `progressService` 的服务）——Phase 4 传输层的接入点
 - **可选存储（1，官方包）**：`storage_s3`（`@open-mercato/storage-s3`，仅 `OM_ENABLE_STORAGE_S3=true` 时启用）
-- **app 自有（16，`from: '@app'`）**：`products`（产品主数据：类型/类目/商品/三档价）、
+- **app 自有（16，`from: '@app'`）**：`products`（自有商品库页面 + catalog 单一存储的读写层 `lib/store.ts`）、
   `purchasing`（供应商/采购单/阶段付款）、`sourcing`（供应商报价与导入映射）、
   `trade_docs`（采购销售合同、进出口发票）、`cross_border`（发运/在途/出口单证）、
   `export_finance`（收汇按订单 / 出口退税按柜 + 订单档案与柜档案只读投影）、
   `internal_sales`（对分公司内部销售的自建界面，引擎仍是官方 `sales`）、
   `parties`（交易对手方主数据：买方/分公司/服务方 + 银行信息）、
-  `platform_ops`（平台渠道/订单镜像/结算/对账）、`product_codes`（商品编码规则与发号台账）、
+  `platform_ops`（平台渠道/订单镜像/结算/对账）、`product_codes`（发号已停用：只保留旧码别名与品牌/类别字典播种）、
   `finance`（柜费用/到岸成本/期间费用 + 应付/应收只读台账）、`ru_sync`（俄方 PETKIT 供应链数据同步）、
   `boss_cockpit`（老板驾驶舱只读聚合）、`storage_ops`（附件存储运维 CLI：audit/migrate/verify/rollback/prune-local）、
   `currency_policy`（汇率主数据与币种字典对账，无页面）、`scope_guards`（auth 管理命令越权写入拦截，无页面）——见
@@ -71,7 +71,8 @@ app 自建了业务面（`products`/`purchasing`/`trade_docs`/`platform_ops`/`cr
   message-object href、catalog search presenter。通知的 `linkHref` 在创建时就冻结成行数据，
   所以摘除路由会让**已经存在**的通知点开即 404，改通知类型也救不回来——只能让 URL 继续可解析。
 
-已按此策略隐藏的模块：`catalog`（8 个产品/类目页 + `config/catalog` 配置页）、`customers`、`sales`、`currencies`、
+已按此策略隐藏的模块：`catalog`（8 个产品/类目页 + `config/catalog` 配置页——**2026-10-10 起 catalog 是商品数据的唯一存储**，
+但 app 自绘自己的商品页面 `/backend/products/items`，官方产品/变体/类目页仍不出现在导航）、`customers`、`sales`、`currencies`、
 `feature_toggles`（全部 `navHidden`）。隐藏只作用于导航：模块的 API/命令/实体/ACL
 不受影响，页面自身的 `requireFeatures` 也照旧生效，改回一行即恢复。
 
@@ -85,10 +86,11 @@ app 自建了业务面（`products`/`purchasing`/`trade_docs`/`platform_ops`/`cr
 `wms.manage_locations`/`wms.adjust_inventory`/`wms.cycle_count`，中文标签取 `src/modules/wms/i18n/zh.json`。
 要再收窄（例如只留仓库/库位）就是给对应页面加回一行 `navHidden`。
 
-`config/catalog` 是 2026-09-23 追加的一项（业主口径：Settings 面板条目太多）：页面只维护
-catalog 价格类型与欧盟单位价展示开关，本部署没有自有面读它（价格词表在 `products_prices.price_tier`，
-`purchasing`/`sourcing` 用自己的 `supplier_cost`/`company_offer` 码，`catalog_price_kinds` 为空表），
-但 catalog 搜索 presenter 会把 `catalog:catalog_price_kind` 的结果链到该 URL，所以仍走 `navHidden` 而不是 `null`。
+`config/catalog` 是 2026-09-23 追加的一项（业主口径：Settings 面板条目太多）：页面维护 catalog 价格类型
+（`catalog_price_kinds`，**2026-10-10 起是商品三档价的真源**：`purchase`/`internal`/`export` 由
+`products/lib/store.ts` 幂等建/读，价表 `catalog_product_variant_prices` 按 `price_kind_id` 引用）与欧盟单位价展示开关。
+页面保持可用（URL 直达），隐藏只为缩短 Settings 面板；catalog 搜索 presenter 会把
+`catalog:catalog_price_kind` 的结果链到该 URL，所以走 `navHidden` 而不是 `null`。
 
 **另一处不隐藏的是 `dictionaries`**：字典库的页面体是 app 自建的
 （`src/modules/dictionaries/backend/config/dictionaries/page.tsx` 遮蔽包内同名文件），而 app 的主数据下拉

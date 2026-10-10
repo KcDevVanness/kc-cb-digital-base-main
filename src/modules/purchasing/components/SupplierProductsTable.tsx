@@ -42,7 +42,7 @@ const PRODUCT_EDIT_HREF = '/backend/products/items'
 const SUPPLIERS_API_PATH = 'purchasing/suppliers'
 /** Master-writing actions (create/update the product record) need `promote`, not just `manage`. */
 const FEATURE_PROMOTE = 'purchasing.supplier-products.promote'
-/** Link actions (assign / re-point / clear `product_id`) need the library's write feature. */
+/** Link actions (assign / re-point / clear `catalog_product_id`) need the library's write feature. */
 const FEATURE_MANAGE = 'purchasing.supplier-products.manage'
 const PAGE_SIZE = 50
 const QUERY_KEY_ROOT = 'purchasing-supplier-products'
@@ -331,7 +331,7 @@ export default function SupplierProductsTable() {
 
   const [linkTarget, setLinkTarget] = React.useState<SupplierProductListRow | null>(null)
   const [importOpen, setImportOpen] = React.useState(false)
-  const [nextStep, setNextStep] = React.useState<{ productId: string; label: string } | null>(null)
+  const [nextStep, setNextStep] = React.useState<{ catalogProductId: string; label: string } | null>(null)
 
   const refreshList = React.useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: [QUERY_KEY_ROOT] })
@@ -353,7 +353,7 @@ export default function SupplierProductsTable() {
         confirmText: t('purchasing.supplierProducts.actions.promote', 'Create product record'),
       })
       if (!confirmed) return
-      const response = await apiCall<{ action?: string; productId?: string }>(PROMOTE_URL, {
+      const response = await apiCall<{ action?: string; catalogProductId?: string }>(PROMOTE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: row.id }),
@@ -365,12 +365,13 @@ export default function SupplierProductsTable() {
         )
         return
       }
-      const productId = typeof response.result?.productId === 'string' ? response.result.productId : null
+      const catalogProductId =
+        typeof response.result?.catalogProductId === 'string' ? response.result.catalogProductId : null
       if (response.result?.action === 'skipped') {
         flash(t('purchasing.supplierProducts.promote.skipped', 'Already has a product record — nothing to do'), 'info')
       } else {
         flash(t('purchasing.supplierProducts.promote.result', 'Product record created'), 'success')
-        if (productId) setNextStep({ productId, label: row.nameZh ?? row.name })
+        if (catalogProductId) setNextStep({ catalogProductId, label: row.nameZh ?? row.name })
       }
       refreshList()
     },
@@ -527,22 +528,22 @@ export default function SupplierProductsTable() {
       // The DataTable navigates on a row click, so every control in this cell stops the click from
       // reaching it — without that, clicking the product link or an inline action also opened the
       // library row's edit page.
-      if (row.productId && !row.productDeleted) {
+      if (row.catalogProductId && !row.productDeleted) {
         return (
           <Link
-            href={`${PRODUCT_EDIT_HREF}/${row.productId}/edit`}
+            href={`${PRODUCT_EDIT_HREF}/${row.catalogProductId}/edit`}
             className="flex flex-col hover:underline"
             title={t('purchasing.supplierProducts.list.openProduct', 'Open the product record')}
             onClick={(event) => event.stopPropagation()}
           >
-            <span>{row.productName ?? row.productSku ?? row.productId}</span>
+            <span>{row.productName ?? row.productSku ?? row.catalogProductId}</span>
             {row.productName && row.productSku ? (
               <span className="text-xs text-muted-foreground">{row.productSku}</span>
             ) : null}
           </Link>
         )
       }
-      if (row.productId && row.productDeleted) {
+      if (row.catalogProductId && row.productDeleted) {
         return (
           <div className="flex flex-col items-start gap-1">
             <span className="text-xs text-muted-foreground">
@@ -710,7 +711,7 @@ export default function SupplierProductsTable() {
           dismissible
           onDismiss={() => setNextStep(null)}
           footer={(
-            <Link className="text-sm underline" href={`${PRODUCT_EDIT_HREF}/${nextStep.productId}/edit`}>
+            <Link className="text-sm underline" href={`${PRODUCT_EDIT_HREF}/${nextStep.catalogProductId}/edit`}>
               {t(
                 'purchasing.supplierProducts.promote.nextStepAction',
                 'Open the product and fill its official catalog link',
@@ -827,12 +828,12 @@ export default function SupplierProductsTable() {
           <RowActions
             items={[
               { id: 'edit', label: t('purchasing.supplierProducts.actions.edit', 'Edit'), href: `${LIST_HREF}/${row.id}/edit` },
-              ...(row.productId
+              ...(row.catalogProductId
                 ? [
                     {
                       id: 'open-product',
                       label: t('purchasing.supplierProducts.actions.openProduct', 'Open the product record'),
-                      href: `${PRODUCT_EDIT_HREF}/${row.productId}/edit`,
+                      href: `${PRODUCT_EDIT_HREF}/${row.catalogProductId}/edit`,
                     },
                   ]
                 : canPromote
@@ -850,14 +851,14 @@ export default function SupplierProductsTable() {
                 ? [
                     {
                       id: 'link',
-                      label: row.productId
+                      label: row.catalogProductId
                         ? t('purchasing.supplierProducts.actions.relink', 'Link another product')
                         : t('purchasing.supplierProducts.actions.link', 'Link existing product'),
                       onSelect: () => setLinkTarget(row),
                     },
                   ]
                 : []),
-              ...(row.productId && !row.productDeleted && canPromote
+              ...(row.catalogProductId && !row.productDeleted && canPromote
                 ? [
                     {
                       id: 'sync-fields',
@@ -868,7 +869,7 @@ export default function SupplierProductsTable() {
                     },
                   ]
                 : []),
-              ...(row.productId && canManage
+              ...(row.catalogProductId && canManage
                 ? [
                     {
                       id: 'unlink',
@@ -918,7 +919,7 @@ export default function SupplierProductsTable() {
       <SupplierProductLinkDialog
         open={linkTarget !== null}
         rowLabel={linkTarget ? `${linkTarget.itemNo ?? linkTarget.supplierSku} — ${linkTarget.nameZh ?? linkTarget.name}` : ''}
-        currentProductId={linkTarget?.productId ?? null}
+        currentProductId={linkTarget?.catalogProductId ?? null}
         onOpenChange={(open) => {
           if (!open) setLinkTarget(null)
         }}

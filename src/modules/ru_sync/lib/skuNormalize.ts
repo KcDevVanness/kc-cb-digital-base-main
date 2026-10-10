@@ -7,7 +7,7 @@
  *
  * - {@link canonicalize} produces the human/target form of a RU code (suffix stripped, uppercase)
  *   and is what a suggestion is displayed as;
- * - {@link matchKey} produces the comparison key used against `products_products.sku` — letters and
+ * - {@link matchKey} produces the comparison key used against the catalog product's `sku` — letters and
  *   digits only, uppercase — so `PK-44`, `pk44` and `PK 44` all collide.
  *
  * Neither function guesses: a code that cannot be normalized to a unique candidate stays unmapped

@@ -152,24 +152,23 @@ function optionFromOwnedProduct(item: Record<string, unknown>): CrudFieldOption 
 }
 
 /**
- * Products the current organization can buy, from the app-owned master.
+ * Products the current organization can buy, from the catalog product store.
  *
  * Two pickers read this: the purchase order's line editor and the supplier library's
- * 关联已有商品 action. They must offer the same thing — `products_products.id`, with the label the
+ * 关联已有商品 action. They must offer the same thing — the catalog product id, with the label the
  * operator recognises — so the loader lives here, once, with the other option loaders.
  *
- * The installed catalog is no longer consulted for new references.
- * `organizationId` narrows the list to the selected organization because every write resolves its
- * product in that scope.
+ * The store's list is scoped to the caller's *selected* organization, so `organizationId` is not
+ * sent as a query key (the endpoint does not accept one); it stays a parameter because the React
+ * Query key that drives this loader depends on the selected scope, and switching scope must refetch.
  */
 export async function loadOwnedProductOptions(
   errorMessage: string,
   forbiddenMessage: string,
   query?: string,
-  organizationId?: string | null,
+  _organizationId?: string | null,
 ): Promise<CrudFieldOption[]> {
   const params = new URLSearchParams({ page: '1', pageSize: String(OWNED_PRODUCT_OPTION_PAGE_SIZE), status: 'active' })
-  if (organizationId) params.set('organizationId', organizationId)
   const term = query?.trim()
   if (term) params.set('search', term)
   try {
@@ -200,7 +199,7 @@ function optionFromSupplierProduct(item: Record<string, unknown>): SupplierProdu
   const label = code && name ? `${code} — ${name}` : code || name
   // 建档状态 rides along so the picker can say what an unlinked row costs: it can be ordered, but
   // it cannot be shipped or received until the product record exists and is catalog-linked.
-  return { value, label: label || value, linked: readText(item, 'productId').length > 0 }
+  return { value, label: label || value, linked: readText(item, 'catalogProductId').length > 0 }
 }
 
 /**

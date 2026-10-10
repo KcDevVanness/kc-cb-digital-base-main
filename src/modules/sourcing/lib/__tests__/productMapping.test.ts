@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals'
 import { changedProductFields } from '../../../products/lib/supplierMapping'
-import { categoryCodeFromSection, desiredPriceRow, quoteLineToProductFields } from '../productMapping'
+import { desiredPriceRow, quoteLineToProductFields } from '../productMapping'
 
 /**
  * The quotation line's own half of the master mapping: which columns feed the product fields and
@@ -64,6 +64,7 @@ describe('sourcing productMapping', () => {
 
   it('asks for the line currency and MOQ, quantizing the price to the price scale', () => {
     expect(desiredPriceRow({ currencyCode: 'usd', moqQuantity: 500, unitCost: '230.000000' } as never, 'CNY')).toMatchObject({
+      tier: 'purchase',
       currencyCode: 'USD',
       minQuantity: 500,
       unitPrice: '230.0000',
@@ -75,12 +76,5 @@ describe('sourcing productMapping', () => {
       minQuantity: 1,
       unitPrice: '0',
     })
-  })
-
-  it('turns a section banner into a category code, or refuses one it cannot slug', () => {
-    expect(categoryCodeFromSection('FEEDING')).toBe('feeding')
-    expect(categoryCodeFromSection('ACCESSORY & PARTS')).toBe('accessory_parts')
-    expect(categoryCodeFromSection('猫砂')).toBeNull()
-    expect(categoryCodeFromSection(null)).toBeNull()
   })
 })

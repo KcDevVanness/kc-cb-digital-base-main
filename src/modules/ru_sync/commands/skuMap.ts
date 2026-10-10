@@ -35,12 +35,12 @@ function skuMapFilter(scope: Scope, ruSku: string): FilterQuery<RuSyncSkuMap> {
 
 /**
  * The product a binding points at must exist in the caller's organization. The check reads
- * `products_products` through raw SQL (no cross-module entity import) and answers 404 for anything
+ * the installed catalog (`catalog_products`) through raw SQL (no cross-module entity import) and answers 404 for anything
  * else, so a typo cannot create a binding to a product nobody can see.
  */
 async function assertProductInScope(em: EntityManager, scope: Scope, productId: string): Promise<void> {
   const rows = (await em.fork().getConnection().execute<Array<{ id: string }>>(
-    `select id from products_products
+    `select id from catalog_products
       where id = ? and tenant_id = ? and organization_id = ? and deleted_at is null`,
     [productId, scope.tenantId, scope.organizationId],
   )) as Array<{ id: string }>

@@ -22,7 +22,7 @@ describe('supplierMapping', () => {
   }
 
   const purchaseRow = (overrides: Partial<DesiredPriceRow> = {}): DesiredPriceRow => ({
-    priceTier: 'purchase',
+    tier: 'purchase',
     currencyCode: 'CNY',
     minQuantity: 500,
     unitPrice: '230.000000',
@@ -78,22 +78,27 @@ describe('supplierMapping', () => {
 
   it('merges the purchase row into the existing price set without touching other tiers', () => {
     const existing = [
-      { id: 'p1', priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 500, unitPrice: '230.000000', startsAt: null, endsAt: null, isActive: true },
-      { id: 'i1', priceTier: 'internal', currencyCode: 'CNY', minQuantity: 1, unitPrice: '310.500000', startsAt: null, endsAt: null, isActive: true },
-      { id: 'e1', priceTier: 'export', currencyCode: 'USD', minQuantity: 1, unitPrice: '49.900000', startsAt: null, endsAt: null, isActive: true },
+      { id: 'p1', tier: 'purchase', currencyCode: 'CNY', minQuantity: 500, unitPrice: '230.000000', startsAt: null, endsAt: null, isActive: true },
+      { id: 'i1', tier: 'internal', currencyCode: 'CNY', minQuantity: 1, unitPrice: '310.500000', startsAt: null, endsAt: null, isActive: true },
+      { id: 'e1', tier: 'export', currencyCode: 'USD', minQuantity: 1, unitPrice: '49.900000', startsAt: null, endsAt: null, isActive: true },
     ]
     const updated = mergePriceRows(existing, purchaseRow({ unitPrice: '244.750000' }))
     expect(updated.changed).toBe(true)
     expect(updated.rows).toHaveLength(3)
-    expect(updated.rows.find((row) => row.id === 'p1')).toMatchObject({ unitPrice: '244.750000', isActive: true })
-    // the other tiers are submitted unchanged, which is what keeps `replace` from deactivating them
-    expect(updated.rows.find((row) => row.id === 'i1')).toMatchObject({ priceTier: 'internal', unitPrice: '310.500000', isActive: true })
-    expect(updated.rows.find((row) => row.id === 'e1')).toMatchObject({ priceTier: 'export', currencyCode: 'USD', isActive: true })
+    // The payload identifies a row by `(tier, currency, min quantity)`: no id is echoed.
+    expect(updated.rows.every((row) => !('id' in row))).toBe(true)
+    expect(updated.rows.find((row) => row.tier === 'purchase' && row.minQuantity === 500)).toMatchObject({
+      unitPrice: '244.750000',
+      isActive: true,
+    })
+    // the other tiers are submitted unchanged, which is what keeps `replace` from closing them
+    expect(updated.rows.find((row) => row.tier === 'internal')).toMatchObject({ unitPrice: '310.500000', isActive: true })
+    expect(updated.rows.find((row) => row.tier === 'export')).toMatchObject({ currencyCode: 'USD', isActive: true })
 
     // a new MOQ rung is appended rather than replacing the existing one
     const secondRung = mergePriceRows(existing, purchaseRow({ minQuantity: 1, unitPrice: '250.000000' }))
     expect(secondRung.rows).toHaveLength(4)
-    expect(secondRung.rows.filter((row) => row.priceTier === 'purchase')).toHaveLength(2)
+    expect(secondRung.rows.filter((row) => row.tier === 'purchase')).toHaveLength(2)
   })
 
   it('compares prices as exact scaled integers, never as floats', () => {
@@ -104,7 +109,7 @@ describe('supplierMapping', () => {
     expect(Number(huge) === Number(next)).toBe(true)
 
     const existing = [
-      { id: 'p1', priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 500, unitPrice: huge, startsAt: null, endsAt: null, isActive: true },
+      { id: 'p1', tier: 'purchase', currencyCode: 'CNY', minQuantity: 500, unitPrice: huge, startsAt: null, endsAt: null, isActive: true },
     ]
     expect(mergePriceRows(existing, purchaseRow({ unitPrice: next })).changed).toBe(true)
     // the same price spelled with a finer scale is not rewritten
@@ -113,7 +118,7 @@ describe('supplierMapping', () => {
 
   it('reports no change when the quoted price already matches the stored one', () => {
     const existing = [
-      { id: 'p1', priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 500, unitPrice: '230.000000', startsAt: null, endsAt: null, isActive: true },
+      { id: 'p1', tier: 'purchase', currencyCode: 'CNY', minQuantity: 500, unitPrice: '230.000000', startsAt: null, endsAt: null, isActive: true },
     ]
     const same = mergePriceRows(existing, purchaseRow({ unitPrice: '230' }))
     expect(same.changed).toBe(false)

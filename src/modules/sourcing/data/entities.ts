@@ -5,9 +5,10 @@ import { Entity, Index, ManyToOne, PrimaryKey, Property, Unique } from '@mikro-o
  * A supplier quotation: one document a supplier sent (an imported workbook or a hand-typed
  * list) with the lines the operator reviews and promotes.
  *
- * `product`-master price rows cannot carry this history — `products_prices` is keyed by
- * `(product, tier, currency, minQuantity)` and holds no supplier, quote date or source file —
- * so the quotation lives here and only the chosen line is written back to the master.
+ * `product`-store price rows cannot carry this history — the catalog price table
+ * (`catalog_product_variant_prices`) is keyed by product × price kind × currency × minimum
+ * quantity and holds no supplier, quote date or source file — so the quotation lives here and
+ * only the chosen line is written back to the store.
  *
  * `columnMap`, `sectionRules`, `header_row_index` and the layout signature are stored so the
  * same file can be re-parsed deterministically with a different mapping (or no mapping at all)
@@ -214,8 +215,9 @@ export class SourcingQuoteLine {
   @Property({ type: 'boolean', default: true })
   selected: boolean = true
 
-  @Property({ name: 'promoted_product_id', type: 'uuid', nullable: true })
-  promotedProductId?: string | null
+  /** The catalog product id the line was promoted into. */
+  @Property({ name: 'catalog_product_id', type: 'uuid', nullable: true })
+  catalogProductId?: string | null
 
   @Property({ name: 'promoted_price_id', type: 'uuid', nullable: true })
   promotedPriceId?: string | null

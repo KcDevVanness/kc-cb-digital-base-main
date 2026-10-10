@@ -15,32 +15,27 @@ import {
  */
 describe('orderLinePicker', () => {
   it('reads the reference a saved line carries', () => {
-    expect(linePickerValue({ supplierProductId: 'sp-1', productId: '', catalogProductId: '' }))
+    expect(linePickerValue({ supplierProductId: 'sp-1', catalogProductId: '' }))
       .toBe(toSupplierProductPickerValue('sp-1'))
-    expect(linePickerValue({ supplierProductId: '', productId: 'p-1', catalogProductId: '' }))
-      .toBe(toProductPickerValue('p-1'))
-    // A legacy draft wrote the installed catalog id: it is still a master reference.
-    expect(linePickerValue({ supplierProductId: '', productId: '', catalogProductId: 'cat-1' }))
+    expect(linePickerValue({ supplierProductId: '', catalogProductId: 'cat-1' }))
       .toBe(toProductPickerValue('cat-1'))
     // The library reference wins when a row carries both (a line saved before the rule tightened).
-    expect(linePickerValue({ supplierProductId: 'sp-1', productId: 'p-1', catalogProductId: 'cat-1' }))
+    expect(linePickerValue({ supplierProductId: 'sp-1', catalogProductId: 'cat-1' }))
       .toBe(toSupplierProductPickerValue('sp-1'))
-    expect(linePickerValue({ supplierProductId: '', productId: '', catalogProductId: '' })).toBe('')
+    expect(linePickerValue({ supplierProductId: '', catalogProductId: '' })).toBe('')
   })
 
   it('writes exactly one reference, clearing the other side', () => {
-    // Picking from the library must drop a master reference picked earlier, label included.
+    // Picking from the library must drop a product reference picked earlier, label included.
     expect(applyLinePickerValue(toSupplierProductPickerValue('sp-9'))).toEqual({
       supplierProductId: 'sp-9',
-      productId: '',
       catalogProductId: '',
       productLabel: '',
     })
-    // ...and the other way round, including the legacy column.
+    // ...and the other way round.
     expect(applyLinePickerValue(toProductPickerValue('p-9'))).toEqual({
-      productId: 'p-9',
+      catalogProductId: 'p-9',
       supplierProductId: '',
-      catalogProductId: '',
       productLabel: '',
     })
   })
@@ -48,13 +43,11 @@ describe('orderLinePicker', () => {
   it('treats any unrecognized value as a clear', () => {
     expect(applyLinePickerValue('')).toEqual({
       supplierProductId: '',
-      productId: '',
       catalogProductId: '',
       productLabel: '',
     })
     expect(applyLinePickerValue('9f6e6f1e')).toEqual({
       supplierProductId: '',
-      productId: '',
       catalogProductId: '',
       productLabel: '',
     })

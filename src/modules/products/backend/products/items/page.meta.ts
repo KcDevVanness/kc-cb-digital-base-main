@@ -7,9 +7,7 @@ export const metadata = {
   pageGroupKey: 'products.nav.group',
   pageOrder: 300,
   icon: 'package',
-  breadcrumb: [
-    { label: 'Products', labelKey: 'products.items.page.title' },
-  ],
+  breadcrumb: [{ label: 'Products', labelKey: 'products.items.page.title' }],
 }
 
 export default metadata

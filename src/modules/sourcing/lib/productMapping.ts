@@ -4,8 +4,8 @@
  * The master-side half of the rule (non-empty/changed values, the whole price set) lives in
  * `products/lib/supplierMapping.ts`, because the supplier library's sync obeys the same contract;
  * this file owns only what a quotation line contributes and how its price row is built from the
- * line's own currency and MOQ, so the ladder lands in `products_prices.min_quantity` where the
- * product module already models it.
+ * line's own currency and MOQ, so the ladder lands in the catalog price table's minimum-quantity
+ * column (`catalog_product_variant_prices.min_quantity`), where the product store already models it.
  */
 
 import { parseExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
@@ -17,7 +17,6 @@ import {
   type DesiredPriceRow,
   type ProductFieldValues,
 } from '../../products/lib/supplierMapping'
-import { slugifySku } from './valueNormalization'
 
 /**
  * Non-empty product values a line can contribute; nothing here returns an empty string.
@@ -52,7 +51,7 @@ export function quoteLineToProductFields(line: SourcingQuoteLine): ProductFieldV
 export function desiredPriceRow(line: SourcingQuoteLine, quoteCurrency: string): DesiredPriceRow {
   const lineCurrency = line.currencyCode && /^[A-Za-z]{3}$/.test(line.currencyCode) ? line.currencyCode : quoteCurrency
   return {
-    priceTier: 'purchase',
+    tier: 'purchase',
     currencyCode: lineCurrency.toUpperCase(),
     minQuantity: line.moqQuantity && line.moqQuantity >= 1 ? Math.round(line.moqQuantity) : 1,
     // The products validator now rejects a price finer than 4 decimals, so a legacy line (or one
@@ -73,11 +72,4 @@ function priceString(value: string | null | undefined): string {
   if (value === null || value === undefined || value.trim().length === 0) return '0'
   const parsed = parseExactDecimal(value)
   return parsed ? toAmountString(parsed, PRICE_SCALE) : '0'
-}
-
-/** Category code for a section banner (`FEEDING` → `feeding`); null when nothing usable is left. */
-export function categoryCodeFromSection(label: string | null | undefined): string | null {
-  if (!label) return null
-  const slug = slugifySku(label).replace(/-/g, '_')
-  return /^[a-z0-9_]{1,64}$/.test(slug) ? slug : null
 }

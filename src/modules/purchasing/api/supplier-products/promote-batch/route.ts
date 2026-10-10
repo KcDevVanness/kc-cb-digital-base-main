@@ -38,7 +38,7 @@ export const { metadata, POST } = makeCrudRoute({
     softDeleteField: 'deletedAt',
   },
   indexer: { entityType: ENTITY_ID },
-  list: { schema: promoteBatchListSchema, entityId: ENTITY_ID, fields: ['id', 'supplier_sku', 'product_id'] },
+  list: { schema: promoteBatchListSchema, entityId: ENTITY_ID, fields: ['id', 'supplier_sku', 'catalog_product_id'] },
   actions: {
     create: {
       commandId: 'purchasing.supplier-products.promote-batch',

@@ -40,8 +40,18 @@
 ## 规格状态板（`.ai/specs/`）
 
 **权威状态是每份 spec 的 `**Status**` 行**（那里写清已交付到哪一阶段、哪些还开着）；
-下表只是给人看的总览，最近一次与代码核对是 2026-09-29（补上此前遗漏的 7 份规格）。逐条实测证据见
+下表只是给人看的总览，最近一次与代码核对是 **2026-10-10**（「catalog 单一商品存储」改造：`products_*`
+表族退役、官方 `catalog` 成为唯一商品存储、SKU 手填、发号器停用）。逐条实测证据见
 [`cross-border-erp.md`](./cross-border-erp.md) 的"进度"表。
+
+> **2026-10-10 改造波及的规格**（下表逐行状态可读作「历史交付」，以下条目以新 spec 为准）：
+> - [2026-09-22-products-and-trade-docs.md](../../.ai/specs/2026-09-22-products-and-trade-docs.md)：`trade_docs` / `internal_sales` 部分仍有效；`products` 自建主数据部分被取代。
+> - [2026-09-22-product-variants.md](../../.ai/specs/2026-09-22-product-variants.md)：**结案** —— 变体 = catalog 变体，Phase 3 的「wms 轮」问题随单一存储关闭。
+> - [2026-09-23-product-taxonomy-consolidation.md](../../.ai/specs/2026-09-23-product-taxonomy-consolidation.md)：**退役** —— 产品线与自建品类树删除。
+> - [2026-09-24-supplier-product-code-rules.md](../../.ai/specs/2026-09-24-supplier-product-code-rules.md)：**停用** —— 规则/台账/生成/解析删除，只保留旧码别名表。
+> - [2026-09-28-product-distribution-to-branches.md](../../.ai/specs/2026-09-28-product-distribution-to-branches.md)：语义保留，**在 catalog 上重造**（`source_product_id` 自定义字段）。
+> - [2026-09-22-supplier-product-library.md](../../.ai/specs/2026-09-22-supplier-product-library.md)：产品库保留为**供应商方向**表，指针 `product_id` → `catalog_product_id`。
+> - 新规格：[2026-10-10-catalog-single-store.md](../../.ai/specs/2026-10-10-catalog-single-store.md)（Phase 0 已交付，PR #170；Phase 1 实施中）。
 
 | 规格 | 状态 | 覆盖 |
 |---|---|---|

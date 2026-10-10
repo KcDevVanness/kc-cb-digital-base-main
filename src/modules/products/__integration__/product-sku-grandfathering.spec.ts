@@ -21,7 +21,8 @@ import { getTokenContext, readJsonSafe } from '@open-mercato/core/helpers/integr
  *
  * The legacy value is written with SQL on purpose: no API can produce it (`products.items.create`
  * validates the pattern), and that is exactly the state a database migrated from the spreadsheet era
- * is in. Without the grandfathering fix, step 3 below returns 400 and the row is uneditable forever.
+ * is in. The SKU itself lives in the installed catalog (`catalog_products.sku`) since the single-store
+ * cutover. Without the grandfathering rule, step 2 below returns 400 and the row is uneditable forever.
  */
 
 const ITEMS_URL = '/api/products/items'
@@ -106,7 +107,7 @@ test.describe.serial('products — legacy SKU grandfathering', () => {
 
     // Reproduce the migrated state: an SKU the pattern rejects, written where only a migration can.
     await withClient(async (client) => {
-      await client.query('update products_products set sku = $1 where id = $2', [LEGACY_SKU, productId])
+      await client.query('update catalog_products set sku = $1 where id = $2', [LEGACY_SKU, productId])
     })
     const legacy = await readProduct()
     expect(legacy.sku, 'the legacy value is in the row').toBe(LEGACY_SKU)

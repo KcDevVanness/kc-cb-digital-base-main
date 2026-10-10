@@ -65,7 +65,7 @@ export type QuoteLineFacts = {
   unitCost: string | null
   currencyCode: string | null
   moqQuantity: number | null
-  promotedProductId: string | null
+  catalogProductId: string | null
   sourceRowNumber: number | null
 }
 
@@ -361,7 +361,7 @@ export type ItemTimelinePoint = {
   unitCost: string | null
   currencyCode: string | null
   moqQuantity: number | null
-  promotedProductId: string | null
+  catalogProductId: string | null
   /** Movement against the previous point of the same item. */
   kind: ChangeKind
   deltaAmount: string | null

@@ -139,13 +139,20 @@ export async function evaluateDueReminders(
             p.id as product_id
        from wms_inventory_balances b
        join catalog_product_variants v on v.id = b.catalog_variant_id
-       join products_products p on p.catalog_product_id = v.product_id and p.deleted_at is null
-       left join products_prices pp
-              on pp.product_id = p.id and pp.price_tier = 'purchase' and pp.is_active = true
+       join catalog_products p on p.id = v.product_id and p.deleted_at is null
+       left join catalog_product_variant_prices pp
+              on pp.product_id = p.id
+             and pp.price_kind_id = (select k.id
+                                       from catalog_price_kinds k
+                                      where k.code = 'purchase'
+                                        and k.tenant_id = ?
+                                        and k.deleted_at is null
+                                      limit 1)
+             and (pp.ends_at is null or pp.ends_at > now())
       where b.tenant_id = ? and b.organization_id = ? and b.deleted_at is null
         and p.tenant_id = ? and p.organization_id = ?
       group by p.sku, p.id`,
-    [scope.tenantId, scope.organizationId, scope.tenantId, scope.organizationId],
+    [scope.tenantId, scope.tenantId, scope.organizationId, scope.tenantId, scope.organizationId],
   )) as StockRow[]
 
   for (const row of stockRows) {

@@ -78,28 +78,18 @@ test.describe.serial('cross_border — shipments of one sales order', () => {
     const internalChannelId = String((await readJsonSafe<ChannelPayload>(channels))?.channels?.internal ?? '')
     expect(internalChannelId, 'the internal trade-type channel is seeded').toBeTruthy()
 
-    const catalogSku = `SHIP-ORDER-${stamp}`.toUpperCase()
-    const catalog = await scoped('POST', '/api/catalog/products', {
-      title: `Ship order product ${stamp}`,
-      sku: catalogSku,
-      description: 'Long enough description for the catalog create validation in QA automation flows.',
-    })
-    const catalogBody = await readJsonSafe<Record<string, unknown>>(catalog)
-    catalogProductId = String(
-      [catalogBody?.id, (catalogBody?.item as Record<string, unknown>)?.id].find(
-        (value): value is string => typeof value === 'string' && value.length > 0,
-      ) ?? '',
-    )
-    expect(catalogProductId, 'the catalog product fixture resolved an id').toBeTruthy()
-
+    // One action creates the catalog product and its default variant; the returned id is the
+    // catalog product id every downstream document reference uses.
+    const productSku = `SHIP-ORDER-${stamp}`.toUpperCase()
     const product = await scoped('POST', '/api/products/items', {
-      sku: catalogSku,
+      sku: productSku,
       name: `Ship order product ${stamp}`,
-      catalogProductId,
       unit: 'PCS',
     })
     expect(product.status(), await product.text()).toBe(201)
-    productId = String((await readJsonSafe<IdPayload>(product))?.id ?? '')
+    const created = await readJsonSafe<IdPayload>(product)
+    productId = String(created?.id ?? '')
+    catalogProductId = productId
     expect(productId).toBeTruthy()
 
     const supplier = await scoped('POST', '/api/purchasing/suppliers', {

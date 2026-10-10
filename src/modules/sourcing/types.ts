@@ -60,7 +60,7 @@ export type QuoteLineRow = {
   warnings: string[]
   rowStatus: QuoteLineStatus
   selected: boolean
-  promotedProductId: string | null
+  catalogProductId: string | null
   updatedAt: string | null
 }
 
@@ -165,8 +165,8 @@ export type QuoteChangeRow = {
   targetCurrencyCode: string | null
   deltaAmount: string | null
   deltaPercent: number | null
-  library: { supplierProductId: string; supplierSku: string; productId: string | null } | null
-  purchase: { productId: string; productSku: string; unitPrice: string; currencyCode: string } | null
+  library: { supplierProductId: string; supplierSku: string; catalogProductId: string | null } | null
+  purchase: { catalogProductId: string; productSku: string; unitPrice: string; currencyCode: string } | null
 }
 
 export type QuoteChangeSummary = {
@@ -220,7 +220,7 @@ export type ItemTimelinePoint = {
   unitCost: string | null
   currencyCode: string | null
   moqQuantity: number | null
-  promotedProductId: string | null
+  catalogProductId: string | null
   kind: QuoteChangeKind
   deltaAmount: string | null
   deltaPercent: number | null
@@ -232,8 +232,8 @@ export type ItemTimelineResponse = {
     key: string
     itemNo: string | null
     name: string | null
-    library: { supplierProductId: string; supplierSku: string; productId: string | null } | null
-    purchase: { productId: string; productSku: string; unitPrice: string; currencyCode: string } | null
+    library: { supplierProductId: string; supplierSku: string; catalogProductId: string | null } | null
+    purchase: { catalogProductId: string; productSku: string; unitPrice: string; currencyCode: string } | null
   }
   points: ItemTimelinePoint[]
   versionCount: number

@@ -106,11 +106,11 @@ export async function GET(request: Request) {
     return {
       ...row,
       library: entry
-        ? { supplierProductId: entry.supplierProductId, supplierSku: entry.supplierSku, productId: entry.productId }
+        ? { supplierProductId: entry.supplierProductId, supplierSku: entry.supplierSku, catalogProductId: entry.catalogProductId }
         : null,
       purchase: price
         ? {
-            productId: price.productId,
+            catalogProductId: price.catalogProductId,
             productSku: price.productSku,
             unitPrice: price.unitPrice,
             currencyCode: price.currencyCode,
@@ -184,12 +184,12 @@ const changeRowSchema = z.object({
     .object({
       supplierProductId: z.string().uuid(),
       supplierSku: z.string(),
-      productId: z.string().uuid().nullable(),
+      catalogProductId: z.string().uuid().nullable(),
     })
     .nullable(),
   purchase: z
     .object({
-      productId: z.string().uuid(),
+      catalogProductId: z.string().uuid(),
       productSku: z.string(),
       unitPrice: z.string(),
       currencyCode: z.string(),

@@ -138,7 +138,7 @@ export function createOrmRuSyncStore(em: EntityManager): RuSyncStore {
 
       const scoped = em.fork()
       const products = (await scoped.getConnection().execute<Array<{ id: string; sku: string }>>(
-        `select id, sku from products_products
+        `select id, sku from catalog_products
           where tenant_id = ? and organization_id = ? and deleted_at is null`,
         [scope.tenantId, scope.organizationId],
       )) as Array<{ id: string; sku: string }>

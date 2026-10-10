@@ -370,7 +370,7 @@ Verdict: `Ready for implementation`（Phase 1 起）— 依赖 owner 的开工�
 | Q5 | SKU 全手填；发号器停用 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q6 | 供应商表原文组保留 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q7 | 自产/委外仍走采购单 | owner | no | 2026-10-10 采纳推荐（A） |
-| Q8 | 三档价落 catalog price kinds；砍有效期窗口 | owner | no | 2026-10-10 采纳推荐（A） |
+| Q8 | 三档价落 catalog price kinds；**有效期窗口保留**（catalog 价格原生带 `starts_at`/`ends_at`，实现时发现不必砍；"消失的行"用 `ends_at=now` 关窗而不是删除） | owner | no | 2026-10-10 采纳推荐（A），并在 Phase 1 实现时按原生字段修正 |
 | Q-新1 | 分发副本保留并重造 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q-新2 | 权限沿用 app feature 闸门 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q-新3 | 报价 section → 品类自动建树砍掉 | owner | no | 2026-10-10 采纳推荐（A） |
