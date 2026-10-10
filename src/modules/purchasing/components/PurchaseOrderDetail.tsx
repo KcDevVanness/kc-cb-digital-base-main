@@ -57,6 +57,13 @@ import {
   type PurchaseOrderRecord,
 } from './PurchaseOrderForm'
 import { loadProductCategoryOptions } from './orderFormOptions'
+import {
+  ROOT_ATTACHMENT_BYTES_HREF,
+  ROOT_DOCUMENTS_API_PATH,
+  ROOT_SOURCE_ANCHOR,
+  toRootDocumentSlots,
+  type RootDocumentSlot,
+} from './rootDocuments'
 
 const ORDER_LINES_PAGE_SIZE = 200
 const PAYMENT_PAGE_SIZE = 100
@@ -700,82 +707,17 @@ function PurchasePaymentsSection({
 }
 
 /**
- * The purchase order files no documents of its own any more (REQ-055): the 单证 section mirrors the
- * root order's 「单据与文件」 slots instead, read-only, so the associated documents show here without
- * leaving the page (owner 2026-10-10 复查·三: 会关联什么单证数据，会联动显示在这里).
+ * The root order's 「单据与文件」 slots that carry something, or `null` when the page cannot answer.
  *
- * The read is the hub's own summary (`GET /api/order_hub/orders/fields`) — the same projection the
- * hub's 单据与文件 block and its field drawer render — never its tables, and the slot vocabulary
- * (labels, sources) stays the hub's, reused through the merged app dictionary exactly as the
- * trade-docs dialogs reuse `order_hub.detail.documents.*` keys.
- */
-type RootDocumentFile = {
-  attachmentId: string
-  fileName: string
-  /** ISO-8601 registration timestamp; `''` when the summary carries none. */
-  createdAt: string
-}
-
-/** One child-document signal of a slot (`contract`/`shipment`/`collection`/`purchasing`). */
-type RootDocumentSource = {
-  source: string
-  /** The source artifact's number, or `''` when it carries none. */
-  label: string
-  count: number | null
-}
-
-/** One slot that carries anything at all; empty slots are dropped rather than rendered as noise. */
-type RootDocumentSlot = {
-  slot: string
-  files: RootDocumentFile[]
-  childSources: RootDocumentSource[]
-}
-
-const ROOT_DOCUMENTS_API_PATH = '/api/order_hub/orders/fields'
-/** The root's byte proxy: it resolves a slot attachment through its row to the root's visibility. */
-const ROOT_ATTACHMENT_BYTES_HREF = '/api/order_hub/orders/attachments'
-/** Where each child source's own block sits on the root page, the chip's deep link. */
-const ROOT_SOURCE_ANCHOR: Record<string, string> = {
-  contract: '#contracts',
-  shipment: '#shipments',
-  collection: '#money',
-  purchasing: '#purchasing',
-}
-
-function toRootDocumentSlot(item: Record<string, unknown>): RootDocumentSlot | null {
-  const slot = typeof item.slot === 'string' ? item.slot : ''
-  if (!slot) return null
-  const files: RootDocumentFile[] = []
-  for (const raw of Array.isArray(item.files) ? item.files : []) {
-    const file = (raw ?? {}) as Record<string, unknown>
-    const attachmentId = typeof file.attachmentId === 'string' ? file.attachmentId : ''
-    if (!attachmentId) continue
-    files.push({
-      attachmentId,
-      fileName: typeof file.fileName === 'string' && file.fileName.length > 0 ? file.fileName : attachmentId,
-      createdAt: typeof file.createdAt === 'string' ? file.createdAt : '',
-    })
-  }
-  const childSources: RootDocumentSource[] = []
-  for (const raw of Array.isArray(item.childSources) ? item.childSources : []) {
-    const source = (raw ?? {}) as Record<string, unknown>
-    const kind = typeof source.source === 'string' ? source.source : ''
-    if (!kind) continue
-    childSources.push({
-      source: kind,
-      label: typeof source.label === 'string' ? source.label : '',
-      count: typeof source.count === 'number' && Number.isFinite(source.count) ? source.count : null,
-    })
-  }
-  if (files.length === 0 && childSources.length === 0) return null
-  return { slot, files, childSources }
-}
-
-/**
- * The root order's slots that carry something, or `null` when the page cannot answer: the order is
- * not linked, the role lacks `order_hub.view` (403), or the read failed — all three leave the
- * section with its pointer alone, exactly like the link lookup below, and none may disturb the
- * page's own read.
+ * The purchase order files no documents of its own any more (REQ-055), so the 单证 section mirrors
+ * the root's slots read-only instead — the associated documents show here without leaving the page
+ * (owner 2026-10-10 复查·三: 会关联什么单证数据，会联动显示在这里). The read is the hub's own summary,
+ * the same projection its 单据与文件 block and field drawer render, never its tables
+ * (`./rootDocuments` owns the payload parse).
+ *
+ * `null` covers all three unusable answers — the order is not linked, the role lacks `order_hub.view`
+ * (403), or the read failed — and each leaves the section with its pointer alone, exactly like the
+ * link lookup below; none may disturb the page's own read.
  */
 async function fetchRootDocumentSlots(companyOrderId: string): Promise<RootDocumentSlot[] | null> {
   try {
@@ -787,9 +729,7 @@ async function fetchRootDocumentSlots(companyOrderId: string): Promise<RootDocum
     if (!call.ok || !call.result) return null
     const bySlot = call.result.documents?.bySlot
     if (!Array.isArray(bySlot)) return null
-    return bySlot
-      .map((item) => toRootDocumentSlot((item ?? {}) as Record<string, unknown>))
-      .filter((slot): slot is RootDocumentSlot => slot !== null)
+    return toRootDocumentSlots(bySlot)
   } catch {
     return null
   }
