@@ -15,7 +15,8 @@
 | [i18n.md](./i18n.md) | 语言集、字典位置、三个收窄入口、扩展步骤 |
 | [currency-policy.md](./currency-policy.md) | 启用哪些币种、币种字典与汇率主数据的分工、收敛与重跑命令 |
 | [multi-company-org-model.md](./multi-company-org-model.md) | 一租户 + 组织树的多公司建模、角色矩阵、配置步骤与自查 |
-| [business-architecture.md](./business-architecture.md) | 公司实际业务链路、模块归属（复用/自建/待启用）、数据主源约定、新增流程对齐规则 |
+| [business-architecture.md](./business-architecture.md) | 公司实际业务链路与入口（公司订单为根）、模块归属（复用/自建/待启用）、数据主源约定、已定决策（含被取代的记录）、新增流程对齐规则 |
+| [business-conventions.md](./business-conventions.md) | 业务约定（owner 口径清单）：文案语言、字段与数据口径、交互、流程、产品与货源、文档与交付纪律 |
 | [navigation.md](./navigation.md) | 后台侧边栏「域 → 模块 → 页面」树：结构、新增页面后怎么登记、偏好与权限语义、已知限制、回滚 |
 | [parallel-development.md](./parallel-development.md) | 多路并行开发：并行单元、worktree、分支生命周期与清理（`yarn branches:cleanup`）、共享脊柱文件清单、数据库与端口分配、PR 与合并规则 |
 | [linear-sync.md](./linear-sync.md) | 文档 → Linear 同步（`scripts/linear-sync`）：映射规则、重跑与审计用法 |
