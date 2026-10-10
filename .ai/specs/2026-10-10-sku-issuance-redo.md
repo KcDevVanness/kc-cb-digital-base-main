@@ -5,6 +5,11 @@
 （「一份 spec 覆盖砍+合并+UI，SKU 发号另立」，Phase 4）。所有 ⚠ 标记的决议需要 owner 点头后转
 `Ready for implementation`；`owner` 未点头前不写代码。
 
+> **前提**：本规格在**单一存储改造合入之后**实施（[`.ai/specs/2026-10-10-catalog-single-store.md`](2026-10-10-catalog-single-store.md)，
+> PR #171）。正文引用的路径与行号都按**改造后的树**（`feat/catalog-cutover-phase1`）标注——在 `dev` 上这些文件
+> 尚未删除或改名（例如 `product_codes/{api,commands,backend,components}` 仍然存在、`products/data/validators.ts`
+> 里的字符集还没对齐）。这不是笔误，而是取证口径：本规格描述的是改造之后的系统。
+
 > **它修订/继承的东西**：`.ai/specs/2026-09-24-supplier-product-code-rules.md`（已 superseded：规则/台账/发号/解析
 > 全部删除，但它的三态解析与「旧码别名」教训仍被引用）、`.ai/specs/2026-10-10-catalog-single-store.md`
 > （REQ-006 / Q5 的「SKU 全手填、发号器停用」是本规格的**起点**，不是终点）、
@@ -28,7 +33,7 @@
 2. **「旧码可搜」只对历史成立**：`product_codes_aliases` 只有读（`product_codes/lib/aliasLookup.ts:14-40`、
    `products/lib/store.ts:628-630` 的 `sku ilike / title ilike / id in (aliasIds)` union），
    `src/modules/product_codes/README.md` 明写「手写维护，**不重发**」——当前树里没有任何代码路径能创建一行别名
-   （`product_codes/api|commands|backend|components` 目录已不存在），改一次 SKU 旧码就再也搜不到，
+   （改造后 `product_codes/{api,commands,backend,components}` 目录已删除，见前提），改一次 SKU 旧码就再也搜不到，
    而这正是 C-37 / AC-006 承诺的行为。
 3. **改码的门槛被低估**：SKU 的字符集规则在树里有三份拷贝——`products/data/validators.ts:89`（catalog 口径）、
    `sourcing/lib/skuDerivation.ts:29`（已把供应商的 `/` 映射成 `-` 再校验）、
