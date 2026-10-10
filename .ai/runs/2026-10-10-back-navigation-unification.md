@@ -56,6 +56,19 @@ history -1 的逻辑，有些混乱，你帮我检查所有返回按钮的逻辑
 
 单元测试：`src/lib/navigation/__tests__/returnTo.test.ts` 17 项（解析优先级、回调台账、白名单拒绝、轨迹推进/幂等、query 校验）。
 
+宽门禁（worktree，本地跑的就是单元 PR 的验证证据）：
+
+```bash
+yarn generate && yarn typecheck && yarn lint && node scripts/check-lessons.mjs && yarn ds:check && yarn test && yarn build
+# generate ✅（281 artifacts）/ typecheck ✅ / lint ✅（0 errors，12 个既有 warning）/
+# lessons ✅ / ds:check ✅（1110 files）/ test ✅（94 suites, 845 tests）/ build ✅
+```
+
+主目录复核（owner 要求「功能代码必须在主目录 `yarn dev` 里能 review」）：`git merge --no-ff feat/unified-back-navigation` 进主目录
+本地 `dev`，`git diff feat/unified-back-navigation dev` 为空（合并树与分支树逐字节相同，分支门禁即合并树门禁）；在主目录
+`http://localhost:3000`（admin@acme.com）重跑报告流程：`/backend/quotes` 行操作 → create 页 → 「← 返回」→ 确认未保存更改 →
+落到 `/backend/quotes`（标题「销售报价单」）；安装层页面 `/backend/customers/companies` 在挂载轨迹记录器后照常渲染。
+
 ## 回滚
 
 revert 本 PR 即可：无迁移、无数据、无 API；`sessionStorage` 里残留的 `om:nav-origin:v1` 无人读取（键名带版本，页面回退到台账行为）。
