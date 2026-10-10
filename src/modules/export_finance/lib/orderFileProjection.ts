@@ -1,5 +1,6 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
 import { sql } from 'kysely'
+import { Dictionary, DictionaryEntry } from '@open-mercato/core/modules/dictionaries/data/entities'
 import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern'
 import {
   aggregateRefundStatus,
@@ -32,6 +33,37 @@ import { AMOUNT_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
  */
 
 export * from './fileRules'
+
+/** The shared 订单描述 dictionary (字典库「Product categories」), the code an order stores. */
+const PRODUCT_CATEGORY_DICTIONARY_KEY = 'product_category'
+
+/**
+ * The `product_category` labels of the projection's organization scope, as one value → label map.
+ *
+ * The purchase order stores the dictionary *code*, so a row carries both the raw code and the
+ * label resolved here (`productCategoryLabel`). Resolved in a single dictionary + entries read for
+ * the whole request — never one lookup per row — and a code the dictionary no longer lists simply
+ * has no map entry, leaving the row's label `null` so the surface can fall back to the raw code.
+ */
+async function loadProductCategoryLabels(
+  em: EntityManager,
+  scope: { tenantId: string; organizationId: string },
+): Promise<Map<string, string>> {
+  const scopedEm = em.fork()
+  const dictionary = await scopedEm.findOne(Dictionary, {
+    key: PRODUCT_CATEGORY_DICTIONARY_KEY,
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+    deletedAt: null,
+  })
+  if (!dictionary) return new Map()
+  const entries = await scopedEm.find(DictionaryEntry, {
+    dictionary: dictionary.id,
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+  })
+  return new Map(entries.map((entry) => [entry.value, entry.label ?? entry.value] as [string, string]))
+}
 
 type OrderRow = {
   id: string
@@ -443,6 +475,10 @@ export async function loadOrderFiles(
     milestones.filter((row) => row.milestone === 'picked_up').map((row) => String(row.shipment_id)),
   )
 
+  // One lookup for the page: every row's 订单描述 code resolves against this map, so the
+  // dictionary is read once per request rather than once per order.
+  const productCategoryLabels = await loadProductCategoryLabels(em, scope)
+
   // One clock for the whole page (see the container projection).
   const now = new Date()
   const items: OrderFileRow[] = orders.map((order) => {
@@ -542,6 +578,9 @@ export async function loadOrderFiles(
       ownerName: snapshotName(order.owner_snapshot),
       customerName: snapshotName(order.customer_snapshot),
       productCategory: order.product_category ?? null,
+      productCategoryLabel: order.product_category
+        ? productCategoryLabels.get(order.product_category) ?? null
+        : null,
       businessStatus: deriveBusinessStatus({
         poStatus: String(order.status ?? 'draft'),
         pickedUp: containers.some((container) => container.pickedUp),

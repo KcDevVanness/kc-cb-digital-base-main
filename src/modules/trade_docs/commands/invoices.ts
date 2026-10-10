@@ -14,7 +14,7 @@ import { badRequest, conflict, CrudHttpError, notFound } from '@open-mercato/sha
 import type { CrudEmitContext, CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
-import { TradeDocsContract, TradeDocsContractLine, TradeDocsDocument, TradeDocsDocumentLine, TradeDocsInvoice, TradeDocsInvoiceLine } from '../data/entities'
+import { TradeDocsContract, TradeDocsContractLine, TradeDocsDocument, TradeDocsDocumentLine, TradeDocsInvoice, TradeDocsInvoiceLine, TradeDocsOrderDocument } from '../data/entities'
 import {
   invoiceAttachSchema,
   invoiceCopySchema,
@@ -28,8 +28,9 @@ import {
   resolveCounterpartyKind,
   assertCounterpartyReference,
 } from '../lib/counterpartyRefs'
-import { invalidateInvoiceCaches } from '../lib/cacheInvalidation'
+import { invalidateInvoiceCaches, invalidateOrderDocumentLinkCaches } from '../lib/cacheInvalidation'
 import { ensureScope, invoiceFilter, loadContract, loadDocument, loadInvoice, type TradeDocsScope } from '../lib/scope'
+import { loadSalesOrderRef } from '../lib/orderDocumentReads'
 import { recomputeContractHead } from '../lib/contractRecalc'
 import { productSnapshotPayload, readProductSnapshots } from '../lib/productSnapshots'
 import { computeInvoiceLineTax, computeInvoiceTotals } from '../lib/invoiceTax'
@@ -292,6 +293,18 @@ const createInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
 
     const contractId = parsed.contractId ?? null
     await assertContractVisible(em, scope, contractId)
+    // `?orderKind=&orderId=` on the create page: the link is written in the same transaction as the
+    // invoice, so the order hub's Documents block sees it without a second call. An order the caller
+    // cannot see fails the create instead of being silently dropped.
+    const orderLink = parsed.orderKind && parsed.orderId
+      ? await loadSalesOrderRef(em, scope, parsed.orderId)
+      : null
+    if (parsed.orderKind && parsed.orderId && !orderLink) {
+      throw new CrudHttpError(422, {
+        error: 'order_document_link_order_not_found',
+        orderId: parsed.orderId,
+      })
+    }
     const lines = await resolveInvoiceLines(em, scope, contractId, parsed.lines)
     const totals = computeInvoiceTotals(lines)
 
@@ -326,6 +339,28 @@ const createInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
             },
           })
           await persistInvoiceLines(em, scope, invoice, lines)
+          if (orderLink && parsed.orderKind) {
+            em.persist(
+              em.create(TradeDocsOrderDocument, {
+                tenantId: scope.tenantId,
+                organizationId: scope.organizationId,
+                orderKind: parsed.orderKind,
+                orderId: orderLink.id,
+                orderNumber: orderLink.number,
+                documentKind: 'tax_invoice',
+                documentId: String(invoice.id),
+                documentNumber: invoice.number ?? null,
+                documentSnapshot: {
+                  kind: 'tax_invoice',
+                  number: invoice.number ?? null,
+                  status: 'draft',
+                  total: totals.total,
+                  currencyCode: parsed.currencyCode,
+                  issuedAt: parsed.issuedAt ?? null,
+                },
+              }),
+            )
+          }
         },
       ],
       { transaction: true, label: 'trade_docs.invoices.create' },
@@ -345,6 +380,14 @@ const createInvoiceCommand: CommandHandler<Record<string, unknown>, TradeDocsInv
       { id: String(invoice.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
       'created',
     )
+    // A create that recorded an order link moved that collection too (its own cache resource).
+    if (orderLink) {
+      await invalidateOrderDocumentLinkCaches(
+        { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+        { id: orderLink.id, tenantId: scope.tenantId, organizationId: scope.organizationId },
+        'order-document-linked',
+      )
+    }
 
     return invoice
   },
@@ -542,6 +585,15 @@ const deleteInvoiceCommand: CommandHandler<
     }
     const contractId = contractIdFrom(invoice.contract)
 
+    // The link has no foreign key (it is polymorphic), so nothing cascades: the rows pointing at
+    // this invoice go first, so a deleted invoice leaves no dangling link behind.
+    const removedLinks = await em.nativeDelete(TradeDocsOrderDocument, {
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+      documentKind: 'tax_invoice',
+      documentId: String(invoice.id),
+    } as FilterQuery<TradeDocsOrderDocument>)
+
     const removed = await de.deleteOrmEntity({
       entity: TradeDocsInvoice,
       where: invoiceFilter(scope, id),
@@ -565,6 +617,13 @@ const deleteInvoiceCommand: CommandHandler<
       { id: String(removed.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
       'deleted',
     )
+    if (removedLinks > 0) {
+      await invalidateOrderDocumentLinkCaches(
+        { container: ctx.container, tenantId: scope.tenantId, organizationId: scope.organizationId },
+        { id: String(removed.id), tenantId: scope.tenantId, organizationId: scope.organizationId },
+        'order-document-unlinked',
+      )
+    }
 
     return removed
   },

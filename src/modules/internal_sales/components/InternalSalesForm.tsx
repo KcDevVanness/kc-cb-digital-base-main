@@ -13,6 +13,7 @@ import {
 } from '@open-mercato/ui/backend/CrudForm'
 import { ComboboxInput, type ComboboxOption } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { ErrorMessage, RecordNotFoundState } from '@open-mercato/ui/backend/detail'
+import { useBackendChrome } from '@open-mercato/ui/backend/BackendChromeProvider'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { apiCall, readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
@@ -29,6 +30,7 @@ import {
   useOrganizationScopeVersion,
 } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { hasFeature } from '@open-mercato/shared/security/features'
 import { loadProductOption, loadProductOptions, type ProductOption } from '../../products/components/formOptions'
 import {
   parseOrganizationSwitcherScope,
@@ -38,6 +40,7 @@ import {
   relatedOrganizationEntries,
   type RelatedOrganizationNode,
 } from '@/lib/orgs/organizationOptions'
+import { CustomerQuickCreateDialog } from '@/lib/parties/CustomerQuickCreateDialog'
 import {
   EXTERNAL_BUYER_ROLES,
   buildPartyOptionsUrl,
@@ -47,6 +50,15 @@ import {
   isUuid,
 } from '../lib/buyer'
 import { useTradeTypeChannels, type TradeTypeChannelMap } from '../lib/tradeTypeChannels'
+import {
+  currencyStorageKey,
+  readStoredCurrency,
+  resolveInitialCurrency,
+  writeStoredCurrency,
+} from '../lib/currencyDefault'
+import { useReturnHref } from '@/lib/navigation/returnTo'
+import { parseCompanyOrderParam } from '@/lib/orders/companyOrderParams'
+import { loadCompanyOrderDefaults } from '@/lib/orders/companyOrderDefaults'
 import { SALES_STATUS_DRAFT, SALES_STATUS_SENT } from '../lib/salesStatus'
 import { useSalesStatusEntries } from '../lib/salesStatusEntries'
 import {
@@ -118,7 +130,7 @@ const QUOTES_HREF = '/backend/internal-sales/quotes'
 const LINES_PAGE_SIZE = 100
 const ORDERS_HREF = '/backend/internal-sales/orders'
 
-function apiPathFor(kind: InternalSalesKind): string {
+export function apiPathFor(kind: InternalSalesKind): string {
   return kind === 'quote' ? 'sales/quotes' : 'sales/orders'
 }
 
@@ -211,6 +223,24 @@ export function lineScaleViolation(
     if (!LINE_DECIMAL_PATTERN.test(line.unitPriceNet.trim() || '0')) return { line: index + 1, field: 'unitPriceNet' }
   }
   return null
+}
+
+/**
+ * Whether a single quantity/unit-price value breaks the same rule, for the input's inline error on
+ * blur. The sibling field is neutralised so one offending value never flags the other input; the
+ * rule itself is not restated — `lineScaleViolation` stays the one definition, also used at submit.
+ */
+function lineFieldScaleViolation(
+  line: InternalSalesLineValues,
+  field: 'quantity' | 'unitPriceNet',
+  value: string,
+): boolean {
+  const probe: InternalSalesLineValues = {
+    ...line,
+    quantity: field === 'quantity' ? value : '1',
+    unitPriceNet: field === 'unitPriceNet' ? value : '1',
+  }
+  return lineScaleViolation([probe]) !== null
 }
 
 /**
@@ -410,6 +440,11 @@ function BuyerPickerField({
   t,
 }: CrudCustomFieldRenderProps & { t: TranslateFn }) {
   const { organizationId } = useOrganizationScopeDetail()
+  // The quick-create writes to `parties`; the button hides only once the payload says the caller
+  // lacks `parties.manage` — while it loads, keep it visible (same fail-open pattern as the lists).
+  const { payload: chromePayload, isReady: chromeReady } = useBackendChrome()
+  const canManageParties = !chromeReady || hasFeature(chromePayload?.grantedFeatures, 'parties.manage')
+  const [quickCreateOpen, setQuickCreateOpen] = React.useState(false)
   const { organizations, failed: organizationsFailed, scopeVersion } = useRelatedOrganizations()
   const queryClient = useQueryClient()
   const [partiesFailed, setPartiesFailed] = React.useState(false)
@@ -590,12 +625,35 @@ function BuyerPickerField({
         clearable
         disabled={disabled}
       />
+      {tradeType === 'external' && canManageParties ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setQuickCreateOpen(true)}
+          disabled={disabled}
+        >
+          <Plus className="size-4" aria-hidden="true" />
+          {t('internal_sales.form.buyer.quickCreate', 'New customer')}
+        </Button>
+      ) : null}
       {organizationsFailed ? (
         <p className="text-xs text-status-error-text">
           {t('internal_sales.form.buyer.orgLoadFailed', 'Could not load related organizations')}
         </p>
       ) : null}
       {partiesFailed ? <p className="text-xs text-status-error-text">{partyLoadFailed}</p> : null}
+      {tradeType === 'external' ? (
+        <CustomerQuickCreateDialog
+          open={quickCreateOpen}
+          onOpenChange={setQuickCreateOpen}
+          onCreated={(partyId) => {
+            // Reuse the picker's own selection path — the same handler the list calls — so the
+            // printed buyer name and the email prefill resolve exactly as a manual pick would.
+            handleChange(encodeBuyerRef({ kind: 'party', id: partyId }))
+          }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -640,6 +698,12 @@ function InternalSalesLinesEditor(
   }, [values.lines])
   const productCache = React.useRef(new Map<string, ProductOption>())
   /**
+   * Per-input scale errors, keyed by the row's stable key + field. Filled on blur, cleared on the
+   * next keystroke; presentation only — the row still submits with the operator's own value and the
+   * submit guard (`lineScaleViolation`) is unchanged.
+   */
+  const [scaleErrors, setScaleErrors] = React.useState<Record<string, boolean>>({})
+  /**
    * Latest rows, for reads that happen after an `await`.
    *
    * `setValue` has no functional form, so an async continuation would otherwise write from the rows
@@ -655,6 +719,26 @@ function InternalSalesLinesEditor(
     },
     [lines, setValue],
   )
+
+  // Two writers over the same error map: the blur check fills a row's slot, the keystroke clears it.
+  const markScaleError = React.useCallback(
+    (line: InternalSalesLineValues, field: 'quantity' | 'unitPriceNet', value: string) => {
+      setScaleErrors((prev) => ({
+        ...prev,
+        [`${line.key}:${field}`]: lineFieldScaleViolation(line, field, value),
+      }))
+    },
+    [],
+  )
+  const clearScaleError = React.useCallback((rowKey: string, field: 'quantity' | 'unitPriceNet') => {
+    setScaleErrors((prev) => {
+      const key = `${rowKey}:${field}`
+      if (!prev[key]) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }, [])
 
   const addLine = React.useCallback(() => {
     setValue('lines', [...lines, { ...EMPTY_LINE, key: `line-${Date.now()}` }])
@@ -753,8 +837,18 @@ function InternalSalesLinesEditor(
                 id={`internal-sales-quantity-${index}`}
                 inputMode="decimal"
                 value={line.quantity}
-                onChange={(event) => updateLine(index, { quantity: event.target.value })}
+                aria-invalid={scaleErrors[`${line.key}:quantity`] || undefined}
+                onChange={(event) => {
+                  clearScaleError(line.key, 'quantity')
+                  updateLine(index, { quantity: event.target.value })
+                }}
+                onBlur={(event) => markScaleError(line, 'quantity', event.target.value)}
               />
+              {scaleErrors[`${line.key}:quantity`] ? (
+                <p className="text-xs text-status-error-text">
+                  {t('internal_sales.form.lines.scaleInvalid', 'Quantity and unit price accept at most 4 decimal places.')}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5 md:col-span-2">
               <FieldLabel htmlFor={`internal-sales-price-${index}`} required>
@@ -764,8 +858,18 @@ function InternalSalesLinesEditor(
                 id={`internal-sales-price-${index}`}
                 inputMode="decimal"
                 value={line.unitPriceNet}
-                onChange={(event) => updateLine(index, { unitPriceNet: event.target.value })}
+                aria-invalid={scaleErrors[`${line.key}:unitPriceNet`] || undefined}
+                onChange={(event) => {
+                  clearScaleError(line.key, 'unitPriceNet')
+                  updateLine(index, { unitPriceNet: event.target.value })
+                }}
+                onBlur={(event) => markScaleError(line, 'unitPriceNet', event.target.value)}
               />
+              {scaleErrors[`${line.key}:unitPriceNet`] ? (
+                <p className="text-xs text-status-error-text">
+                  {t('internal_sales.form.lines.scaleInvalid', 'Quantity and unit price accept at most 4 decimal places.')}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5 md:col-span-3 flex items-end justify-end">
               <IconButton
@@ -889,9 +993,55 @@ function SentQuoteNotice({ values, t }: { values?: Record<string, unknown>; t: T
   )
 }
 
+/**
+ * Seeds the buyer from the company order this create was opened from (`?companyOrderId=`).
+ *
+ * Headless (renders nothing): the create form mounts with its empty values and the root read lands
+ * asynchronously, so this watches the form's own values through a bare group. It only fills a field
+ * the operator has **not** touched (an empty `buyerRef`/`customerName`) — a hand-typed buyer is never
+ * overwritten. The link ref is seeded only when the entry's trade type matches a party buyer
+ * (external); an internal sale's buyer is a sibling organization, so only the printed name is filled
+ * there. A failed root read leaves the form exactly as it opened (the reader swallows and logs).
+ */
+function CompanyOrderBuyerPrefill({
+  values,
+  setValue,
+  companyOrderId,
+  tradeType,
+}: {
+  values?: Record<string, unknown>
+  setValue: (id: string, value: unknown) => void
+  companyOrderId: string
+  tradeType: SalesTradeType
+}) {
+  const valuesRef = React.useRef(values)
+  valuesRef.current = values
+
+  React.useEffect(() => {
+    let cancelled = false
+    void loadCompanyOrderDefaults(companyOrderId).then((defaults) => {
+      if (cancelled || !defaults) return
+      const current = valuesRef.current ?? {}
+      const currentRef = typeof current.buyerRef === 'string' ? current.buyerRef.trim() : ''
+      const currentName = typeof current.customerName === 'string' ? current.customerName.trim() : ''
+      if (!currentRef && defaults.customerPartyId && tradeType === 'external') {
+        setValue('buyerRef', encodeBuyerRef({ kind: 'party', id: defaults.customerPartyId }))
+      }
+      if (!currentName && defaults.customerName) {
+        setValue('customerName', defaults.customerName)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [companyOrderId, setValue, tradeType])
+
+  return null
+}
+
 function useGroups(
   t: TranslateFn,
-  { withQuoteLoad = false, mode = 'create' as 'create' | 'edit', autoLoadFrom = null, tradeType = 'internal' as SalesTradeType, channelIds = {} }: {
+  { withQuoteLoad = false, mode = 'create' as 'create' | 'edit', autoLoadFrom = null, tradeType = 'internal' as SalesTradeType, channelIds = {}, companyOrderId = null }: {
     withQuoteLoad?: boolean
     mode?: 'create' | 'edit'
     autoLoadFrom?: string | null
@@ -899,9 +1049,26 @@ function useGroups(
     tradeType?: SalesTradeType
     /** The organization's trade-type channels, so the quote picker offers this entry's own type. */
     channelIds?: TradeTypeChannelMap
+    /** The root this create was opened from (`?companyOrderId=`), for the buyer default prefill. */
+    companyOrderId?: string | null
   } = {},
 ): CrudFormGroup[] {
   return React.useMemo<CrudFormGroup[]>(() => [
+    ...(mode === 'create' && companyOrderId
+      ? [{
+          id: 'company-order-defaults',
+          column: 1 as const,
+          bare: true,
+          component: (context: CrudFormGroupComponentProps) => (
+            <CompanyOrderBuyerPrefill
+              values={context.values}
+              setValue={context.setValue}
+              companyOrderId={companyOrderId}
+              tradeType={tradeType}
+            />
+          ),
+        }]
+      : []),
     ...(withQuoteLoad
       ? [{
           id: 'quote-load',
@@ -936,7 +1103,7 @@ function useGroups(
       bare: true,
       component: (context) => <InternalSalesLinesEditor {...context} t={t} />,
     },
-  ], [autoLoadFrom, channelIds, mode, t, tradeType, withQuoteLoad])
+  ], [autoLoadFrom, channelIds, companyOrderId, mode, t, tradeType, withQuoteLoad])
 }
 
 /**
@@ -960,14 +1127,45 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
   // writing a status the tenant cannot see).
   const { entryIdFor, isLoading: statusLoading, failed: statusFailed } = useSalesStatusEntries()
   // The quote list's row action arrives here; the panel loads that quote once on mount.
-  const fromQuote = useSearchParams().get('fromQuote')
+  const searchParams = useSearchParams()
+  const fromQuote = searchParams.get('fromQuote')
+  /**
+   * `?companyOrderId=` — the company order's "new child" entry hands the operator here with the
+   * root already known, so a saved document is attached back to it. A malformed value is reported
+   * inline and treated as absent: the operator still gets their create, and any link can be made
+   * by hand from the company order page.
+   */
+  const companyOrderParam = React.useMemo(() => parseCompanyOrderParam(searchParams), [searchParams])
+  const { organizationId } = useOrganizationScopeDetail()
   const entryHref = listHrefForTradeType(kind, entryTradeType)
+  const backHref = useReturnHref(entryHref)
+  /**
+   * The starting currency.
+   *
+   * With `?fromQuote=` the quote loader writes that quote's own currency on auto-load, which must
+   * stay ahead of the remembered default — so the memory is only consulted without a source quote.
+   * Read after mount because localStorage is unavailable during SSR; the operator's own change is
+   * never overwritten afterwards (the loader confirms before touching a non-empty form, and this
+   * effect does not re-run on their edits).
+   */
+  const [initialCurrency, setInitialCurrency] = React.useState<string>(EMPTY_VALUES.currencyCode)
+  React.useEffect(() => {
+    if (fromQuote?.trim()) return
+    setInitialCurrency(
+      resolveInitialCurrency({
+        quoteCurrency: null,
+        storedCurrency: readStoredCurrency(currencyStorageKey(organizationId, entryTradeType)),
+        fallback: EMPTY_VALUES.currencyCode,
+      }),
+    )
+  }, [entryTradeType, fromQuote, organizationId])
   const groups = useGroups(t, {
     withQuoteLoad: kind === 'order',
     mode: 'create',
     autoLoadFrom: fromQuote,
     tradeType: entryTradeType,
     channelIds: channels,
+    companyOrderId: companyOrderParam.status === 'ok' ? companyOrderParam.companyOrderId : null,
   })
 
   const handleSubmit = React.useCallback(async (values: InternalSalesFormValues) => {
@@ -1015,19 +1213,57 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
     try {
       const created = await createCrud<{ id?: string }>(apiPathFor(kind), payload)
       const id = typeof created.result?.id === 'string' ? created.result.id : null
-      pushWithFlash(
-        router,
-        id ? documentEditHrefForTradeType(kind, id, values.tradeType) : entryHref,
-        t('internal_sales.form.saved'),
-        'success',
-      )
+      // Remember what was used: the next document in this organization + trade type starts here.
+      writeStoredCurrency(currencyStorageKey(organizationId, entryTradeType), values.currencyCode)
+      // A new order created from a company order's "new" entry is attached back to that root and
+      // lands on it, so the operator sees the row they just created. The kind is the entry's own
+      // trade type — a document cannot be linked as a kind its channel contradicts.
+      if (id && kind === 'order' && companyOrderParam.status === 'ok') {
+        const companyOrderHref = `/backend/orders/${encodeURIComponent(companyOrderParam.companyOrderId)}`
+        const childKind = entryTradeType === 'external' ? 'external_sales_order' : 'internal_sales_order'
+        try {
+          await readApiResultOrThrow(
+            '/api/order_hub/orders/link-child',
+            {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ kind: childKind, refId: id, companyOrderId: companyOrderParam.companyOrderId }),
+            },
+            { errorMessage: t('internal_sales.form.companyOrder.linkFailed') },
+          )
+          pushWithFlash(router, companyOrderHref, t('internal_sales.form.saved'), 'success')
+        } catch (linkError) {
+          // The document exists; a failed attach must not strand it. Land on the company order page
+          // anyway and say the link still needs a hand.
+          const message = linkError instanceof Error && linkError.message
+            ? linkError.message
+            : t('internal_sales.form.companyOrder.linkFailed')
+          pushWithFlash(router, companyOrderHref, message, 'warning')
+        }
+        return
+      }
+      // Without the parameter a new order lands on its hub (the one filling surface,
+      // `/backend/orders/<id>`, which resolves it or shows the "unlinked" state); a quote keeps the
+      // edit page it has always landed on, and a create without an id keeps the list fallback.
+      const landingHref = id
+        ? (kind === 'order'
+            ? `/backend/orders/${encodeURIComponent(id)}`
+            : documentEditHrefForTradeType(kind, id, values.tradeType))
+        : entryHref
+      pushWithFlash(router, landingHref, t('internal_sales.form.saved'), 'success')
     } catch (error) {
       flash(t('internal_sales.form.saveFailed'), 'error')
       throw error
     }
-  }, [channels, entryHref, entryIdFor, hasAllChannels, kind, missingChannelMessage, router, statusFailed, statusLoading, t])
+  }, [channels, companyOrderParam, entryHref, entryIdFor, entryTradeType, hasAllChannels, kind, missingChannelMessage, organizationId, router, statusFailed, statusLoading, t])
 
   return (
+    <>
+      {kind === 'order' && companyOrderParam.status === 'invalid' ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('internal_sales.form.companyOrder.invalid')}
+        </p>
+      ) : null}
     <CrudForm<InternalSalesFormValues>
       title={t(
         entryTradeType === 'external'
@@ -1035,18 +1271,20 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
           : (kind === 'quote' ? 'internal_sales.form.quote.createTitle' : 'internal_sales.form.order.createTitle'),
       )}
       titleHeadingLevel={1}
-      backHref={entryHref}
+      backHref={backHref}
       fields={fields}
       groups={groups}
       initialValues={{
         ...EMPTY_VALUES,
         tradeType: entryTradeType,
+        currencyCode: initialCurrency,
         lines: [{ ...EMPTY_LINE }],
       }}
       submitLabel={t('internal_sales.form.save')}
       cancelHref={entryHref}
       onSubmit={handleSubmit}
     />
+    </>
   )
 }
 
@@ -1057,6 +1295,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
   const fields = useFields(t, entryTradeType)
   const { channels, hasAll: hasAllChannels, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
   const entryHref = listHrefForTradeType(kind, entryTradeType)
+  const backHref = useReturnHref(entryHref)
   const groups = useGroups(t, {
     withQuoteLoad: kind === 'order',
     mode: 'edit',
@@ -1180,7 +1419,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
   }, [channels, documentId, hasAllChannels, initial, kind, loadedLineIds, missingChannelMessage, t])
 
   if (isNotFound) {
-    return <RecordNotFoundState label={t('internal_sales.form.notFound')} backHref={entryHref} />
+    return <RecordNotFoundState label={t('internal_sales.form.notFound')} backHref={backHref} />
   }
   if (error) return <ErrorMessage label={error} />
 
@@ -1195,7 +1434,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
       // This module has no per-document detail view — the edit page *is* the document's page.
       // Back/cancel must therefore leave for the list; built from the document's own edit href they
       // addressed the page the operator was already on and clicking them did nothing.
-      backHref={entryHref}
+      backHref={backHref}
       fields={fields}
       groups={groups}
       initialValues={initial ?? fallback}

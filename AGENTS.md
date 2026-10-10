@@ -234,6 +234,8 @@ layer/engine for the same subjects, so load their facts for host/extension quest
 | read-only executive cockpit page + four dashboard widgets | `boss_cockpit` | reads the RU projections and CN ledgers read-only; no entity, no write path |
 | currency dictionary route, FX/currency-policy reconciliation | `currency_policy` | `dictionaries`, `currencies` |
 | auth-admin write-scope guards | `scope_guards` | `auth` command interceptors |
+| the app-drawn sidebar tree (域 → 模块/台账 → 页面) and the chrome payload that drops the installed flat list | `nav_shell` | `auth` chrome payload + sidebar preferences; the tree is a display layer over each page's own `requireFeatures` |
+| the company-order entry: order workbench (`/backend/orders`, aggregate list + fill stages) and the order detail hub (`/backend/orders/<id>`) | `order_hub` | reads `sales`/`purchasing`/`cross_border`/`trade_docs`/`export_finance` through their own routes; no entity, no write path of its own |
 | attachment storage operations CLI (`audit`/`migrate`/`verify`/`rollback`/`prune-local`) | `storage_ops` | drives the installed `attachments` driver factory |
 
 Installed admin pages for the ERP modules are `navHidden`: URLs stay resolvable, nothing is

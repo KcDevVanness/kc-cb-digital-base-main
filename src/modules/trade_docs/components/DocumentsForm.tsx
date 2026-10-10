@@ -37,6 +37,8 @@ import {
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { parseExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
+import { useReturnHref } from '@/lib/navigation/returnTo'
+import { parseSourceOrderParams, sourceOrderPayload } from '@/lib/orders/sourceOrderParams'
 import { AMOUNT_SCALE, multiplyExactDecimal, toAmountString } from '../lib/money'
 import { OurPartyPicker } from './ContractForm'
 import {
@@ -77,6 +79,7 @@ import { contractPreviewLines, orderPreviewLines, sourcePreviewFields } from './
 const DOCUMENTS_API_PATH = 'trade_docs/documents'
 const DOCUMENT_LINES_API_PATH = 'trade_docs/documents/lines'
 const CONTRACTS_API_PATH = 'trade_docs/contracts'
+const CONTRACT_ORDERS_API_PATH = 'trade_docs/contracts/orders'
 const CONTRACT_LINES_API_PATH = 'trade_docs/contracts/lines'
 const SALES_ORDER_LINES_API_PATH = 'sales/order-lines'
 const PURCHASE_ORDER_LINES_API_PATH = 'purchasing/purchase-orders/lines'
@@ -511,6 +514,40 @@ function purchaseLineToDraft(item: Record<string, unknown>): OrderLineDraft {
   }
 }
 
+/**
+ * One order's lines as document lines. This is the **single** order→document mapping: the manual
+ * 「从订单复制行」 dialog and the `?orderKind=&orderId=` prefill both call it, so a copied batch and a
+ * prefilled one cannot diverge (same columns, same frozen `sourceSnapshot` provenance).
+ */
+function buildCopiedOrderLines(
+  kind: OrderAnchorKind,
+  items: Record<string, unknown>[],
+  copiedAt: string,
+): DocumentLineValues[] {
+  return items.map((item) => {
+    const draft = kind === 'purchase_order' ? purchaseLineToDraft(item) : salesLineToDraft(item)
+    return {
+      productId: draft.productId,
+      name: draft.name,
+      sku: draft.sku,
+      model: '',
+      spec: '',
+      unit: draft.unit || 'PCS',
+      quantity: draft.quantity || '0',
+      unitPrice: draft.unitPrice || '0',
+      amount: defaultLineAmount(draft.quantity, draft.unitPrice),
+      note: draft.note,
+      amountTouched: false,
+      sourceSnapshot: {
+        kind: 'order_line',
+        id: readText(item, 'id'),
+        orderKind: kind,
+        copiedAt,
+      },
+    }
+  })
+}
+
 function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProps & { t: TranslateFn }) {
   const { organizationId } = useOrganizationScopeDetail()
   const unitOptions = useUnitOptions()
@@ -751,29 +788,7 @@ function DocumentLinesEditor({ values, setValue, t }: CrudFormGroupComponentProp
     setIsCopying(true)
     try {
       const items = await readOrderItems(copyKind, copyOrderId.trim())
-      const copiedAt = new Date().toISOString()
-      const appended: DocumentLineValues[] = items.map((item) => {
-        const draft = copyKind === 'purchase_order' ? purchaseLineToDraft(item) : salesLineToDraft(item)
-        return {
-          productId: draft.productId,
-          name: draft.name,
-          sku: draft.sku,
-          model: '',
-          spec: '',
-          unit: draft.unit || 'PCS',
-          quantity: draft.quantity || '0',
-          unitPrice: draft.unitPrice || '0',
-          amount: defaultLineAmount(draft.quantity, draft.unitPrice),
-          note: draft.note,
-          amountTouched: false,
-          sourceSnapshot: {
-            kind: 'order_line',
-            id: readText(item, 'id'),
-            orderKind: copyKind,
-            copiedAt,
-          },
-        }
-      })
+      const appended = buildCopiedOrderLines(copyKind, items, new Date().toISOString())
       const existing = linesRef.current.filter((line) => line.productId.trim() || line.name.trim())
       if (appended.length === 0) {
         flash(t('trade_docs.documents.form.lines.copyOrderEmpty', '该订单没有可复制的行'), 'error')
@@ -1448,24 +1463,108 @@ export default function DocumentsForm({
 
 type FormWiring = { kind: DocumentKind; listHref: string; fields: CrudField[]; groups: CrudFormGroup[] }
 
+/**
+ * `?orderKind=&orderId=` — the order hub hands the operator here with the sales order already
+ * known, so a PI/CI opens with its direction, currency and lines already filled from that order
+ * (through the same read and mapping the manual 「从订单复制行」 dialog uses) and, when the order
+ * carries exactly one contract, bound to it.
+ *
+ * The prefill resolves before the form mounts (`initialValues === null` renders the loading state),
+ * which is why there is no "overwrite what you typed" confirmation: there is nothing to overwrite
+ * yet. An unusable parameter pair is reported inline and the form opens empty — a mistyped link
+ * must not block the page — and a failed read keeps the form usable with a notice.
+ */
+type DocumentPrefillState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; values: DocumentFormValues; applied: boolean }
+  | { status: 'failed' }
+
 function DocumentCreateForm({ kind, listHref, fields, groups }: FormWiring) {
   const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const backHref = useReturnHref(listHref)
 
   // Arriving from a contract's hub (`?contractId=`) starts the document bound to that contract;
   // the picker still lets the operator change or clear it.
-  const initialValues = React.useMemo<DocumentFormValues>(
-    () => ({ ...emptyDocumentValues(), contractId: searchParams.get('contractId')?.trim() ?? '' }),
-    [searchParams],
+  const contractFromUrl = searchParams.get('contractId')?.trim() ?? ''
+  const baseValues = React.useMemo<DocumentFormValues>(
+    () => ({ ...emptyDocumentValues(), contractId: contractFromUrl }),
+    [contractFromUrl],
   )
+
+  const sourceParam = React.useMemo(() => parseSourceOrderParams(searchParams), [searchParams])
+  const [prefillState, setPrefillState] = React.useState<DocumentPrefillState>(
+    sourceParam.status === 'ok' ? { status: 'loading' } : { status: 'idle' },
+  )
+
+  React.useEffect(() => {
+    if (sourceParam.status !== 'ok') return
+    let cancelled = false
+    const load = async () => {
+      const [facts, linePayload, links] = await Promise.all([
+        loadOrderSourceHeadFacts('sales_order', sourceParam.id),
+        fetchCrudList<Record<string, unknown>>(SALES_ORDER_LINES_API_PATH, {
+          orderId: sourceParam.id,
+          pageSize: ORDER_LINES_PAGE_SIZE,
+        }),
+        fetchCrudList<Record<string, unknown>>(CONTRACT_ORDERS_API_PATH, {
+          orderKind: sourceParam.kind,
+          orderId: sourceParam.id,
+          pageSize: 50,
+        }).catch(() => ({
+          // The contract binding is a convenience: a failed link read must not drop the prefill.
+          items: [] as Record<string, unknown>[],
+          total: 0,
+          page: 1,
+          pageSize: 50,
+          totalPages: 0,
+        })),
+      ])
+      const copied = buildCopiedOrderLines('sales_order', linePayload.items ?? [], new Date().toISOString())
+      // Several contracts (or none) leave the binding to the operator: guessing among them would
+      // file the invoice against the wrong contract.
+      const linkedContracts = Array.from(new Set(
+        (links.items ?? [])
+          .map((item) => String(item.contractId ?? '').trim())
+          .filter((id) => id.length > 0),
+      ))
+      if (cancelled) return
+      setPrefillState({
+        status: 'ready',
+        applied: copied.length > 0,
+        values: {
+          ...emptyDocumentValues(),
+          direction: 'sales',
+          currencyCode: facts?.currencyCode ?? '',
+          contractId: linkedContracts.length === 1 ? linkedContracts[0] : contractFromUrl,
+          lines: copied.length > 0 ? copied : [emptyLine()],
+        },
+      })
+    }
+    load().catch(() => {
+      if (!cancelled) setPrefillState({ status: 'failed' })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [contractFromUrl, sourceParam])
 
   const handleSubmit = React.useCallback(
     async (values: DocumentFormValues) => {
       try {
         const created = await createCrud<{ id?: string }>(
           DOCUMENTS_API_PATH,
-          { kind, ...buildDocumentPayload(values), lines: buildDocumentLines(values) },
+          {
+            kind,
+            ...buildDocumentPayload(values),
+            lines: buildDocumentLines(values),
+            // Arriving from an order's hub (`?orderKind=&orderId=`): the create records the order ↔
+            // document link in the same transaction, so the order's Documents block shows the new
+            // proforma/commercial invoice without a second call.
+            ...sourceOrderPayload(sourceParam),
+          },
         )
         const createdId = typeof created.result?.id === 'string' ? created.result.id : null
         if (createdId) {
@@ -1478,24 +1577,45 @@ function DocumentCreateForm({ kind, listHref, fields, groups }: FormWiring) {
         throw error
       }
     },
-    [kind, listHref, router, t],
+    [kind, listHref, router, sourceParam, t],
   )
 
+  if (prefillState.status === 'loading') {
+    return <p className="text-sm text-muted-foreground">{t('trade_docs.form.sourceOrder.loading')}</p>
+  }
+
+  const invalidSourceParam = sourceParam.status === 'invalid'
+
   return (
-    <CrudForm<DocumentFormValues>
-      title={kind === 'commercial'
-        ? t('trade_docs.documents.form.createTitleCommercial', '新建商业发票（CI）')
-        : t('trade_docs.documents.form.createTitleProforma', '新建形式发票（PI）')}
-      titleHeadingLevel={1}
-      backHref={listHref}
-      fields={fields}
-      groups={groups}
-      initialValues={initialValues}
-      submitLabel={t('trade_docs.documents.form.save', '保存')}
-      cancelHref={listHref}
-      injectionSpotId="crud-form:trade_docs.documents"
-      onSubmit={handleSubmit}
-    />
+    <>
+      {invalidSourceParam ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('trade_docs.form.sourceOrder.invalid')}
+        </p>
+      ) : null}
+      {prefillState.status === 'failed' ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('trade_docs.form.sourceOrder.loadFailed')}
+        </p>
+      ) : null}
+      {prefillState.status === 'ready' && prefillState.applied ? (
+        <p className="mb-3 text-xs text-muted-foreground">{t('trade_docs.form.sourceOrder.applied')}</p>
+      ) : null}
+      <CrudForm<DocumentFormValues>
+        title={kind === 'commercial'
+          ? t('trade_docs.documents.form.createTitleCommercial', '新建商业发票（CI）')
+          : t('trade_docs.documents.form.createTitleProforma', '新建形式发票（PI）')}
+        titleHeadingLevel={1}
+        backHref={backHref}
+        fields={fields}
+        groups={groups}
+        initialValues={prefillState.status === 'ready' ? prefillState.values : baseValues}
+        submitLabel={t('trade_docs.documents.form.save', '保存')}
+        cancelHref={listHref}
+        injectionSpotId="crud-form:trade_docs.documents"
+        onSubmit={handleSubmit}
+      />
+    </>
   )
 }
 
@@ -1511,6 +1631,7 @@ function DocumentEditForm({
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [isNotFound, setIsNotFound] = React.useState(false)
+  const backHref = useReturnHref(listHref)
 
   React.useEffect(() => {
     let cancelled = false
@@ -1577,7 +1698,7 @@ function DocumentEditForm({
   )
 
   if (isNotFound) {
-    return <RecordNotFoundState label={t('trade_docs.documents.form.notFound', '未找到该单据，或你没有访问权限。')} backHref={listHref} />
+    return <RecordNotFoundState label={t('trade_docs.documents.form.notFound', '未找到该单据，或你没有访问权限。')} backHref={backHref} />
   }
   if (error) return <ErrorMessage label={error} />
 
@@ -1587,7 +1708,7 @@ function DocumentEditForm({
         ? t('trade_docs.documents.form.editTitleCommercial', '编辑商业发票（CI）')
         : t('trade_docs.documents.form.editTitleProforma', '编辑形式发票（PI）')}
       titleHeadingLevel={1}
-      backHref={listHref}
+      backHref={backHref}
       fields={fields}
       groups={groups}
       initialValues={initial ?? fallbackInitialValues}

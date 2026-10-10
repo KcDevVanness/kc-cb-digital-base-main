@@ -16,6 +16,7 @@ import { pushWithFlash } from '@open-mercato/ui/backend/utils/flash'
 import { toUtcDateInputValue } from '@open-mercato/ui/primitives/date-format'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
+import { useReturnHref } from '@/lib/navigation/returnTo'
 import {
   ORDERS_API_PATH,
   ORDERS_LINES_API_PATH,
@@ -108,6 +109,7 @@ function PurchaseOrderEditFormBody({
   // stays editable, exactly as the update command enforces it.
   const locked = order.status !== 'draft'
   const detailHref = `${ORDERS_LIST_HREF}/${encodeURIComponent(order.id)}`
+  const backHref = useReturnHref(detailHref)
   const pickerOptionsRef = React.useRef<Record<string, CrudFieldOption[]>>({})
 
   const initialValues = React.useMemo<PurchaseOrderFormValues>(() => ({
@@ -126,6 +128,9 @@ function PurchaseOrderEditFormBody({
     depositAmount: order.depositAmount ?? '',
     expectedShipAt: toUtcDateInputValue(order.expectedShipAt) ?? '',
     notes: order.notes ?? '',
+    // Carried through unchanged: the edit form does not re-point an order's source, but the payload
+    // must keep the anchor it already has (an omitted key never clears it server-side).
+    sourceSalesOrderId: order.sourceSalesOrderId ?? '',
     lines: initialLines,
   }), [initialLines, order])
 
@@ -286,7 +291,7 @@ function PurchaseOrderEditFormBody({
     <CrudForm<PurchaseOrderFormValues>
       title={t('purchasing.orders.edit.title')}
       titleHeadingLevel={1}
-      backHref={detailHref}
+      backHref={backHref}
       fields={fields}
       groups={groups}
       initialValues={initialValues}
@@ -306,6 +311,7 @@ function PurchaseOrderEditFormBody({
 export default function PurchaseOrderEditForm({ orderId }: { orderId: string }) {
   const t = useT()
   const scopeVersion = useOrganizationScopeVersion()
+  const backHref = useReturnHref(ORDERS_LIST_HREF)
   const [order, setOrder] = React.useState<PurchaseOrderRecord | null>(null)
   const [lines, setLines] = React.useState<PurchaseOrderLineValues[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -348,7 +354,7 @@ export default function PurchaseOrderEditForm({ orderId }: { orderId: string }) 
   if (loading && !order) return <LoadingMessage label={t('purchasing.orders.form.loadFailed')} />
 
   if (notFound) {
-    return <RecordNotFoundState label={t('purchasing.orders.form.loadFailed')} backHref={ORDERS_LIST_HREF} />
+    return <RecordNotFoundState label={t('purchasing.orders.form.loadFailed')} backHref={backHref} />
   }
 
   if (loadError || !order) {

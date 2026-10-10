@@ -205,5 +205,13 @@
   "cross_border.shipments.status.closed": "Closed",
   "cross_border.shipments.actions.close": "Close",
   "cross_border.shipments.closeConfirmTitle": "Close this shipment?",
-  "cross_border.shipments.closeConfirmBody": "Closing is terminal: the shipment can no longer be edited, cancelled or given milestones. Confirm its paperwork and settlement are done."
+  "cross_border.shipments.closeConfirmBody": "Closing is terminal: the shipment can no longer be edited, cancelled or given milestones. Confirm its paperwork and settlement are done.",
+  "cross_border.shipments.form.sourceOrder.loading": "Loading the source order…",
+  "cross_border.shipments.form.sourceOrder.loadFailed": "The source order allocations could not be read — pick them by hand",
+  "cross_border.shipments.form.sourceOrder.skipped": "{count} line(s) carry no official catalog link and were not prefilled",
+  "cross_border.shipments.form.sourceOrder.invalid": "The source order parameters are invalid; opening a plain new shipment",
+  "cross_border.shipments.form.sourceOrder.applied": "Sales allocations prefilled from the source order",
+  "cross_border.shipments.list.sourceOrderFilter": "Showing only shipments carrying goods from {number}",
+  "cross_border.shipments.list.sourceOrderFilterUnknown": "Showing only shipments of the given source order",
+  "cross_border.shipments.list.clearSourceOrderFilter": "Clear filter"
 }

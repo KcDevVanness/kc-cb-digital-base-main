@@ -539,3 +539,4 @@ The owner's plan resolved the open questions before implementation; recorded her
 | 2026-09-28 | 金额口径统一：金额 2 位/单价 4 位，HALF_UP，引擎单点；金额列 numeric(18,2)、单价列 numeric(18,4)（见 [`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](2026-09-28-money-scale-2dp-unification.md)）。本 spec：`tax_refund_amount` 18,4→18,2；REQ-F3 金额改按 `AMOUNT_SCALE=2`（不再读 `readCurrencyScaleInfo`）；REQ-E4 分摊 2 位口径不变。 |
 | 2026-09-22 | Initial draft from the approved implementation plan (35-field inventory, two finance anchors, allocation rule) |
 | 2026-09-23 | Status → `Implemented (Phases 1–5)`; integration-test backfill recorded as an open follow-up (only the projection unit test exists; TEST-001…TEST-012/TEST-014 are oracles, not artifacts). |
+| 2026-10-09 | 订单描述（`product_category`）改读字典库「Product categories」的 `product_category` 字典（`product_codes` 播种：猫砂/尿片/猫砂盆/猫砂铲/餐具）；`purchasing` 不再播种模块私有 `order_product_category`（存量字典行保留，无数据迁移）；`export_finance` 订单档案投影新增解析标签 `productCategoryLabel`，页面回退到原始码。 |

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Trash2 } from 'lucide-react'
 import {
   CrudForm,
@@ -14,7 +14,13 @@ import { ComboboxInput, type ComboboxOption } from '@open-mercato/ui/backend/inp
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { createCrud } from '@open-mercato/ui/backend/utils/crud'
-import { pushWithFlash } from '@open-mercato/ui/backend/utils/flash'
+import {
+  PurchaseOrderStatusBadge,
+  purchaseOrderStatusLabel as orderStatusLabel,
+} from '@/lib/orders/purchaseOrderStatus'
+import { pushWithFlash, withFlash } from '@open-mercato/ui/backend/utils/flash'
+import { parseCompanyOrderParam } from '@/lib/orders/companyOrderParams'
+import { formatSupplierLabel, loadCompanyOrderDefaults } from '@/lib/orders/companyOrderDefaults'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
 import { FieldLabel } from '@open-mercato/ui/primitives/label'
@@ -34,6 +40,12 @@ import {
   type SupplierProductOption,
 } from './orderFormOptions'
 import {
+  isSourceSalesOrderKind,
+  parseSourceOrderParams,
+  salesOrderLinesToPurchaseLines,
+  type SourceSalesOrderKind,
+} from '../lib/sourceSalesOrder'
+import {
   applyLinePickerValue,
   linePickerValue,
   toProductPickerValue,
@@ -48,6 +60,10 @@ export const ORDERS_LIST_HREF = '/backend/purchasing/orders'
 
 const SUPPLIERS_API_PATH = '/api/purchasing/suppliers'
 const CURRENCY_DICTIONARY_URL = '/api/currency_policy/currencies'
+/** The supplier product library, read for one supplier + product to prefill a copied line's price. */
+const SUPPLIER_PRODUCTS_API_PATH = '/api/purchasing/supplier-products'
+/** The installed sales module's order lines — what a `?orderId=` prefill copies from. */
+const SALES_ORDER_LINES_API_PATH = '/api/sales/order-lines'
 const OPTION_PAGE_SIZE = 50
 
 /**
@@ -66,27 +82,8 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number]
 export const PAYMENT_STATUSES = ['unpaid', 'deposit_paid', 'partially_paid', 'paid'] as const
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number]
 
-const ORDER_STATUS_MAP: StatusMap<OrderStatus> = {
-  draft: 'neutral',
-  placed: 'info',
-  shipped: 'info',
-  received: 'success',
-  closed: 'success',
-  cancelled: 'error',
-}
 
-const ORDER_STATUS_LABEL_KEYS: Record<OrderStatus, string> = {
-  draft: 'purchasing.orders.status.draft',
-  placed: 'purchasing.orders.status.placed',
-  shipped: 'purchasing.orders.status.shipped',
-  received: 'purchasing.orders.status.received',
-  closed: 'purchasing.orders.status.closed',
-  cancelled: 'purchasing.orders.status.cancelled',
-}
 
-export function orderStatusLabel(t: TranslateFn, status: OrderStatus): string {
-  return t(ORDER_STATUS_LABEL_KEYS[status])
-}
 
 /** A purchase order as `/api/purchasing/purchase-orders` projects it. */
 export type PurchaseOrderRecord = {
@@ -96,7 +93,7 @@ export type PurchaseOrderRecord = {
   businessNumber: string | null
   supplierId: string
   supplierName: string | null
-  /** Dictionary code of `order_product_category`. */
+  /** Dictionary code of the `product_category` list. */
   productCategory: string | null
   ownerUserId: string | null
   ownerSnapshot: Record<string, unknown> | null
@@ -105,6 +102,10 @@ export type PurchaseOrderRecord = {
   customerId: string | null
   customerSnapshot: Record<string, unknown> | null
   customerName: string | null
+  /** The sales order this purchase order was raised for; null when it stands on its own. */
+  sourceSalesOrderId: string | null
+  sourceSalesOrderKind: SourceSalesOrderKind | null
+  sourceSalesOrderNumber: string | null
   status: OrderStatus
   currencyCode: string
   /** Stored as a fixed-scale decimal string; the form edits it as a number. */
@@ -164,6 +165,12 @@ export function toPurchaseOrderRecord(item: Record<string, unknown>): PurchaseOr
     customerId: readOptionalText(item, 'customerId', 'customer_id'),
     customerSnapshot: readOptionalRecord(item, 'customerSnapshot', 'customer_snapshot'),
     customerName: readOptionalText(item, 'customerName', 'customer_name'),
+    sourceSalesOrderId: readOptionalText(item, 'sourceSalesOrderId', 'source_sales_order_id'),
+    sourceSalesOrderKind: (() => {
+      const kind = readOptionalText(item, 'sourceSalesOrderKind', 'source_sales_order_kind')
+      return isSourceSalesOrderKind(kind) ? kind : null
+    })(),
+    sourceSalesOrderNumber: readOptionalText(item, 'sourceSalesOrderNumber', 'source_sales_order_number'),
     status: ORDER_STATUSES.includes(item.status as OrderStatus) ? (item.status as OrderStatus) : 'draft',
     currencyCode: readText(item, 'currencyCode', 'currency_code') || 'CNY',
     depositPercent: readOptionalText(item, 'depositPercent', 'deposit_percent'),
@@ -255,6 +262,24 @@ export async function loadCurrencyOptions(errorMessage: string): Promise<CrudFie
 }
 
 /**
+ * A supplier's own default currency, for prefilling the order's currency (`''` when it has none or
+ * the read fails — a missing prefill must never block the form).
+ */
+async function fetchSupplierDefaultCurrency(supplierId: string): Promise<string> {
+  try {
+    const payload = await readApiResultOrThrow<{ item?: { defaultCurrencyCode?: string | null } }>(
+      `${SUPPLIERS_API_PATH}/${encodeURIComponent(supplierId)}`,
+      undefined,
+      { fallback: {}, errorMessage: '' },
+    )
+    const code = payload.item?.defaultCurrencyCode
+    return typeof code === 'string' ? code.trim().toUpperCase() : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
  * One editable order line. `key` keeps React (and the picker's resolved label) anchored to a
  * line while lines are added and removed; `productLabel` only ever seeds the picker's display
  * for a product that is not on the first page of options, and is never submitted.
@@ -333,7 +358,7 @@ async function loadLineProductOptions(
 export type PurchaseOrderFormValues = {
   /** The business's own order number; the system `number` is assigned when the order is placed. */
   businessNumber: string
-  /** Dictionary code of `order_product_category`. */
+  /** Dictionary code of the `product_category` list. */
   productCategory: string
   ownerUserId: string
   /** Frozen display snapshot of the picked purchaser, sent by the client (see handleSubmit). */
@@ -348,6 +373,11 @@ export type PurchaseOrderFormValues = {
   depositAmount: number | string
   expectedShipAt: string
   notes: string
+  /**
+   * The sales order this purchase order is raised for (`?orderKind=&orderId=`), sent as the id only:
+   * the kind and the number are derived and frozen server-side.
+   */
+  sourceSalesOrderId: string
   lines: PurchaseOrderLineValues[]
 }
 
@@ -364,6 +394,7 @@ export const EMPTY_ORDER_VALUES: PurchaseOrderFormValues = {
   depositAmount: '',
   expectedShipAt: '',
   notes: '',
+  sourceSalesOrderId: '',
   lines: [],
 }
 
@@ -450,6 +481,7 @@ export function buildPurchaseOrderPayload(values: PurchaseOrderFormValues): Reco
     depositAmount: toOptionalNumber(values.depositAmount),
     expectedShipAt: toOptionalText(values.expectedShipAt),
     notes: toOptionalText(values.notes),
+    sourceSalesOrderId: toOptionalText(values.sourceSalesOrderId),
     lines: values.lines.map((line) => {
       // A library line carries exactly one reference and the command rejects a mix, so both master
       // references are dropped the moment the operator picks from the library.
@@ -524,6 +556,68 @@ export function PurchaseOrderLinesEditor({
   const addLine = React.useCallback(() => {
     setValue('lines', [...lines, createEmptyLine()])
   }, [lines, setValue])
+
+  /**
+   * Fills the supplier's own 供货价 into lines that carry no price yet.
+   *
+   * Lines copied from a sales order arrive with a product and a quantity but no price on purpose —
+   * the sales price is what the customer pays. Once the operator names the supplier, the price that
+   * supplier quoted for that product is the number this order actually needs, so it is looked up from
+   * the library (one request per distinct product, the discount already applied) and written into the
+   * empty cells only. A price the operator typed is never touched, and a product with no library
+   * price simply stays empty for them to fill in.
+   *
+   * The ref keeps a line from being re-filled after the operator clears it deliberately.
+   */
+  const autoPricedLineKeys = React.useRef<Set<string>>(new Set())
+
+  React.useEffect(() => {
+    if (!supplierId) return
+    const targets = lines.filter(
+      (line) => line.productId.trim().length > 0 && line.unitPrice.trim().length === 0 && !autoPricedLineKeys.current.has(line.key),
+    )
+    if (targets.length === 0) return
+    let cancelled = false
+    const productIds = Array.from(new Set(targets.map((line) => line.productId.trim())))
+    const load = async () => {
+      const prices: Record<string, string> = {}
+      await Promise.all(
+        productIds.map(async (productId) => {
+          const params = new URLSearchParams({ supplierId, productId, page: '1', pageSize: '1' })
+          try {
+            const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
+              `${SUPPLIER_PRODUCTS_API_PATH}?${params.toString()}`,
+              undefined,
+              { fallback: { items: [] }, errorMessage: t('purchasing.orders.form.lines.priceLoadFailed') },
+            )
+            const cell = payload.items?.[0]?.supplierCostPrice
+            if (!cell || typeof cell !== 'object') return
+            const record = cell as Record<string, unknown>
+            const price = record.netUnitPrice ?? record.unitPrice
+            if (typeof price === 'string' && price.length > 0) prices[productId] = price
+          } catch {
+            // A supplier without a price for this product is normal: leave the cell empty.
+          }
+        }),
+      )
+      if (cancelled) return
+      let changed = false
+      const next = lines.map((line) => {
+        const productId = line.productId.trim()
+        if (!productId || line.unitPrice.trim().length > 0) return line
+        const price = prices[productId]
+        if (!price) return line
+        autoPricedLineKeys.current.add(line.key)
+        changed = true
+        return { ...line, unitPrice: price }
+      })
+      if (changed) setValue('lines', next)
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [lines, setValue, supplierId, t])
 
   return (
     <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
@@ -686,9 +780,48 @@ function resolvePickerSnapshot(
   return findOptionSnapshot(store.current[fieldId] ?? [], id)
 }
 
+/**
+ * Prefills the order's currency from the supplier the operator just picked, and never overrides a
+ * currency they changed by hand.
+ *
+ * Headless (renders nothing): the supplier and currency controls are built-in fields, so there is no
+ * field of its own to render into — it watches the form's values through a bare group instead. A
+ * hand edit is inferred from the currency moving away from the value this component last wrote, so
+ * its own write is never mistaken for one.
+ */
+function SupplierCurrencyDefault({ values, setValue }: CrudFormGroupComponentProps) {
+  const supplierId = typeof values?.supplierId === 'string' ? values.supplierId.trim() : ''
+  const currencyCode = typeof values?.currencyCode === 'string' ? values.currencyCode : ''
+  const handEditedRef = React.useRef(false)
+  const appliedRef = React.useRef('')
+  const seenCurrencyRef = React.useRef(currencyCode)
+
+  React.useEffect(() => {
+    if (seenCurrencyRef.current === currencyCode) return
+    if (currencyCode !== appliedRef.current) handEditedRef.current = true
+    seenCurrencyRef.current = currencyCode
+  }, [currencyCode])
+
+  React.useEffect(() => {
+    if (!supplierId || handEditedRef.current) return
+    let cancelled = false
+    void fetchSupplierDefaultCurrency(supplierId).then((code) => {
+      if (cancelled || !code || handEditedRef.current) return
+      appliedRef.current = code
+      setValue('currencyCode', code)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [setValue, supplierId])
+
+  return null
+}
+
 function useOrderFields(
   t: TranslateFn,
   pickerOptions: React.RefObject<Record<string, CrudFieldOption[]>>,
+  supplierSeed: CrudFieldOption | null = null,
 ): CrudField[] {
   return React.useMemo<CrudField[]>(() => [
     {
@@ -713,6 +846,10 @@ function useOrderFields(
       type: 'select',
       required: true,
       layout: 'half',
+      // A seeded supplier (a company-order default, REQ-013) is not on the loaded page, so it is
+      // added as a static option — otherwise the select would render its blank placeholder and read
+      // as "no supplier" while the value is actually set.
+      options: supplierSeed ? [supplierSeed] : undefined,
       loadOptions: (query) => loadSupplierOptions(t('purchasing.orders.form.loadFailed'), query),
     },
     {
@@ -767,14 +904,92 @@ function useOrderFields(
       type: 'textarea',
       layout: 'half',
     },
-  ], [t, pickerOptions])
+  ], [supplierSeed, t, pickerOptions])
 }
 
 export default function PurchaseOrderForm() {
   const t = useT()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const pickerOptionsRef = React.useRef<Record<string, CrudFieldOption[]>>({})
-  const fields = useOrderFields(t, pickerOptionsRef)
+
+  /**
+   * `?orderKind=&orderId=` — the order hub and the workbench hand the operator here with the sales
+   * order already known, so the source anchor and the order's lines arrive filled in.
+   *
+   * The prefill resolves before the form mounts (`initialValues === null` renders the loading state
+   * instead), which is why there is no "overwrite what you typed" confirmation: there is nothing to
+   * overwrite yet, and a half-applied prefill would be worse than a short wait. An unusable parameter
+   * pair is reported inline and the form opens empty — a mistyped link must not block the page.
+   */
+  const sourceParam = React.useMemo(() => parseSourceOrderParams(searchParams), [searchParams])
+  /**
+   * `?companyOrderId=` — the company order's purchase block hands the operator here with the root
+   * already known, so a saved order is attached back to it and the root's default supplier seeds the
+   * form. It coexists with the `?orderKind=&orderId=` source pair above: that pair fills the lines
+   * and freezes the source anchor, this one seeds the supplier and records the root link after the
+   * save. A malformed value is reported inline and treated as absent.
+   */
+  const companyOrderParam = React.useMemo(() => parseCompanyOrderParam(searchParams), [searchParams])
+  /** The seeded supplier option, so the picker renders its label rather than a blank (raw-id fallback). */
+  const [supplierSeed, setSupplierSeed] = React.useState<CrudFieldOption | null>(null)
+  const fields = useOrderFields(t, pickerOptionsRef, supplierSeed)
+  const [prefillState, setPrefillState] = React.useState<
+    { status: 'idle' } | { status: 'loading' } | { status: 'ready'; values: PurchaseOrderFormValues; skipped: number }
+  >(sourceParam.status === 'ok' || companyOrderParam.status === 'ok' ? { status: 'loading' } : { status: 'idle' })
+
+  React.useEffect(() => {
+    const hasSource = sourceParam.status === 'ok'
+    const hasCompanyOrder = companyOrderParam.status === 'ok'
+    if (!hasSource && !hasCompanyOrder) return
+    let cancelled = false
+    const load = async () => {
+      let values: PurchaseOrderFormValues = { ...EMPTY_ORDER_VALUES }
+      let skipped = 0
+      if (hasSource) {
+        const params = new URLSearchParams({ orderId: sourceParam.id, pageSize: '500' })
+        try {
+          const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
+            `${SALES_ORDER_LINES_API_PATH}?${params.toString()}`,
+            undefined,
+            { fallback: { items: [] }, errorMessage: t('purchasing.orders.form.sourceOrder.loadFailed') },
+          )
+          const copy = salesOrderLinesToPurchaseLines(payload.items ?? [])
+          skipped = copy.skipped
+          values = {
+            ...EMPTY_ORDER_VALUES,
+            sourceSalesOrderId: sourceParam.id,
+            lines: copy.lines.map((seed) => ({
+              ...createEmptyLine(),
+              productId: seed.productId ?? '',
+              catalogProductId: seed.catalogProductId ?? '',
+              quantity: seed.quantity,
+            })),
+          }
+        } catch {
+          // The anchor is still valid even when the lines could not be read: keep it and let the
+          // operator add the lines by hand rather than dropping the link they arrived with.
+          values = { ...EMPTY_ORDER_VALUES, sourceSalesOrderId: sourceParam.id }
+        }
+      }
+      if (hasCompanyOrder) {
+        const defaults = await loadCompanyOrderDefaults(companyOrderParam.companyOrderId)
+        // Only when the operator has not chosen one — this resolves before the form mounts, so the
+        // only non-empty supplier here would come from the source prefill (which never sets one).
+        if (defaults?.supplierId && !values.supplierId) {
+          values = { ...values, supplierId: defaults.supplierId }
+          const name = defaults.supplierName ?? defaults.supplierId
+          setSupplierSeed({ value: defaults.supplierId, label: formatSupplierLabel(name, defaults.supplierCode) })
+        }
+      }
+      if (cancelled) return
+      setPrefillState({ status: 'ready', values, skipped })
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [companyOrderParam, sourceParam, t])
 
   const groups = React.useMemo<CrudFormGroup[]>(() => [
     {
@@ -799,6 +1014,13 @@ export default function PurchaseOrderForm() {
       bare: true,
       component: (context) => <PurchaseOrderLinesEditor {...context} t={t} />,
     },
+    {
+      // Headless: watches the picked supplier to prefill the currency; renders nothing.
+      id: 'supplier-currency-default',
+      column: 1,
+      bare: true,
+      component: (context) => <SupplierCurrencyDefault {...context} />,
+    },
   ], [t])
 
   const handleSubmit = React.useCallback(async (values: PurchaseOrderFormValues) => {
@@ -815,6 +1037,41 @@ export default function PurchaseOrderForm() {
       const result = await createCrud<{ id?: string }>(ORDERS_API_PATH, payload)
       const createdId = typeof result.result?.id === 'string' ? result.result.id : null
       if (createdId) {
+        // A purchase order created from a company order's block is attached back to that root and
+        // lands on it (at the purchase anchor), so the operator sees the row they just created.
+        if (companyOrderParam.status === 'ok') {
+          try {
+            await readApiResultOrThrow(
+              '/api/order_hub/orders/link-child',
+              {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  kind: 'purchase_order',
+                  refId: createdId,
+                  companyOrderId: companyOrderParam.companyOrderId,
+                }),
+              },
+              { errorMessage: t('purchasing.orders.form.companyOrder.linkFailed') },
+            )
+            // `withFlash` drops the fragment, so the anchor is appended after it.
+            router.push(
+              `${withFlash(
+                `/backend/orders/${encodeURIComponent(companyOrderParam.companyOrderId)}`,
+                t('purchasing.orders.form.saved'),
+                'success',
+              )}#purchasing`,
+            )
+          } catch (linkError) {
+            // The order exists; a failed attach must not strand it. Keep the order's own page and
+            // say the link still needs a hand.
+            const message = linkError instanceof Error && linkError.message
+              ? linkError.message
+              : t('purchasing.orders.form.companyOrder.linkFailed')
+            pushWithFlash(router, `${ORDERS_LIST_HREF}/${encodeURIComponent(createdId)}`, message, 'warning')
+          }
+          return
+        }
         // The detail page is the only surface that shows the lines, totals and payments a
         // freshly placed order needs, so the create flow hands the user straight to it.
         pushWithFlash(
@@ -835,29 +1092,44 @@ export default function PurchaseOrderForm() {
       )
       throw error
     }
-  }, [router, t])
+  }, [companyOrderParam, router, t])
+
+  if (prefillState.status === 'loading') {
+    return <p className="text-sm text-muted-foreground">{t('purchasing.orders.form.sourceOrder.loading')}</p>
+  }
+
+  const invalidSourceParam = sourceParam.status === 'invalid'
+  const invalidCompanyOrderParam = companyOrderParam.status === 'invalid'
 
   return (
+    <>
+      {invalidSourceParam ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('purchasing.orders.create.sourceOrder.invalid')}
+        </p>
+      ) : null}
+      {invalidCompanyOrderParam ? (
+        <p className="mb-3 rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text" role="alert">
+          {t('purchasing.orders.create.companyOrder.invalid')}
+        </p>
+      ) : null}
+      {prefillState.status === 'ready' && prefillState.skipped > 0 ? (
+        <p className="mb-3 text-xs text-muted-foreground">
+          {t('purchasing.orders.form.sourceOrder.skipped', { count: prefillState.skipped })}
+        </p>
+      ) : null}
     <CrudForm<PurchaseOrderFormValues>
       title={t('purchasing.orders.form.createTitle')}
       titleHeadingLevel={1}
       backHref={ORDERS_LIST_HREF}
       fields={fields}
       groups={groups}
-      initialValues={EMPTY_ORDER_VALUES}
+      initialValues={prefillState.status === 'ready' ? prefillState.values : EMPTY_ORDER_VALUES}
       submitLabel={t('purchasing.orders.form.save')}
       cancelHref={ORDERS_LIST_HREF}
       onSubmit={handleSubmit}
     />
+    </>
   )
 }
 
-/** Status pill used by the list and the detail header, so both read the same vocabulary. */
-export function PurchaseOrderStatusBadge({ status }: { status: OrderStatus }) {
-  const t = useT()
-  return (
-    <StatusBadge variant={ORDER_STATUS_MAP[status]} dot>
-      {orderStatusLabel(t, status)}
-    </StatusBadge>
-  )
-}

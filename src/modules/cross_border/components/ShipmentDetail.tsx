@@ -38,6 +38,7 @@ import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
+import { useReturnHref } from '@/lib/navigation/returnTo'
 import {
   SHIPMENT_ALLOCATIONS_API_PATH,
   SHIPMENT_CANCEL_API_PATH,
@@ -941,6 +942,7 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
   const locale = useLocale()
   const scopeVersion = useOrganizationScopeVersion()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
+  const backHref = useReturnHref(SHIPMENTS_LIST_HREF)
   const [shipment, setShipment] = React.useState<ShipmentRecord | null>(null)
   const [contracts, setContracts] = React.useState<ShipmentContractRecord[]>([])
   const [allocations, setAllocations] = React.useState<ShipmentAllocationRecord[]>([])
@@ -1161,7 +1163,7 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
     return (
       <RecordNotFoundState
         label={t('cross_border.shipments.form.loadFailed')}
-        backHref={SHIPMENTS_LIST_HREF}
+        backHref={backHref}
       />
     )
   }
@@ -1176,7 +1178,7 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
     <>
       <FormHeader
         mode="detail"
-        backHref={SHIPMENTS_LIST_HREF}
+        backHref={backHref}
         entityTypeLabel={t('cross_border.shipments.page.title')}
         title={shipment.number ?? t('cross_border.shipments.status.draft')}
         statusBadge={<ShipmentStatusBadge status={shipment.status} />}

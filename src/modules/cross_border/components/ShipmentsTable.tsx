@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
@@ -93,6 +93,12 @@ export default function ShipmentsTable() {
   const [search, setSearch] = React.useState('')
   const [status, setStatus] = React.useState<ShipmentStatus | typeof ALL_STATUSES>(ALL_STATUSES)
   const [page, setPage] = React.useState(1)
+  const searchParams = useSearchParams()
+  // Arriving from an order's hub (`?salesOrderId=`) or a purchase order's page (`?purchaseOrderId=`)
+  // narrows the list to the shipments that carry goods from that order; the row projection carries no
+  // source-order number, so the banner names the filter without inventing a second read.
+  const salesOrderId = searchParams.get('salesOrderId')?.trim() ?? ''
+  const purchaseOrderId = searchParams.get('purchaseOrderId')?.trim() ?? ''
 
   // The shipments route orders by newest first itself; it exposes no sort parameters, so the
   // list asks for one page of the server's order rather than inventing a client-side one.
@@ -104,8 +110,10 @@ export default function ShipmentsTable() {
     const term = search.trim()
     if (term) params.set('search', term)
     if (status !== ALL_STATUSES) params.set('status', status)
+    if (salesOrderId) params.set('salesOrderId', salesOrderId)
+    if (purchaseOrderId) params.set('purchaseOrderId', purchaseOrderId)
     return params
-  }, [page, search, status])
+  }, [page, purchaseOrderId, salesOrderId, search, status])
 
   const queryKey = React.useMemo(
     () => [QUERY_KEY_ROOT, queryParams.toString(), scopeVersion],
@@ -142,70 +150,82 @@ export default function ShipmentsTable() {
   )
 
   return (
-    <DataTable<ShipmentRecord>
-      title={(
-        <div className="flex flex-col gap-1">
-          <h1 className="text-base font-semibold leading-tight">{t('cross_border.shipments.page.title')}</h1>
-          <p className="text-sm font-normal text-muted-foreground">{t('cross_border.shipments.page.description')}</p>
+    <>
+      {salesOrderId || purchaseOrderId ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">
+            {t('cross_border.shipments.list.sourceOrderFilterUnknown')}
+          </span>
+          <Button type="button" variant="ghost" size="sm" onClick={() => router.replace(SHIPMENTS_LIST_HREF)}>
+            {t('cross_border.shipments.list.clearSourceOrderFilter')}
+          </Button>
         </div>
-      )}
-      columns={columns}
-      data={rows}
-      actions={(
-        <Button asChild>
-          <Link href={`${SHIPMENTS_LIST_HREF}/create`}>{t('cross_border.shipments.actions.create')}</Link>
-        </Button>
-      )}
-      searchValue={search}
-      onSearchChange={handleSearchChange}
-      searchPlaceholder={t('cross_border.shipments.list.searchPlaceholder')}
-      searchAlign="right"
-      filters={[
-        {
-          id: 'status',
-          label: t('cross_border.shipments.list.columns.status'),
-          type: 'select',
-          options: SHIPMENT_STATUSES.map((value) => ({ value, label: shipmentStatusLabel(t, value) })),
-        },
-      ]}
-      filterValues={status === ALL_STATUSES ? {} : { status }}
-      onFiltersApply={(values: FilterValues) => {
-        const next = values.status
-        setStatus(typeof next === 'string' && next.length ? (next as ShipmentStatus) : ALL_STATUSES)
-        setPage(1)
-      }}
-      onFiltersClear={() => {
-        setStatus(ALL_STATUSES)
-        setPage(1)
-      }}
-      emptyState={(
-        <ListEmptyState
-          title={t('cross_border.shipments.list.empty')}
-          createHref={`${SHIPMENTS_LIST_HREF}/create`}
-          createLabel={t('cross_border.shipments.actions.create')}
-        />
-      )}
-      rowActions={(row) => (
-        <RowActions
-          items={[
-            {
-              id: 'open',
-              label: t('cross_border.shipments.actions.open'),
-              onSelect: () => router.push(detailHref(row)),
-            },
-          ]}
-        />
-      )}
-      pagination={{
-        page,
-        pageSize: PAGE_SIZE,
-        total,
-        totalPages: total > 0 ? Math.ceil(total / PAGE_SIZE) : 0,
-        onPageChange: setPage,
-      }}
-      isLoading={isLoading}
-      error={listError}
-      onRowClick={(row) => router.push(detailHref(row))}
-    />
+      ) : null}
+      <DataTable<ShipmentRecord>
+        title={(
+          <div className="flex flex-col gap-1">
+            <h1 className="text-base font-semibold leading-tight">{t('cross_border.shipments.page.title')}</h1>
+            <p className="text-sm font-normal text-muted-foreground">{t('cross_border.shipments.page.description')}</p>
+          </div>
+        )}
+        columns={columns}
+        data={rows}
+        actions={(
+          <Button asChild>
+            <Link href={`${SHIPMENTS_LIST_HREF}/create`}>{t('cross_border.shipments.actions.create')}</Link>
+          </Button>
+        )}
+        searchValue={search}
+        onSearchChange={handleSearchChange}
+        searchPlaceholder={t('cross_border.shipments.list.searchPlaceholder')}
+        searchAlign="right"
+        filters={[
+          {
+            id: 'status',
+            label: t('cross_border.shipments.list.columns.status'),
+            type: 'select',
+            options: SHIPMENT_STATUSES.map((value) => ({ value, label: shipmentStatusLabel(t, value) })),
+          },
+        ]}
+        filterValues={status === ALL_STATUSES ? {} : { status }}
+        onFiltersApply={(values: FilterValues) => {
+          const next = values.status
+          setStatus(typeof next === 'string' && next.length ? (next as ShipmentStatus) : ALL_STATUSES)
+          setPage(1)
+        }}
+        onFiltersClear={() => {
+          setStatus(ALL_STATUSES)
+          setPage(1)
+        }}
+        emptyState={(
+          <ListEmptyState
+            title={t('cross_border.shipments.list.empty')}
+            createHref={`${SHIPMENTS_LIST_HREF}/create`}
+            createLabel={t('cross_border.shipments.actions.create')}
+          />
+        )}
+        rowActions={(row) => (
+          <RowActions
+            items={[
+              {
+                id: 'open',
+                label: t('cross_border.shipments.actions.open'),
+                onSelect: () => router.push(detailHref(row)),
+              },
+            ]}
+          />
+        )}
+        pagination={{
+          page,
+          pageSize: PAGE_SIZE,
+          total,
+          totalPages: total > 0 ? Math.ceil(total / PAGE_SIZE) : 0,
+          onPageChange: setPage,
+        }}
+        isLoading={isLoading}
+        error={listError}
+        onRowClick={(row) => router.push(detailHref(row))}
+      />
+    </>
   )
 }

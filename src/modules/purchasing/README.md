@@ -11,11 +11,45 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 | 实体（`data/entities.ts`） | `PurchasingSupplier` / `PurchasingSupplierProduct` / `PurchasingSupplierProductPrice` / `PurchasingPurchaseOrder` / `PurchasingPurchaseOrderLine` / `PurchasingPurchasePayment` / `PurchasingPurchaseOrderDocument` → 表 `purchasing_suppliers` / `purchasing_supplier_products` / `purchasing_supplier_product_prices` / `purchasing_purchase_orders` / `purchasing_purchase_order_lines` / `purchasing_purchase_payments` / `purchasing_purchase_order_documents` |
 | API | `GET|POST|PUT|DELETE /api/purchasing/suppliers`、`/purchase-orders`、`/purchase-orders/documents`、`/purchase-orders/payments`（`makeCrudRoute`；payments 的 PUT 是绑定付款凭证）；`GET /api/purchasing/purchase-orders/lines`（只读行面，行只经订单命令写入）；`POST /api/purchasing/purchase-orders/transitions`（阶段流转：同路径的 GET 列表只为 CRUD 工厂解析作用域，不是 UI 契约）；供应商产品库：`GET|POST|PUT|DELETE /api/purchasing/supplier-products`、`POST …/import`、`POST …/promote`、`GET|PUT /api/purchasing/supplier-products/prices` |
 | 命令 | `purchasing.suppliers.{create,update,delete}`、`purchasing.supplier-products.{create,update,delete,import-from-quote,promote,replace-prices}`、`purchasing.purchase-orders.{create,update,delete,transition,apply-receipt}`、`purchasing.purchase-payments.{record,attach,delete}`、`purchasing.order-documents.{create,update,delete}` |
-| 后台页面 | `/backend/purchasing/suppliers`（列表/新建/编辑）、`/backend/purchasing/supplier-products`（列表/新建/编辑：字段分组、供货价、商品图片）、`/backend/purchasing/orders`（列表/新建/详情/编辑：行、阶段付款、单证） |
+| 后台页面 | `/backend/purchasing/suppliers`（列表/新建/编辑）、`/backend/purchasing/supplier-products`（列表/新建/编辑：字段分组、供货价、商品图片）、`/backend/purchasing/orders`（列表/新建/详情/编辑：行、阶段付款、单证；详情页另有只读的 关联订单/关联合同/关联发运单 三区块） |
 | 事件 | `purchasing.supplier.{created,updated,deleted}`、`purchasing.supplier_product.{created,updated,deleted}`、`purchasing.supplier_product_prices.updated`、`purchasing.purchase_order.{created,updated,placed,shipped,received,closed,cancelled,deleted}`、`purchasing.purchase_payment.{recorded,deleted}`；单证 CRUD 侧效另发 `purchasing.purchase_order_document.{created,updated,deleted}`（`commands/orders.ts` 的 `purchaseOrderDocumentCrudEvents`，实体 `purchase_order_document`；这三个 id 目前未登记在 `events.ts`） |
 | 权限 | `purchasing.suppliers.view|manage`、`purchasing.supplier-products.view|manage|promote`、`purchasing.orders.view|manage`、`purchasing.payments.manage` |
 | 命令公共件 | `commands/shared.ts`：本模块唯一的 `ensureScope`（可信作用域、缺组织 fail closed）与产品库的实体 id / 资源类型 / 事件与索引桥配置 |
-| 迁移 | `migrations/Migration20260921081717_purchasing.ts`（`purchasing_suppliers`）、`Migration20260921085348_purchasing.ts`（订单 / 行 / 付款三表）、`Migration20260921100702_purchasing.ts`（付款 `attachment_id`）、`Migration20260922073530_purchasing.ts`（行 `product_id` + `catalog_product_id` 放开 NOT NULL）、`Migration20260922082559_purchasing.ts`（`purchasing_purchase_order_documents` 表 + 单头 `business_number`/`product_category`/`owner_*`/`customer_*`）、`Migration20260922103027_purchasing.ts`（行 `supplier_product_id`）、`Migration20260924041621_purchasing.ts`（供应商 `brand_value`）、`Migration20260928073630_purchasing.ts`（订单/行/付款金额列收窄为 `numeric(18,2)`）、`Migration20260929063626_purchasing.ts`（`purchasing_supplier_bank_accounts` 供应商银行账户表）；产品库的表由 `sourcing` 侧的迁移建出并在 `Migration20260923043000_sourcing.ts` **改名为 `purchasing_*`**（含 `Migration20260923044000_sourcing.ts` 的 pkey 改名），数据原样保留 |
+| 迁移 | `migrations/Migration20260921081717_purchasing.ts`（`purchasing_suppliers`）、`Migration20260921085348_purchasing.ts`（订单 / 行 / 付款三表）、`Migration20260921100702_purchasing.ts`（付款 `attachment_id`）、`Migration20260922073530_purchasing.ts`（行 `product_id` + `catalog_product_id` 放开 NOT NULL）、`Migration20260922082559_purchasing.ts`（`purchasing_purchase_order_documents` 表 + 单头 `business_number`/`product_category`/`owner_*`/`customer_*`）、`Migration20260922103027_purchasing.ts`（行 `supplier_product_id`）、`Migration20260924041621_purchasing.ts`（供应商 `brand_value`）、`Migration20260928073630_purchasing.ts`（订单/行/付款金额列收窄为 `numeric(18,2)`）、`Migration20261008042809_purchasing.ts`（采购单来源销售订单三列 + 索引）、`Migration20260929063626_purchasing.ts`（`purchasing_supplier_bank_accounts` 供应商银行账户表）；产品库的表由 `sourcing` 侧的迁移建出并在 `Migration20260923043000_sourcing.ts` **改名为 `purchasing_*`**（含 `Migration20260923044000_sourcing.ts` 的 pkey 改名），数据原样保留 |
+
+## 采购单的来源销售订单（2026-10-08）
+
+采购单可以挂在一张**销售订单**上——「这张订单的采购单是哪些」由此可查（订单详情 hub 的采购分区、
+订单工作台的「采购」阶段列都读它）。
+
+| 事项 | 口径 |
+|---|---|
+| 列 | `source_sales_order_id` / `source_sales_order_kind` / `source_sales_order_number`（都可空；索引 `purchasing_purchase_orders_source_sales_order_idx` 前缀是 `organization_id, tenant_id`） |
+| 谁能写 | 只有**销售订单 id**：`kind`（`internal_sales_order` / `external_sales_order`）与 `number` 在命令内由销售订单**推导并冻结**，客户端直写会被忽略 |
+| 解析规则 | 命令内 scoped 只读 `sales_orders`（同租户 + 同组织 + 未软删），经 `sales_channels.code` 判定贸易类型；解析不到 → **422 `source_sales_order_not_found`**（跨组织与不存在返回同一码：不确认他组织记录的存在） |
+| 更新语义 | 不出现即不改；显式 `null` 清空三列；来源是**链接不是商务条款**，因此已下单（非 `draft`）也可改 |
+| 列表 | `GET /api/purchasing/purchase-orders?sourceSalesOrderId=<uuid>` 只回该销售订单的采购单；出参带三个 camelCase 字段 |
+| 新建预填 | `/backend/purchasing/orders/create?orderKind=<kind>&orderId=<uuid>`：来源已填、行按销售订单行复制（**只复制商品引用与数量，不复制销售单价**——那是客户价）；供应商选定后自动带出该供应商供货价（未手填的行） |
+| 页面 | 列表页带可清除的来源筛选横幅；详情页的「关联订单」区块只读显示来源单号并链到订单详情 hub（`/backend/orders/<id>`） |
+| 纯函数 | `lib/sourceSalesOrder.ts`（参数解析、行映射、kind 映射，客户端与服务端共用）+ `lib/sourceSalesOrderReads.ts`（scoped 只读与 422 前置） |
+
+## 采购单详情页的关联区块（2026-10-09）
+
+详情页（`/backend/purchasing/orders/<id>`——工作台采购行的「打开详情」落点）读作 hub：明细行之后是三个
+**只读**关联区块，壳是共享件 `src/lib/related/RelatedSection.tsx`（与订单 hub、合同详情页同一实现），
+每区独立读、独立 loading/empty/error（错误带重试），切换组织时整组重取（`scopeVersion` 进 query key）。
+
+| 区块 | 读 | 行 | 空态 |
+|---|---|---|---|
+| 关联订单 | 抬头上的来源锚三列（不额外读） | 单号链 `/backend/orders/<id>`（订单 hub）+ kind 徽章（复用 `trade_docs.contracts.detail.orders.kind.*` 词条） | 「这张采购单没有来源销售订单。」 |
+| 关联合同 | `GET /api/trade_docs/contracts/orders?orderKind=purchase_order&orderId=` → `GET /api/trade_docs/contracts?ids=` | 合同号链 `/backend/trade-docs/contracts/<id>`、金额、状态徽章 | 文案指向合同页的「管理订单关联」——挂单关系写在合同侧，本页没有写入口 |
+| 关联发运单 | `GET /api/cross_border/shipments?purchaseOrderId=<id>`（预览 20 行） | 单号链 `/backend/cross_border/shipments/<id>`、柜号、状态徽章、ETA | 「还没有携带这张采购单货物的发运单。」；超过预览条数时「查看全部」→ `/backend/cross_border/shipments?purchaseOrderId=<id>`（列表页带可清除横幅） |
+
+- 来源单号从抬头摘要格**移进**「关联订单」区块：同一事实只留一处，且区块给了它到订单 hub 的入口。
+- 词条在 `purchasing.orders.detail.{related.*, sourceOrder.*, contracts.*, shipments.*}`；状态徽章复用各模块自己的
+  词条（`trade_docs.contracts.status.*`、`cross_border.shipments.status.*`），不复制第二份文案。
+- 服务端读全在数据归属方：合同的关联行由 `trade_docs` 的路由读、发运单过滤由 `cross_border` 的 scoped 只读
+  （`lib/shipmentSalesReads.ts` 的 `loadShipmentIdsForPurchaseOrder`）解析，本模块不碰对方实体。
 
 ## 商品引用：自建商品主数据优先（REQ-017）
 

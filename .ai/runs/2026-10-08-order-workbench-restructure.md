@@ -1,0 +1,33 @@
+# 公司订单为根的第二轮重构（报价单合并 + 订单单据维度 + hub 就地编辑 + 菜单再分层 + 取消「只看待补」）
+
+**Status:** in-progress（阶段 E / A / B / C 已交付，阶段 D 在飞；PR #147，base `dev`）
+**Source doc:** [`.ai/specs/2026-10-08-order-centric-entry.md`](../specs/2026-10-08-order-centric-entry.md)
+
+## 为什么有这一轮
+
+第一轮把入口收到「公司订单」后，owner review 指出四处仍需改，外加一处筛选要删：
+
+| # | 问题 | 决定 |
+|---|---|---|
+| 1 | 对内 / 对外销售报价单还是两条平铺入口 | 合并成 `/backend/quotes` 一条列表 + 类型列 + 类型筛选（D2） |
+| 2 | 公司订单的「单据」靠合同推导（`trade_docs_contract_orders` → `documents.contract_id`） | 订单拥有自己的单据维度：新表 `trade_docs_order_documents`（D1） |
+| 3 | 订单 hub 的草稿填写不如 `/backend/trade-docs/contracts/<id>` 直观 | hub 对齐合同页组织，且区块内可就地编辑（D3） |
+| 4 | 采购 / 出口销售 / 合同与单据 / 发运与装箱 的位置（owner 先要求收到「订单工作台」之下，复审后再上移一层） | 公司订单域第二层平铺：订单工作台与四个业务组并排，组内是各自的页面（D4） |
+| 5 | 工作台「只看待补」勾选框 | 删除筛选、`pending` 参数与 `lib/orderPending.ts`；阶段列保留（D5） |
+
+## 阶段与证据
+
+| 阶段 | 内容 | 证据 |
+|---|---|---|
+| E | 工作台取消「只看待补」 | `order_hub` 单测 16（`compareByCreatedAtDesc` 移入 `mergeOrders`）、`src` 内 0 处旧符号；spec/README 同步 |
+| A | 公司订单域第二层 = 订单工作台（页面叶子）+ 四个业务组并排，分支行标题可点（组标题 → 组内第一页）。初版为「四层」（组在「订单工作台」之下），owner 复审后由 A3 收平一层 | `yarn jest --config jest.config.cjs src/modules/nav_shell` 30 passed；`docs/dev/navigation.md` 与模块 README 同步（「域内排序只在域的顶层」列入已知限制）；四层初版证据：22 passed |
+| B | `/backend/quotes` 合并报价列表 | `yarn jest src/modules/internal_sales` 60 passed（含 `quoteListParams` 5 例）；两个旧 URL 307 |
+| C | 订单单据维度 | 迁移 `Migration20261008095745_trade_docs`（已应用）、`trade_docs.orders.documents.replace` + `GET/POST /api/trade_docs/orders/documents`、集成 `__integration__/order-documents.spec.ts`、`documentCount` 口径改按订单自己的关联行 |
+| D | hub 对齐合同页 + 就地编辑 + 装箱单区块 | 共享 `src/lib/related/RelatedSection.tsx`、`src/lib/quick-edit/QuickEditDialog.tsx` + 五个字段工厂；hub 六区块 |
+| A2 | owner 复审（2026-10-09）：「当前页标识」只留在页面上——分组行 / 父行只加粗（起因：分组行没有自带页面时 href 取第一个子页，采购 → `/backend/purchasing/orders`，旧规则把采购、订单工作台、采购单三行一起点亮） | 新纯规则模块 `src/modules/nav_shell/lib/navActive.ts` + `lib/__tests__/navActive.test.ts`（7 例，含「分组行与页面行同 href」回归）→ `yarn jest --config jest.config.cjs src/modules/nav_shell` **30 passed**；门禁 `EXIT=0`（`yarn generate` / `typecheck` / `lint` 0 error / `ds:check` 1053 files / `test` 76 suites · 636 tests / `build` 绿）；浏览器实测（:3000，admin@acme.com）：`/backend/purchasing/orders` 竖条 1 个（采购单），采购 / 订单工作台 无竖条无底色只加粗，域标题 公司订单 加粗；`/backend/products/items` 竖条 1 个（产品）；superadmin：`/backend/orders` 竖条 = 订单工作台（分支自带页面仍是 active），`/backend/purchasing/orders` 竖条 1 个，折叠态（紧凑）图标底色 1 个（采购单）、父行只换前景色。**owner 复审通过（2026-10-09）**，PR 标签 `review` → `merge-queue` |
+| A3 | owner 复审（2026-10-09）：菜单收平一层——采购 / 出口销售 / 合同与单据 / 发运与装箱 与「订单工作台」平级（公司订单域第二层 5 个条目，域内三层） | `navTree.ts` 删除分支「自带页面」（`NavTreeBranch.href`、builder 的 own-page 解析、`nav_shell.tree.module.orderWorkbench` 键一并删除）；`yarn jest --config jest.config.cjs src/modules/nav_shell` **30 passed**（3 suites）；`yarn typecheck` EXIT=0、`yarn lint` 0 error（8 个既有 warning）、`yarn test` **76 suites · 636 tests passed** |
+
+## 交付方式
+
+一个工作单元 = 一个 worktree = 一条分支 = 一个 PR（#147，base `dev`）。阶段 D 的两块共享件与两个模块 README
+分别在**叠加在单元分支上的竖片 worktree**里并行开发，由集成者合并进单元分支；竖片分支不进 PR、合并后删除。
