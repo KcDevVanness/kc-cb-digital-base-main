@@ -37,6 +37,13 @@ bare `--` and drops the footer, which would hide the number the widget exists to
 as the first currency group with every group listed in the footer, because this module never adds two
 currencies together.
 
+Two calibers, never confused: **amounts are the system-wide 2 decimals** served as fixed-decimal
+strings (`AMOUNT_SCALE`, imported from `trade_docs/lib/money.ts` — the caliber of
+[`.ai/specs/2026-09-28-money-scale-2dp-unification.md`](../../../.ai/specs/2026-09-28-money-scale-2dp-unification.md)),
+while **quantities keep 4 decimals** under this module's own `QUANTITY_SCALE` (shipment counts,
+unrecognized inbound, weekly site-sales). They once shared one local constant, which is how a
+quantity scale reached the money totals; a separate name is what keeps them apart.
+
 ## Surfaces
 
 | Surface | Purpose |
@@ -49,9 +56,11 @@ currencies together.
 
 ## Verification
 
-- `yarn test` covers the money-formatting rules this module reuses; the aggregation itself is a
-  read-only projection whose evidence is the app run (see the plan's progress table for the figures
-  against fresh snapshots).
+- `yarn test` covers the money-formatting rules this module reuses, and
+  `lib/__tests__/summary.test.ts` pins the two calibers the aggregation serves (`sumByCurrency` at
+  the canonical 2 decimals, `sumQuantities` at 4); the aggregation itself is a read-only projection
+  whose evidence is the app run (see the plan's progress table for the figures against fresh
+  snapshots).
 - The page and the widgets are permission-gated by `boss_cockpit.view` (and `dashboards.view` on the
   dashboard host).
 - Live evidence (2026-09-28, dev app with the RU fixtures pulled): the page showed 缺口金额 12.0K RUB
