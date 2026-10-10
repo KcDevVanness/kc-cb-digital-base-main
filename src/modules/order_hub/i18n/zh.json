@@ -326,5 +326,9 @@
   "order_hub.preview.field.time": "时间",
   "order_hub.preview.field.taxRefundAmount": "退税金额",
   "order_hub.preview.value.yes": "是",
-  "order_hub.preview.value.no": "否"
+  "order_hub.preview.value.no": "否",
+  "order_hub.detail.purchaseOrders.depositPercent": "定金比例",
+  "order_hub.detail.purchaseOrders.notes": "备注",
+  "order_hub.detail.orders.openDetail": "打开详情",
+  "order_hub.companyOrders.links.removeConfirm": "确定移除关联 {number} 吗？"
 }

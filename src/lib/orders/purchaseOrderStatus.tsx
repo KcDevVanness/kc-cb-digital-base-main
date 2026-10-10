@@ -18,7 +18,12 @@ import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 export const PURCHASE_ORDER_STATUSES = ['draft', 'placed', 'shipped', 'received', 'closed', 'cancelled'] as const
 export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number]
 
-const STATUS_TONES: StatusMap<PurchaseOrderStatus> = {
+/**
+ * The badge tones, exported because surfaces that render their own badge — the order hub's 采购 rows,
+ * which mix purchase orders with other child kinds — must show the same colours as this component
+ * does; a status that reads «info» here and «neutral» there is the drift this file exists to prevent.
+ */
+export const PURCHASE_ORDER_STATUS_TONES: StatusMap<PurchaseOrderStatus> = {
   draft: 'neutral',
   placed: 'info',
   shipped: 'info',
@@ -47,7 +52,7 @@ export function purchaseOrderStatusLabel(t: TranslateFn, status: PurchaseOrderSt
 export function PurchaseOrderStatusBadge({ status }: { status: PurchaseOrderStatus }) {
   const t = useT()
   return (
-    <StatusBadge variant={STATUS_TONES[status]} dot>
+    <StatusBadge variant={PURCHASE_ORDER_STATUS_TONES[status]} dot>
       {purchaseOrderStatusLabel(t, status)}
     </StatusBadge>
   )

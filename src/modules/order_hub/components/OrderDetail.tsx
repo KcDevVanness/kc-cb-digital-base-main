@@ -19,8 +19,9 @@ import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import type { CrudField } from '@open-mercato/ui/backend/CrudForm'
 import { RelatedSection } from '@/lib/related/RelatedSection'
+import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { QuickEditDialog } from '@/lib/quick-edit/QuickEditDialog'
-import { createDictionaryMap, type DictionaryMap } from '@open-mercato/core/modules/dictionaries/components/dictionaryAppearance'
+import { createDictionaryMap, renderDictionaryColor, type DictionaryMap } from '@open-mercato/core/modules/dictionaries/components/dictionaryAppearance'
 import {
   resolveCodeListLabel,
   resolveHeaderSupplierName,
@@ -53,7 +54,7 @@ import { CompanyOrderStatusDialog } from './CompanyOrderStatusDialog'
 import { AttachmentsSection } from '@/lib/attachments/AttachmentsSection'
 import { OrderDocumentsSection } from './OrderDocumentsSection'
 import { withReturnTo } from '@/lib/navigation/returnTo'
-import { childStatusLabel } from './companyOrderChildStatus'
+import { childStatusAppearance } from './companyOrderChildStatus'
 import LinkedRecordPreviewDrawer from './LinkedRecordPreviewDrawer'
 import type { LinkedRecordPreviewKind, LinkedRecordPreviewTarget } from './linkedRecordPreviewSources'
 import { resolveCompanyOrderForDocument } from '../lib/companyOrderResolve'
@@ -111,7 +112,28 @@ type PackingListRow = { id: string; documentNumber: string | null; issuedAt: str
 type CollectionRow = { purchaseOrderId: string; purchaseOrderNumber: string | null; collectionStatus: string; amount: string | null; currencyCode: string }
 type RefundRow = { shipmentId: string; shipmentNumber: string | null; taxRefundStatus: string; taxRefundAmount: string | null; currencyCode: string }
 /** One linked purchase order's money header, as the batched `?ids=` read projects it (REQ-043). */
-type PurchaseAmountRow = { total: string | null; paidDeposit: string | null; paidBalance: string | null; currencyCode: string }
+type PurchaseAmountRow = {
+  total: string | null
+  paidDeposit: string | null
+  paidBalance: string | null
+  /** 定金比例 — the term frozen on the order, shown beside the amounts (owner 2026-10-10). */
+  depositPercent: string | null
+  /** 备注 — the order's own note, shown in the row (owner 2026-10-10). */
+  notes: string | null
+  currencyCode: string
+}
+
+/**
+ * `50.000` → `50%`: the percent column carries `numeric(6,3)`, so the row shows the term the
+ * operator typed and never a trailing-zero wall. A value that is not a finite number is shown as
+ * stored (the cell never blanks a fact the record holds).
+ */
+function formatDepositPercent(value: string | null): string | null {
+  if (!value) return null
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return value
+  return `${Number(parsed.toFixed(3))}%`
+}
 
 /** The three order kinds this phase attaches; a purchase child needs no trade type. */
 function isSalesKind(kind: CompanyOrderLinkKind): kind is 'internal_sales_order' | 'external_sales_order' {
@@ -518,6 +540,10 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
     queryKeyPrefix: readonly unknown[]
   } | null>(null)
 
+  // Removals ask first (owner 2026-10-10): the hook's element is rendered once at the end of the
+  // tree, and every `confirm(...)` call awaits the operator's answer.
+  const { confirm, ConfirmDialogElement } = useConfirmDialog()
+
   const headQuery = useQuery({
     queryKey: ['order-hub-company-order', orderId, scopeVersion],
     queryFn: async () => {
@@ -594,6 +620,8 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
               total: readText(item, 'total') || null,
               paidDeposit: readText(item, 'paidDeposit') || null,
               paidBalance: readText(item, 'paidBalance') || null,
+              depositPercent: readText(item, 'depositPercent') || null,
+              notes: readText(item, 'notes') || null,
               currencyCode: readText(item, 'currencyCode') || 'CNY',
             })
           }
@@ -865,6 +893,14 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   const removeLink = React.useCallback(
     async (link: LinkRow) => {
       if (!head) return
+      // Every removal asks first (owner 2026-10-10): the row's own number is what the operator
+      // confirms against, so a mis-click on a list of look-alike rows cannot unlink a child silently.
+      const confirmed = await confirm({
+        title: t('order_hub.detail.orders.remove'),
+        text: t('order_hub.companyOrders.links.removeConfirm', { number: link.refNumber ?? link.refId.slice(0, 8) }),
+        variant: 'destructive',
+      })
+      if (!confirmed) return
       const remaining = links
         .filter((candidate) => candidate.kind === link.kind && candidate.id !== link.id)
         .map((candidate) => ({ refId: candidate.refId }))
@@ -886,7 +922,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         flash(error instanceof Error && error.message ? error.message : t('order_hub.companyOrders.links.saveFailed'), 'error')
       }
     },
-    [head, links, queryClient, t],
+    [confirm, head, links, queryClient, t],
   )
 
   const openQuickEdit = React.useCallback(
@@ -1090,8 +1126,6 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
             const amountCurrency = amounts?.currencyCode ?? 'CNY'
             return (
               <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
-                {/* A collaborator reads the same row but reaches the purchase order's own page
-                    instead of its edit form — the root's write gate is not theirs. */}
                 {previewNumber(
                   { kind: 'purchase_order', refId: row.refId, label: row.refNumber },
                   row.refNumber ?? row.refId.slice(0, 8),
@@ -1100,8 +1134,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
                 <ChildStatusBadge t={t} kind={row.kind} status={row.refStatus} salesDictionary={salesStatusDictionary} />
                 {/* 订单金额 / 预付款金额 / 尾款金额, from the block's one batched read (REQ-043). The
                     预付款/尾款 are the actual registered payments (deposit / balance stages), never a
-                    plan; a row or viewer the read did not cover renders `—`. This row carries no
-                    editing entry — the amounts belong to the purchase order's own module. */}
+                    plan; a row or viewer the read did not cover renders `—`. */}
                 <PurchaseRowAmount
                   label={t('order_hub.detail.purchaseOrders.amount.order')}
                   value={amounts?.total ?? null}
@@ -1117,9 +1150,26 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
                   value={amounts?.paidBalance ?? null}
                   currencyCode={amountCurrency}
                 />
+                {/* 定金比例 + 备注 (owner 2026-10-10): the two facts an operator checks next to the
+                    money. Both come from the same batched read; `—` when the order does not carry
+                    one, and the note is clamped so a long one cannot push the actions off the row. */}
+                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                  {t('order_hub.detail.purchaseOrders.depositPercent')}
+                  <span className="text-foreground">
+                    {formatDepositPercent(amounts?.depositPercent ?? null) ?? '—'}
+                  </span>
+                </span>
+                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                  {t('order_hub.detail.purchaseOrders.notes')}
+                  <span className="max-w-64 truncate text-foreground" title={amounts?.notes ?? undefined}>
+                    {amounts?.notes ?? '—'}
+                  </span>
+                </span>
+                {/* 详情, not 编辑 (owner 2026-10-10): the purchase order's own page is where its
+                    单证 and 付款记录 are filled in, and its edit form is one click from there. */}
                 <Button asChild variant="ghost" size="sm">
-                  <Link href={withReturnTo(childHref(row.kind, row.refId, canWrite ? 'edit' : 'detail'), returnTo)}>
-                    {t(canWrite ? 'order_hub.detail.section.edit' : 'order_hub.detail.orders.open')}
+                  <Link href={withReturnTo(childHref(row.kind, row.refId, 'detail'), returnTo)}>
+                    {t('order_hub.detail.orders.openDetail')}
                   </Link>
                 </Button>
                 {canWrite ? (
@@ -1509,6 +1559,8 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         />
       ) : null}
 
+      {ConfirmDialogElement}
+
       {linkDialog ? (
         <CompanyOrderLinkDialog
           open
@@ -1616,7 +1668,21 @@ function ChildStatusBadge({
   status: string | null
   salesDictionary: DictionaryMap | null
 }) {
-  const label = childStatusLabel(t, kind, status, salesDictionary)
-  if (!label) return null
-  return <StatusBadge variant="neutral">{label}</StatusBadge>
+  const appearance = childStatusAppearance(t, kind, status, salesDictionary)
+  if (!appearance) return null
+  // The sales kinds colour their dot with the dictionary's own hex (the sales lists draw the same
+  // swatch); the purchase vocabulary has semantic tones, which the badge renders itself.
+  const dictionaryDot = appearance.color
+    ? renderDictionaryColor(appearance.color, 'inline-flex h-1.5 w-1.5 shrink-0 rounded-full')
+    : null
+  return (
+    <StatusBadge
+      variant={appearance.tone ?? 'neutral'}
+      dot={dictionaryDot === null}
+      className={dictionaryDot ? 'gap-1.5' : undefined}
+    >
+      {dictionaryDot}
+      {appearance.label}
+    </StatusBadge>
+  )
 }

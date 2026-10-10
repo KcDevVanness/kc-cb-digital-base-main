@@ -157,6 +157,15 @@ export function QuoteReviewPanel({ quoteId }: { quoteId: string }) {
 
   const archive = React.useCallback(async () => {
     if (!quote) return
+    // 归档 retires the quotation from the working list (owner 2026-10-10: cancel-like actions ask
+    // first), and the command is one-way in the UI — there is no un-archive button beside it.
+    const confirmed = await confirm({
+      title: t('sourcing.quotes.actions.archive', 'Archive'),
+      description: t('sourcing.quotes.archiveConfirmBody', '归档后这张报价单退出日常列表，不再参与后续流程。'),
+      confirmText: t('sourcing.quotes.actions.archive', 'Archive'),
+      variant: 'destructive',
+    })
+    if (!confirmed) return
     setBusy(true)
     try {
       const response = await withScopedApiRequestHeaders(buildOptimisticLockHeader(quote.updatedAt), () =>
@@ -174,7 +183,7 @@ export function QuoteReviewPanel({ quoteId }: { quoteId: string }) {
     } finally {
       setBusy(false)
     }
-  }, [quote, reload, t])
+  }, [confirm, quote, reload, t])
 
   const deleteSourceFile = React.useCallback(async () => {
     if (!quote?.sourceAttachmentId) return

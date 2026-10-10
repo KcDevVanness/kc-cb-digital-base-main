@@ -326,5 +326,9 @@
   "order_hub.preview.field.time": "Time",
   "order_hub.preview.field.taxRefundAmount": "Tax refund amount",
   "order_hub.preview.value.yes": "Yes",
-  "order_hub.preview.value.no": "No"
+  "order_hub.preview.value.no": "No",
+  "order_hub.detail.purchaseOrders.depositPercent": "Deposit %",
+  "order_hub.detail.purchaseOrders.notes": "Notes",
+  "order_hub.detail.orders.openDetail": "Open details",
+  "order_hub.companyOrders.links.removeConfirm": "Remove the link to {number}?"
 }
