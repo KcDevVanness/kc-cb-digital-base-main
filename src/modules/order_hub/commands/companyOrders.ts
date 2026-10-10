@@ -26,6 +26,7 @@ import {
   freezeNameSnapshot,
   linkChild,
   linkKey,
+  listLinkedPurchaseOrderIds,
   loadCompanyOrder,
   loadCompanyOrderRefs,
   moveCompanyOrderChildren,
@@ -134,6 +135,9 @@ type CompanyOrderSnapshot = {
   status: string
   paymentStatus: string | null
   notes: string | null
+  productCategory: string | null
+  ownerUserId: string | null
+  ownerSnapshot: Record<string, unknown> | null
   customerPartyId: string | null
   customerSnapshot: Record<string, unknown> | null
   supplierId: string | null
@@ -158,11 +162,43 @@ function serializeCompanyOrder(order: CompanyOrder): CompanyOrderSnapshot {
     status: order.status,
     paymentStatus: order.paymentStatus ?? null,
     notes: order.notes ?? null,
+    productCategory: order.productCategory ?? null,
+    ownerUserId: order.ownerUserId ? String(order.ownerUserId) : null,
+    ownerSnapshot: order.ownerSnapshot ?? null,
     customerPartyId: order.customerPartyId ? String(order.customerPartyId) : null,
     customerSnapshot: order.customerSnapshot ?? null,
     supplierId: order.supplierId ? String(order.supplierId) : null,
     supplierSnapshot: order.supplierSnapshot ?? null,
   }
+}
+
+/**
+ * 订单描述 / 采购负责人 — the fields a company order **holds** for its purchase orders.
+ *
+ * Whenever these change on the root, or a purchase order newly hangs off the root, this announces
+ * the **stored** values to the given purchase-order ids so `purchasing` can mirror them (owner
+ * 2026-10-10: the entry point is the root, the purchase side is read-only). Duplicate ids collapse;
+ * an empty recipient list is a no-op — removing the last purchase link mirrors nothing. A root read
+ * that answered nothing is skipped too: the mirror is a best-effort courtesy and the next root edit
+ * resyncs, exactly like the link-cache invalidation above never failing the committed write.
+ */
+async function emitPurchaseOrderFieldMirror(
+  identifiers: { id: string; tenantId: string; organizationId: string },
+  order: CompanyOrder | null,
+  purchaseOrderIds: readonly string[],
+): Promise<void> {
+  const recipients = Array.from(new Set(purchaseOrderIds.filter((id) => typeof id === 'string' && id.length > 0)))
+  if (!order || recipients.length === 0) return
+  const snapshot = serializeCompanyOrder(order)
+  await eventsConfig.emit('order_hub.company_order.order_fields_updated', {
+    id: identifiers.id,
+    tenantId: identifiers.tenantId,
+    organizationId: identifiers.organizationId,
+    productCategory: snapshot.productCategory,
+    ownerUserId: snapshot.ownerUserId,
+    ownerSnapshot: snapshot.ownerSnapshot,
+    purchaseOrderIds: recipients,
+  })
 }
 
 function orderFilter(scope: CompanyOrderScope, id: string): FilterQuery<CompanyOrder> {
@@ -217,6 +253,9 @@ async function createCompanyOrderAtomic(
     status: string
     paymentStatus: string | null
     notes: string | null
+    productCategory: string | null
+    ownerUserId: string | null
+    ownerSnapshot: Record<string, unknown> | null
     customerPartyId: string | null
     supplierId: string | null
     links: Array<{ kind: CompanyOrderLinkKind; refId: string }>
@@ -279,6 +318,9 @@ async function createCompanyOrderAtomic(
               status: data.status,
               paymentStatus: data.paymentStatus,
               notes: data.notes,
+              productCategory: data.productCategory,
+              ownerUserId: data.ownerUserId,
+              ownerSnapshot: data.ownerSnapshot,
               customerPartyId: party ? party.id : null,
               customerSnapshot: party ? freezeNameSnapshot(party) : null,
               supplierId: supplier ? supplier.id : null,
@@ -325,6 +367,11 @@ const createCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
       status: parsed.status ?? 'placed',
       paymentStatus: parsed.paymentStatus === undefined ? 'unpaid' : parsed.paymentStatus,
       notes: parsed.notes ?? null,
+      // 订单描述 / 采购负责人: `null` and absent are the same on create — a fresh root simply has no
+      // recorded value, and the form sends an explicit `null` for an empty pick.
+      productCategory: parsed.productCategory ?? null,
+      ownerUserId: parsed.ownerUserId ?? null,
+      ownerSnapshot: parsed.ownerSnapshot ?? null,
       customerPartyId: parsed.customerPartyId ?? null,
       supplierId: parsed.supplierId ?? null,
       links: parsed.links ?? [],
@@ -357,6 +404,12 @@ const createCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
         'company-order-created-with-links',
       )
     }
+    // A purchase order created onto the root mirrors the root's 订单描述/采购负责人 at once.
+    await emitPurchaseOrderFieldMirror(
+      identifiers,
+      order,
+      (parsed.links ?? []).filter((link) => link.kind === 'purchase_order').map((link) => link.refId),
+    )
     // A child moved off another root changed that root's attach block without writing to it: clear
     // its cached collections and broadcast the same link event under its id.
     for (const movedFromId of movedFrom) {
@@ -476,6 +529,16 @@ const updateCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
       }
     }
 
+    // 订单描述 / 采购负责人: three-state like the counterparty ids — absent leaves the stored value
+    // alone, `null` clears it (for the owner that clears the id **and** its frozen snapshot), and a
+    // value writes. The owner pair is decided here so `apply` stays synchronous, and the values this
+    // write **will** store are kept so the mirror fires only on a real change (see below).
+    const previousProductCategory = order.productCategory ?? null
+    const previousOwnerUserId = order.ownerUserId ? String(order.ownerUserId) : null
+    const previousOwnerSnapshot = order.ownerSnapshot ?? null
+    const nextOwnerSnapshot: Record<string, unknown> | null =
+      parsed.ownerUserId === null ? null : (parsed.ownerSnapshot ?? null)
+
     // The write predicate is the tenant + id (the side was already decided above): a collaborator's
     // organization owns no row here, so an organization-scoped `where` would match nothing.
     const updated = await de.updateOrmEntity({
@@ -488,6 +551,11 @@ const updateCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
         if (parsed.status !== undefined) entity.status = parsed.status
         if (parsed.paymentStatus !== undefined) entity.paymentStatus = parsed.paymentStatus
         if (parsed.notes !== undefined) entity.notes = parsed.notes
+        if (parsed.productCategory !== undefined) entity.productCategory = parsed.productCategory
+        if (parsed.ownerUserId !== undefined) {
+          entity.ownerUserId = parsed.ownerUserId
+          entity.ownerSnapshot = nextOwnerSnapshot
+        }
         if (parsed.customerPartyId !== undefined) {
           entity.customerPartyId = customer ? customer.id : null
           entity.customerSnapshot = customer ? freezeNameSnapshot(customer) : null
@@ -514,6 +582,18 @@ const updateCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
       events: companyOrderCrudEvents,
       indexer: companyOrderCrudIndexer,
     })
+    // Only a **real** change of the two root-held fields reaches the linked purchase orders — an
+    // unrelated save (status, notes, a date) must not resend the same values across the module line.
+    const productCategoryChanged =
+      parsed.productCategory !== undefined && (parsed.productCategory ?? null) !== previousProductCategory
+    const ownerUserIdChanged = parsed.ownerUserId !== undefined && (parsed.ownerUserId ?? null) !== previousOwnerUserId
+    const ownerSnapshotChanged =
+      parsed.ownerUserId !== undefined &&
+      JSON.stringify(nextOwnerSnapshot) !== JSON.stringify(previousOwnerSnapshot)
+    if (productCategoryChanged || ownerUserIdChanged || ownerSnapshotChanged) {
+      const recipients = await listLinkedPurchaseOrderIds(em, scope, String(updated.id))
+      await emitPurchaseOrderFieldMirror(identifiers, updated, recipients)
+    }
     const updatedOrgs = await rootInvalidationOrganizations(em, scope, String(updated.id))
     await invalidateCompanyOrderCaches(
       { container: ctx.container, ...scope },
@@ -553,6 +633,9 @@ const updateCompanyOrderCommand: CommandHandler<Record<string, unknown>, Company
         entity.status = before.status
         entity.paymentStatus = before.paymentStatus ?? null
         entity.notes = before.notes
+        entity.productCategory = before.productCategory ?? null
+        entity.ownerUserId = before.ownerUserId ?? null
+        entity.ownerSnapshot = before.ownerSnapshot ?? null
         entity.customerPartyId = before.customerPartyId ?? null
         entity.customerSnapshot = before.customerSnapshot ?? null
         entity.supplierId = before.supplierId ?? null
@@ -678,6 +761,9 @@ const deleteCompanyOrderCommand: CommandHandler<
       entity.status = before.status
       entity.paymentStatus = before.paymentStatus ?? null
       entity.notes = before.notes
+      entity.productCategory = before.productCategory ?? null
+      entity.ownerUserId = before.ownerUserId ?? null
+      entity.ownerSnapshot = before.ownerSnapshot ?? null
       entity.customerPartyId = before.customerPartyId ?? null
       entity.customerSnapshot = before.customerSnapshot ?? null
       entity.supplierId = before.supplierId ?? null
@@ -697,6 +783,9 @@ const deleteCompanyOrderCommand: CommandHandler<
           status: before.status,
           paymentStatus: before.paymentStatus ?? null,
           notes: before.notes,
+          productCategory: before.productCategory ?? null,
+          ownerUserId: before.ownerUserId ?? null,
+          ownerSnapshot: before.ownerSnapshot ?? null,
           customerPartyId: before.customerPartyId ?? null,
           customerSnapshot: before.customerSnapshot ?? null,
           supplierId: before.supplierId ?? null,
@@ -804,6 +893,11 @@ const replaceCompanyOrderLinksCommand: CommandHandler<
       kind: parsed.kind,
       count: parsed.refs.length,
     })
+    // A purchase order re-hung on the root mirrors the root's 订单描述/采购负责人 at once; the whole
+    // resulting set is the recipient list, so a child moved here is covered too.
+    if (parsed.kind === 'purchase_order') {
+      await emitPurchaseOrderFieldMirror(identifiers, companyOrder, parsed.refs.map((ref) => ref.refId))
+    }
     const replaceOrgs = await rootInvalidationOrganizations(em, scope, String(companyOrder.id))
     await invalidateCompanyOrderLinkCaches(
       { container: ctx.container, ...scope },
@@ -891,6 +985,12 @@ const linkChildCommand: CommandHandler<Record<string, unknown>, LinkChildResult>
       'company-order-link-child',
       linkChildOrgs,
     )
+    // A purchase order that just hung off the root mirrors the root's 订单描述/采购负责人 at once; the
+    // root is read back so the mirror carries the **stored** values, not the request's.
+    if (parsed.kind === 'purchase_order') {
+      const root = await loadCompanyOrder(em, scope, result.companyOrderId)
+      await emitPurchaseOrderFieldMirror(identifiers, root, [parsed.refId])
+    }
 
     return result
   },

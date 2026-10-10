@@ -111,6 +111,13 @@ export const companyOrderCreateSchema = z.object({
   paymentStatus: z.enum(COMPANY_ORDER_PAYMENT_STATUSES).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   /**
+   * 订单描述（字典 `product_category` 码）与 采购负责人（人员 id + 冻结显示快照）——根单持有，
+   * 关联的采购单只镜像显示。`null` 与缺席同义（新字段无默认值）。
+   */
+  productCategory: z.string().trim().max(64).nullable().optional(),
+  ownerUserId: z.string().uuid().nullable().optional(),
+  ownerSnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
+  /**
    * Optional default customer/supplier. A non-null id must resolve inside the writer's scope (else
    * 422) and its display name is frozen into the paired snapshot column. `null` is the same as
    * omitted on create.
@@ -135,6 +142,13 @@ export const companyOrderUpdateSchema = z.object({
   /** Three-state like `title`: absent leaves the stored value, a value sets it, `null` clears it. */
   paymentStatus: z.enum(COMPANY_ORDER_PAYMENT_STATUSES).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  /**
+   * 订单描述/采购负责人：三态与 `title` 相同——缺席不动、给值即写、显式 `null` 清空（两个字段都清，
+   * 快照没有单独清法的意义）。变更会向后镜像到已关联的采购单（见 events 的 order_fields_updated）。
+   */
+  productCategory: z.string().trim().max(64).nullable().optional(),
+  ownerUserId: z.string().uuid().nullable().optional(),
+  ownerSnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
   /**
    * Three-state like `title`: absent leaves the stored value alone, an id re-resolves and re-freezes
    * the snapshot, and an explicit `null` clears both halves. A non-null id outside the scope is 422.
