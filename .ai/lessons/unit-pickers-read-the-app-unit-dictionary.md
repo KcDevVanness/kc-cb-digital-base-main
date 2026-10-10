@@ -65,7 +65,15 @@ facts fix its shape:
 
 Seeding therefore moved from `purchasing/setup.ts` to `products/setup.ts` (the module that writes the
 field owns the list), and a unit typed by hand on a library row now needs a dictionary entry before
-that row can be promoted into a product. The lesson generalizes: when a value crosses into an
+that row can be promoted into a product.
+
+What the union deliberately does *not* do: it does not adopt catalog's own spelling for pieces.
+Catalog ships `pc` (`catalog/lib/seeds.ts:10`, and its `qty → pc` migration), the app inserts `PCS`
+next to it, and `isKnownUnitCode('pc')` therefore returns false — a product written through
+**catalog's own** product form carries `pc`, the app's pickers never offer it, and unit-wise grouping
+or printing splits by spelling. Nothing fails; the two spellings simply coexist. That is the accepted
+cost of keeping the trade spelling the business prints (2026-10-10, owner confirmation pending), and
+it is recorded here so the next person finding `pc` in a product row knows it is known, not a bug. The lesson generalizes: when a value crosses into an
 installed module through a **resolver — not a schema — an unexpected spelling is a write failure, so
 a code vocabulary must be *unioned* with the installed one, never parallel to it, and the union has to
 be seeded by the module that performs the write.**
