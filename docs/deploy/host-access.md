@@ -41,7 +41,7 @@ EC2 实例**自动分配**的公网 IPv4 是临时的：实例 stop 时释放，
 
 | 项 | 值 |
 |---|---|
-| 实例 | `i-056bebe0773cdd6bc`（Name `KC_DEV_SP_CB_Digital_Base`） |
+| 实例 | `i-0b63a86ce28929eec`（Name `KC_DEV_SP_CB_Digital_Base`，`t4g.micro`，arm64，Amazon Linux 2023；SSH 用户 `ec2-user`）。前一台 `i-056bebe0773cdd6bc`（t3.large）于 2026-10-10 终止，**根卷随实例删除，无快照** |
 | Elastic IP | `18.163.244.11`（AllocationId `eipalloc-067b8590fe4993461`） |
 | 域名 | `dgital-base.kc-trade.cn`，A 记录指向该 EIP |
 | 流水线目标 | 仓库 secret `DEPLOY_HOST` = 该 EIP |
@@ -59,7 +59,7 @@ EC2 实例**自动分配**的公网 IPv4 是临时的：实例 stop 时释放，
 ```bash
 dig +short dgital-base.kc-trade.cn A
 aws ec2 describe-instances --profile kc-cb-digital --region ap-east-1 \
-  --instance-ids i-056bebe0773cdd6bc \
+  --instance-ids i-0b63a86ce28929eec \
   --query 'Reservations[].Instances[]|[0].{IP:PublicIpAddress,State:State.Name}'
 ```
 
@@ -85,7 +85,7 @@ curl -sS -o /dev/null -w '%{http_code} tls=%{ssl_verify_result}\n' \
 **4. 主机内部**
 
 ```bash
-ssh -i <key> ubuntu@18.163.244.11 \
+ssh -i <key> ec2-user@18.163.244.11 \
   'cd /opt/kc-cb-digital-base && docker compose -f docker-compose.deploy.yml ps'
 ```
 
@@ -95,7 +95,7 @@ ssh -i <key> ubuntu@18.163.244.11 \
 ## SSH 访问
 
 ```bash
-ssh -i <key> ubuntu@18.163.244.11
+ssh -i <key> ec2-user@18.163.244.11
 ```
 
 两种「连不上」含义完全不同，别混为一谈：
@@ -152,7 +152,7 @@ curl -sS -o /dev/null -w '%{http_code} tls=%{ssl_verify_result}\n' \
   https://dgital-base.kc-trade.cn/api/healthz
 
 # 4. 主机内部五容器 healthy
-ssh -i <key> ubuntu@18.163.244.11 \
+ssh -i <key> ec2-user@18.163.244.11 \
   'cd /opt/kc-cb-digital-base && docker compose -f docker-compose.deploy.yml ps'
 ```
 
