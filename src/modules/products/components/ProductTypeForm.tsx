@@ -7,6 +7,7 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { readErrorStatus } from '../lib/errorStatus'
 
 const API_PATH = 'products/types'
@@ -154,6 +155,7 @@ function useProductTypeFields(t: TranslateFn): CrudField[] {
 
 function ProductTypeCreateForm() {
   const t = useT()
+  const backHref = useBackHref(TAXONOMY_HREF)
   const fields = useProductTypeFields(t)
   const successRedirect = React.useMemo(
     () => withFlash(TAXONOMY_HREF, t('products.types.form.saved'), 'success'),
@@ -175,12 +177,12 @@ function ProductTypeCreateForm() {
     <CrudForm<ProductTypeFormValues>
       title={t('products.types.form.createTitle')}
       titleHeadingLevel={1}
-      backHref={TAXONOMY_HREF}
+      backHref={backHref}
       fields={fields}
       groups={PRODUCT_TYPE_GROUPS}
       initialValues={EMPTY_PRODUCT_TYPE_VALUES}
       submitLabel={t('products.types.form.save')}
-      cancelHref={TAXONOMY_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       onSubmit={handleSubmit}
     />
@@ -189,6 +191,7 @@ function ProductTypeCreateForm() {
 
 function ProductTypeEditForm({ typeId }: { typeId: string }) {
   const t = useT()
+  const backHref = useBackHref(TAXONOMY_HREF)
   const fields = useProductTypeFields(t)
   const [initial, setInitial] = React.useState<ProductTypeRecord | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -264,7 +267,7 @@ function ProductTypeEditForm({ typeId }: { typeId: string }) {
     return (
       <RecordNotFoundState
         label={t('products.types.form.loadFailed')}
-        backHref={TAXONOMY_HREF}
+        backHref={backHref}
       />
     )
   }
@@ -275,12 +278,12 @@ function ProductTypeEditForm({ typeId }: { typeId: string }) {
     <CrudForm<ProductTypeFormValues>
       title={t('products.types.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={TAXONOMY_HREF}
+      backHref={backHref}
       fields={fields}
       groups={PRODUCT_TYPE_GROUPS}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('products.types.form.save')}
-      cancelHref={TAXONOMY_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       isLoading={loading}
       onSubmit={handleSubmit}

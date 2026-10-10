@@ -37,7 +37,7 @@ import {
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { parseExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
-import { useReturnHref } from '@/lib/navigation/returnTo'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { parseSourceOrderParams, sourceOrderPayload } from '@/lib/orders/sourceOrderParams'
 import { AMOUNT_SCALE, multiplyExactDecimal, toAmountString } from '../lib/money'
 import { OurPartyPicker } from './ContractForm'
@@ -1484,7 +1484,7 @@ function DocumentCreateForm({ kind, listHref, fields, groups }: FormWiring) {
   const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const backHref = useReturnHref(listHref)
+  const backHref = useBackHref(listHref)
 
   // Arriving from a contract's hub (`?contractId=`) starts the document bound to that contract;
   // the picker still lets the operator change or clear it.
@@ -1611,7 +1611,7 @@ function DocumentCreateForm({ kind, listHref, fields, groups }: FormWiring) {
         groups={groups}
         initialValues={prefillState.status === 'ready' ? prefillState.values : baseValues}
         submitLabel={t('trade_docs.documents.form.save', '保存')}
-        cancelHref={listHref}
+        cancelHref={backHref}
         injectionSpotId="crud-form:trade_docs.documents"
         onSubmit={handleSubmit}
       />
@@ -1631,7 +1631,7 @@ function DocumentEditForm({
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [isNotFound, setIsNotFound] = React.useState(false)
-  const backHref = useReturnHref(listHref)
+  const backHref = useBackHref(listHref)
 
   React.useEffect(() => {
     let cancelled = false
@@ -1713,7 +1713,7 @@ function DocumentEditForm({
       groups={groups}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('trade_docs.documents.form.save', '保存')}
-      cancelHref={listHref}
+      cancelHref={backHref}
       injectionSpotId="crud-form:trade_docs.documents"
       isLoading={loading}
       onSubmit={handleSubmit}

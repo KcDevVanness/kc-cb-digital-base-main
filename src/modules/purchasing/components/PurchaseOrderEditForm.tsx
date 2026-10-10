@@ -17,7 +17,7 @@ import { toUtcDateInputValue } from '@open-mercato/ui/primitives/date-format'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
-import { useReturnHref } from '@/lib/navigation/returnTo'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import {
   ORDERS_API_PATH,
   ORDERS_LINES_API_PATH,
@@ -122,7 +122,7 @@ function PurchaseOrderEditFormBody({
   // stays editable, exactly as the update command enforces it.
   const locked = order.status !== 'draft'
   const detailHref = `${ORDERS_LIST_HREF}/${encodeURIComponent(order.id)}`
-  const backHref = useReturnHref(detailHref)
+  const backHref = useBackHref(detailHref)
   const pickerOptionsRef = React.useRef<Record<string, CrudFieldOption[]>>({})
 
   const initialValues = React.useMemo<PurchaseOrderFormValues>(() => ({
@@ -302,7 +302,7 @@ function PurchaseOrderEditFormBody({
       groups={groups}
       initialValues={initialValues}
       submitLabel={t('purchasing.orders.form.save')}
-      cancelHref={detailHref}
+      cancelHref={backHref}
       optimisticLockUpdatedAt={order.updatedAt}
       onSubmit={handleSubmit}
       contentHeader={locked ? (
@@ -317,7 +317,7 @@ function PurchaseOrderEditFormBody({
 export default function PurchaseOrderEditForm({ orderId }: { orderId: string }) {
   const t = useT()
   const scopeVersion = useOrganizationScopeVersion()
-  const backHref = useReturnHref(ORDERS_LIST_HREF)
+  const backHref = useBackHref(ORDERS_LIST_HREF)
   const [order, setOrder] = React.useState<PurchaseOrderRecord | null>(null)
   const [lines, setLines] = React.useState<PurchaseOrderLineValues[]>([])
   const [loading, setLoading] = React.useState(true)

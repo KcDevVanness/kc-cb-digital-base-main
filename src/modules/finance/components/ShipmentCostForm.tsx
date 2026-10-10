@@ -7,6 +7,7 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import {
   loadPartyOptions,
   loadShipmentCostTypeOptions,
@@ -183,6 +184,7 @@ function useShipmentCostFields(t: TranslateFn): CrudField[] {
 function ShipmentCostCreateForm() {
   const t = useT()
   const fields = useShipmentCostFields(t)
+  const backHref = useBackHref(SHIPMENT_COSTS_LIST_HREF)
   const successRedirect = React.useMemo(
     () => withFlash(SHIPMENT_COSTS_LIST_HREF, t('finance.shipmentCosts.form.saved'), 'success'),
     [t],
@@ -203,12 +205,12 @@ function ShipmentCostCreateForm() {
     <CrudForm<ShipmentCostFormValues>
       title={t('finance.shipmentCosts.form.createTitle')}
       titleHeadingLevel={1}
-      backHref={SHIPMENT_COSTS_LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={FORM_GROUPS}
       initialValues={EMPTY_VALUES}
       submitLabel={t('finance.shipmentCosts.form.save')}
-      cancelHref={SHIPMENT_COSTS_LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       onSubmit={handleSubmit}
     />
@@ -218,6 +220,7 @@ function ShipmentCostCreateForm() {
 function ShipmentCostEditForm({ costId }: { costId: string }) {
   const t = useT()
   const fields = useShipmentCostFields(t)
+  const backHref = useBackHref(SHIPMENT_COSTS_LIST_HREF)
   const [initial, setInitial] = React.useState<ShipmentCostRecord | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -279,7 +282,7 @@ function ShipmentCostEditForm({ costId }: { costId: string }) {
   )
 
   if (isNotFound) {
-    return <RecordNotFoundState label={t('finance.shipmentCosts.form.loadFailed')} backHref={SHIPMENT_COSTS_LIST_HREF} />
+    return <RecordNotFoundState label={t('finance.shipmentCosts.form.loadFailed')} backHref={backHref} />
   }
   if (error) return <ErrorMessage label={error} />
 
@@ -287,12 +290,12 @@ function ShipmentCostEditForm({ costId }: { costId: string }) {
     <CrudForm<ShipmentCostFormValues>
       title={t('finance.shipmentCosts.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={SHIPMENT_COSTS_LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={FORM_GROUPS}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('finance.shipmentCosts.form.save')}
-      cancelHref={SHIPMENT_COSTS_LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       isLoading={loading}
       onSubmit={handleSubmit}

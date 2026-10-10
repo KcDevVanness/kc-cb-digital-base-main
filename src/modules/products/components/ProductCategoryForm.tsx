@@ -14,6 +14,7 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { readErrorStatus } from '../lib/errorStatus'
 import { useSelectedOrganizationId } from './useSelectedOrganizationId'
 
@@ -279,6 +280,7 @@ const NO_EXCLUSIONS: ReadonlySet<string> = new Set<string>()
 
 function ProductCategoryCreateForm() {
   const t = useT()
+  const backHref = useBackHref(TAXONOMY_HREF)
   // The parent picker feeds a write, so it uses the selection the first paint already knows instead
   // of a value that arrives one request later (`.ai/lessons/read-expands-writes-are-selected-org.md`).
   const { organizationId } = useSelectedOrganizationId()
@@ -321,12 +323,12 @@ function ProductCategoryCreateForm() {
     <CrudForm<ProductCategoryFormValues>
       title={t('products.categories.form.createTitle')}
       titleHeadingLevel={1}
-      backHref={TAXONOMY_HREF}
+      backHref={backHref}
       fields={fields}
       groups={PRODUCT_CATEGORY_GROUPS}
       initialValues={initialValues}
       submitLabel={t('products.categories.form.save')}
-      cancelHref={TAXONOMY_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       onSubmit={handleSubmit}
     />
@@ -340,6 +342,7 @@ type LoadedCategory = {
 
 function ProductCategoryEditForm({ categoryId }: { categoryId: string }) {
   const t = useT()
+  const backHref = useBackHref(TAXONOMY_HREF)
   const { organizationId } = useSelectedOrganizationId()
   const [loaded, setLoaded] = React.useState<LoadedCategory | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -438,7 +441,7 @@ function ProductCategoryEditForm({ categoryId }: { categoryId: string }) {
     return (
       <RecordNotFoundState
         label={t('products.categories.form.loadFailed')}
-        backHref={TAXONOMY_HREF}
+        backHref={backHref}
       />
     )
   }
@@ -453,12 +456,12 @@ function ProductCategoryEditForm({ categoryId }: { categoryId: string }) {
     <CrudForm<ProductCategoryFormValues>
       title={t('products.categories.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={TAXONOMY_HREF}
+      backHref={backHref}
       fields={fields}
       groups={PRODUCT_CATEGORY_GROUPS}
       initialValues={loaded.values}
       submitLabel={t('products.categories.form.save')}
-      cancelHref={TAXONOMY_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       isLoading={loading}
       onSubmit={handleSubmit}

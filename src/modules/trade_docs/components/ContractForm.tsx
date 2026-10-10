@@ -37,6 +37,7 @@ import {
   sourceLineToContractLine,
   type ContractLineDraft,
 } from '../lib/contractLineSource'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { parseSourceOrderParams } from '@/lib/orders/sourceOrderParams'
 import { CONTRACT_DIRECTIONS, CONTRACT_STATUSES, directionLabel } from './contractLabels'
 import { ContractLineSourceDialog, type ContractLineSourceHead } from './ContractLineSourceDialog'
@@ -1044,6 +1045,7 @@ type ContractPrefillState =
 
 function ContractCreateForm({ fields, groups }: FormWiring) {
   const t = useT()
+  const backHref = useBackHref(LIST_HREF)
   const router = useRouter()
   const searchParams = useSearchParams()
   const sourceParam = React.useMemo(() => parseSourceOrderParams(searchParams), [searchParams])
@@ -1175,14 +1177,14 @@ function ContractCreateForm({ fields, groups }: FormWiring) {
       <CrudForm<ContractFormValues>
         title={t('trade_docs.contracts.form.createTitle')}
         titleHeadingLevel={1}
-        backHref={LIST_HREF}
+        backHref={backHref}
         fields={fields}
         groups={groups}
         initialValues={prefillState.status === 'ready'
           ? prefillState.values
           : { ...EMPTY_CONTRACT_VALUES, lines: [{ ...EMPTY_LINE }] }}
         submitLabel={t('trade_docs.contracts.form.save')}
-        cancelHref={LIST_HREF}
+        cancelHref={backHref}
         onSubmit={handleSubmit}
       />
     </>
@@ -1191,6 +1193,7 @@ function ContractCreateForm({ fields, groups }: FormWiring) {
 
 function ContractEditForm({ contractId, fields, groups }: FormWiring & { contractId: string }) {
   const t = useT()
+  const backHref = useBackHref(LIST_HREF)
   const [initial, setInitial] = React.useState<ContractRecord | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -1255,7 +1258,7 @@ function ContractEditForm({ contractId, fields, groups }: FormWiring & { contrac
   }, [contractId, initial, t])
 
   if (isNotFound) {
-    return <RecordNotFoundState label={t('trade_docs.contracts.form.notFound')} backHref={LIST_HREF} />
+    return <RecordNotFoundState label={t('trade_docs.contracts.form.notFound')} backHref={backHref} />
   }
   if (error) return <ErrorMessage label={error} />
 
@@ -1263,12 +1266,12 @@ function ContractEditForm({ contractId, fields, groups }: FormWiring & { contrac
     <CrudForm<ContractFormValues>
       title={t('trade_docs.contracts.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={groups}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('trade_docs.contracts.form.save')}
-      cancelHref={LIST_HREF}
+      cancelHref={backHref}
       isLoading={loading}
       onSubmit={handleSubmit}
     />
