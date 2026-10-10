@@ -9,7 +9,9 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/kc-cb-digital-base}"
 REPO_URL="${REPO_URL:-https://github.com/KcDevVanness/kc-cb-digital-base-main.git}"
-SWAP_SIZE_MB="${SWAP_SIZE_MB:-4096}"
+# The deployment host is a t4g.micro (1 GiB): steady state does not fit in RAM,
+# so the working set is meant to live here (swappiness=10 keeps RAM first).
+SWAP_SIZE_MB="${SWAP_SIZE_MB:-8192}"
 # Caddy requests a certificate for this exact name and Let's Encrypt will not
 # issue for a bare IP, so there is no usable default.
 APP_DOMAIN="${APP_DOMAIN:?set APP_DOMAIN to the public hostname, e.g. app.example.com}"
@@ -40,20 +42,46 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
   docker --version
   docker compose version
 else
-  # Ubuntu 26.04 (resolute) ships no docker.io at all, so this uses Docker's own
-  # apt repository, pinned to the detected codename (which it publishes).
-  sudo install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-    | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  sudo chmod a+r /etc/apt/keyrings/docker.gpg
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-    | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
-  sudo apt-get update -qq
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  case "$(. /etc/os-release && echo "${ID:-}")" in
+    amzn|fedora|rhel|centos|rocky|almalinux)
+      # Amazon Linux 2023 ships the engine (`docker` 25.x) but has no
+      # docker-compose-plugin package, so compose comes from its own release as
+      # a CLI plugin — the install path Docker documents for plugins. Pinned so
+      # a host rebuild is reproducible.
+      sudo dnf install -y docker
+      COMPOSE_VERSION="${COMPOSE_VERSION:-v5.6.0}"
+      sudo install -d -m 0755 /usr/local/lib/docker/cli-plugins
+      sudo curl -fsSL \
+        "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" \
+        -o /usr/local/lib/docker/cli-plugins/docker-compose
+      sudo chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+      ;;
+    *)
+      # Ubuntu 26.04 (resolute) ships no docker.io at all, so this uses Docker's
+      # own apt repository, pinned to the detected codename (which it publishes).
+      sudo install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      sudo chmod a+r /etc/apt/keyrings/docker.gpg
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+      sudo apt-get update -qq
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+        docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      ;;
+  esac
 fi
 sudo systemctl enable --now docker
 sudo usermod -aG docker "$USER"
+
+log "git"
+# AL2023 does not carry git in its base image; Ubuntu does.
+if ! command -v git >/dev/null 2>&1; then
+  case "$(. /etc/os-release && echo "${ID:-}")" in
+    amzn|fedora|rhel|centos|rocky|almalinux) sudo dnf install -y git ;;
+    *) sudo apt-get install -y git ;;
+  esac
+fi
 
 log "checkout ${APP_DIR}"
 sudo mkdir -p "${APP_DIR}"
@@ -110,11 +138,12 @@ ADMIN_EMAIL=${ADMIN_EMAIL}
 OM_INIT_SUPERADMIN_EMAIL=${ADMIN_EMAIL}
 OM_INIT_SUPERADMIN_PASSWORD=${ADMIN_PASSWORD}
 
-# Sized for a t3.large (2 vCPU / 8 GB). Raise these together with the instance
-# size, otherwise V8 hits its heap ceiling while RAM is still free.
-NODE_OPTIONS=--max-old-space-size=3072
-DB_POOL_MAX=20
-REDIS_MAXMEMORY=512mb
+# Sized for a t4g.micro (2 vCPU / 1 GiB). Change these together with the
+# instance size, otherwise V8 hits its heap ceiling while RAM is still free —
+# and lower them when shrinking, or the OOM killer takes the container.
+NODE_OPTIONS=--max-old-space-size=384
+DB_POOL_MAX=5
+REDIS_MAXMEMORY=128mb
 EOF
   chmod 600 .env
 
