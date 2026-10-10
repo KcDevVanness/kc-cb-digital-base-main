@@ -258,7 +258,8 @@ products.items.update（既有）行为增量：
 | TEST-001 | unit | 建议器纯函数：前缀匹配/序号推导/三位进位/前缀与字典码等长无关（`PK-CL`、`SP-TP`） |
 | TEST-002 | integration | `POST /api/products/items/suggest-code`：空字典 → `code:null` + reason；正常 → `PK-CL004`；跨组织 403 |
 | TEST-003 | integration | 改码后 `GET /api/products/items?search=<旧码>` 命中该商品，且显示当前 SKU |
-| TEST-004 | unit | 订阅者：SKU 未变不写；变更写一行；别名冲突不抛错 |
+| TEST-004 | unit | 别名注册：SKU 未变不写；变更写一行；别名冲突不抛错 |
+| TEST-005 | integration | 并发/重复：同一建议码被两个商品占用时第二个 create 409 且建议器随后给出下一个序号 |
 
 ## Implementation Phases
 
@@ -295,7 +296,7 @@ products.items.update（既有）行为增量：
 |---|---|---|---|---|---|
 | REQ-001 | J-001 | `products.items.suggest-code` | 1 | TEST-001, TEST-002 | AC-001 |
 | REQ-002 | J-001/J-002 | 表单字段 | 2 | 冒烟 | AC-002 |
-| REQ-003 | J-001 | 扫描推导（无表） | 1 | TEST-001 | AC-003 |
+| REQ-003 | J-001 | 扫描推导（无表） | 1 | TEST-001, TEST-005 | AC-003 |
 | REQ-004 | J-003 | 订阅者 + `product_codes_aliases` | 3 | TEST-003, TEST-004 | AC-004 |
 | REQ-005 | J-001 | 字典读 | 2 | TEST-002 | AC-005 |
 | REQ-006 | 全局 | `metadata.requireFeatures` | 1 | TEST-002 | AC-006 |
