@@ -52,6 +52,8 @@ yarn db:migrate
 yarn mercato entities install
 # 3) 重新播种字典（品牌/类别）与其它 seed
 yarn mercato seed:defaults --module product_codes
+# 4) 单位词表（`supplier_product_unit` 的 11 个海关常用码 + catalog `unit` 字典缺的三个码）
+yarn mercato seed:defaults --module products
 ```
 
 历史商品数据不迁移：需要演示数据时按新流程重新建档（供应商产品库「建商品档案」或自有商品库新建）。

@@ -94,7 +94,7 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 | 商品 SKU 与品牌（2026-09-24；2026-10-10 起 SKU 手填） | 「商品 SKU」= 我方编码（本供应商下唯一，建档时写进 catalog 商品的 `sku`）；「供应商货号」= 对方表格上印的号。**编码发号已停用**（单一存储改造）：`/api/product_codes/generate|parse` 与表单里的编码面板已删除，SKU 由操作员**手输**；旧码仍可搜索，靠 `product_codes_aliases`（`target_kind='product'`）在商品/产品库列表搜索里兜底。手输码要能「建商品档案」必须满足 `SKU_PATTERN`（`^[A-Za-z0-9._\-/]{1,64}$`；库行本身只校验 1–120 字符），否则建档 422。品牌取「行的品牌 → 供应商默认品牌」（`brand_value`，字典 `product_brand`，字典由 `product_codes` 播种、业务在字典库维护）；**默认品牌是字典值、写入即校验**（`purchasing.suppliers.create/update` → `assertDictionaryValue`），清空始终允许、改成**新**值才校验。**迁移落点**：`purchasing_suppliers.brand_value` 在 purchasing 的迁移里加；`purchasing_supplier_products.brand_value` 由 **sourcing** 的迁移加（该表由 sourcing 改名而来，模块顺序 purchasing 在前）——见 `.ai/lessons/cross-module-rename-migration-ordering.md` |
 | 唯一键 | `(tenant, organization, supplier_id, supplier_sku)`，**含软删行**（货号永久占用）：查重必须一起查已删行，否则唯一索引把可读的 409 变成 500 |
 | 价格 | **表单只录一条供货价**（2026-09-24，owner 在新建页反馈「只有一种类型…新增多条好像意义不大了」）：`币种 + 单价 + 折扣`，填的就是该货号在售的**基准** `supplier_cost` 行（列表列与建档路径解析的那一行，比法唯一实现于 `lib/priceKinds.ts` 的 `comparePriceBaseRows`/`pickBasePriceRow`）；其余行（其它币种/起订量档、已停用的旧价、历史 `company_offer`）在「其它价格行（只读）」里列出并**原样提交回去**，所以保存不改写历史；已停用的价绝不回填（否则下次保存会把它悄悄复活）；清空单价 = 停用该价（不删除）。数据层仍是价格表：一行 = `price_kind × 币种 × 起订量`；`supplier_cost` = **供应商供货价**（供应商报给我们的价）。整组提交（`replace-prices`），载荷里消失的行**停用不删**，币种必须存在于币种字典。**折扣在产品库行上**（`purchasing_supplier_products.discount_percent`，`numeric(3,0)`，**0–100 的整数**、可空）：同供应商不同货号折扣不同，所以按货号一条，不是按价格行、也不是按供应商；**不收小数**（owner 2026-09-24 在新建页反馈「价格-折扣，只有使用整数，不需要保留小数点」；与 `unit_volume` 同一种收窄——0 位小数的 `nullableDecimalSchema(0)` + `Migration20260924054410_sourcing` 的 `numeric(3,0)`，表单 `inputMode="numeric"`，库里读回 `5` 而不是 `5.0000`）；折后价 = 单价 ×（1 − 折扣），六位小数，唯一实现 `lib/priceKinds.ts` 的 `netUnitPrice`（表单预览、列表列、建档写入共用）。`company_offer` = **本公司报价**：2026-09-24 起**不再在产品库录入**（表单只为新行提供供货价，已存在的行照常显示与提交），列表的该列改为只读展示**已建档商品**的 `internal`（内部结算价）档基准价——我们的对外报价是商品属性，主流 ERP（Odoo supplierinfo 的 price+discount 对 list_price/pricelist、SAP 采购信息记录对销售条件）都不把它挂在供应商记录上 |
-| 单位 | 读字典 `supplier_product_unit`（`setup.ts` 播种，11 个海关常用码；`value` = 码、`label` = 纯中文名）；表单走全 app 唯一的 loader `products/lib/unitOptions.ts`，它把选项渲染成 `PCS — 件`（码在前，因为记录存的是码），字典没有的码仍可手输 |
+| 单位 | 读字典 `supplier_product_unit`（**2026-10-10 起由 `products/setup.ts` 播种**，词表见 `products/lib/unitVocabulary.ts`；`value` = 码、`label` = 纯中文名）；表单走全 app 唯一的 loader `products/lib/unitOptions.ts`，它把选项渲染成 `PCS — 件`（码在前，因为记录存的是码），字典没有的码仍可手输（库行存任意码）。**但写进商品的那一步有闸门**：商品的单位就是 catalog 的 `default_unit`，catalog 的解析器只认它自己 `unit` 字典里的码（`uom.unit_not_found` → 400），所以词表里的每个码都必须是合法 catalog 单位——`PCS`/`CTN`/`BAG` 由本 app 向 catalog 字典补齐，`set`/`pair`/`box`/`roll`/`kg`/`g`/`m`/`l` 沿用 catalog 已有拼写（小写）；词表之外的手输码（库行 API 仍接受任意码）要先把码加进 catalog 的 `unit` 字典，否则建档 400 `uom.unit_not_found` |
 | 图片 | `image_attachment_ids` 有序数组；文件走 `attachments`（`entityId = purchasing:purchasing_supplier_product` + 行 id），**先建行后绑图**，绑定走行更新（受乐观锁保护）；解绑只删 id，文件留在附件库。**新建页**先选图（本地 blob 预览）再点保存：提交时先建行、再上传、再带版本回写列表，一步完成；编辑页仍是选中即上传。图片失败不回滚行，页面跳到该行的编辑页提示重试 |
 | 建商品档案（原「同步为商品」，2026-10-10 起写 catalog） | `purchasing.supplier-products.promote` 按 SKU 建/更新 **catalog 商品**（经 `products/lib/store.ts`：`createStoreProduct`/`updateStoreProduct`），`name_zh ?? name` → 商品名、`name_en` → 英文名；价格优先用产品库里的 `supplier_cost`（没有才回退到最新报价行）——**两条路径都先打折**，写进 `purchase`（成本价）档的是**折后价**（报价行没有自己的折扣，用的是产品库行上那个）；整组价格提交以保住 `internal`/`export`；幂等（已建档返回 `skipped`），SKU 属于已软删商品时 422（`catalog_products.sku` 的唯一性含软删行，store 的可见读不到它，故命令另做一次原始探测）。列表行操作的文案是「**建商品档案**」，确认框写明"建过档才能发运、收货"；回填的是库行的 `catalog_product_id` |
 | 关联已有商品 / 换绑 / 解除关联（2026-09-23；2026-10-10 指向 catalog） | `purchasing.supplier-products.link`：`{ id, productId }`（request/response 的 `productId` 键名保留），`productId: null` = 解除。**只写 `catalog_product_id` 这一列**，不改商品任何字段与价格——供应商编码 ≠ 我们 SKU 时，这是唯一不产生重复商品档案的做法。目标商品的**作用域与存活检查在写这一列的同一个事务里**（`select … for update` 锁住 `catalog_products` 行；这是跨模块标量 ID、没有外键，所以只能这么做）：跨组织 → 404 `product_not_found`，已软删（或在选择与写入之间被删）→ 422 `product_deleted`，两种都不落任何写入 |
@@ -170,24 +170,23 @@ yarn test:integration:ephemeral   # 含 purchasing/__integration__/supplier-prod
 #   折扣只收整数（2026-09-24 收窄）：填 3.75 → 400（`nullableDecimalSchema(0)`），库里读回 `5` 而不是 `5.0000`
 #   （`Migration20260924054410_sourcing` 把列收成 numeric(3,0)，与 `unit_volume` 同一种收窄）
 #   注意：新增实体属性后 dev 服务器要重启（面板 restart action）才认，否则写入会被 ORM 元数据静默丢掉
-# 单件物理数据冒烟（2026-09-24）：编辑页「装箱、重量与体积」填 单件毛重/单件净重/单件体积 → 保存 → GET 回读三个字段
-#   （净重与毛重成对写入商品主数据的 net_weight/gross_weight；体积没有主数据列，只留产品库行）
+# 单件物理数据冒烟（2026-09-24；2026-10-10 起映射 catalog 自定义字段）：编辑页「装箱、重量与体积」填 单件毛重/单件净重/单件体积 → 保存 → GET 回读三个字段；
+#   建商品档案后三个值经自定义字段 unit_net_weight/unit_gross_weight/unit_volume 落 catalog（体积此前只留库行，2026-10-10 起同样写自定义字段）
 #   注意：新增实体属性后 dev 服务器要重启（面板 restart action）才认，否则写入会被 ORM 元数据静默丢掉
 # 图片一步建行冒烟（2026-09-23 实测）：新建页选图（本地预览）→ 保存 → 行上的 image_attachment_ids 已带该附件
 # 采购单行选择器冒烟：/backend/purchasing/orders/create 选供应商 → 商品框里同时出现「本供应商产品库」与「商品库」两条建议 →
 #   选产品库那条保存 → GET /api/purchasing/purchase-orders/lines?orderId=… 的 supplierProductId 已落库、productId/catalogProductId 为 null
-# 关联冒烟（2026-09-23）：列表按「建档状态=未建档」筛出待办 → 行内点「建商品档案」（或勾选多行「批量建商品档案」）→
-#   页面顶部出现「去填官方目录链接」的下一步 → 换「关联已有商品」把编码不一致的行挂到已有商品（商品总数不变）→
+# 建档下一步冒烟（2026-09-23；2026-10-10 起是「建商品档案」）：列表按「建档状态=未建档」筛出待办 → 行内点「建商品档案」（或勾选多行「批量建商品档案」）→
+#   页面顶部出现「去建商品档案」的下一步 → 换「关联已有商品」把编码不一致的行挂到已有商品（商品总数不变）→
 #   同步字段到商品后提示写明写了哪些字段 → 换绑 / 解除关联各回到预期状态
 # 品牌冒烟（2026-09-24）：/backend/purchasing/suppliers/create 的「默认品牌」下拉列出 SP/DK/PK（`CODE — name`，来自字典 product_brand）→ 保存 → GET 回读 brandValue；
 #   POST 一个字典外的品牌（如 XX）→ 400 `Unknown product_brand value: XX`；PUT 把它清空 → 200（清空始终允许，只有改成新值才校验）
-# 编码面板冒烟（2026-09-24）：/backend/purchasing/supplier-products/create 的「品牌（编码前缀）」选 PK → 面板「品牌」行显示 `PK — PetKit`（取自供应商默认品牌时附一行说明）；
-#   「类别」下拉列出 CL — 猫砂 等字典条目（手输已不可用）→ 选 CL → 生成 → 商品 SKU 得 `PK-CL001` + 拆解；
-#   类别码表读不到/为空时面板给「字典 product_category 里没有可用条目…」而不是空白下拉框；手输类别那条路已不存在，因此 `Unknown product_category value: …` 只可能来自 API 调用方
-# 生成后可手改（2026-09-24）：生成得到 `PK-CL001` 后把「商品 SKU」改成手工码（如 `DK-MANUAL-01`）→ 面板徽章变「沿用旧码」且不拦截 → 保存 → 列表与 `GET /api/purchasing/supplier-products` 回读的就是手输值（写路径不读 `rule.enforce`，`strict` 也不拦）
-# 已有租户需要：yarn mercato seed:defaults --module purchasing（单位字典）+ yarn mercato seed:defaults --module product_codes（品牌/类别字典 + 默认编码规则）
-#   + yarn mercato auth sync-role-acls（新权限）。漏掉 product_codes 那一步的表现是「默认品牌」下拉为空、字典库里没有 product_brand，
-#   且 product_codes_rules 为空（生成按钮没有规则可解析）——见 `.ai/lessons/module-seeded-dictionaries-need-seed-defaults.md`
+# SKU 手填冒烟（2026-10-10）：/backend/purchasing/supplier-products/create 的「商品 SKU」就是普通输入框（发号面板、「生成」与「改用规范编码」已删除）→
+#   填 `PK-CL001` 或手工码 → 保存 → 列表与 GET 回读同一个值；含空格的码（如 `PK CL 1`）库行可存（1–120 字符），但点「建商品档案」→ 422（`SKU_PATTERN`）
+# 默认品牌冒烟（2026-09-24）：新建页品牌留空 → 显示「品牌留空，用供应商默认品牌：PK — PetKit」，来自供应商的 brand_value
+# 已有租户需要：yarn mercato seed:defaults --module products（单位词表：`supplier_product_unit` + catalog `unit` 字典缺码）+ yarn mercato seed:defaults --module product_codes（品牌/类别字典）
+#   + yarn mercato auth sync-role-acls（新权限）。漏掉 product_codes 那一步的表现是「默认品牌」下拉为空、字典库里没有 product_brand
+#   ——见 `.ai/lessons/module-seeded-dictionaries-need-seed-defaults.md`
 # Excel 导入冒烟（2026-10-10）：产品库列表「Excel 导入」→ 选供应商 → 上传 .xlsx/.xls/.csv → 出现表头探测与列映射建议 →
 #   改一列映射后预览立即重算（不必重新上传）→ 导入 → 结果页给出成功/失败计数与失败行原因；关闭对话框后列表自动刷新
 #   边界：非本供应商的 attachmentId → 422 attachment_unreadable；没有已知表头的表 → 422 header_not_found；
@@ -208,6 +207,6 @@ yarn test src/modules/purchasing/lib/supplierProductExcelImport
 
 - `currency-dictionary-seeding.md` — 币种字典与汇率主数据的播种顺序。
 - `per-user-acl-is-an-absolute-override.md` — 写权限测试时的用户级 ACL 覆盖坑。
-- `unit-pickers-read-the-app-unit-dictionary.md` — 单位选择器只读 app 自有的 `supplier_product_unit` 字典。
+- `unit-pickers-read-the-app-unit-dictionary.md` — 单位选择器只读 app 自有的 `supplier_product_unit` 字典；2026-10-10 起该词表还必须是 catalog `unit` 字典的子集（商品的单位就是 catalog `default_unit`）。
 - `kysely-bare-handle-types-tables-away.md` — 本模块的表走实体管理器；读别的模块的表（报价行）用带类型声明的只读投影。
 - `option-loaders-must-respect-page-size-caps.md` — 选项加载器问的 `pageSize` 超过路由上限就是 400 + 空白下拉框。

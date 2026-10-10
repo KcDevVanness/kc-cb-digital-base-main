@@ -22,12 +22,12 @@
 
 | 项 | 说明 |
 |---|---|
-| 依赖模块 | 已启用 `purchasing`/`cross_border`/`trade_docs`/`export_finance`/`platform_ops`/`products`/`parties`/`wms`/`sales`/`integrations`/`data_sync`/`notifications`/`dashboards`/`dictionaries`/`attachments`/`currencies`/`currency_policy` |
+| 依赖模块 | 已启用 `purchasing`/`cross_border`/`trade_docs`/`export_finance`/`platform_ops`/`catalog`（商品单一存储，经 `products/lib/store.ts` 读）/`parties`/`wms`/`sales`/`integrations`/`data_sync`/`notifications`/`dashboards`/`dictionaries`/`attachments`/`currencies`/`currency_policy` |
 | 外部依赖 | 俄方 token 与联调窗口（Q-010）；`A.4` 敏感确认（成本毛利/ФБО 只读/增量粒度/币种混用）——2/4 已勾选（成本毛利、币种混用），ФБО `data_updated_at` 与 `updated_since` 待俄方；阶段三按当时状态用 mock 夹具，阶段六的 `cost` 行由中方到岸成本单边提供并标来源 |
 | 数据库 | 迁移一律 `yarn db:generate` → 审阅（只允许建表/加列/索引/外键、确认无 drop）→ **批准后** `yarn db:migrate`。阶段一 `finance_shipment_costs`；阶段二 `finance_expenses` + `export_finance_collections` 两列；阶段三 三张 `ru_sync_*` |
 | 风险：汇率缺失 | 行标 `unconvertible`/`rateMissing`，不进 CNY 合计、页面标红；永不按 1 摊、永不填 0 |
 | 风险：SKU 映射覆盖不满 | 未映射禁生成 PO + 派生异常清单 + 覆盖率可见；不静默合并 |
-| 风险：仓库无可读库存余额表 | 库存资金占用退回「SKU 最新到岸单价 × 已收货数量」并标注口径来源（阶段一实现第一步确认 `wms` 表名） |
+| 风险：仓库无可读库存余额表 | 库存资金占用退回「SKU 最新到岸单价 × 已收货数量」并标注口径来源（阶段一实现第一步确认 `wms` 表名）；成本其次取 catalog 上该商品的 `purchase` 档价（2026-10-10 起，价在 `catalog_product_variant_prices`） |
 | 风险：分摊规则漂移 | 与退税分摊同规则（HALF_UP + 余差落占比最大行 + 平手取最小 `lineNumber`），单测钉死 |
 | 新增依赖 | 无（不引图表库；趋势用一方 SVG 组件，确需先问） |
 

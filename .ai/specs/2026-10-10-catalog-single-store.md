@@ -1,7 +1,11 @@
 # Single Product Store on the Official Catalog — Cut, Merge, Rebuild
 
 **Date**: 2026-10-10
-**Status**: Ready for implementation (Phase 1) — owner approved the option set on 2026-10-10; Phase 0 (baseline docs) rides this PR
+**Status**: Implemented (Phase 0–3 in the `feat/catalog-single-store` branch; Phase 4 SKU 发号另立)
+> **As-shipped deltas (2026-10-10).** 与正文不同处，以代码与 `src/modules/<id>/README.md` 为准：
+> - **单位是写路径闸门**（正文只把单位列为字段）：商品的单位就是 catalog 的 `default_unit`，而 catalog 的解析器只认自己 `unit` 字典里的码、并存字典条目的 `value`——首次集成跑测出 19 个用例在 `POST /api/products/items` 上 400 `uom.unit_not_found`。修法是词表并入而非并行：`products/lib/unitVocabulary.ts` 定义 11 个码，`products/setup.ts` 幂等把 catalog 缺的 `PCS`/`CTN`/`BAG` 补进 `unit` 字典，`set`/`pair`/`box`/`roll`/`kg`/`g`/`m`/`l` 沿用 catalog 的小写拼写（改拼写会让已存商品的下一次写失败，或造出 normalized key 冲突）。播种从 `purchasing/setup.ts` 移到 `products/setup.ts`；规则沉淀见 `.ai/lessons/unit-pickers-read-the-app-unit-dictionary.md`。
+> - **分发副本保留 provenance**：`custom_field_values` 的 `cf_source_product_id` 记录来源商品（正文未提），`products.items.distribute` 写入。
+> - **价格档的"消失行"以 `ends_at` 关窗**（Q8 的落地形态），不是删除。
 
 > 本规格取代 / 修订：`.ai/specs/2026-09-22-products-and-trade-docs.md`（自建主数据的决定）、
 > `.ai/specs/2026-09-22-product-variants.md`（变体归属 + 推迟的 wms round）、
@@ -377,9 +381,11 @@ Verdict: `Ready for implementation`（Phase 1 起）— 依赖 owner 的开工�
 | Q-新4 | 旧码别名表保留 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q-新5 | 先落 Phase 0 基准文档 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q-新6 | Linear：每阶段 apply + 收尾 audit | owner | no | 2026-10-10 采纳推荐（A） |
+| Q-新7 | 单位词表（app 的 `supplier_product_unit` vs catalog 的 `unit`） | owner | no | 2026-10-10 实现时定为**并入 catalog 字典**：词表见 `products/lib/unitVocabulary.ts`；`PCS`/`CTN`/`BAG` 由本 app 补进 catalog，其余沿用 catalog 拼写。备选（两表并存 / 重命名 peer 条目）都被写路径的 `uom.unit_not_found` 闸门与 normalized key 冲突否决——证据见 `.ai/lessons/unit-pickers-read-the-app-unit-dictionary.md` 的 Recurrence 段 |
 
 ## Changelog
 
 | Date | Change |
 |---|---|
 | 2026-10-10 | Initial spec — owner approved the option set; Phase 0 (baseline docs) in the same PR |
+| 2026-10-10 | Phase 0–3 shipped in `feat/catalog-single-store`：表族删除 + `products/lib/store.ts` 单一读写层 + 两页 UI + D 组文档；集成跑测发现的单位闸门按 Q-新7 落地（`products/lib/unitVocabulary.ts`、`products/setup.ts`）；Phase 4（SKU 发号）仍待另立切片 |

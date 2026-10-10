@@ -154,8 +154,7 @@ was bought), and the finance operator (reads order/container files).
   Carton G.W / N.W and the outer carton size left the field set on 2026-09-23 (D5). HS code stays **text**: a HS code is an identifier with leading
   zeros and dotted groups (`8471.30.0000`), not an arithmetic value, so a numeric column would
   corrupt it.
-- **REQ-SPL-012** — The unit is a **dictionary** value, not free text: `purchasing/setup.ts` seeds the
-  organization's `supplier_product_unit` dictionary (idempotent, insert-only) and the form renders a
+- **REQ-SPL-012** — The unit is a **dictionary** value, not free text: **`products/setup.ts` seeds it since 2026-10-10** (it used to be `purchasing/setup.ts`; the unit became catalog's `default_unit`, so the module that writes it owns the list — `products/lib/unitVocabulary.ts`), idempotent and insert-only, and the form renders a
   dropdown fed by it through the app's **one** client loader (`products/lib/unitOptions.ts`, the same
   list the product form and the trade-document lines read), while the API keeps accepting any code (a quotation import or an older row may
   carry one the dictionary does not list yet, and opening such a row must never blank it).

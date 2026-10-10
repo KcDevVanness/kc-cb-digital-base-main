@@ -19,6 +19,18 @@
 
 **身份**：catalog 商品 id 就是 app 的商品 id；catalog 变体 id 就是库存单位。app 不再有第二套身份（旧 `products_products.catalog_product_id` 桥已删除）。
 
+## 单位词表（2026-10-10）
+
+商品的单位是 catalog 的 `default_unit`，而 catalog 的解析器（`catalog/lib/unitResolution.ts`）**只认它自己 `unit` 字典里的码**，并且存的是字典条目的 `value`——所以词表必须是 catalog 字典的子集，否则建档/改档直接 400 `uom.unit_not_found`（实测：19 个集成用例在 `POST /api/products/items` 上全红）。
+
+`lib/unitVocabulary.ts` 是这份词表的唯一定义（11 个海关常用码，`label` 是纯中文名）：
+
+- `PCS` / `CTN` / `BAG`：catalog 没有，由 `products/setup.ts` 的 `ensureCatalogUnitEntries` 幂等补进它的 `unit` 字典（catalog 的字典不存在时一并创建）；
+- `set` / `pair` / `box` / `roll` / `kg` / `g` / `m` / `l`：沿用 catalog 已有（小写）拼写——改拼写要么让已存商品的下一次写失败，要么造出 normalized key 冲突的第二条，解析结果就不确定了；
+- 词表之外的手输码，要先把码加进 catalog 的 `unit` 字典才能建档。
+
+选品器读的是 app 自己的 `supplier_product_unit` 字典（`lib/unitOptions.ts`，`CODE — 名称` 形状）；两份字典的码一致，所以「选什么就存什么」。已有组织跑 `yarn mercato seed:defaults --module products` 补齐。
+
 ## 读写在 `lib/store.ts`
 
 - 写：全部经官方命令（`catalog.products.*` / `catalog.variants.*` / `catalog.prices.*` / `catalog.priceKinds.*`），命令载荷里的 `cf_*` 键带业务字段；事件、审计、索引副作用由官方命令产生。
