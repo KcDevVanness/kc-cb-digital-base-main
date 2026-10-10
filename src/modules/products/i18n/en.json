@@ -56,7 +56,7 @@
   "products.items.form.field.manufacturerModel": "Model",
   "products.items.form.field.manufacturerModelHelp": "The model printed on the contract line, e.g. W5C.",
   "products.items.form.field.sku": "SKU",
-  "products.items.form.field.skuHelp": "Our code for this item: unique inside the organization and never reused — including by a deleted row.",
+  "products.items.form.field.skuHelp": "Our code for this item: unique inside the organization while the product exists — deleting the product frees it again.",
   "products.items.form.field.hsCode": "HS code",
   "products.items.form.field.cnCode": "CN code",
   "products.items.form.field.countryOfOriginCode": "Country of origin",

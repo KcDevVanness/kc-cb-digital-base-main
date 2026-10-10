@@ -56,7 +56,7 @@
   "products.items.form.field.manufacturerModel": "型号",
   "products.items.form.field.manufacturerModelHelp": "印在合同行上的型号，例：W5C。",
   "products.items.form.field.sku": "SKU",
-  "products.items.form.field.skuHelp": "我方编码，组织内唯一、含软删占位。",
+  "products.items.form.field.skuHelp": "本商品的编码：组织内唯一（商品存在期间）；删除商品后编码释放，可再次使用。",
   "products.items.form.field.hsCode": "HS 编码",
   "products.items.form.field.cnCode": "CN 编码",
   "products.items.form.field.countryOfOriginCode": "原产国代码",

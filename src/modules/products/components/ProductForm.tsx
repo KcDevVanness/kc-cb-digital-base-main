@@ -413,7 +413,7 @@ function useProductFields(t: TranslateFn): CrudField[] {
         label: t('products.items.form.field.sku', 'SKU'),
         description: t(
           'products.items.form.field.skuHelp',
-          'Our code for this item: unique inside the organization and never reused — including by a deleted row.',
+          'Our code for this item: unique inside the organization while the product exists — deleting the product frees it again.',
         ),
         type: 'text',
         required: true,
