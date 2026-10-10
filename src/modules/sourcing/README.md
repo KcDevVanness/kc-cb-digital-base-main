@@ -17,7 +17,7 @@ Specs: [`.ai/specs/2026-09-22-supplier-quotation-import.md`](../../../.ai/specs/
 | Value normalization | `lib/valueNormalization.ts` | `/` and friends → null, `10 pallets` → 10 + warning, `0.58*0.395*0.455` → centimetres, name → base + variant tokens. |
 | SKU derivation | `lib/skuDerivation.ts` | Item No. for the first row of a group, `-<variant token>` for the rest (`P4108` / `P4108-UVC`), name slug when there is no Item No. |
 | Line building | `lib/quoteLines.ts` + `lib/quoteAnalysis.ts` | Detection + mapping + normalization → quotation lines, with every source row kept in `raw`. |
-| Promotion | `lib/promotion.ts` + `lib/productMapping.ts` | Selected lines → `products.items.create|update` + `products.prices.replace` + `products.categories.create`, then `purchasing.supplier-products.import-from-quote` for the library. The master-side mapping (non-empty/changed values, the whole price set) is shared from `products/lib/supplierMapping.ts`. |
+| Promotion | `lib/promotion.ts` + `lib/productMapping.ts` | Selected lines → **catalog 商品**（经 `products/lib/store.ts`：`createStoreProduct`/`updateStoreProduct`/`replaceStorePrices`；分类横幅不再自动建树，2026-10-10），then `purchasing.supplier-products.import-from-quote` for the library. The master-side mapping (non-empty/changed values, the whole price set) is shared from `products/lib/supplierMapping.ts`. |
 | AI mapping (optional) | `lib/aiMapping.ts` | Header row + up to three sample rows → a proposed mapping. Off unless a model provider is configured. |
 
 ## The import keeps single-unit data only
@@ -49,7 +49,7 @@ still *feeds* it, and that is its only remaining involvement:
   (`purchasing/lib/quoteLineReads.ts` — this module's entities are never imported there).
 - **Promoting lines into the product master** calls the same command for each promoted line, so the
   library stays a by-product of the workflow the buyer already runs. The command reads the line's
-  `promoted_product_id`, which is why only the line id travels. A library failure never rolls back a
+  `catalog_product_id`, which is why only the line id travels. A library failure never rolls back a
   product write: the line stays promoted and the reason is reported on its own row.
 - The quote line's old reverse pointer (`sourcing_quote_lines.supplier_product_id`) is gone
   (`Migration20260923043000_sourcing`): it pointed at a row another module owns, nothing read it, and
@@ -86,7 +86,7 @@ Rules that are load-bearing (and why they are not five-line diffs):
 - Caps: 2000 lines per version (`422 quote_lines_unavailable`), 50 versions per chain
   (`truncated: true`), `pageSize ≤ 200`.
 - Cross-module reads are raw-Kysely projections declared in `lib/quoteChangeReads.ts`
-  (`purchasing_supplier_products`, `products_products`, `products_prices`) — the module's own tables
+  (`purchasing_supplier_products`, `catalog_products`, `catalog_product_variant_prices`, `custom_field_values`) — the module's own tables
   go through the entity manager. No cross-module entity import.
 - Authentication resolves from the **request** (`getAuthFromRequest`), the same line the CRUD factory
   uses, so the three routes accept the browser's cookie and a bearer token alike. A hand-written route
@@ -102,10 +102,10 @@ browser paths above.
 
 - **Money is a decimal string.** `unit_cost` and `suggested_rsp` are validated as fixed-scale decimal
   strings (unit price scale, 4 decimals — `PRICE_SCALE`) and passed through untouched; nothing here does float arithmetic on a price.
-- **Promotion never blanks a product field.** Only non-empty, changed values reach
-  `products.items.update`, and the price write submits the product's whole price set (the
-  `products.prices.replace` contract deactivates rows missing from the payload), so `internal`
-  and `export` tiers survive an import.
+- **Promotion never blanks a product field.** Only non-empty, changed values reach the store's
+  `updateStoreProduct` (the payload is merged onto the current `StoreProduct`, so untouched columns
+  stay), and the price write submits the product's whole price set (rows missing from the payload are
+  closed with `ends_at`), so `internal` and `export` tiers survive an import.
 - **A promoted line is frozen.** Re-parsing or re-mapping a quotation that has promoted lines is
   refused with 409: those lines are the record of what was written to the product master.
 - **A quotation's currency is picked.** Both quotation panels (`QuoteCreatePanel`'s manual header and

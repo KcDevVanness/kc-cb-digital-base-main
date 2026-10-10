@@ -3,16 +3,16 @@ import { createModuleEvents } from '@open-mercato/shared/modules/events'
 /**
  * Events emitted by the products module.
  *
+ * Nothing here is emitted any more: a product write goes through the installed catalog's commands
+ * (`lib/store.ts` → `catalog.products.*` / `catalog.variants.*` / `catalog.prices.*`), which is what
+ * fires the platform's `catalog.product.*` / `catalog.variant.*` / `catalog.price.*` events, audit
+ * trail and index side effects. The four app-level ids below survive only because existing
+ * subscribers and open backend lists reference them; a new listener should follow the catalog events.
+ *
  * `clientBroadcast` keeps open backend lists in sync without polling; payloads carry
  * identifiers and scope only.
  */
 const events = [
-  { id: 'products.type.created', label: 'Product Line Created', entity: 'product_type', category: 'crud', clientBroadcast: true },
-  { id: 'products.type.updated', label: 'Product Line Updated', entity: 'product_type', category: 'crud', clientBroadcast: true },
-  { id: 'products.type.deleted', label: 'Product Line Deleted', entity: 'product_type', category: 'crud', clientBroadcast: true },
-  { id: 'products.category.created', label: 'Product Category Created', entity: 'product_category', category: 'crud', clientBroadcast: true },
-  { id: 'products.category.updated', label: 'Product Category Updated', entity: 'product_category', category: 'crud', clientBroadcast: true },
-  { id: 'products.category.deleted', label: 'Product Category Deleted', entity: 'product_category', category: 'crud', clientBroadcast: true },
   { id: 'products.item.created', label: 'Product Created', entity: 'product', category: 'crud', clientBroadcast: true },
   { id: 'products.item.updated', label: 'Product Updated', entity: 'product', category: 'crud', clientBroadcast: true },
   { id: 'products.item.deleted', label: 'Product Deleted', entity: 'product', category: 'crud', clientBroadcast: true },

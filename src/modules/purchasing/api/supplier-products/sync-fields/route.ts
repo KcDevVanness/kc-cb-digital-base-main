@@ -14,7 +14,7 @@ const syncFieldsListSchema = z.object({
 })
 
 const syncFieldsResponseSchema = z.object({
-  productId: z.string().uuid(),
+  catalogProductId: z.string().uuid(),
   fieldsChanged: z.array(z.string()),
   priceChanged: z.boolean(),
 })
@@ -31,7 +31,7 @@ export const { metadata, POST } = makeCrudRoute({
     softDeleteField: 'deletedAt',
   },
   indexer: { entityType: ENTITY_ID },
-  list: { schema: syncFieldsListSchema, entityId: ENTITY_ID, fields: ['id', 'supplier_sku', 'product_id'] },
+  list: { schema: syncFieldsListSchema, entityId: ENTITY_ID, fields: ['id', 'supplier_sku', 'catalog_product_id'] },
   actions: {
     create: {
       commandId: 'purchasing.supplier-products.sync-fields',
@@ -50,7 +50,7 @@ export const openApi: OpenApiRouteDoc = {
     POST: {
       summary: 'Push a supplier product’s current values onto its linked product',
       description:
-        'Re-applies the same non-empty/changed field mapping and the `purchase`-tier price merge that promotion uses, on the product this row is already linked to — `promote` itself is idempotent (`skipped`) once a link exists. Reports `fieldsChanged` and `priceChanged`. The catalog link, the `internal`/`export` price tiers and the variants are never touched. An unlinked row (422 `supplier_product_not_linked`) and a deleted product (422 `product_deleted`) are refused. Requires `purchasing.supplier-products.promote`, because it writes the master.',
+        'Re-applies the same non-empty/changed field mapping and the `purchase`-tier price merge that promotion uses, on the product this row is already linked to — `promote` itself is idempotent (`skipped`) once a link exists. Reports `fieldsChanged` and `priceChanged`. The catalog link, the `internal`/`export` price tiers and the variants are never touched. An unlinked row (422 `supplier_product_not_linked`) and a product that no longer exists (404 `product_not_found`) are refused. Requires `purchasing.supplier-products.promote`, because it writes the master.',
       requestBody: { schema: supplierProductSyncFieldsSchema },
       responses: [{ status: 200, description: 'Fields synced', schema: syncFieldsResponseSchema }],
       errors: [...purchasingCommandErrors],

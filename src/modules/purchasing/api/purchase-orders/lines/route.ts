@@ -11,7 +11,6 @@ const orderLineItemSchema = z
     id: z.string().uuid(),
     orderId: z.string().uuid(),
     lineNumber: z.number(),
-    productId: z.string().uuid().nullable().optional(),
     catalogProductId: z.string().uuid().nullable().optional(),
     /** The supplier product library row the line was ordered from, when it came from one. */
     supplierProductId: z.string().uuid().nullable().optional(),
@@ -79,9 +78,8 @@ export const { metadata, GET } = makeCrudRoute({
       'id',
       'order_id',
       'line_number',
-      'product_id',
-      'supplier_product_id',
       'catalog_product_id',
+      'supplier_product_id',
       'product_snapshot',
       'quantity',
       'received_quantity',
@@ -106,8 +104,6 @@ export const { metadata, GET } = makeCrudRoute({
       id: String(item.id),
       orderId: orderIdFrom(item.order_id) ?? String(item.order_id ?? ''),
       lineNumber: Number(item.line_number ?? 0),
-      // New lines carry `productId`; rows written before the switch carry the catalog reference.
-      productId: (item.product_id ?? null) as string | null,
       catalogProductId: (item.catalog_product_id ?? null) as string | null,
       // The library row is the supplier-facing identity of the line; both it and the frozen
       // supplier code are additive keys, so a master-only line just reads null.

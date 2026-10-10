@@ -21,7 +21,6 @@ import { writeSupplierProductLink } from '../lib/supplierProductLinking'
 import {
   applySupplierProductToMaster,
   promoteSupplierProduct,
-  type CommandBusLike,
   type SupplierProductPromotionResult,
 } from '../lib/supplierProductPromotion'
 import { loadQuote } from '../lib/quoteLineReads'
@@ -243,8 +242,9 @@ const importSupplierProductsCommand: CommandHandler<Record<string, unknown>, Sup
 }
 
 /**
- * `purchasing.supplier-products.promote` — the supplier list's only write into the product master.
- * Idempotent: a row that already carries `product_id` reports `skipped` instead of writing again.
+ * `purchasing.supplier-products.promote` — the supplier list's only write into the catalog store.
+ * Idempotent: a row that already carries `catalog_product_id` reports `skipped` instead of writing
+ * again.
  */
 const promoteSupplierProductCommand: CommandHandler<Record<string, unknown>, SupplierProductPromotionResult> = {
   id: 'purchasing.supplier-products.promote',
@@ -261,7 +261,6 @@ const promoteSupplierProductCommand: CommandHandler<Record<string, unknown>, Sup
       ctx,
       scope,
       de,
-      commandBus: ctx.container.resolve('commandBus') as CommandBusLike,
       product,
     })
   },
@@ -271,10 +270,13 @@ const promoteSupplierProductCommand: CommandHandler<Record<string, unknown>, Sup
  * `purchasing.supplier-products.link` — point a library row at a product that already exists
  * (关联已有商品), re-point it (换绑), or clear the link (解除关联, `productId: null`).
  *
- * It writes **only** `product_id`: the master's fields and prices have their own owners, and a link
- * that also rewrote them would overwrite a product manager's edits with no review step. That is the
- * whole reason this action exists next to `promote` — a supplier code that deliberately differs
- * from our SKU can be linked instead of spawning a duplicate product.
+ * It writes **only** `catalog_product_id`: the catalog product's fields and prices have their own
+ * owners, and a link that also rewrote them would overwrite a product manager's edits with no review
+ * step. That is the whole reason this action exists next to `promote` — a supplier code that
+ * deliberately differs from our SKU can be linked instead of spawning a duplicate product.
+ *
+ * The command input keeps the `{ id, productId }` shape (and the response echoes `productId`): the
+ * wire name is the link action's own, and `productId` is the catalog product id it targets.
  */
 const linkSupplierProductCommand: CommandHandler<Record<string, unknown>, { id: string; productId: string | null }> = {
   id: 'purchasing.supplier-products.link',
@@ -316,7 +318,7 @@ const linkSupplierProductCommand: CommandHandler<Record<string, unknown>, { id: 
  */
 const syncSupplierProductFieldsCommand: CommandHandler<
   Record<string, unknown>,
-  { productId: string; fieldsChanged: string[]; priceChanged: boolean }
+  { catalogProductId: string; fieldsChanged: string[]; priceChanged: boolean }
 > = {
   id: 'purchasing.supplier-products.sync-fields',
   isUndoable: false,
@@ -325,7 +327,7 @@ const syncSupplierProductFieldsCommand: CommandHandler<
     const scope = ensureScope(ctx)
     const em = ctx.container.resolve('em') as EntityManager
     const product = await loadSupplierProduct(em, scope, parsed.id)
-    if (!product.productId) {
+    if (!product.catalogProductId) {
       throw new CrudHttpError(422, {
         error: 'This library row is not linked to a product yet; create or link one first',
         code: 'supplier_product_not_linked',
@@ -334,13 +336,12 @@ const syncSupplierProductFieldsCommand: CommandHandler<
 
     const result = await applySupplierProductToMaster({
       em,
-      scope,
-      commandBus: ctx.container.resolve('commandBus') as CommandBusLike,
       ctx,
+      scope,
       product,
-      productId: String(product.productId),
+      productId: String(product.catalogProductId),
     })
-    return { productId: String(product.productId), ...result }
+    return { catalogProductId: String(product.catalogProductId), ...result }
   },
 }
 
@@ -364,9 +365,9 @@ function promotionFailure(id: string, error: unknown): SupplierProductPromoteBat
 /**
  * `purchasing.supplier-products.promote-batch` — clear a backlog without clicking row by row.
  *
- * Per-row isolation, exactly like the quotation import: one row whose SKU is owned by a deleted
- * product fails alone and the rest still land. Duplicate ids are collapsed to their first
- * occurrence, so the counts always describe distinct rows.
+ * Per-row isolation, exactly like the quotation import: one row the catalog refuses (an unknown
+ * unit, a SKU another library row owns) fails alone and the rest still land. Duplicate ids are
+ * collapsed to their first occurrence, so the counts always describe distinct rows.
  */
 const promoteSupplierProductsBatchCommand: CommandHandler<Record<string, unknown>, SupplierProductPromoteBatchResult> = {
   id: 'purchasing.supplier-products.promote-batch',
@@ -376,13 +377,12 @@ const promoteSupplierProductsBatchCommand: CommandHandler<Record<string, unknown
     const scope = ensureScope(ctx)
     const em = ctx.container.resolve('em') as EntityManager
     const de = ctx.container.resolve('dataEngine') as DataEngine
-    const commandBus = ctx.container.resolve('commandBus') as CommandBusLike
 
     const result: SupplierProductPromoteBatchResult = { created: 0, updated: 0, skipped: 0, failed: [] }
     for (const id of Array.from(new Set(parsed.ids))) {
       try {
         const product = await loadSupplierProduct(em, scope, id)
-        const promoted = await promoteSupplierProduct({ em, ctx, scope, de, commandBus, product })
+        const promoted = await promoteSupplierProduct({ em, ctx, scope, de, product })
         if (promoted.action === 'created') result.created += 1
         else if (promoted.action === 'updated') result.updated += 1
         else result.skipped += 1

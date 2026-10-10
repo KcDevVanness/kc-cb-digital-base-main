@@ -94,9 +94,10 @@ export const setup: ModuleSetupConfig = {
    * organization and never rewrites an entry an operator has edited. A section the dictionary does
    * not carry can still be typed on a line.
    *
-   * The supplier product library's unit dictionary (`supplier_product_unit`) is seeded by
-   * `purchasing/setup.ts`, the module that owns the library since 2026-09-23; the product form and
-   * the trade-document lines read it through `products/lib/unitOptions.ts`.
+   * The unit vocabulary (`supplier_product_unit` + catalog's `unit` entries) is seeded by
+   * `products/setup.ts` since 2026-10-10 — the product's unit is catalog's `default_unit` now, so the
+   * module that writes it owns the list. The product form and the trade-document lines read it
+   * through `products/lib/unitOptions.ts`.
    */
   async seedDefaults(ctx) {
     await seedQuoteSections(ctx)

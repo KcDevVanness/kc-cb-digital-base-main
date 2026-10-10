@@ -23,8 +23,8 @@ import { loadOwnedProductOptions } from './orderFormOptions'
  * This is the action that exists because SKU matching cannot serve every row: our own product SKU
  * and the supplier's code are different facts, and when they differ the only alternatives used to
  * be "change one of them" or "create a duplicate product". Picking by hand is the third one, and it
- * is deliberately the *only* thing it does — the link action writes `product_id` and nothing else
- * (no field or price write-back), so linking can never overwrite a product manager's work.
+ * is deliberately the *only* thing it does — the link action writes `catalog_product_id` and nothing
+ * else (no field or price write-back), so linking can never overwrite a product manager's work.
  *
  * The search hits the product master's own list route through the module's shared option loader
  * (`orderFormOptions.loadOwnedProductOptions`), so this picker and the purchase order's line picker

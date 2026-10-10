@@ -85,6 +85,10 @@ const OPTION_ID_PAGE_SIZE = 1
 
 /** Statuses the list filter offers — the API's own enum, never a second literal. */
 import { SHIPMENT_STATUS_FILTER_ORDER as SHIPMENT_STATUSES, type ShipmentStatus } from '../lib/shipmentStatus'
+import {
+  toPurchaseOrderLineOption,
+  type PurchaseOrderLineOption,
+} from './purchaseOrderLineOptions'
 export { SHIPMENT_STATUSES, type ShipmentStatus }
 
 const SHIPMENT_STATUS_MAP: StatusMap<ShipmentStatus> = {
@@ -467,32 +471,6 @@ export async function resolveOrderOptionLabel(
 }
 
 /** A purchase-order line as `/api/purchasing/purchase-orders/lines` projects it. */
-export type PurchaseOrderLineOption = {
-  id: string
-  lineNumber: number
-  /** Owned-master reference; the contract-line match key (null on historical catalog-only lines). */
-  productId: string
-  catalogProductId: string
-  productTitle: string | null
-  productSku: string | null
-  supplierSku: string | null
-  quantity: string
-  receivedQuantity: string
-}
-
-function toPurchaseOrderLineOption(item: Record<string, unknown>): PurchaseOrderLineOption {
-  return {
-    id: readText(item, 'id'),
-    lineNumber: Number(item.lineNumber ?? 0),
-    productId: readText(item, 'productId', 'product_id'),
-    catalogProductId: readText(item, 'catalogProductId', 'catalog_product_id'),
-    productTitle: readOptionalText(item, 'productTitle', 'product_title'),
-    productSku: readOptionalText(item, 'productSku', 'product_sku'),
-    supplierSku: readOptionalText(item, 'supplierSku', 'supplier_sku'),
-    quantity: readText(item, 'quantity') || '0',
-    receivedQuantity: readText(item, 'receivedQuantity', 'received_quantity') || '0',
-  }
-}
 
 /** The lines of one purchase order — the candidates an allocation can be built from. */
 export async function loadPurchaseOrderLines(

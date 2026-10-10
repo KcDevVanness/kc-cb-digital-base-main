@@ -96,29 +96,19 @@ test.describe.serial('purchasing — purchase order source link', () => {
     internalChannelId = String((await readJsonSafe<ChannelPayload>(channels))?.channels?.internal ?? '')
     expect(internalChannelId, 'the internal trade-type channel is seeded for this organization').toBeTruthy()
 
-    const catalogSku = `SRC-LINK-${stamp}`.toUpperCase()
-    const catalog = await scoped('POST', '/api/catalog/products', {
-      title: `Source link product ${stamp}`,
-      sku: catalogSku,
-      description: 'Long enough description for the catalog create validation in QA automation flows.',
-    })
-    const catalogBody = await readJsonSafe<Record<string, unknown>>(catalog)
-    catalogProductId = String(
-      [catalogBody?.id, (catalogBody?.item as Record<string, unknown>)?.id].find(
-        (value): value is string => typeof value === 'string' && value.length > 0,
-      ) ?? '',
-    )
-    expect(catalogProductId, 'the catalog product fixture resolved an id').toBeTruthy()
-
+    // A product **is** the catalog product since the single-store cutover: one create through the
+    // app's own API yields the id every downstream document and the catalog-side reads use. Creating
+    // a catalog product first and then an app product with the same SKU would be the same row twice
+    // and now answers 409 (the SKU is unique per organization).
     const product = await scoped('POST', '/api/products/items', {
-      sku: catalogSku,
+      sku: `SRC-LINK-${stamp}`.toUpperCase(),
       name: `Source link product ${stamp}`,
-      catalogProductId,
       unit: 'PCS',
     })
     expect(product.status(), 'POST /api/products/items should return 201').toBe(201)
     productId = String((await readJsonSafe<IdPayload>(product))?.id ?? '')
     expect(productId).toBeTruthy()
+    catalogProductId = productId
 
     const supplier = await scoped('POST', '/api/purchasing/suppliers', {
       name: `Source link supplier ${stamp}`,
@@ -236,7 +226,7 @@ test.describe.serial('purchasing — purchase order source link', () => {
       supplierId,
       currencyCode: 'CNY',
       sourceSalesOrderId: salesOrderId,
-      lines: [{ productId, quantity: 3, unitPrice: 88, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 3, unitPrice: 88, taxRate: 0, priceIncludesTax: true }],
     })
     expect(created.status, created.body).toBe(201)
 
@@ -251,7 +241,7 @@ test.describe.serial('purchasing — purchase order source link', () => {
       supplierId,
       currencyCode: 'CNY',
       sourceSalesOrderId: '11111111-1111-4111-8111-111111111111',
-      lines: [{ productId, quantity: 1, unitPrice: 10, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 1, unitPrice: 10, taxRate: 0, priceIncludesTax: true }],
     })
     expect(unknown.status, unknown.body).toBe(422)
     expect(unknown.body).toContain('source_sales_order_not_found')
@@ -262,7 +252,7 @@ test.describe.serial('purchasing — purchase order source link', () => {
       supplierId,
       currencyCode: 'CNY',
       sourceSalesOrderId: unmarkedSalesOrderId,
-      lines: [{ productId, quantity: 1, unitPrice: 10, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 1, unitPrice: 10, taxRate: 0, priceIncludesTax: true }],
     })
     expect(unmarked.status, unmarked.body).toBe(422)
     expect(unmarked.body).toContain('source_sales_order_not_found')
@@ -274,7 +264,7 @@ test.describe.serial('purchasing — purchase order source link', () => {
         supplierId: branchSupplierId,
         currencyCode: 'CNY',
         sourceSalesOrderId: salesOrderId,
-        lines: [{ productId, quantity: 1, unitPrice: 10, taxRate: 0, priceIncludesTax: true }],
+        lines: [{ catalogProductId, quantity: 1, unitPrice: 10, taxRate: 0, priceIncludesTax: true }],
       },
       staffToken,
       branchOrgId as string,
@@ -288,14 +278,14 @@ test.describe.serial('purchasing — purchase order source link', () => {
       supplierId,
       currencyCode: 'CNY',
       sourceSalesOrderId: salesOrderId,
-      lines: [{ productId, quantity: 2, unitPrice: 50, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 2, unitPrice: 50, taxRate: 0, priceIncludesTax: true }],
     })
     expect(anchored.status, anchored.body).toBe(201)
 
     const standalone = await createOrder({
       supplierId,
       currencyCode: 'CNY',
-      lines: [{ productId, quantity: 1, unitPrice: 5, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 1, unitPrice: 5, taxRate: 0, priceIncludesTax: true }],
     })
     expect(standalone.status, standalone.body).toBe(201)
 
@@ -316,7 +306,7 @@ test.describe.serial('purchasing — purchase order source link', () => {
       supplierId,
       currencyCode: 'CNY',
       sourceSalesOrderId: salesOrderId,
-      lines: [{ productId, quantity: 1, unitPrice: 30, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 1, unitPrice: 30, taxRate: 0, priceIncludesTax: true }],
     })
     expect(created.status, created.body).toBe(201)
     const before = await readOrder(created.id)

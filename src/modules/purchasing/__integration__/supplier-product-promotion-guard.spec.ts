@@ -36,7 +36,7 @@ const STAFF_FEATURES = [
   'products.prices.manage',
 ]
 
-type Promoted = { productId?: string; action?: string }
+type Promoted = { catalogProductId?: string; action?: string }
 type ProductDetail = { item?: { id?: string; sku?: string; name?: string } }
 
 test.describe.serial('purchasing — supplier product promotion guard', () => {
@@ -128,7 +128,7 @@ test.describe.serial('purchasing — supplier product promotion guard', () => {
     const synced = await staffRequest('POST', `${LIBRARY_URL}/promote`, { id: rowAId })
     expect(synced.status(), 'an unowned master is still synced by SKU').toBe(200)
     const syncedBody = await readJsonSafe<Promoted>(synced)
-    expect(syncedBody?.productId).toBe(handMadeProductId)
+    expect(syncedBody?.catalogProductId).toBe(handMadeProductId)
     expect(['created', 'updated']).toContain(String(syncedBody?.action))
 
     // Row B creates its own master from the shared code.
@@ -137,7 +137,7 @@ test.describe.serial('purchasing — supplier product promotion guard', () => {
     expect(created.status()).toBe(200)
     const createdBody = await readJsonSafe<Promoted>(created)
     expect(createdBody?.action).toBe('created')
-    createdProductId = String(createdBody?.productId ?? '')
+    createdProductId = String(createdBody?.catalogProductId ?? '')
     expect(createdProductId).toBeTruthy()
 
     // Row C carries the same code for the *other* supplier: promotion must refuse, not overwrite.

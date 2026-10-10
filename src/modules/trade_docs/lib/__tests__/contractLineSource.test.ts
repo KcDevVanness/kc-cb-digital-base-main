@@ -208,7 +208,10 @@ describe('sourceLineToContractLine', () => {
     const line = sourceLineToContractLine(
       {
         id: 'line-1',
-        product_id: 'product-1',
+        // The projection's own key since the single-store cutover: a purchase-order line carries
+        // `catalogProductId` (the `product_id` column was dropped), and reading the old key mapped
+        // every line to an empty reference.
+        catalogProductId: 'product-1',
         product_title: 'Steel bracket',
         product_sku: 'SKU-9',
         supplier_sku: 'SUP-1',
@@ -248,6 +251,8 @@ describe('sourceLineToContractLine', () => {
     expect(line.sku).toBe('FR-8')
     expect(line.unit).toBe('')
     expect(line.unitPrice).toBe('50')
+    // A line with no owned-master reference maps to an empty id rather than a stale one.
+    expect(line.productId).toBe('')
   })
 
   it('maps a sales line, reading SKU and unit out of the catalog snapshot as a fallback', () => {

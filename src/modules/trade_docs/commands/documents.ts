@@ -825,8 +825,8 @@ const aggregateDocumentLinesCommand: CommandHandler<Record<string, unknown>, { i
      * Builds a frozen document line straight from an allocation row.
      *
      * The product master is deliberately NOT re-read here: `catalog_product_id` is the installed
-     * catalog bridge, not a `products_products` id, so `readProductSnapshots` would reject it — and
-     * the allocation already carries the authoritative display snapshot it was written with. The
+     * catalog product id — the same id every product reference uses since the single-store cutover —
+     * and the allocation already carries the authoritative display snapshot it was written with. The
      * product name lives under `title` on both sides (purchasing snapshots and the sales
      * `catalog_snapshot`); `name` is accepted as well for older snapshots.
      */

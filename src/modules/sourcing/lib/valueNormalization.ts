@@ -256,8 +256,9 @@ export function splitVariantName(value: string | null | undefined): { base: stri
 
 /**
  * Lowercase slug used when a line has no Item No. Only ASCII alphanumerics survive,
- * because `products_products.sku` accepts `[A-Za-z0-9._\-/]`; a CJK-only name therefore
- * slugs to an empty string and the caller flags the line as needing a manual SKU.
+ * because `catalog_products.sku` accepts `[A-Za-z0-9._\-]` (no slash — the app's copies of the rule
+ * were aligned with catalog's in the single-store cutover); a CJK-only name therefore slugs to an
+ * empty string and the caller flags the line as needing a manual SKU.
  */
 export function slugifySku(value: string | null | undefined): string {
   if (!value) return ''

@@ -84,7 +84,7 @@ export async function GET(request: Request) {
       itemNo: timeline[timeline.length - 1]?.itemNo ?? null,
       name: timeline[timeline.length - 1]?.name ?? null,
       library: entry
-        ? { supplierProductId: entry.supplierProductId, supplierSku: entry.supplierSku, productId: entry.productId }
+        ? { supplierProductId: entry.supplierProductId, supplierSku: entry.supplierSku, catalogProductId: entry.catalogProductId }
         : null,
       purchase,
     },
@@ -106,7 +106,7 @@ const pointSchema = z.object({
   unitCost: z.string().nullable(),
   currencyCode: z.string().nullable(),
   moqQuantity: z.number().nullable(),
-  promotedProductId: z.string().uuid().nullable(),
+  catalogProductId: z.string().uuid().nullable(),
   kind: z.enum(['added', 'removed', 'up', 'down', 'currency_mismatch', 'no_price', 'same']),
   deltaAmount: z.string().nullable(),
   deltaPercent: z.number().nullable(),
@@ -134,12 +134,12 @@ export const openApi: OpenApiRouteDoc = {
                 .object({
                   supplierProductId: z.string().uuid(),
                   supplierSku: z.string(),
-                  productId: z.string().uuid().nullable(),
+                  catalogProductId: z.string().uuid().nullable(),
                 })
                 .nullable(),
               purchase: z
                 .object({
-                  productId: z.string().uuid(),
+                  catalogProductId: z.string().uuid(),
                   productSku: z.string(),
                   unitPrice: z.string(),
                   currencyCode: z.string(),

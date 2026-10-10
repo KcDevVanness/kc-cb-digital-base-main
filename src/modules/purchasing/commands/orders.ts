@@ -35,6 +35,7 @@ import {
   type PaymentRow,
 } from '../lib/orderTotals'
 import { AMOUNT_SCALE, PRICE_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
+import { getStoreProduct, type StoreProduct } from '../../products/lib/store'
 import { loadSupplierProducts } from '../lib/supplierProductReads'
 import { requireSourceSalesOrder } from '../lib/sourceSalesOrderReads'
 import { eventsConfig } from '../events'
@@ -78,20 +79,15 @@ const ALLOWED_TRANSITIONS: Record<string, { from: OrderStatus[]; to: OrderStatus
 }
 
 /**
- * A line references exactly one product: the app-owned product master (`products_products.id`), a
- * supplier product library row (`supplierProductId`, which resolves through the master once the row
- * has been synced), or — historical rows only — the installed catalog (`catalogProductId`).
- *
- * This widens the previous contract instead of replacing it: a payload that carried a product
- * master id alone, or a catalog id alone, parses and resolves exactly as it did before, and the
- * library reference is a third option next to them. A line that mixes the library reference with
- * either master reference is rejected here, so a client can never send two contradictory
+ * A line references exactly one product: a catalog product (`catalogProductId` — the one product
+ * store) or a supplier product library row (`supplierProductId`, whose own `catalog_product_id`
+ * resolves through the store once the row has been promoted). A line that mixes the library
+ * reference with a catalog one is rejected here, so a client can never send two contradictory
  * identities and have the server pick one of them silently. A line with none cannot be priced or
  * received, hence the "at least one" rule.
  */
 const lineInputSchema = z
   .object({
-    productId: z.string().uuid().nullable().optional(),
     catalogProductId: z.string().uuid().nullable().optional(),
     supplierProductId: z.string().uuid().nullable().optional(),
     /**
@@ -105,12 +101,12 @@ const lineInputSchema = z
     priceIncludesTax: z.boolean().default(true),
     note: z.string().max(500).nullable().optional(),
   })
-  .refine((line) => Boolean(line.productId || line.catalogProductId || line.supplierProductId), {
-    message: 'each line needs a product reference (productId, catalogProductId or supplierProductId)',
-    path: ['productId'],
+  .refine((line) => Boolean(line.catalogProductId || line.supplierProductId), {
+    message: 'each line needs a product reference (catalogProductId or supplierProductId)',
+    path: ['catalogProductId'],
   })
-  .refine((line) => !(line.supplierProductId && (line.productId || line.catalogProductId)), {
-    message: 'a line cannot combine supplierProductId with productId or catalogProductId',
+  .refine((line) => !(line.supplierProductId && line.catalogProductId), {
+    message: 'a line cannot combine supplierProductId with catalogProductId',
     path: ['supplierProductId'],
   })
 
@@ -209,9 +205,8 @@ async function loadOrder(
 }
 
 type ResolvedLine = {
-  productId: string | null
   catalogProductId: string | null
-  /** The library row this line was ordered from; null for a master-only or catalog-only line. */
+  /** The library row this line was ordered from; null for a catalog-only line. */
   supplierProductId: string | null
   productSnapshot: Record<string, unknown>
   quantity: string
@@ -227,17 +222,16 @@ type ResolvedLine = {
 /**
  * Resolves the products referenced by the order lines and computes each line's money fields.
  *
- * New lines point at the app-owned master (`products_products`, see
- * .ai/specs/2026-09-22-products-and-trade-docs.md) or at the supplier product library
- * (`purchasing_supplier_products`); lines written before that slice point at the installed catalog.
- * All three are read with raw, scoped Kysely queries — this module must not import another
- * module's entities, and it only needs a handful of display columns for the snapshot.
- * A product that is not visible in this organization fails the whole order: silently dropping a
- * line would ship a wrong order.
+ * A line points at a catalog product (`catalogProductId`, read with the store's `getStoreProduct`)
+ * or at a supplier product library row (`purchasing_supplier_products`). A library row that has been
+ * promoted carries its own `catalog_product_id`, which is copied onto the line here — no bridge
+ * step, no second table: the catalog id the receive path resolves through comes from the store
+ * directly. A product that is not visible in this organization fails the whole order: silently
+ * dropping a line would ship a wrong order.
  *
- * Resolution runs again on every save, so a line whose library row has since been synced into the
- * master picks up `productId` and the catalog bridge the next time the draft is saved. What freezes
- * is the snapshot written onto the line, not the rule that produced it.
+ * Resolution runs again on every save, so a line whose library row has since been promoted picks up
+ * the catalog reference the next time the draft is saved. What freezes is the snapshot written onto
+ * the line, not the rule that produced it.
  */
 async function resolveOrderLines(
   em: EntityManager,
@@ -254,51 +248,26 @@ async function resolveOrderLines(
   )
   const supplierProducts = await loadSupplierProducts(em, scope, supplierProductIds)
 
-  const ownedProductIds = Array.from(
+  const catalogProductIds = Array.from(
     new Set([
       ...lines
-        .map((line) => line.productId)
+        .map((line) => line.catalogProductId)
         .filter((id): id is string => typeof id === 'string' && id.length > 0),
-      // A library row that has been synced carries the master reference on the row itself, so its
-      // line resolves through the very same read an explicitly picked master product does.
+      // A library row that has been promoted carries its catalog reference on the row itself, so its
+      // line resolves through the very same store read an explicitly picked product does.
       ...supplierProductIds
-        .map((id) => supplierProducts[id]?.productId ?? null)
+        .map((id) => supplierProducts[id]?.catalogProductId ?? null)
         .filter((id): id is string => typeof id === 'string' && id.length > 0),
     ]),
   )
-  const legacyProductIds = Array.from(
-    new Set(
-      lines
-        .map((line) => (line.productId ? null : line.catalogProductId))
-        .filter((id): id is string => typeof id === 'string' && id.length > 0),
-    ),
+
+  const byId: Record<string, StoreProduct> = {}
+  await Promise.all(
+    catalogProductIds.map(async (id) => {
+      const product = await getStoreProduct({ em, scope, id })
+      if (product) byId[id] = product
+    }),
   )
-
-  const ownedById: Record<string, Record<string, unknown>> = {}
-  if (ownedProductIds.length > 0) {
-    const rows = (await (em.fork().getKysely<any>())
-      .selectFrom('products_products')
-      .select(['id', 'name', 'sku', 'manufacturer_model', 'spec_summary', 'unit', 'catalog_product_id'])
-      .where('id', 'in', ownedProductIds)
-      .where('tenant_id', '=', scope.tenantId)
-      .where('organization_id', '=', scope.organizationId)
-      .where('deleted_at', 'is', null)
-      .execute()) as Array<Record<string, unknown>>
-    for (const row of rows) ownedById[String(row.id)] = row
-  }
-
-  const legacyById: Record<string, Record<string, unknown>> = {}
-  if (legacyProductIds.length > 0) {
-    const rows = (await (em.fork().getKysely<any>())
-      .selectFrom('catalog_products')
-      .select(['id', 'title', 'sku', 'default_unit'])
-      .where('id', 'in', legacyProductIds)
-      .where('tenant_id', '=', scope.tenantId)
-      .where('organization_id', '=', scope.organizationId)
-      .where('deleted_at', 'is', null)
-      .execute()) as Array<Record<string, unknown>>
-    for (const row of rows) legacyById[String(row.id)] = row
-  }
 
   const resolved = lines.map((line) => {
     const totals = computeLineTotals({
@@ -321,32 +290,27 @@ async function resolveOrderLines(
     // The supplier's own item number is what the packing list and the shipment allocation print, so
     // it travels in the snapshot: the goods stay identifiable after the library row is renamed.
     const supplierSku = supplierProduct ? supplierProduct.itemNo ?? supplierProduct.supplierSku : null
-    // A synced library row is the master record in disguise, so both references resolve here.
-    const productId = line.productId ?? supplierProduct?.productId ?? null
+    // The catalog reference the line keeps is the explicit one, or the one the library row carries
+    // once it has been promoted.
+    const catalogProductId = line.catalogProductId ?? supplierProduct?.catalogProductId ?? null
 
-    if (productId) {
-      const product = ownedById[productId]
-      if (!product) throw badRequest(`Product not found in this organization: ${productId}`)
-      // `title` is the key every purchasing surface already renders; `model`/`spec` are additive
-      // so an order line prints the same detail a contract line does.
+    if (catalogProductId) {
+      const product = byId[catalogProductId]
+      if (!product) throw badRequest(`Product not found in this organization: ${catalogProductId}`)
+      // `title` is the key every purchasing surface already renders; `model`/`spec` are additive so
+      // an order line prints the same detail a contract line does.
       const snapshot: Record<string, unknown> = {
-        title: product.name ?? null,
-        sku: product.sku ?? null,
-        unit: product.unit ?? null,
-        model: product.manufacturer_model ?? null,
-        spec: product.spec_summary ?? null,
+        title: product.name,
+        sku: product.sku,
+        unit: product.unit,
+        model: product.manufacturerModel,
+        spec: product.specSummary,
       }
-      // Only a line that came from the library carries the supplier code; an ordinary master line
+      // Only a line that came from the library carries the supplier code; an ordinary product line
       // has no library row and therefore no key — the reader treats a missing key as null.
       if (supplierSku) snapshot.supplierSku = supplierSku
       return {
-        productId,
-        // Bridge, not a client input: the shipment receive path books stock at *variant* level and
-        // resolves the variant through the installed catalog, so a line keeps the linked catalog
-        // product when the master record has one. An unlinked product therefore cannot be
-        // received — the receive command says so explicitly instead of writing stock against
-        // nothing.
-        catalogProductId: (product.catalog_product_id as string | null) ?? null,
+        catalogProductId,
         supplierProductId: supplierProduct?.id ?? null,
         productSnapshot: snapshot,
         quantity: line.quantity,
@@ -358,42 +322,20 @@ async function resolveOrderLines(
       }
     }
 
-    if (supplierProduct) {
-      // Library-only line: no master record yet, so no catalog bridge either. Receipt and shipment
-      // allocation require that link and say so in their own message, which is why an unsynced row
-      // is orderable but not yet receivable.
-      return {
-        productId: null,
-        catalogProductId: null,
-        supplierProductId: supplierProduct.id,
-        productSnapshot: {
-          title: supplierProduct.name,
-          sku: supplierProduct.supplierSku,
-          unit: supplierProduct.unit,
-          model: null,
-          spec: supplierProduct.description,
-          supplierSku: supplierProduct.itemNo ?? supplierProduct.supplierSku,
-        },
-        quantity: line.quantity,
-        unitPrice: line.unitPrice,
-        taxRate: line.taxRate,
-        priceIncludesTax: line.priceIncludesTax,
-        note: line.note ?? null,
-        ...totals,
-      }
-    }
-
-    const catalogProductId = line.catalogProductId ?? ''
-    const product = legacyById[catalogProductId]
-    if (!product) throw badRequest(`Catalog product not found in this organization: ${catalogProductId}`)
+    if (!supplierProduct) throw badRequest('Each line needs a product reference')
+    // Library-only line: no catalog product yet, so no catalog reference either. Receipt and
+    // shipment allocation require that link and say so in their own message, which is why an
+    // unpromoted row is orderable but not yet receivable.
     return {
-      productId: null,
-      catalogProductId,
-      supplierProductId: null,
+      catalogProductId: null,
+      supplierProductId: supplierProduct.id,
       productSnapshot: {
-        title: product.title ?? null,
-        sku: product.sku ?? null,
-        unit: product.default_unit ?? null,
+        title: supplierProduct.name,
+        sku: supplierProduct.supplierSku,
+        unit: supplierProduct.unit,
+        model: null,
+        spec: supplierProduct.description,
+        supplierSku: supplierProduct.itemNo ?? supplierProduct.supplierSku,
       },
       quantity: line.quantity,
       unitPrice: line.unitPrice,
@@ -433,7 +375,6 @@ async function persistLines(
         organizationId: scope.organizationId,
         order,
         lineNumber: index + 1,
-        productId: line.productId,
         catalogProductId: line.catalogProductId,
         supplierProductId: line.supplierProductId,
         productSnapshot: line.productSnapshot,

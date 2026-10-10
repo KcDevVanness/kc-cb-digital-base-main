@@ -16,9 +16,7 @@ export type PurchaseOrderLineRef = {
   orderId: string
   orderNumber: string | null
   orderStatus: string
-  /** Owned-master reference on newer lines; null on historical ones. */
-  productId: string | null
-  /** Installed-catalog reference: legacy lines carry it directly, newer lines through the product link. */
+  /** The catalog product this line references — the installed catalog is the only product store. */
   catalogProductId: string | null
   productSnapshot: Record<string, unknown> | null
   quantity: string
@@ -30,7 +28,6 @@ type PurchaseOrderLineRow = {
   order_id: string
   order_number: string | null
   order_status: string
-  product_id: string | null
   catalog_product_id: string | null
   product_snapshot: Record<string, unknown> | null
   quantity: string
@@ -49,7 +46,6 @@ export async function loadPurchaseOrderLines(
     .select([
       'l.id as id',
       'l.order_id as order_id',
-      'l.product_id as product_id',
       'l.catalog_product_id as catalog_product_id',
       'l.product_snapshot as product_snapshot',
       'l.quantity as quantity',
@@ -70,7 +66,6 @@ export async function loadPurchaseOrderLines(
       orderId: String(row.order_id),
       orderNumber: row.order_number ?? null,
       orderStatus: String(row.order_status),
-      productId: row.product_id ? String(row.product_id) : null,
       catalogProductId: row.catalog_product_id ? String(row.catalog_product_id) : null,
       productSnapshot: row.product_snapshot ?? null,
       quantity: String(row.quantity ?? '0'),

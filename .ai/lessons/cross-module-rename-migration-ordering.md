@@ -59,3 +59,11 @@ initializer with `relation "purchasing_supplier_product_prices" does not exist` 
 detected because the ephemeral environment starts empty. The statement moved to
 `Migration20260928082000_sourcing.ts` (this chain, after `Migration20260923043000_sourcing`); the purchasing
 snapshot still carries the 4-decimal column, so `yarn db:generate` stays a no-op for both modules.
+
+**Recurrence (2026-10-10, catalog single-store cutover)**: the supplier-pointer rename
+(`product_id` → `catalog_product_id`) came out of `yarn db:generate` as
+`Migration20261010081054_purchasing.ts` and the ephemeral initializer failed with
+`relation "purchasing_supplier_products" does not exist`. The rename moved to
+`Migration20261010081055_sourcing.ts`; the purchasing chain keeps only the purchase-order-line column
+drop (`purchasing_purchase_order_lines`, which `purchasing` itself creates). `yarn db:generate` stays a
+no-op for both modules afterwards.

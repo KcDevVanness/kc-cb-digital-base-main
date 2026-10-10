@@ -16,7 +16,7 @@ import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/u
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { parseOrganizationSwitcherScope } from '../../dictionaries/lib/dictionariesLibraryApi'
 import { findOrganizationName, organizationChainEntries } from '@/lib/orgs/organizationOptions'
-import { useOrganizationNames } from '../../products/components/useOrganizationNames'
+import { useOrganizationNames } from '@/lib/orgs/useOrganizationNames'
 import {
   BankAccountsEditor,
   readBankAccountRows,

@@ -1,19 +1,17 @@
+import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import type { EntityManager } from '@mikro-orm/postgresql'
-import { makeCrudRoute } from '@open-mercato/shared/lib/crud/factory'
-import { escapeLikePattern } from '@open-mercato/shared/lib/db/escapeLikePattern'
-import { findAliasTargetIds } from '../../../product_codes/lib/aliasLookup'
-import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/crud'
-import { ProductsProduct } from '../../data/entities'
-import {
-  productCreateSchema,
-  productListSchema,
-  productUpdateSchema,
-  productStatuses,
-} from '../../data/validators'
-import { createProductsCrudOpenApi, productsCreatedSchema, productsOkSchema } from '../openapi'
+import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
+import { isCrudHttpError } from '@open-mercato/shared/lib/crud/errors'
+import { createLogger } from '@open-mercato/shared/lib/logger'
+import { productCreateSchema, productListSchema, productUpdateSchema, productStatuses } from '../../data/validators'
+import { listStoreProducts } from '../../lib/store'
+import { executeProductCommand, resolveProductRouteScope } from '../../lib/routeSupport'
 
-const ENTITY_ID = 'products:products_product' as const
+const logger = createLogger('products').child({ component: 'items-route' })
+
+const productsTag = 'Products'
+
+const productsErrorSchema = z.object({ error: z.string() }).passthrough()
 
 const productListItemSchema = z
   .object({
@@ -23,230 +21,190 @@ const productListItemSchema = z
     nameEn: z.string().nullable().optional(),
     brand: z.string(),
     manufacturerModel: z.string().nullable().optional(),
-    typeId: z.string().uuid().nullable().optional(),
-    categoryId: z.string().uuid().nullable().optional(),
     unit: z.string(),
     status: z.enum(productStatuses),
     containsLithiumBattery: z.boolean(),
     hsCode: z.string().nullable().optional(),
     countryOfOriginCode: z.string().nullable().optional(),
+    /** Compatibility alias: the product id **is** the catalog product id. */
+    catalogProductId: z.string().uuid(),
     created_at: z.string().nullable().optional(),
     updated_at: z.string().nullable().optional(),
     updatedAt: z.string().nullable().optional(),
   })
   .passthrough()
 
-export { productListSchema }
+export const metadata = {
+  GET: { requireAuth: true, requireFeatures: ['products.items.view'] },
+  POST: { requireAuth: true, requireFeatures: ['products.items.manage'] },
+  PUT: { requireAuth: true, requireFeatures: ['products.items.manage'] },
+  DELETE: { requireAuth: true, requireFeatures: ['products.items.manage'] },
+}
 
-type ProductListQuery = z.infer<typeof productListSchema>
+/**
+ * The own-product library's API, backed by the installed catalog through `lib/store.ts`.
+ *
+ * The list is a scoped read of the catalog products of the caller's **selected** organization: the
+ * store's read model is organization-private, so there is no descendant expansion and no
+ * `organizationId` override — a picker can only offer a product the write commands would accept.
+ * `sortField`/`sortDir` are part of the query contract for callers that send them, but the store's
+ * read model decides the order (newest first); the projection is not ours to sort.
+ *
+ * `catalogProductId` is echoed on every item as a compatibility alias for the product id: a product
+ * has no separate catalog link any more, and existing pickers/mappers read that field.
+ */
+export async function GET(request: Request) {
+  const resolved = await resolveProductRouteScope(request)
+  if (!resolved.ok) return resolved.response
+  const { em, tenantId, selectedOrganizationId } = resolved.scope
 
-function toIsoTimestamp(value: unknown): string | null {
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString()
-  if (typeof value === 'string' || typeof value === 'number') {
-    const parsed = new Date(value)
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+  const url = new URL(request.url)
+
+  try {
+    const parsed = productListSchema.parse(Object.fromEntries(url.searchParams.entries()))
+    const { items, total } = await listStoreProducts({
+      em,
+      scope: { tenantId, organizationId: selectedOrganizationId },
+      search: parsed.search ?? null,
+      status: parsed.status,
+      ids: parsed.ids?.split(',').map((value) => value.trim()).filter((value) => value.length > 0),
+      skus: parsed.skus?.split(',').map((value) => value.trim()).filter((value) => value.length > 0),
+      page: parsed.page,
+      pageSize: parsed.pageSize,
+    })
+    return NextResponse.json({
+      items: items.map((item) => ({ ...item, catalogProductId: item.id })),
+      total,
+      page: parsed.page,
+      pageSize: parsed.pageSize,
+    })
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'Invalid query', details: error.issues }, { status: 400 })
+    }
+    logger.error('Failed to list products', { err: error })
+    return NextResponse.json({ error: 'Could not load the products' }, { status: 500 })
   }
-  return null
 }
 
-function asNullableString(value: unknown): string | null {
-  if (value === null || value === undefined) return null
-  const text = String(value)
-  return text.length > 0 ? text : null
+/** Create a product: catalog product + its variants (catalog's default variant when none are sent). */
+export async function POST(request: Request) {
+  const resolved = await resolveProductRouteScope(request)
+  if (!resolved.ok) return resolved.response
+
+  try {
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+    const created = await executeProductCommand<{ id?: string }>(
+      resolved.scope,
+      request,
+      'products.items.create',
+      body,
+    )
+    return NextResponse.json({ id: String(created.id ?? '') }, { status: 201 })
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'Invalid input', details: error.issues }, { status: 400 })
+    }
+    if (isCrudHttpError(error)) return NextResponse.json(error.body, { status: error.status })
+    logger.error('Failed to create a product', { err: error })
+    return NextResponse.json({ error: 'Could not create the product' }, { status: 500 })
+  }
 }
 
-// `updated_at` is part of the projection because the optimistic-lock round trip needs it:
-// `CrudForm` derives the expected-version header from `initialValues.updatedAt`, and dropping
-// it silently disables locking on this entity.
-const listFields = [
-  'id',
-  'sku',
-  'name',
-  'name_en',
-  'brand',
-  'series',
-  'manufacturer_model',
-  'type_id',
-  'category_id',
-  'spec_summary',
-  'barcode',
-  'unit',
-  'hs_code',
-  'cn_code',
-  'country_of_origin_code',
-  'net_weight',
-  'gross_weight',
-  'volume',
-  'dimensions',
-  'carton_quantity',
-  'battery_capacity_mah',
-  'battery_wh',
-  'contains_lithium_battery',
-  'certifications',
-  'status',
-  'catalog_product_id',
-  'catalog_snapshot',
-  'source_product_id',
-  'notes',
-  'tenant_id',
-  'organization_id',
-  'created_at',
-  'updated_at',
-]
+/** Update a product; the payload may carry the whole variant set (the store deletes the rows it omits). */
+export async function PUT(request: Request) {
+  const resolved = await resolveProductRouteScope(request)
+  if (!resolved.ok) return resolved.response
 
-export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
-  metadata: {
-    GET: { requireAuth: true, requireFeatures: ['products.items.view'] },
-    POST: { requireAuth: true, requireFeatures: ['products.items.manage'] },
-    PUT: { requireAuth: true, requireFeatures: ['products.items.manage'] },
-    DELETE: { requireAuth: true, requireFeatures: ['products.items.manage'] },
-  },
-  orm: {
-    entity: ProductsProduct,
-    idField: 'id',
-    tenantField: 'tenantId',
-    orgField: 'organizationId',
-    softDeleteField: 'deletedAt',
-  },
-  indexer: { entityType: ENTITY_ID },
-  list: {
-    schema: productListSchema,
-    entityId: ENTITY_ID,
-    fields: listFields,
-    sortFieldMap: {
-      id: 'id',
-      sku: 'sku',
-      name: 'name',
-      status: 'status',
-      created_at: 'created_at',
-      updated_at: 'updated_at',
-      updatedAt: 'updated_at',
-    },
-    buildFilters: async (query: ProductListQuery, ctx) => {
-      const filters: Record<string, unknown> = {}
-      if (query.id) filters.id = query.id
-      if (query.organizationId) filters.organization_id = query.organizationId
-      if (query.typeId) filters.type_id = query.typeId
-      if (query.categoryId) filters.category_id = query.categoryId
-      if (query.status !== 'all') filters.status = query.status
-      if (query.containsLithiumBattery !== undefined) {
-        filters.contains_lithium_battery = query.containsLithiumBattery
-      }
-      if (query.search && query.search.trim().length > 0) {
-        // Escaped LIKE on plaintext columns; the escape keeps a typed `%` from widening the filter.
-        const term = `%${escapeLikePattern(query.search.trim())}%`
-        // A retired SKU still finds its product: `product_codes` keeps the old → new mapping, and a
-        // document printed before a re-code is exactly where somebody reads the old characters from.
-        const aliasIds = await findAliasTargetIds(
-          ctx.container.resolve('em') as EntityManager,
-          { tenantId: ctx.auth?.tenantId ?? '', organizationId: query.organizationId ?? ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? '' },
-          'product',
-          term,
-        )
-        filters.$or = [
-          { sku: { $ilike: term } },
-          { name: { $ilike: term } },
-          { manufacturer_model: { $ilike: term } },
-          ...(aliasIds.length > 0 ? [{ id: { $in: aliasIds } }] : []),
-        ]
-      }
-      return filters
-    },
-    export: {
-      columns: [
-        { field: 'sku' },
-        { field: 'name' },
-        { field: 'nameEn', header: 'Name EN' },
-        { field: 'brand' },
-        { field: 'manufacturerModel', header: 'Model' },
-        { field: 'specSummary', header: 'Spec' },
-        { field: 'unit' },
-        { field: 'barcode' },
-        { field: 'hsCode', header: 'HS Code' },
-        { field: 'countryOfOriginCode', header: 'Origin' },
-        { field: 'status' },
-        { field: 'updatedAt', header: 'Updated At' },
+  try {
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+    await executeProductCommand(resolved.scope, request, 'products.items.update', body)
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'Invalid input', details: error.issues }, { status: 400 })
+    }
+    if (isCrudHttpError(error)) return NextResponse.json(error.body, { status: error.status })
+    logger.error('Failed to update a product', { err: error })
+    return NextResponse.json({ error: 'Could not update the product' }, { status: 500 })
+  }
+}
+
+/**
+ * Delete a product (`?id=`): the catalog command removes the row together with its variants and
+ * prices, so the SKU is free again. Documents that already reference the product keep their frozen
+ * snapshots, and a supplier library row still pointing at it reads as 已关联的商品已删除.
+ */
+export async function DELETE(request: Request) {
+  const resolved = await resolveProductRouteScope(request)
+  if (!resolved.ok) return resolved.response
+
+  try {
+    const url = new URL(request.url)
+    await executeProductCommand(resolved.scope, request, 'products.items.delete', {
+      query: { id: url.searchParams.get('id') ?? undefined },
+    })
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    if (isCrudHttpError(error)) return NextResponse.json(error.body, { status: error.status })
+    logger.error('Failed to delete a product', { err: error })
+    return NextResponse.json({ error: 'Could not delete the product' }, { status: 500 })
+  }
+}
+
+export const openApi: OpenApiRouteDoc = {
+  tag: productsTag,
+  summary: 'Product items',
+  methods: {
+    GET: {
+      summary: 'List products',
+      tags: [productsTag],
+      query: productListSchema,
+      responses: [
+        {
+          status: 200,
+          description: 'Products of the selected organization.',
+          schema: z.object({
+            items: z.array(productListItemSchema),
+            total: z.number(),
+            page: z.number(),
+            pageSize: z.number(),
+          }),
+        },
+      ],
+      errors: [
+        { status: 400, description: 'Malformed query or missing organization scope', schema: productsErrorSchema },
+        { status: 403, description: 'Missing products.items.view', schema: productsErrorSchema },
       ],
     },
-    transformItem: (item: Record<string, unknown>) => ({
-      id: String(item.id),
-      sku: String(item.sku ?? ''),
-      name: String(item.name ?? ''),
-      nameEn: asNullableString(item.name_en),
-      brand: String(item.brand ?? ''),
-      series: asNullableString(item.series),
-      manufacturerModel: asNullableString(item.manufacturer_model),
-      typeId: asNullableString(item.type_id),
-      categoryId: asNullableString(item.category_id),
-      specSummary: asNullableString(item.spec_summary),
-      barcode: asNullableString(item.barcode),
-      unit: String(item.unit ?? 'PCS'),
-      hsCode: asNullableString(item.hs_code),
-      cnCode: asNullableString(item.cn_code),
-      countryOfOriginCode: asNullableString(item.country_of_origin_code),
-      netWeight: asNullableString(item.net_weight),
-      grossWeight: asNullableString(item.gross_weight),
-      volume: asNullableString(item.volume),
-      dimensions: item.dimensions ?? null,
-      cartonQuantity: item.carton_quantity === null || item.carton_quantity === undefined ? null : Number(item.carton_quantity),
-      batteryCapacityMah:
-        item.battery_capacity_mah === null || item.battery_capacity_mah === undefined
-          ? null
-          : Number(item.battery_capacity_mah),
-      batteryWh: asNullableString(item.battery_wh),
-      containsLithiumBattery: item.contains_lithium_battery === true,
-      certifications: Array.isArray(item.certifications) ? item.certifications : null,
-      status: String(item.status ?? 'active'),
-      catalogProductId: asNullableString(item.catalog_product_id),
-      catalogSnapshot: item.catalog_snapshot ?? null,
-      notes: asNullableString(item.notes),
-      // Provenance of a distributed copy; `null` for rows built in this organization.
-      sourceProductId: asNullableString(item.source_product_id),
-      tenant_id: asNullableString(item.tenant_id),
-      organization_id: asNullableString(item.organization_id),
-      created_at: toIsoTimestamp(item.created_at),
-      updated_at: toIsoTimestamp(item.updated_at),
-      updatedAt: toIsoTimestamp(item.updated_at),
-    }),
-  },
-  actions: {
-    create: {
-      commandId: 'products.items.create',
-      schema: productCreateSchema,
-      mapInput: ({ parsed }) => parsed,
-      response: ({ result }) => ({ id: String((result as { id: string }).id) }),
-      status: 201,
+    POST: {
+      summary: 'Create a product',
+      tags: [productsTag],
+      requestBody: { schema: productCreateSchema },
+      responses: [{ status: 201, description: 'The created catalog product id.', schema: z.object({ id: z.string() }) }],
+      errors: [
+        { status: 409, description: 'The SKU is already used in this organization', schema: productsErrorSchema },
+        { status: 403, description: 'Missing products.items.manage', schema: productsErrorSchema },
+      ],
     },
-    update: {
-      commandId: 'products.items.update',
-      schema: productUpdateSchema,
-      mapInput: ({ parsed }) => parsed,
-      response: () => ({ ok: true }),
+    PUT: {
+      summary: 'Update a product',
+      tags: [productsTag],
+      requestBody: { schema: productUpdateSchema },
+      responses: [{ status: 200, description: 'Updated.', schema: z.object({ ok: z.literal(true) }) }],
+      errors: [
+        { status: 409, description: 'SKU conflict or stale version (optimistic lock)', schema: productsErrorSchema },
+        { status: 404, description: 'Product not found', schema: productsErrorSchema },
+      ],
     },
-    delete: {
-      commandId: 'products.items.delete',
-      response: () => ({ ok: true }),
+    DELETE: {
+      summary: 'Delete a product',
+      tags: [productsTag],
+      responses: [{ status: 200, description: 'Deleted.', schema: z.object({ ok: z.literal(true) }) }],
+      errors: [
+        { status: 404, description: 'Product not found', schema: productsErrorSchema },
+        { status: 409, description: 'Stale version (optimistic lock)', schema: productsErrorSchema },
+      ],
     },
   },
-})
-
-export const openApi = createProductsCrudOpenApi({
-  resourceName: 'Product',
-  pluralName: 'Products',
-  querySchema: productListSchema,
-  listResponseSchema: createPagedListResponseSchema(productListItemSchema, { paginationMetaOptional: true }),
-  create: {
-    schema: productCreateSchema,
-    responseSchema: productsCreatedSchema,
-    description: 'Creates a product in the caller’s organization.',
-  },
-  update: {
-    schema: productUpdateSchema,
-    responseSchema: productsOkSchema,
-    description: 'Updates a product; requires the expected version for optimistic locking.',
-  },
-  del: {
-    responseSchema: productsOkSchema,
-    description: 'Soft-deletes a product. Contracts keep their own snapshots.',
-  },
-})
+}

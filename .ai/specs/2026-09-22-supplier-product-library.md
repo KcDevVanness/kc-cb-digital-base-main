@@ -1,5 +1,11 @@
 # Supplier Product Library + Role-Grouped Backend Menu
 
+> **Amended 2026-10-10** by [`.ai/specs/2026-10-10-catalog-single-store.md`](2026-10-10-catalog-single-store.md)：
+> 产品库本身仍活着（`purchasing_supplier_products`），但它的**商品关联章节**改向 catalog——`product_id` 列改名
+> `catalog_product_id`（迁移 `Migration20261010081055_sourcing.ts`），「同步为商品」改为经 `products/lib/store.ts`
+> 写 catalog 商品、文案改「建商品档案」；`supplier_product_unit` 字典的播种移到 `products/setup.ts`，且词表
+> 必须是 catalog `unit` 字典的子集（`uom.unit_not_found` 闸门）。其余章节（导入、价格、字段集）仍有效。
+
 **Date**: 2026-09-22
 **Status**: Implemented and verified (Phases 1–6 on 2026-09-22; Phase 7 on 2026-09-23; Phase 8 — 关联商品：直觉化 + 手动关联 — on 2026-09-23; **Phase 9 — 供应商折扣 + 本公司报价归位 — on 2026-09-24**; **Phase 10 — 价格组：一条供货价 — on 2026-09-24**) — the library then moved to `purchasing` (D4); the Changelog rows are the live record
 
@@ -154,8 +160,7 @@ was bought), and the finance operator (reads order/container files).
   Carton G.W / N.W and the outer carton size left the field set on 2026-09-23 (D5). HS code stays **text**: a HS code is an identifier with leading
   zeros and dotted groups (`8471.30.0000`), not an arithmetic value, so a numeric column would
   corrupt it.
-- **REQ-SPL-012** — The unit is a **dictionary** value, not free text: `purchasing/setup.ts` seeds the
-  organization's `supplier_product_unit` dictionary (idempotent, insert-only) and the form renders a
+- **REQ-SPL-012** — The unit is a **dictionary** value, not free text: **`products/setup.ts` seeds it since 2026-10-10** (it used to be `purchasing/setup.ts`; the unit became catalog's `default_unit`, so the module that writes it owns the list — `products/lib/unitVocabulary.ts`), idempotent and insert-only, and the form renders a
   dropdown fed by it through the app's **one** client loader (`products/lib/unitOptions.ts`, the same
   list the product form and the trade-document lines read), while the API keeps accepting any code (a quotation import or an older row may
   carry one the dictionary does not list yet, and opening such a row must never blank it).

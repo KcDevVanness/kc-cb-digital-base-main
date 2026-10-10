@@ -1,5 +1,10 @@
 # 总部商品分发到分公司（product distribution to branches）
 
+> **Superseded 2026-10-10** by [`.ai/specs/2026-10-10-catalog-single-store.md`](2026-10-10-catalog-single-store.md)：
+> 分发口径在 catalog 上重造——`products_products.source_product_id` 列改为自定义字段 `cf_source_product_id`，
+> `products.items.distribute` 命令与 `POST /api/products/items/distribute` 路由保留（逐组织建 catalog 商品副本、
+> 变体按 code upsert、价格仅首次复制、SKU 冲突跳过）。本文件中的 `products_products`/`products_prices` 细节不再适用。
+
 **Date**: 2026-09-28
 **Status**: Implemented and verified (2026-09-28) — 商品分发的**分发副本**口径落地：`products_products.source_product_id` 一列（迁移审阅并应用）、`products.items.distribute` 一命令（幂等、白名单、变体按 code upsert、价格仅首次复制、SKU 冲突跳过、目标逐个校验可写组织集）、`POST /api/products/items/distribute` 一路由、商品列表**行操作 + 表头**两个入口共用一个对话框。总部 9 件商品已分发到俄罗斯/东南亚两个分公司，分公司行选品器随即可用。
 

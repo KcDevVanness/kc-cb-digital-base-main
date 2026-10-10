@@ -76,10 +76,9 @@ function toLineValues(item: Record<string, unknown>): PurchaseOrderLineValues {
   const supplierSku = typeof item.supplierSku === 'string' ? item.supplierSku : ''
   return {
     key: typeof item.id === 'string' && item.id.length ? item.id : String(item.lineNumber ?? ''),
-    productId: typeof item.productId === 'string' ? item.productId : '',
     catalogProductId: typeof item.catalogProductId === 'string' ? item.catalogProductId : '',
     supplierProductId,
-    // A library line is identified by the supplier's item number, a master line by its title: the
+    // A library line is identified by the supplier's item number, a product line by its title: the
     // label only seeds the picker's display for a value that is not on the first page of options.
     productLabel: supplierSku || (typeof item.productTitle === 'string' ? item.productTitle : ''),
     // The stored decimals carry their column's scale (`10.0000`); the editor's number inputs read

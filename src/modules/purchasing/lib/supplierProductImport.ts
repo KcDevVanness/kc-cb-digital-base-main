@@ -137,8 +137,8 @@ export function changedLibraryFields(
  *
  * The single write path for both entry points — the console's on-demand import and the quotation
  * promotion — so the two cannot diverge: whichever runs first produces the same row and the second
- * merely reports `skipped`. The master link comes from the line's own `promoted_product_id`, so a
- * line promoted in the same request backfills `product_id` without the caller passing anything.
+ * merely reports `skipped`. The catalog link comes from the line's own `catalog_product_id`, so a
+ * line promoted in the same request backfills `catalog_product_id` without the caller passing anything.
  */
 export async function upsertSupplierProductRow(input: {
   em: EntityManager
@@ -195,7 +195,7 @@ export async function upsertSupplierProductRow(input: {
         cartonQuantity: values.cartonQuantity ?? null,
         unitNetWeight: values.unitNetWeight ?? null,
         innerPacking: values.innerPacking ?? null,
-        productId: input.line.promotedProductId ?? null,
+        catalogProductId: input.line.catalogProductId ?? null,
         status: 'active',
         source: 'quote',
         lastQuoteId: input.quote.id,
@@ -219,8 +219,8 @@ export async function upsertSupplierProductRow(input: {
     lastQuoteId: input.quote.id,
     lastQuoteLineId: input.line.id,
   }
-  if (input.line.promotedProductId && input.line.promotedProductId !== existing.productId) {
-    payload.productId = input.line.promotedProductId
+  if (input.line.catalogProductId && input.line.catalogProductId !== existing.catalogProductId) {
+    payload.catalogProductId = input.line.catalogProductId
   }
   if (!existing.supplierNameSnapshot && input.supplierNameSnapshot) {
     payload.supplierNameSnapshot = input.supplierNameSnapshot

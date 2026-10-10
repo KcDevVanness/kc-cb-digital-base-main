@@ -47,7 +47,8 @@ const LINE_STATUS_MAP: StatusMap<QuoteLineStatus> = {
 
 type EditableField = 'derivedSku' | 'productName' | 'moqQuantity' | 'unitCost' | 'sectionLabel'
 
-type PriceRow = { productId: string; currencyCode: string; minQuantity: number; unitPrice: string; isActive: boolean }
+/** The prices API's row: the catalog price row for one product, `tier` being the price kind. */
+type PriceRow = { tier: string; currencyCode: string; minQuantity: number; unitPrice: string; isActive: boolean }
 type ProductRow = { id: string; sku: string }
 
 export type LineDraftState = Record<string, { id: string; updatedAt: string; derivedSku: string; productName: string; moqQuantity: string; unitCost: string; sectionLabel: string }>
@@ -98,31 +99,32 @@ export function QuoteLinesGrid({
   const [promoting, setPromoting] = React.useState(false)
   const [importing, setImporting] = React.useState(false)
 
-  // Current `purchase` prices, indexed by SKU: the products module keys prices by product id, and
-  // the grid knows SKUs. The window is one page of prices (200) — the column is a reading aid, and
-  // a product outside the window simply shows as "not in the master".
+  // Current `purchase` prices, indexed by SKU: the grid knows SKUs, but the prices API is keyed by
+  // catalog product id, so the page's distinct SKUs map to ids first and each product's price set is
+  // read after. The reads are bounded by the page's SKUs, and a SKU with no matching product simply
+  // shows as "not in the master".
   const priceQuery = useQuery({
     queryKey: ['sourcing-current-purchase-prices', scopeVersion],
     queryFn: async () => {
-      const prices = await fetchCrudList<PriceRow>('products/prices', {
-        priceTier: 'purchase',
-        isActive: 'true',
-        pageSize: PAGE_SIZE,
-        sortField: 'created_at',
-        sortDir: 'desc',
-      })
-      const productIds = Array.from(new Set(prices.items.map((row) => row.productId)))
-      if (productIds.length === 0) return {} as Record<string, PriceRow>
+      const skus = Array.from(
+        new Set(lines.map((line) => (line.derivedSku ?? '').trim()).filter((sku) => sku.length > 0)),
+      )
+      if (skus.length === 0) return {} as Record<string, PriceRow>
       const products = await fetchCrudList<ProductRow>('products/items', {
-        ids: productIds.join(','),
+        skus: skus.join(','),
         status: 'all',
         pageSize: PAGE_SIZE,
       })
-      const skuById = new Map(products.items.map((row) => [row.id, row.sku]))
+      const priceSets = await Promise.all(
+        products.items.map(async (product) => ({
+          sku: product.sku,
+          rows: await fetchCrudList<PriceRow>('products/prices', { productId: product.id }),
+        })),
+      )
       const bySku: Record<string, PriceRow> = {}
-      for (const price of prices.items) {
-        const sku = skuById.get(price.productId)
-        if (sku) bySku[sku.toUpperCase()] = price
+      for (const { sku, rows } of priceSets) {
+        const purchase = rows.items.find((row) => row.tier === 'purchase' && row.isActive)
+        if (purchase) bySku[sku.toUpperCase()] = purchase
       }
       return bySku
     },

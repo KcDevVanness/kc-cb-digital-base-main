@@ -270,11 +270,11 @@ export class PurchasingPurchaseOrder {
 
 /**
  * One order line. A line references exactly one product by scalar id plus a display snapshot: the
- * supplier product library row (`purchasing_supplier_products.id` — the supplier-facing item this
- * line was ordered from), the app-owned product master (`products_products.id`), or — historical
- * rows only — the installed catalog. The library and the master are two identities of the same
- * goods, so a line never carries both, and the receipt path resolves the line through the
- * master: a library row that has not been synced yet can be ordered but not received.
+ * installed catalog product (`catalog_product_id` — the one product store) or the supplier product
+ * library row (`purchasing_supplier_products.id` — the supplier-facing item this line was ordered
+ * from). A library row may itself point at the same catalog product, so the two references are
+ * mutually exclusive and a line never carries both: the write command rejects a mix, and it also
+ * rejects a line with neither (nothing could be priced or received).
  *
  * The module is product-level today (the catalog supports variants; a variant column can be
  * added additively later) and must not import another module's entities.
@@ -301,22 +301,16 @@ export class PurchasingPurchaseOrderLine {
   lineNumber!: number
 
   /**
-   * The app-owned product master reference (`products_products`), written by every new order.
-   *
-   * `catalogProductId` below is the historical reference to the installed catalog: it stays
-   * readable (and still selects the line for old orders) but is no longer written. A line carries
-   * exactly one reference — this one, the supplier library row below, or the catalog — and the
-   * command rejects a line with none, and a line that mixes the library row with either of the two.
+   * Scalar id into the installed catalog (`catalog_products.id`) — the one product store, and the
+   * identity the shipment/receipt path resolves the line through (a line cannot be received while
+   * it carries no catalog product). `supplierProductId` below is the mutually exclusive alternative.
    */
-  @Property({ name: 'product_id', type: 'uuid', nullable: true })
-  productId?: string | null
+  @Property({ name: 'catalog_product_id', type: 'uuid', nullable: true })
+  catalogProductId?: string | null
 
   /** Scalar id into `purchasing_supplier_products` — the supplier-facing item this line was ordered from. */
   @Property({ name: 'supplier_product_id', type: 'uuid', nullable: true })
   supplierProductId?: string | null
-
-  @Property({ name: 'catalog_product_id', type: 'uuid', nullable: true })
-  catalogProductId?: string | null
 
   @Property({ name: 'product_snapshot', type: 'jsonb', nullable: true })
   productSnapshot?: Record<string, unknown> | null
@@ -459,10 +453,10 @@ export class PurchasingPurchaseOrderDocument {
  * One item a supplier sells — the supplier-side product library.
  *
  * The supplier's own goods list (item no., name, spec, unit, Qty/Box, MOQ, HS code) as
- * opposed to the internal product master: `products_products` is the record stock, internal sales
- * and contracts need, this is the list the buyer orders from. The two are bridged by
- * `product_id`, backfilled by the explicit "sync to product master" action, so a supplier item can
- * be ordered before it exists internally and nothing is auto-created in the master.
+ * opposed to the one product store: `catalog_products` is the record stock, internal sales and
+ * contracts need, this is the list the buyer orders from. The two are bridged by the pointer
+ * `catalog_product_id`, backfilled by the explicit "建商品档案 (promote)" action, so a supplier item
+ * can be ordered before it exists as a product and nothing is auto-created in the store.
  *
  * Carries the item's **current price list** as `PurchasingSupplierProductPrice` rows (one row per
  * `price_kind` × currency × minimum quantity). A price is a record, never a column: the two prices
@@ -472,8 +466,8 @@ export class PurchasingPurchaseOrderDocument {
  * purchase order still freezes its own `unitPrice` (purchasing Q-P-004); nothing here pre-fills an
  * order line, so an order can never be placed at a stale stored price.
  *
- * `supplier_sku` is unique per supplier **including soft-deleted rows** (same rule as
- * `products_variants`): a supplier code is a stable business identity, so a deleted row keeps
+ * `supplier_sku` is unique per supplier **including soft-deleted rows** (same rule this module's
+ * supplier master uses): a supplier code is a stable business identity, so a deleted row keeps
  * owning its code until it is restored. Duplicate checks must therefore query soft-deleted rows
  * too, or the unique index turns a readable 409 into a 500.
  *
@@ -626,9 +620,13 @@ export class PurchasingSupplierProduct {
   @Property({ name: 'image_attachment_ids', type: 'jsonb', default: '[]' })
   imageAttachmentIds: string[] = []
 
-  /** Backfilled by the sync action with the product master row this supplier item became. */
-  @Property({ name: 'product_id', type: 'uuid', nullable: true })
-  productId?: string | null
+  /**
+   * Backfilled by 建商品档案 (promote) with the catalog product this supplier item became — the
+   * pointer into the one product store. A scalar id with no foreign key across the module boundary,
+   * re-checked for scope and liveness inside the link transaction.
+   */
+  @Property({ name: 'catalog_product_id', type: 'uuid', nullable: true })
+  catalogProductId?: string | null
 
   /** `active` | `inactive`. */
   @Property({ type: 'text', default: 'active' })
@@ -671,7 +669,7 @@ export class PurchasingSupplierProduct {
  * 1 piece and from one carton are two rows, and 1 is the base price the list column shows.
  *
  * The whole price set of one item is submitted in one `purchasing.supplier-products.replace-prices`
- * command (mirroring `products.prices.replace`). Rows that disappear from the payload are
+ * command (mirroring the catalog's `catalog.prices.replace`). Rows that disappear from the payload are
  * **deactivated**, never deleted: a purchase order line's snapshot may name a price that is no
  * longer quoted, and an issued document must stay explainable. The unique key excludes
  * `is_active`, so a reactivated row is the same row and history never forks.

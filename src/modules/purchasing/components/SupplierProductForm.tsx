@@ -33,7 +33,6 @@ import { useAttachmentPreview } from '@/lib/attachments/AttachmentPreview'
 import { loadUnitOptions } from '../../products/lib/unitOptions'
 import { loadCodeListOptions } from '@/lib/dictionaries/codeListOptions'
 import { PRODUCT_BRAND_DICTIONARY_KEY } from '../../product_codes/lib/dictionaryValues'
-import SupplierProductCodePanel from './SupplierProductCodePanel'
 import { loadCurrencyOptions } from './PurchaseOrderForm'
 import { formatMoneyAmount } from '@/lib/money/format'
 import { PRICE_SCALE } from '../../trade_docs/lib/money'
@@ -614,7 +613,7 @@ function PackingEditor({
 
 function useSupplierProductFields(
   t: TranslateFn,
-  opts: { supplierEditable: boolean; productId: string | null; masterProductId: string | null },
+  opts: { supplierEditable: boolean },
 ): CrudField[] {
   return React.useMemo<CrudField[]>(() => {
     const supplierFields: CrudField[] = opts.supplierEditable
@@ -645,27 +644,18 @@ function useSupplierProductFields(
         label: t('purchasing.supplierProducts.form.field.supplierSku', 'Product SKU (ours)'),
         description: t(
           'purchasing.supplierProducts.form.help.supplierSku',
-          'Our code for this item: unique within the supplier, written into the product master\u2019s SKU on 建商品档案, and never reused \u2014 including by a deleted row.',
+          'Our code for this item: unique within the supplier, written into the product\u2019s SKU on 建商品档案, and never reused \u2014 including by a deleted row.',
         ),
-        // The generator, the category picker and the breakdown of the stored characters belong to this
-        // field, not to a block beside it: one task, one place (owner 2026-09-24).
-        type: 'custom',
+        type: 'text',
         required: true,
-        component: (props) => (
-          <SupplierProductCodePanel
-            {...props}
-            t={t}
-            rowId={opts.productId}
-            masterProductId={opts.masterProductId}
-          />
-        ),
+        maxLength: 120,
       },
       {
         id: 'brandValue',
-        label: t('purchasing.supplierProducts.form.field.brandValue', 'Brand (code prefix)'),
+        label: t('purchasing.supplierProducts.form.field.brandValue', 'Brand'),
         description: t(
           'purchasing.supplierProducts.form.help.brandValue',
-          'The brand this row\u2019s codes are generated under; blank falls back to the supplier\u2019s default brand.',
+          'The brand this item is sold under; blank falls back to the supplier\u2019s default brand.',
         ),
         type: 'combobox',
         allowCustomValues: false,
@@ -827,7 +817,7 @@ function useSupplierProductFields(
         maxLength: 2000,
       },
     ]
-  }, [opts.masterProductId, opts.productId, opts.supplierEditable, t])
+  }, [opts.supplierEditable, t])
 }
 
 /**
@@ -948,7 +938,7 @@ function SupplierProductCreateForm() {
   const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const fields = useSupplierProductFields(t, { supplierEditable: true, productId: null, masterProductId: null })
+  const fields = useSupplierProductFields(t, { supplierEditable: true })
   // No id yet: the photo group stages the picks and this form uploads them once the row exists.
   const groups = useSupplierProductGroups(t, { productId: null })
   // The library list links here with `?supplierId=` when the operator came from a supplier row,
@@ -1084,8 +1074,7 @@ function SupplierProductCreateForm() {
 
 function SupplierProductEditForm({ productId }: { productId: string }) {
   const t = useT()
-  const [masterProductId, setMasterProductId] = React.useState<string | null>(null)
-  const fields = useSupplierProductFields(t, { supplierEditable: false, productId, masterProductId })
+  const fields = useSupplierProductFields(t, { supplierEditable: false })
   const groups = useSupplierProductGroups(t, { productId })
   const [initial, setInitial] = React.useState<SupplierProductFormValues | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -1111,12 +1100,6 @@ function SupplierProductEditForm({ productId }: { productId: string }) {
           return
         }
         const values = toSupplierProductFormValues(item)
-        // The master link decides whether the code may still be retired: once promoted, the master's
-        // SKU must not diverge from the library row's.
-        if (!cancelled) {
-          const link = item.productId ?? item.product_id
-          setMasterProductId(typeof link === 'string' && link.length > 0 ? link : null)
-        }
         // The price list is a separate read: losing it must not hide the item itself, so a failure
         // degrades to "no rows loaded" plus a message the operator can act on.
         let prices: SupplierProductPriceRowValues[] = []

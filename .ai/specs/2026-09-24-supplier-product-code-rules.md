@@ -1,5 +1,10 @@
 # Supplier Product Code Rules: Generation, Breakdown, and Legacy Compatibility
 
+> **Superseded 2026-10-10** by [`.ai/specs/2026-10-10-catalog-single-store.md`](2026-10-10-catalog-single-store.md)：
+> 商品编码改为**全手填**（`SKU_PATTERN = ^[A-Za-z0-9._\-]{1,64}$`，与 catalog 的 SKU 字符集一致）——
+> `/api/product_codes/generate|parse`、发号规则页与表单编码面板已删除；`product_codes_rules` / `product_codes_issuance`
+> 两张规则表随迁移删除；`product_codes_aliases` 旧码别名**保留**（列表搜索仍按旧码命中）。发号重做另立切片（新 spec 的 Phase 4）。
+
 **Date**: 2026-09-24
 **Status**: Implemented and verified (Phases 1–4, 2026-09-24) — every phase's integration gate is green on a fresh database and the UI was exercised in a real browser. The migrations are generated and reviewed but **not applied** (approval required), and the smoke automation could not drive a `CrudForm` save (see the Phase 3 progress note — the untouched supplier form behaves identically, so it is a tooling limit, not this feature).
 

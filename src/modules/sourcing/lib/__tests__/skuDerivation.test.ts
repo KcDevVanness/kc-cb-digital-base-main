@@ -66,7 +66,9 @@ describe('skuDerivation', () => {
 
   it('sanitizes Item No. values into the characters a SKU accepts', () => {
     expect(sanitizeSkuCandidate(' P4108 ')).toBe('P4108')
-    expect(sanitizeSkuCandidate('P4117/1')).toBe('P4117/1')
+    // Catalog's SKU charset has no slash, so a slashed item number keeps its two halves as a dash
+    // pair instead of collapsing into one code.
+    expect(sanitizeSkuCandidate('P4117/1')).toBe('P4117-1')
     expect(sanitizeSkuCandidate('PK 2301')).toBe('PK2301')
     expect(sanitizeSkuCandidate('P99026。')).toBe('P99026')
     expect(sanitizeSkuCandidate('/')).toBeNull()

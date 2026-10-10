@@ -179,8 +179,6 @@ export const NAV_TREE: NavTreeNode[] = [
     iconName: 'book',
     children: [
       { href: '/backend/products/items' },
-      { href: '/backend/products/taxonomy' },
-      { href: '/backend/product-codes/rules' },
       { href: '/backend/parties' },
       { href: '/backend/our-parties' },
       { href: '/backend/dictionaries' },
@@ -251,8 +249,8 @@ export const TREE_EXCLUDED: ReadonlyArray<{ href: string; reason: string }> = [
   { href: '/backend/users/create', reason: 'create form of the user list (settings sidebar)' },
 
   // Installed surfaces superseded by app-owned modules. Kept resolvable, out of the tree.
-  { href: '/backend/catalog/categories', reason: 'installed catalog categories — superseded by /backend/products/taxonomy' },
-  { href: '/backend/catalog/products', reason: 'installed catalog products — superseded by /backend/products/items' },
+  { href: '/backend/catalog/categories', reason: 'installed catalog categories — the app keeps no category surface of its own after the single-store cutover' },
+  { href: '/backend/catalog/products', reason: 'installed catalog products — the app draws its own product library at /backend/products/items' },
   { href: '/backend/customers/companies', reason: 'installed CRM companies — this deployment trades through /backend/parties' },
   { href: '/backend/customers/deals', reason: 'installed CRM deals — no deal pipeline in this deployment' },
   { href: '/backend/customers/people', reason: 'installed CRM people — this deployment trades through /backend/parties' },

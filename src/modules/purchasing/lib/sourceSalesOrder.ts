@@ -39,16 +39,20 @@ export const SOURCE_KIND_BY_CHANNEL_CODE: Record<string, SourceSalesOrderKind> =
 
 /** A sales order line as the sales API returns it. */
 export type SalesOrderLineForCopy = {
-  productId?: string | null
-  product_id?: string | null
+  /**
+   * The catalog product id the sales line references. The catalog product **is** the app's product
+   * identity, so both the explicit `catalogProductId` and the historical `productId` spellings name
+   * the same id after the cutover; either is accepted, the explicit one winning.
+   */
   catalogProductId?: string | null
   catalog_product_id?: string | null
+  productId?: string | null
+  product_id?: string | null
   quantity?: string | number | null
 }
 
-/** One seed line for the purchase order form: a product reference and a quantity, nothing else. */
+/** One seed line for the purchase order form: a catalog product reference and a quantity, nothing else. */
 export type PurchaseLineSeed = {
-  productId: string | null
   catalogProductId: string | null
   quantity: string
 }
@@ -59,6 +63,13 @@ export type SalesLinesCopyResult = {
   skipped: number
 }
 
+function firstReference(...candidates: Array<string | null | undefined>): string | null {
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.length > 0) return candidate
+  }
+  return null
+}
+
 /**
  * Maps sales order lines onto purchase order lines.
  *
@@ -66,26 +77,23 @@ export type SalesLinesCopyResult = {
  * customer pays, never what the supplier charges, so carrying it across would put a wrong number in
  * a field the operator is about to negotiate. The price is filled from the chosen supplier's own
  * price list (or typed) once a supplier is selected.
- *
- * The app-owned product master wins over the catalog reference: a line that carries both is copied
- * as the master reference, which is the identity the receiving path resolves through.
  */
 export function salesOrderLinesToPurchaseLines(lines: SalesOrderLineForCopy[]): SalesLinesCopyResult {
   const seeds: PurchaseLineSeed[] = []
   let skipped = 0
   for (const line of lines) {
-    const productId = typeof line.productId === 'string' && line.productId.length > 0
-      ? line.productId
-      : (typeof line.product_id === 'string' && line.product_id.length > 0 ? line.product_id : null)
-    const catalogProductId = typeof line.catalogProductId === 'string' && line.catalogProductId.length > 0
-      ? line.catalogProductId
-      : (typeof line.catalog_product_id === 'string' && line.catalog_product_id.length > 0 ? line.catalog_product_id : null)
+    const catalogProductId = firstReference(
+      line.catalogProductId,
+      line.catalog_product_id,
+      line.productId,
+      line.product_id,
+    )
     const quantity = line.quantity === null || line.quantity === undefined ? '' : String(line.quantity).trim()
-    if ((!productId && !catalogProductId) || quantity.length === 0) {
+    if (!catalogProductId || quantity.length === 0) {
       skipped += 1
       continue
     }
-    seeds.push({ productId, catalogProductId: productId ? null : catalogProductId, quantity })
+    seeds.push({ catalogProductId, quantity })
   }
   return { lines: seeds, skipped }
 }

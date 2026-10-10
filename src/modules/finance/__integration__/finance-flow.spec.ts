@@ -223,26 +223,15 @@ test.describe.serial('finance — end-to-end chain (FLOW-G1)', () => {
       201,
     )
 
-    // 3. a catalog product with its default variant — the receipt path resolves the line through the
-    //    catalog bridge, so the product must carry one.
+    // 3. a product — one action creates the catalog product and its default variant; the receipt
+    //    path resolves the purchase line through the catalog product, so the product must carry one.
     const catalogProduct = await expectJson<{ id: string }>(
-      await post(api, '/api/catalog/products', rootToken, organizationId, {
-        title: unique('Flow Product'),
+      await post(api, '/api/products/items', rootToken, organizationId, {
         sku: unique('FLOW'),
+        name: unique('Flow Product'),
       }),
       201,
     )
-    const variant = await expectJson<{ id: string }>(
-      await post(api, '/api/catalog/variants', rootToken, organizationId, {
-        productId: catalogProduct.id,
-        sku: unique('FLOW-V'),
-        isDefault: true,
-        // The receipt path resolves the default **active** variant, so activity is explicit here.
-        isActive: true,
-      }),
-      201,
-    )
-    void variant
 
     // 4. purchase order with one line linked to the catalog product
     const order = await expectJson<{ id: string }>(

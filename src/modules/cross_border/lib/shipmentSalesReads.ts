@@ -168,10 +168,10 @@ export async function readShipmentPurchaseAllocations(
 
 /**
  * Resolves the internal sales-order lines an allocation may point at, scoped to the caller's
- * organization and excluding soft-deleted lines/orders. The catalog product is bridged through the
- * app-owned product link (`products_products.catalog_product_id`) and, when the product is not
- * linked, through the line's catalog variant — the same bridge `internal_sales` writes. A line
- * whose product is not bridged yields `catalogProductId: null`, which the caller refuses.
+ * organization and excluding soft-deleted lines/orders. The sales line's `product_id` **is** the
+ * catalog product id since the single-store cutover, so no bridge lookup is needed; a line that
+ * carries only a variant resolves through `catalog_product_variants.product_id`. A line with
+ * neither yields `catalogProductId: null`, which the caller refuses.
  */
 export async function loadSalesOrderLines(
   em: EntityManager,
@@ -201,21 +201,10 @@ export async function loadSalesOrderLines(
     .where('o.deleted_at', 'is', null)
     .execute()) as SalesOrderLineDbRow[]
 
-  const productIds = Array.from(new Set(rows.map((row) => row.product_id).filter((id): id is string => Boolean(id))))
   const variantIds = Array.from(new Set(rows.map((row) => row.product_variant_id).filter((id): id is string => Boolean(id))))
 
-  // The bridge reads are separate, scoped lookups rather than extra joins: a join would have to
-  // carry its own tenant/organization/soft-delete predicates, and the id lists are tiny.
-  const productLinks = productIds.length
-    ? ((await kysely
-        .selectFrom('products_products')
-        .select(['id', 'catalog_product_id'])
-        .where('id', 'in', productIds)
-        .where('tenant_id', '=', scope.tenantId)
-        .where('organization_id', '=', scope.organizationId)
-        .where('deleted_at', 'is', null)
-        .execute()) as Array<{ id: string; catalog_product_id: string | null }>)
-    : []
+  // The variant lookup is a separate, scoped read rather than an extra join: a join would have to
+  // carry its own tenant/organization/soft-delete predicates, and the id list is tiny.
   const variantLinks = variantIds.length
     ? ((await kysely
         .selectFrom('catalog_product_variants')
@@ -226,22 +215,20 @@ export async function loadSalesOrderLines(
         .execute()) as Array<{ id: string; product_id: string | null }>)
     : []
 
-  const catalogProductByProductId = new Map(productLinks.map((link) => [String(link.id), link.catalog_product_id]))
   const catalogProductByVariantId = new Map(variantLinks.map((link) => [String(link.id), link.product_id]))
 
   const byId: Record<string, SalesOrderLineRef> = {}
   for (const row of rows) {
-    const bridged =
-      (row.product_id ? catalogProductByProductId.get(String(row.product_id)) : null) ??
-      (row.product_variant_id ? catalogProductByVariantId.get(String(row.product_variant_id)) : null) ??
-      null
+    const catalogProductId =
+      (row.product_id ? String(row.product_id) : null) ??
+      (row.product_variant_id ? catalogProductByVariantId.get(String(row.product_variant_id)) ?? null : null)
     byId[String(row.id)] = {
       id: String(row.id),
       orderId: String(row.order_id),
       orderNumber: row.order_number ?? null,
       productId: row.product_id ? String(row.product_id) : null,
       productVariantId: row.product_variant_id ? String(row.product_variant_id) : null,
-      catalogProductId: bridged ? String(bridged) : null,
+      catalogProductId: catalogProductId ? String(catalogProductId) : null,
       productSnapshot: row.catalog_snapshot ?? null,
       quantity: String(row.quantity ?? '0'),
       unitPrice: row.unit_price_net === null || row.unit_price_net === undefined ? null : String(row.unit_price_net),

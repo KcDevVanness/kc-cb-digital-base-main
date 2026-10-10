@@ -39,6 +39,45 @@ dictionary as "no suggestions" rather than an error — a picker must never bloc
 accept. Normalizing to the dictionary's canonical spelling would need a data migration; the code
 column keeps whatever spelling the row already has.
 
+**Recurrence (2026-10-10)** — the single-store cutover (`.ai/specs/2026-10-10-catalog-single-store.md`)
+made "which dictionary" a **write-path** question, not a picker one: a product's unit is catalog's
+`default_unit` now, and `catalog.products.create|update` resolves it through catalog's own `unit`
+dictionary, so the first promote/create of a product with `PCS` failed with `400
+uom.unit_not_found` — measured: 19 integration tests (`POST /api/products/items` → 400) across
+`cross_border`, `finance`, `order_hub`, `products`, `purchasing`, `trade_docs`.
+
+The rule that survived is narrower, and the seed now enforces it: **the app's vocabulary is a subset
+of the installed `unit` dictionary, and it is the app that closes the gap.**
+`src/modules/products/lib/unitVocabulary.ts` holds the list and explains its spelling, because three
+facts fix its shape:
+
+- the resolver stores **the entry's own `value`**, not the string the caller sent — the entry's
+  spelling is what a product keeps and a customs declaration prints;
+- catalog already ships eight of the app's codes in lowercase (`set`, `pair`, `box`, `roll`, `kg`,
+  `g`, `m`, `l`): re-spelling them as `SET`/`KG`/… would either rename an entry that already stores
+  products (their next update then fails with the very same `uom.unit_not_found`) or add a second
+  entry whose normalized key collides (resolution then picks whichever row the database returns
+  first), so the app accepts catalog's spelling for those eight;
+- the three codes catalog does not ship (`PCS`, `CTN`, `BAG`) are inserted by the app's own setup
+  (`products/setup.ts` → `ensureCatalogUnitEntries`) with the trade spelling and the Chinese label,
+  insert-only — and the `unit` dictionary is created when missing, because with no dictionary at all
+  the resolver silently returns the canonicalized (lowercased) code instead of raising.
+
+Seeding therefore moved from `purchasing/setup.ts` to `products/setup.ts` (the module that writes the
+field owns the list), and a unit typed by hand on a library row now needs a dictionary entry before
+that row can be promoted into a product.
+
+What the union deliberately does *not* do: it does not adopt catalog's own spelling for pieces.
+Catalog ships `pc` (`catalog/lib/seeds.ts:10`, and its `qty → pc` migration), the app inserts `PCS`
+next to it, and `isKnownUnitCode('pc')` therefore returns false — a product written through
+**catalog's own** product form carries `pc`, the app's pickers never offer it, and unit-wise grouping
+or printing splits by spelling. Nothing fails; the two spellings simply coexist. That is the accepted
+cost of keeping the trade spelling the business prints (2026-10-10, owner confirmation pending), and
+it is recorded here so the next person finding `pc` in a product row knows it is known, not a bug. The lesson generalizes: when a value crosses into an
+installed module through a **resolver — not a schema — an unexpected spelling is a write failure, so
+a code vocabulary must be *unioned* with the installed one, never parallel to it, and the union has to
+be seeded by the module that performs the write.**
+
 **Extended (2026-09-23)** — the same split now runs through the app's other main-data vocabularies, and
 the control follows what the value *is*:
 
@@ -64,7 +103,8 @@ the control follows what the value *is*:
   being able to maintain those lists.
 
 **Applies to**: `src/modules/products/lib/unitOptions.ts`,
+`src/modules/products/lib/unitVocabulary.ts`, `src/modules/products/setup.ts`,
 `src/modules/products/components/ProductForm.tsx`,
-`src/modules/trade_docs/components/{ContractForm,formOptions}.ts`, `src/modules/purchasing/setup.ts`,
+`src/modules/trade_docs/components/{ContractForm,formOptions}.ts`,
 and any future "turn this field into a dropdown" request where an installed module already owns a
 similarly-named list.

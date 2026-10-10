@@ -1,5 +1,6 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
 import type { Kysely } from 'kysely'
+import { listStorePrices, listStoreProducts } from '../../products/lib/store'
 import { SourcingQuote, SourcingQuoteLine } from '../data/entities'
 import { normalizeItemKey, type QuoteLineFacts, type QuoteVersionFacts } from './quoteChanges'
 
@@ -8,9 +9,10 @@ import { normalizeItemKey, type QuoteLineFacts, type QuoteVersionFacts } from '.
  *
  * This module's own tables (`sourcing_quotes`, `sourcing_quote_lines`) are read through the entity
  * manager — the app-wide rule, and the reason `.ai/lessons/kysely-bare-handle-types-tables-away.md`
- * exists. The three foreign tables are read through raw Kysely with a projection declared in this
- * file, exactly like `purchasing/lib/quoteLineReads.ts` reads this module's tables from the other
- * side: no cross-module entity imports, and every query carries the caller's tenant + organization.
+ * exists. The supplier library (`purchasing_supplier_products`) is read through raw Kysely with a
+ * projection declared in this file, exactly like `purchasing/lib/quoteLineReads.ts` reads this
+ * module's tables from the other side; the catalog product and its prices are read through the
+ * product store (`products/lib/store.ts`). Every read carries the caller's tenant + organization.
  *
  * Nothing here writes, and nothing here knows what a "change" is — the rules live in
  * `lib/quoteChanges.ts` so they stay unit-testable.
@@ -21,11 +23,11 @@ export type Scope = { tenantId: string; organizationId: string }
 export type SupplierLibraryEntry = {
   supplierProductId: string
   supplierSku: string
-  productId: string | null
+  catalogProductId: string | null
 }
 
 export type PurchasePriceEntry = {
-  productId: string
+  catalogProductId: string
   productSku: string
   unitPrice: string
   currencyCode: string
@@ -67,7 +69,7 @@ function toLineFacts(line: SourcingQuoteLine): QuoteLineFacts {
     unitCost: line.unitCost === null || line.unitCost === undefined ? null : String(line.unitCost),
     currencyCode: line.currencyCode ?? null,
     moqQuantity: line.moqQuantity === null || line.moqQuantity === undefined ? null : Number(line.moqQuantity),
-    promotedProductId: line.promotedProductId ?? null,
+    catalogProductId: line.catalogProductId ?? null,
     sourceRowNumber: line.sourceRowNumber === null || line.sourceRowNumber === undefined ? null : Number(line.sourceRowNumber),
   }
 }
@@ -123,7 +125,7 @@ export type TimelinePointFacts = {
   unitCost: string | null
   currencyCode: string | null
   moqQuantity: number | null
-  promotedProductId: string | null
+  catalogProductId: string | null
 }
 
 /**
@@ -176,7 +178,7 @@ export async function loadSupplierItemPoints(
       unitCost: line.unitCost === null || line.unitCost === undefined ? null : String(line.unitCost),
       currencyCode: line.currencyCode ?? quote.currencyCode ?? null,
       moqQuantity: line.moqQuantity === null || line.moqQuantity === undefined ? null : Number(line.moqQuantity),
-      promotedProductId: line.promotedProductId ?? null,
+      catalogProductId: line.catalogProductId ?? null,
     })
   }
 
@@ -195,7 +197,7 @@ type LibraryTables = {
     organization_id: string
     supplier_id: string
     supplier_sku: string
-    product_id: string | null
+    catalog_product_id: string | null
     deleted_at: Date | null
   }
 }
@@ -206,10 +208,10 @@ export async function loadSupplierLibraryIndex(
   scope: Scope,
   supplierId: string,
 ): Promise<Map<string, SupplierLibraryEntry>> {
-  const db = em.fork().getKysely<any>() as unknown as Kysely<LibraryTables>
+  const db = em.fork().getKysely() as unknown as Kysely<LibraryTables>
   const rows = await db
     .selectFrom('purchasing_supplier_products')
-    .select(['id', 'supplier_sku', 'product_id'])
+    .select(['id', 'supplier_sku', 'catalog_product_id'])
     .where('supplier_id', '=', supplierId)
     .where('tenant_id', '=', scope.tenantId)
     .where('organization_id', '=', scope.organizationId)
@@ -220,32 +222,20 @@ export async function loadSupplierLibraryIndex(
     index.set(normalizeItemKey(row.supplier_sku, null) ?? String(row.supplier_sku), {
       supplierProductId: String(row.id),
       supplierSku: String(row.supplier_sku),
-      productId: row.product_id ?? null,
+      catalogProductId: row.catalog_product_id ?? null,
     })
   }
   return index
 }
 
-type ProductTables = {
-  products_products: { id: string; tenant_id: string; organization_id: string; sku: string }
-  products_prices: {
-    product_id: string
-    tenant_id: string
-    organization_id: string
-    price_tier: string
-    currency_code: string
-    min_quantity: number
-    unit_price: string
-    is_active: boolean
-  }
-}
-
 /**
  * The callers' products, keyed by the normalized SKU, with their active `purchase`-tier price.
  *
- * The key is normalized on this side too, so a quotation that writes `p4108` still finds the
- * product `P4108`. The lowest minimum quantity wins — that is the single-unit price the change
- * table shows, and the same row the promotion resolves.
+ * Resolved through the store: one list for the page's SKUs, then one scoped price read per matched
+ * product (bounded by the page). The key is normalized on this side too, so a quotation that writes
+ * `p4108` and a product stored as `P4108` agree where the SKUs match exactly. The lowest minimum
+ * quantity wins — that is the single-unit price the change table shows, and the same row the
+ * promotion resolves.
  */
 export async function loadPurchasePricesBySku(
   em: EntityManager,
@@ -256,46 +246,25 @@ export async function loadPurchasePricesBySku(
   const wanted = [...new Set(skus.map((sku) => sku.trim()).filter((sku) => sku.length > 0))]
   if (wanted.length === 0) return index
 
-  const db = em.fork().getKysely<any>() as unknown as Kysely<ProductTables>
-  const products = await db
-    .selectFrom('products_products')
-    .select(['id', 'sku'])
-    .where('sku', 'in', wanted)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', '=', scope.organizationId)
-    .execute()
-  if (products.length === 0) return index
+  const { items } = await listStoreProducts({
+    em,
+    scope,
+    skus: wanted,
+    status: 'all',
+    pageSize: Math.min(200, wanted.length),
+  })
 
-  const productByKey = new Map<string, { id: string; sku: string }>()
-  const keyByProductId = new Map<string, string>()
-  for (const product of products) {
-    const key = normalizeItemKey(product.sku, null) ?? String(product.sku)
-    productByKey.set(key, { id: String(product.id), sku: String(product.sku) })
-    keyByProductId.set(String(product.id), key)
-  }
-
-  const prices = await db
-    .selectFrom('products_prices')
-    .select(['product_id', 'currency_code', 'min_quantity', 'unit_price'])
-    .where('product_id', 'in', [...productByKey.values()].map((product) => product.id))
-    .where('price_tier', '=', 'purchase')
-    .where('is_active', '=', true)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', '=', scope.organizationId)
-    .orderBy('min_quantity', 'asc')
-    .execute()
-
-  for (const price of prices) {
-    const key = keyByProductId.get(String(price.product_id))
-    if (!key) continue
+  for (const product of items) {
+    const key = normalizeItemKey(product.sku, null) ?? product.sku
     if (index.has(key)) continue
-    const product = productByKey.get(key)
-    if (!product) continue
+    const prices = await listStorePrices({ em, scope, productId: product.id })
+    const candidate = prices.find((price) => price.tier === 'purchase' && price.isActive)
+    if (!candidate) continue
     index.set(key, {
-      productId: product.id,
+      catalogProductId: product.id,
       productSku: product.sku,
-      unitPrice: String(price.unit_price),
-      currencyCode: String(price.currency_code),
+      unitPrice: candidate.unitPrice,
+      currencyCode: candidate.currencyCode,
     })
   }
   return index

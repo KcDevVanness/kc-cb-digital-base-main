@@ -151,7 +151,7 @@ export function ItemTimelineDialog({
                           {point.deltaPercent === null ? '' : ` ${point.deltaPercent > 0 ? '+' : ''}${point.deltaPercent.toFixed(2)}%`}
                         </Badge>
                       )}
-                      {point.promotedProductId ? (
+                      {point.catalogProductId ? (
                         <Badge variant="success">{t('sourcing.changes.timeline.promoted', 'Promoted')}</Badge>
                       ) : null}
                     </span>

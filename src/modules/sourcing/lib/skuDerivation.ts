@@ -2,7 +2,7 @@
  * Derives the SKU a quotation line would promote as.
  *
  * The rule is fixed by the owner and matches how the reference file actually behaves:
- * `products_products.sku` is unique per organization (soft-deleted rows included), while
+ * `catalog_products.sku` is unique per organization (soft-deleted rows included), while
  * PetKit reuses one Item No. for several variants — `P4108` appears twice (base and UVC),
  * `P9906` twice, `PD10` twice, `PKCL11`-style rows repeat too. So the first row of an Item
  * No. group keeps the Item No. and every later row appends a variant token taken from the
@@ -26,16 +26,26 @@ export type DerivedSku = {
   generated: boolean
 }
 
-const SKU_PATTERN = /^[A-Za-z0-9._\-/]{1,64}$/
+const SKU_PATTERN = /^[A-Za-z0-9._\-]{1,64}$/
 const MAX_SKU_LENGTH = 64
 const MAX_VARIANT_LENGTH = 20
 
-/** Keeps only the characters `products_products.sku` accepts; null when nothing usable is left. */
+/**
+ * Keeps only the characters `catalog_products.sku` accepts; null when nothing usable is left.
+ *
+ * A supplier Item No. may carry a slash (`P4117/1` is one code, not `P41171`), and catalog's SKU
+ * charset has none, so the slash becomes a dash instead of being dropped — dropping it would merge
+ * two different item numbers into one code, which the duplicate detector could not even report
+ * because nothing looks duplicated.
+ */
 export function sanitizeSkuCandidate(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null
   const trimmed = String(value).replace(/\s+/g, ' ').trim()
   if (trimmed.length === 0 || NULL_TOKENS[trimmed.toLowerCase()] === true) return null
-  const cleaned = trimmed.replace(/[^A-Za-z0-9._\-/]+/g, '').replace(/^[._\-/]+|[._\-/]+$/g, '')
+  const cleaned = trimmed
+    .replace(/\//g, '-')
+    .replace(/[^A-Za-z0-9._\-]+/g, '')
+    .replace(/^[._\-]+|[._\-]+$/g, '')
   if (cleaned.length === 0) return null
   return cleaned.slice(0, MAX_SKU_LENGTH)
 }

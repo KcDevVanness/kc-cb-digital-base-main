@@ -8,9 +8,9 @@
  * 1. **Only non-empty, changed values are produced.** A supplier sheet that omits a column may
  *    never erase a curated master field, so every value is compared against what the master
  *    already stores before it is sent.
- * 2. **A price is a whole set.** `products.prices.replace` deactivates the rows missing from the
- *    payload, so the caller must submit every row it wants to keep; `mergePriceRows` is what keeps
- *    the `internal` and `export` tiers alive across an import.
+ * 2. **A price is a whole set.** `products.prices.replace` closes the rows missing from the payload
+ *    (a row is never deleted), so the caller must submit every row it wants to keep; `mergePriceRows`
+ *    is what keeps the `internal` and `export` tiers alive across an import.
  *
  * The source-specific halves (which columns of a quotation line or of a library row feed these
  * values) stay in their own modules: this file only knows the master's field names and the merge
@@ -34,7 +34,7 @@ export type ProductFieldValues = {
 }
 
 export type DesiredPriceRow = {
-  priceTier: 'purchase'
+  tier: 'purchase'
   currencyCode: string
   minQuantity: number
   unitPrice: string
@@ -102,22 +102,25 @@ export function changedProductFields(
   return payload
 }
 
-export function priceRowKey(row: { priceTier: string; currencyCode: string; minQuantity: number }): string {
-  return `${row.priceTier}|${row.currencyCode.toUpperCase()}|${row.minQuantity}`
+export function priceRowKey(row: { tier: string; currencyCode: string; minQuantity: number }): string {
+  return `${row.tier}|${row.currencyCode.toUpperCase()}|${row.minQuantity}`
 }
 
 /**
  * Merges the desired row into the product's existing price set.
  *
- * `products.prices.replace` replaces the whole set and deactivates rows missing from the payload,
- * so the caller must submit every row it wants to keep — that is what keeps the `internal` and
- * `export` tiers alive across an import. Rows are returned unchanged when the price already
- * matches, which lets the caller skip the command entirely.
+ * `products.prices.replace` replaces the whole set and closes rows missing from the payload, so the
+ * caller must submit every row it wants to keep — that is what keeps the `internal` and `export`
+ * tiers alive across an import. Rows are returned unchanged when the price already matches, which
+ * lets the caller skip the command entirely.
+ *
+ * The emitted rows carry no `id` and no `priceTier`: the payload identifies a row by its
+ * `(tier, currency, minimum quantity)` key, and `tier` is catalog's price-kind code.
  */
 export function mergePriceRows(
   existing: readonly {
     id: string
-    priceTier: string
+    tier: string
     currencyCode: string
     minQuantity: number
     unitPrice: string
@@ -140,8 +143,7 @@ export function mergePriceRows(
   const rows: Record<string, unknown>[] = existing.map((row) => {
     if (priceRowKey(row) !== key) {
       return {
-        id: row.id,
-        priceTier: row.priceTier,
+        tier: row.tier,
         currencyCode: row.currencyCode,
         minQuantity: row.minQuantity,
         unitPrice: row.unitPrice,
@@ -151,8 +153,7 @@ export function mergePriceRows(
       }
     }
     return {
-      id: row.id,
-      priceTier: desired.priceTier,
+      tier: desired.tier,
       currencyCode: desired.currencyCode,
       minQuantity: desired.minQuantity,
       unitPrice: desired.unitPrice,

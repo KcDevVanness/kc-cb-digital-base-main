@@ -76,10 +76,16 @@ export async function loadSkuMap(em: EntityManager, scope: ReadScope, filters: S
     }>
   >(
     `select m.ru_sku, m.status, m.product_id, m.note, m.updated_at,
-            p.sku as product_sku, coalesce(p.name_en, p.name) as product_name
+            p.sku as product_sku,
+            coalesce(cf.value_text, p.title) as product_name
        from ru_sync_sku_map m
-       left join products_products p
+       left join catalog_products p
               on p.id = m.product_id and p.deleted_at is null
+       left join custom_field_values cf
+              on cf.entity_id = 'catalog:catalog_product'
+             and cf.record_id = p.id::text
+             and cf.field_key = 'name_en'
+             and cf.deleted_at is null
       where m.tenant_id = ?
         and m.organization_id in (${placeholders})`,
     [scope.tenantId, ...organizationIds],

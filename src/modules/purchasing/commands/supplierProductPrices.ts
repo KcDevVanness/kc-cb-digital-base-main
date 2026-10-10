@@ -21,7 +21,7 @@ import {
 /**
  * `purchasing.supplier-products.replace-prices` — the library item's whole price list in one write.
  *
- * Mirrors `products.prices.replace` so the two price lists behave the same way:
+ * Mirrors the catalog's `catalog.prices.replace` so the two price lists behave the same way:
  *
  * 1. **The payload is the complete desired state.** A row that disappears is deactivated (never
  *    deleted), so a purchase order line's snapshot still explains where its price came from.

@@ -42,7 +42,7 @@ type SourcingReadTables = {
     unit_net_weight: string | null
     inner_packing: Record<string, unknown> | null
     row_status: string
-    promoted_product_id: string | null
+    catalog_product_id: string | null
     updated_at: Date
   }
 }
@@ -74,8 +74,8 @@ export type QuoteLineRef = {
   cartonQuantity: number | null
   unitNetWeight: string | null
   innerPacking: Record<string, unknown> | null
-  /** Set once the line was promoted into the product master; the library row then links to it. */
-  promotedProductId: string | null
+  /** Set once the line was promoted into the catalog store; the library row then links to it. */
+  catalogProductId: string | null
 }
 
 export async function loadQuote(
@@ -130,7 +130,7 @@ export async function loadQuoteLines(
       'unit_net_weight',
       'inner_packing',
       'row_status',
-      'promoted_product_id',
+      'catalog_product_id',
     ])
     .where('quote_id', '=', quoteId)
     .where('id', 'in', [...lineIds])
@@ -158,7 +158,7 @@ export async function loadQuoteLines(
     cartonQuantity: row.carton_quantity === null || row.carton_quantity === undefined ? null : Number(row.carton_quantity),
     unitNetWeight: row.unit_net_weight === null || row.unit_net_weight === undefined ? null : String(row.unit_net_weight),
     innerPacking: row.inner_packing ?? null,
-    promotedProductId: row.promoted_product_id ? String(row.promoted_product_id) : null,
+    catalogProductId: row.catalog_product_id ? String(row.catalog_product_id) : null,
   }))
 }
 

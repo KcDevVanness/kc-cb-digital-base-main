@@ -1,5 +1,10 @@
 # Products Master Data + Purchase/Sales Contracts with Dual-Caliber Amounts
 
+> **Amended 2026-10-10** by [`.ai/specs/2026-10-10-catalog-single-store.md`](2026-10-10-catalog-single-store.md)：
+> 本文的**商品主数据**决定（REQ-016 自建 `products_products` 表族 + catalog 桥接、REQ-017 三种商品引用）作废——
+> 商品身份/变体/价格/分类改由官方 `catalog` 承载，`products` 只留自绘页面与 `products/lib/store.ts` 读写层，
+> 供应商产品库指针改为 `catalog_product_id`。**合同/单据（`trade_docs`）与双口径金额部分不受影响，仍然有效。**
+
 **Date**: 2026-09-22
 **Status**: Implemented (Phases 0–6) — verified 2026-09-22 and 2026-09-23
 

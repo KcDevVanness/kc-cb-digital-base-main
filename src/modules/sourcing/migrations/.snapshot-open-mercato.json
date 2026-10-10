@@ -597,8 +597,8 @@
           "enumItems": [],
           "mappedType": "uuid"
         },
-        "promoted_product_id": {
-          "name": "promoted_product_id",
+        "catalog_product_id": {
+          "name": "catalog_product_id",
           "type": "uuid",
           "unsigned": false,
           "autoincrement": false,

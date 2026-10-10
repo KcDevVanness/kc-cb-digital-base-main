@@ -1,12 +1,23 @@
 # Single Product Store on the Official Catalog — Cut, Merge, Rebuild
 
 **Date**: 2026-10-10
-**Status**: Ready for implementation (Phase 1) — owner approved the option set on 2026-10-10; Phase 0 (baseline docs) rides this PR
+**Status**: Implemented (Phase 0–3 in the `feat/catalog-single-store` branch; Phase 4 SKU 发号另立)
+> **As-shipped deltas (2026-10-10).** 与正文不同处，以代码与 `src/modules/<id>/README.md` 为准：
+> - **单位是写路径闸门**（正文只把单位列为字段）：商品的单位就是 catalog 的 `default_unit`，而 catalog 的解析器只认自己 `unit` 字典里的码、并存字典条目的 `value`——首次集成跑测出 19 个用例在 `POST /api/products/items` 上 400 `uom.unit_not_found`。修法是词表并入而非并行：`products/lib/unitVocabulary.ts` 定义 11 个码，`products/setup.ts` 幂等把 catalog 缺的 `PCS`/`CTN`/`BAG` 补进 `unit` 字典，`set`/`pair`/`box`/`roll`/`kg`/`g`/`m`/`l` 沿用 catalog 的小写拼写（改拼写会让已存商品的下一次写失败，或造出 normalized key 冲突）。播种从 `purchasing/setup.ts` 移到 `products/setup.ts`；规则沉淀见 `.ai/lessons/unit-pickers-read-the-app-unit-dictionary.md`。
+> - **分发副本保留 provenance**：`custom_field_values` 的 `cf_source_product_id` 记录来源商品（正文未提），`products.items.distribute` 写入。
+> - **价格档的"消失行"以 `ends_at` 关窗**（Q8 的落地形态），不是删除；**价行挂默认启用变体**——catalog 的
+  `catalog.prices.update` scope guard 经变体解析行归属，缺变体的行会 403（2026-10-10 集成跑测发现「关窗」从未生效、
+  且半写），修法见 `products/lib/store.ts` 的 `resolvePriceVariantId`，规则沉淀见
+  `.ai/lessons/peer-command-scope-guard-reads-a-relation-you-left-null.md`。
+> - **SKU 字符集对齐 catalog**（`^[A-Za-z0-9._\-]{1,64}$`）：SKU 同时写 `catalog_products.sku` 与默认变体 `sku`，catalog 两条正则不收 `/`，故 app 的 `SKU_PATTERN` 去掉斜杠（sourcing 的 Item No. 清洗把 `/` 换成 `-`，避免两个货号并成一个）。
+> - **变体 `name`/`barcode` 只发非空值**：catalog 的 schema 是 optional-string（`null` 报 `invalid_type`，`''` 被 GTIN 细则拒），留空即保持原值；实现见 `lib/store.ts` 的 `variantTextPayload`，同伴命令的校验失败由 `summarizePeerFailure` 收成一句可读消息。
+> - **catalog 的删除是硬删**：`catalog.products.delete` 移除行（连变体与价格），没有软删占码——REQ-006 / 字段表 / 安全段 / TEST-007 / AC-006 等处的「含软删占码」已按此改正；指向已删商品的链接读作「已关联的商品已删除」，重新建档即得同码新商品。`purchasing`/`sourcing` 里两条「SKU 属于已软删商品」的探测与 422 分支随之删除（它们的前提不成立）。删除商品请优先用**停用**。
+> - **采购单行的引用键是 `catalogProductId`**（`supplierProductId` 为另一选项）：集成 spec 原先发 `productId`，已随本轮改名。
 
 > 本规格取代 / 修订：`.ai/specs/2026-09-22-products-and-trade-docs.md`（自建主数据的决定）、
 > `.ai/specs/2026-09-22-product-variants.md`（变体归属 + 推迟的 wms round）、
 > `.ai/specs/2026-09-23-product-taxonomy-consolidation.md`（分类法收敛）、
-> `.ai/specs/2026-09-24-supplier-product-code-rules.md` + `2026-09-24-supplier-code-issuance.md`（编码规则 → 停用待重做）、
+> `.ai/specs/2026-09-24-supplier-product-code-rules.md`（商品编码规则 → 停用待重做；**注意**：`2026-09-24-supplier-code-issuance.md` 的供应商编号 `SUP-####` 不受影响，仍在 `purchasing/commands/suppliers.ts` 里发号）、
 > `.ai/specs/2026-09-22-supplier-product-library.md`（关联章节）、
 > `.ai/specs/2026-09-28-product-distribution-to-branches.md`（分发 → 在 catalog 上重造）。
 > `src/modules/products/README.md` 记载的「官方链切到本模块」计划作废（方向相反）。
@@ -44,7 +55,7 @@ UI 两套全部自绘：供应商产品库保持现版式，自有商品库按�
 - **REQ-003** — 供应商侧「建商品档案」= 一次动作产生 catalog 商品 + 默认启用变体（按 SKU 幂等），回填 `catalog_product_id`；不写官方代码，只经 catalog 命令/API。
 - **REQ-004** — 自有商品建档 = 自绘页面写 catalog（商品 + 变体 + 价格 + 分类 + 自定义字段），与 REQ-003 共用同一段写入。
 - **REQ-005** — 三档价落 catalog：`catalog_price_kinds`（purchase / internal / export，tenant 级码表）× 币种 × `min_quantity`/`max_quantity`，挂商品级；整组替换（消失的行停用不删）；**不保留有效期窗口**。
-- **REQ-006** — SKU 全部手填：唯一性 = 组织内唯一（含软删占码）；保留 `product_codes_aliases` 旧码别名（单据上的旧码可搜到）；发号规则表、发号台账、`product_brand` 码表、生成/拆解 API、编码面板全部删除；品牌改自由文本。
+- **REQ-006** — SKU 全部手填：唯一性 = 组织内唯一（catalog 的删除是硬删，删除即释放编码）；保留 `product_codes_aliases` 旧码别名（单据上的旧码可搜到）；发号规则表、发号台账、`product_brand` 码表、生成/拆解 API、编码面板全部删除；品牌改自由文本。
 - **REQ-007** — 单据引用商品统一为 catalog 商品 id + 冻结快照（采购行、发运分摊、销售行、合同/发票行、装箱单行）；改名/删除不改历史。
 - **REQ-008** — 发运分摊与收货的变体解析直读 catalog（去掉经 `products_products` 的一跳）；无变体仍 422，报错文案指向新路径。
 - **REQ-009** — `ru_sync` SKU 映射 `map_status='mapped'` 的断言目标改 `catalog_products`；草稿采购单按映射生成（`productId` = catalog 商品 id）。
@@ -90,7 +101,7 @@ UI 两套全部自绘：供应商产品库保持现版式，自有商品库按�
 | 供应商货品 | 某供应商卖的一件货：供应商 × 货号，候选期即存在 | `purchasing_supplier_products` | 货号重复（含软删）→ 409 |
 | 建档 | 供应商行 → catalog 商品 + 默认变体 + 指针；幂等（已建档 skipped） | 本规格 REQ-003 | 失败逐行隔离，可重试 |
 | 三档价 | purchase / internal / export，各含币种与起订量台阶；整组替换、消失即停用 | catalog 价格 + price kinds | 币种不在字典 → 400 |
-| SKU | 我方编码，组织内唯一、含软删永久占用；手填；旧码登记别名 | catalog 商品/变体的 `sku` + `product_codes_aliases` | 重复 → 409；改码后旧码仍可搜 |
+| SKU | 我方编码，组织内唯一；手填；旧码登记别名 | catalog 商品/变体的 `sku` + `product_codes_aliases` | 重复 → 409；改码后旧码仍可搜；删除商品释放编码 |
 | 订单为根 | 公司订单是唯一订单入口；三类子单关联式挂载；下游按子单并集只读 | `order_hub`（已交付） | 旧 URL 经关联表解析，解析不到显示未关联 |
 | 快照 | 单据引用商品存 id + 冻结快照，改名不改历史 | 各单据模块 | — |
 
@@ -143,7 +154,7 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 1. 采购员在产品库编辑行（供应商方向字段），点「建商品档案」。
 2. 系统在 catalog 建商品（sku = 我方 SKU、中英名、单位）+ 默认启用变体，回填指针；价格档写 purchase（折后价）。
 3. 采购单行选择该行 → 保存草稿解析出 catalog 商品与变体（快照冻结）→ 下单。
-4. 失败：SKU 被软删商品占用 → 409/422 可读文案；catalog 写入失败逐行隔离、可重试，不留半写。
+4. 失败：SKU 已被活商品占用 → 409 可读文案；catalog 写入失败逐行隔离、可重试，不留半写。
 
 ### Journey J-002 — 自有商品建档并分发
 
@@ -226,7 +237,7 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 - **Authorization:** 页面/API 闸门用 app feature（REQ-013）；catalog 命令自身的校验照旧；不新增角色名判断。
 - **Tenant isolation:** 所有读写沿用会话作用域；跨组织读取 404、越界写 403 且零写入（沿用现有测试口径）。
 - **Sensitive data:** 无新增 PII；供应商银行等既有加密面不动。
-- **Abuse and failure modes:** SKU 唯一性（含软删）；重复建档幂等；catalog 写入失败不留半写（先建商品再建变体，失败补偿/重试可读）。
+- **Abuse and failure modes:** SKU 唯一性（活行内）；重复建档幂等；catalog 写入失败不留半写（先建商品再建变体，失败补偿/重试可读）。
 
 ## Integration Coverage
 
@@ -238,7 +249,7 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 | TEST-004 | security | 两个组织 + 缺权限角色 | 跨组织读写、无 feature 调用 | 404/403 且零写入 | REQ-013 |
 | TEST-005 | UI | 自有商品页 | 新建/编辑/冲突/窄屏/暗色/键盘 | 白名单字段齐全、官方字段不可见 | REQ-012 |
 | TEST-006 | integration | 两个组织 | 分发（catalog 副本） | 副本 + 变体 + 来源标记；幂等；价格仅首次复制 | REQ-011 |
-| TEST-007 | integration | 历史旧码 + 手填 SKU | 搜索、唯一性 | 旧码命中；重复 409；软删占码 | REQ-006 |
+| TEST-007 | integration | 历史旧码 + 手填 SKU | 搜索、唯一性 | 旧码命中；重复 409；删除后编码可复用 | REQ-006 |
 
 ## Implementation Phases
 
@@ -259,7 +270,8 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 - **Requirements closed:** REQ-001…REQ-011, REQ-013, REQ-014
 - **Tests:** TEST-001…TEST-004, TEST-006, TEST-007
 - **Validation:** `yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test && yarn build`；`yarn test:integration:ephemeral`；FLOW-G1
-- **Exit gate:** 全新库上 FLOW-G1 绿；浏览器冒烟：建档→下单→发运→收货；`grep -r products_products src` 无生产代码命中
+- **Exit gate:** 全新库上 FLOW-G1 绿；浏览器冒烟：建档→下单→发运→收货；`grep -r products_products src` 无生产代码命中。
+  *2026-10-10 实测*：建档（供应商产品库 UI 建商品档案）→ 下单（采购单 API 一行商品、一行库行）→ 发运（UI「Depart」→ `SHP-2026-0001` In transit）→ **收货**（UI「Receive」，目的仓 `CSWH — Chain smoke WH` / 库位 `B1 — bin` → 状态 Received；`GET /api/wms/inventory/movements` 恰一条 `receipt 10.0000`、运营看板 `todaysMoves` +1、采购行 `receivedQuantity 10.0000`）。
 
 ### Phase 2 — 两页 UI
 
@@ -275,7 +287,7 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 
 - **Depends on:** Phase 1、Phase 2
 - **Outcome:** 模块 README / PRD / 状态板 / lessons 与新逻辑一致；Linear 镜像同步
-- **Deliverables:** D 组文档；superseded 标注；Linear dry-run/apply/audit 记录 + 孤儿清单
+- **Deliverables:** D 组文档；superseded 标注；Linear dry-run/apply/audit 记录 + 孤儿清单（✅ 2026-10-10 执行：104 条 payload → 更新 21 / 跳过 83 / 新建 0 / 失败 0；`--audit` 通过；孤儿 **0** 条——记录见 [`.ai/runs/2026-10-10-catalog-cutover-linear-sync.md`](../runs/2026-10-10-catalog-cutover-linear-sync.md)）
 - **Requirements closed:** REQ-015, REQ-016
 - **Validation:** `node scripts/linear-sync/sync.mjs --docs-root <main>` → `--apply` → `--audit`
 - **Exit gate:** dry-run 数量与状态分布核对；审计父子关系通过；孤儿 issue 清单交 owner
@@ -284,7 +296,7 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 
 - **Depends on:** Phase 1
 - **Outcome:** 按新字段口径重做编码生成（本规格不含）
-- **Non-goal of this spec**
+- **Non-goal of this spec** —— 已另立：[`.ai/specs/2026-10-10-sku-issuance-redo.md`](2026-10-10-sku-issuance-redo.md)（Draft，等 owner 回答 Q1/Q2）
 
 ## Requirement Traceability
 
@@ -327,24 +339,70 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 
 ## Acceptance Criteria
 
-- [ ] **AC-001** — `products_*` 表族与其路由/页面/命令/事件消失；开发库重建后系统可启动。
-- [ ] **AC-002** — 供应商库行只含供应商方向字段 + `catalog_product_id`；唯一键仍（供应商 × 货号，含软删）。
-- [ ] **AC-003** — 建档一次产生 catalog 商品 + 默认启用变体；重复建档 skipped。
-- [ ] **AC-004** — 自有商品建档写出 catalog 商品/变体/价格/分类/自定义字段。
-- [ ] **AC-005** — 三档价 = price kind × 币种 × 起订量；整组替换、消失停用。
-- [ ] **AC-006** — 手填 SKU 组织内唯一（含软删）；旧码可搜。
-- [ ] **AC-007** — 单据引用 = catalog id + 快照；改名不改历史。
-- [ ] **AC-008** — 发运/收货直读 catalog 变体；无变体 422。
-- [ ] **AC-009** — RU 映射指向 catalog 商品；草稿采购单按映射生成。
-- [ ] **AC-010** — 财务读缝与到期提醒直读 catalog。
-- [ ] **AC-011** — 分发副本在 catalog 上幂等、越界 403。
-- [ ] **AC-012** — 自有商品页与采购页同版式，字段白名单生效，官方字段不可见。
-- [ ] **AC-013** — 权限边界不变（商品 ≠ 供应商库）。
-- [ ] **AC-014** — 公司订单链路不变，根单子单引用改指 catalog。
-- [ ] **AC-015** — 基准文档与约定清单落档，被推翻的 spec 标注 superseded。
-- [ ] **AC-016** — Linear 同步 dry-run/apply/audit 通过，孤儿清单交付。
-- [ ] Every listed backend surface matches its recorded reference and uses the canonical shell/components, shared API helpers, semantic tokens, and complete states.
-- [ ] Every affected API and UI path has self-contained integration coverage and the configured validation gate passes.
+> 状态 = 截至 2026-10-10 本分支（`feat/catalog-cutover-phase1`）的**当前树证据**；每条给出可重跑的锚点，
+> 未覆盖的部分写明「未覆盖」而不是打勾。
+
+- [x] **AC-001** — `products_*` 表族与其路由/页面/命令/事件消失；开发库重建后系统可启动。
+  *证据*：`grep -rn "products_products\|products_prices\|products_variants\|products_types\|products_categories" src`
+  在生产代码命中 0（只剩迁移与 spec 文本）；drop 迁移 `Migration20261010090000_products.ts`；本分支四次 ephemeral 跑测
+  （全新库 initialize + migrate + 启动）全部就绪。
+- [x] **AC-002** — 供应商库行只含供应商方向字段 + `catalog_product_id`；唯一键仍（供应商 × 货号，含软删）。
+  *证据*：`Migration20261010081055_sourcing.ts`（指针改名）；集成 `purchasing/__integration__/supplier-products.spec.ts`
+  通过（含「重复货号（含软删行）→ 409」与「换绑/解除只写指针」用例）。
+- [x] **AC-003** — 建档一次产生 catalog 商品 + 默认启用变体；重复建档 `skipped`。
+  *证据*：store 的 `createStoreProduct` 在未给变体时创建默认启用变体；集成 `supplier-products.spec.ts`（promote →
+  `created`/`skipped`）与 `cross_border/__integration__/shipment-close.spec.ts`（收货要求启用变体，全绿）通过；
+  浏览器冒烟：UI 点「建商品档案」→ `POST …/promote` 200 → 行/接口都有 `catalogProductId`。
+- [x] **AC-004** — 自有商品建档写出 catalog 商品/变体/价格/自定义字段（**分类按 Q3 不写**：品类是 catalog 原生可选树，
+  由 catalog 自己的页面维护，app 表单没有分类字段——原 AC 的「分类」一列按决议收窄）。
+  *证据*：`ce.ts` 的 `product_erp` 字段集 + `entities install` 步骤（`docs/dev/setup.md`）；单元 `supplierMapping`
+  与集成 `products/__integration__/product-distribution.spec.ts`（副本连自定义字段与价格）通过；浏览器冒烟回读
+  名称/SKU/单位/变体/两档价。
+- [x] **AC-005** — 三档价 = price kind × 币种 × 起订量；整组替换、消失行**关窗**（`ends_at`，价表无软删列）。
+  *证据*：`lib/store.ts` 的 `replaceStorePrices`；集成 `purchasing/…/supplier-products.spec.ts` 新增断言（提交更窄的价格集后，
+  被丢掉的 purchase 行仍在、`endsAt` 有值、`isActive=false`，提交的行 `endsAt=null`）＋ `product-distribution.spec.ts`
+  的「价格只在首次分发复制」。
+- [x] **AC-006** — 手填 SKU 组织内唯一（活行）；旧码可搜。
+  *证据*：集成 `products/…/product-sku-grandfathering.spec.ts`（未改的旧码放行、改码按字符集把关）＋ 同 spec 新增步骤 4
+  （SQL 写入一条 `product_codes_aliases` 后 `GET /api/products/items?search=<旧码>` 命中该商品，命中的是当前 SKU）。
+  边界：**别名没有写入路径**（随发号停用；Phase 4 重做时才恢复），现在只剩历史行可搜。
+- [x] **AC-007** — 单据引用 = catalog id + 快照；改名不改历史。
+  *证据*：`trade_docs`（合同/发票）、`cross_border`（发运分摊）、`order_hub`、`internal_sales` 的集成 spec 全绿；
+  `product_snapshot` 由 `trade_docs/lib/productSnapshots.ts` 等冻结。
+- [x] **AC-008** — 发运/收货直读 catalog 变体；无启用变体 422。
+  *证据*：`cross_border/__integration__/shipment-close.spec.ts`（收货入 `wms`）与 `supplier-products.spec.ts` 的
+  「无启用变体不能发运」断言通过。
+- [x] **AC-009** — RU 映射指向 catalog 商品；草稿采购单按映射生成。
+  *证据*：`ru_sync/lib/skuMap.ts` 直接 join `catalog_products`；本轮修掉一处真缺陷——`draftPos` 仍发旧键 `productId`，
+  现在发 `catalogProductId`（单元 `commands/__tests__/draftPosLines.test.ts` 钉住），并在 2026-10-10 对**运行中的应用**
+  做了端到端：播种 plan 快照 + 映射行 → `POST /api/ru_sync/plan/draft-pos` **201**（`draft`、`lines:1`、
+  `planAsOf:2026-10-10`）→ 回读采购单行 `catalogProductId` = 映射商品、数量 7（来自计划）、单价 12.3000（同币种照抄）；
+  未映射码单独 422 并列出原因。
+- [x] **AC-010** — 财务读缝与到期提醒直读 catalog。
+  *证据*：`finance/__integration__/finance-flow.spec.ts`（FLOW-G1：收货→到岸→收汇核对）全绿；`finance/lib/peerReads.ts`
+  与 `dueReminders.ts` 的投影读 `catalog_products`（跨模块标量 id，无 ORM 关联）。
+- [x] **AC-011** — 分发副本在 catalog 上幂等、越界 403。
+  *证据*：`products/__integration__/product-distribution.spec.ts` 通过（建立副本一次、重复分发只更新字段、越界目标被拒）。
+- [x] **AC-012** — 自有商品页与采购页同版式，字段白名单生效，官方字段不可见。
+  *证据*：浏览器冒烟（列表/新建/编辑三页：分组顺序 = 商品标识 → 商品 SKU → 海关与单位 → 变体 → 价格 → 装箱重量体积 →
+  产品尺寸 → 备注/状态；未渲染任何官方多余字段）；实现见 `components/ProductForm.tsx` 的字段表。
+- [x] **AC-013** — 权限边界不变（商品 ≠ 供应商库）。
+  *证据*：功能位仍是 `products.items.*` / `purchasing.supplier-products.*`（`acl.ts`、路由 `metadata`）；集成
+  `supplier-products.spec.ts` 的「没有 promote 权限的角色被拒」与 `scope_guards` 套件通过。
+- [x] **AC-014** — 公司订单链路不变，根单子单引用改指 catalog。
+  *证据*：`order_hub/__integration__/company-order-{create-fields,fields,links}.spec.ts` 全绿。
+- [x] **AC-015** — 基准文档与约定清单落档，被推翻的 spec 标注 superseded。
+  *证据*：`docs/dev/business-architecture.md`、`docs/dev/business-conventions.md`（C-37 等已按新口径改正）；
+  六份旧 spec 顶部标注（`product-variants`、`product-taxonomy-consolidation`、`supplier-product-code-rules`、
+  `product-distribution-to-branches`、`supplier-product-library` 为 amended、`products-and-trade-docs` 为 amended）。
+- [x] **AC-016** — Linear 同步 dry-run/apply/audit 通过（104 条、更新 21、失败 0、审计通过），孤儿清单 0 条
+  （无内容被移除，无需人工处理）——证据 `.ai/runs/2026-10-10-catalog-cutover-linear-sync.md`。
+- [x] 每个后端表面与其记录参考一致，使用规范 shell/组件、共享 API 助手、语义 token 与完整状态。
+  *证据*：两页使用 `Page`/`PageBody`/`DataTable`/`CrudForm` 与 `useBackendChrome()`；服务端一律命令总线
+  （`executeProductCommand` / 既有命令），错误走 `CrudHttpError`；`yarn ds:check` 通过；浏览器冒烟覆盖列表/加载/空态入口。
+- [x] 每个受影响的 API/UI 路径有自包含集成覆盖，且配置的门禁通过。
+  *证据*：`yarn test:integration:ephemeral` **155 passed**（4 条 `storage_ops` 为 S3 环境门槛，未触碰 app 即抛错）；
+  宽门禁 `generate/typecheck/lint/ds:check/test(87 suites·768)/build` 全绿。
 
 ## Final Compliance Report
 
@@ -357,7 +415,17 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 | UI contracts identify references, canonical components, and theme/state coverage | pass | 两页 UI 表 + 白名单 |
 | Every phase has dependencies, bounded slices, tests, value, and an observable exit gate | pass | Phases 0–3 |
 
-Verdict: `Ready for implementation`（Phase 1 起）— 依赖 owner 的开工指令。
+Verdict: **Implemented (Phase 0–3)** — 分支 `feat/catalog-cutover-phase1`（PR #171，stacked on #170）。
+证据：宽门禁全绿（`generate` / `typecheck` / `lint` 0 error / `ds:check` 1061 files / `yarn test` 87 suites·768 /
+`yarn build`）；`yarn test:integration:ephemeral` **155 passed**（仅 4 条 `storage_ops` 因缺 `STORAGE_OPS_TEST_S3_CONFIG`
+在触碰 app 前抛错——环境门槛，与本改造无关）；浏览器冒烟（列表/新建/编辑 + UI 建档 + 采购单两种引用）；
+RU 草稿采购单端到端 201（AC-009）。
+
+残余（都在正文里写明，不是隐含债务）：
+- 采购单详情页与「发运→收货」全链的**浏览器**走查未做（该链由 FLOW-G1 与 `cross_border` 集成用例覆盖）。
+- 单位词表拼写（`PCS`/`CTN`/`BAG` 大写 + catalog 自带小写八码）与「删除=硬删」两条口径等 owner 点头。
+- Phase 4（SKU 发号重做）另立切片；`product_codes_aliases` 目前无写入路径（只剩历史行可搜）。
+- 官方 catalog 的 OpenAPI 生成在打包步骤回退到静态抽取（Node 24 的 JSON import attribute 环境问题，非本改造引入）。
 
 ## Open Questions
 
@@ -370,16 +438,19 @@ Verdict: `Ready for implementation`（Phase 1 起）— 依赖 owner 的开工�
 | Q5 | SKU 全手填；发号器停用 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q6 | 供应商表原文组保留 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q7 | 自产/委外仍走采购单 | owner | no | 2026-10-10 采纳推荐（A） |
-| Q8 | 三档价落 catalog price kinds；砍有效期窗口 | owner | no | 2026-10-10 采纳推荐（A） |
+| Q8 | 三档价落 catalog price kinds；**有效期窗口保留**（catalog 价格原生带 `starts_at`/`ends_at`，实现时发现不必砍；"消失的行"用 `ends_at=now` 关窗而不是删除） | owner | no | 2026-10-10 采纳推荐（A），并在 Phase 1 实现时按原生字段修正 |
 | Q-新1 | 分发副本保留并重造 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q-新2 | 权限沿用 app feature 闸门 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q-新3 | 报价 section → 品类自动建树砍掉 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q-新4 | 旧码别名表保留 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q-新5 | 先落 Phase 0 基准文档 | owner | no | 2026-10-10 采纳推荐（A） |
 | Q-新6 | Linear：每阶段 apply + 收尾 audit | owner | no | 2026-10-10 采纳推荐（A） |
+| Q-新7 | 单位词表（app 的 `supplier_product_unit` vs catalog 的 `unit`） | owner | no | 2026-10-10 实现时定为**并入 catalog 字典**：词表见 `products/lib/unitVocabulary.ts`；`PCS`/`CTN`/`BAG` 由本 app 补进 catalog，其余沿用 catalog 拼写。备选（两表并存 / 重命名 peer 条目）都被写路径的 `uom.unit_not_found` 闸门与 normalized key 冲突否决——证据见 `.ai/lessons/unit-pickers-read-the-app-unit-dictionary.md` 的 Recurrence 段 |
 
 ## Changelog
 
 | Date | Change |
 |---|---|
 | 2026-10-10 | Initial spec — owner approved the option set; Phase 0 (baseline docs) in the same PR |
+| 2026-10-10 | Linear 镜像重跑：dry-run 104 条 → apply（更新 21 / 跳过 83 / 失败 0）→ audit 通过 → 孤儿 0（`.ai/runs/2026-10-10-catalog-cutover-linear-sync.md`）。**更正**：同步走 Orca，不需要 Linear API token。 |
+| 2026-10-10 | Phase 0–3 shipped in `feat/catalog-single-store`：表族删除 + `products/lib/store.ts` 单一读写层 + 两页 UI + D 组文档；集成跑测发现的单位闸门按 Q-新7 落地（`products/lib/unitVocabulary.ts`、`products/setup.ts`）；Phase 4（SKU 发号）仍待另立切片 |

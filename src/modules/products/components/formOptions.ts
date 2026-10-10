@@ -5,9 +5,18 @@ import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
  *
  * The product master owns how it is listed, so every picker in the app (contract lines, invoice
  * lines, internal sales lines) reads it through this one function instead of each form writing its
- * own query. It is a plain `fetchCrudList` call against the module's own list route, which means the
- * caller inherits the route's scope rules: a product outside the caller's organization cannot be
- * offered, and `organizationId` narrows the list to the organization being written to.
+ * own query. It is a plain `fetchCrudList` call against the module's own list route
+ * (`GET /api/products/items`), which means the caller inherits the route's scope rules: a product
+ * outside the caller's organization cannot be offered.
+ *
+ * A product **is** the catalog product since the cutover
+ * (`.ai/specs/2026-10-10-catalog-single-store.md`), so an option's `catalogProductId` is the product
+ * id itself — the field is kept because callers resolve a product's default variant from it.
+ *
+ * The `organizationId` argument stays in the signature for the callers that pass the organization
+ * they are writing to, but it no longer narrows anything: the list is always the caller's selected
+ * organization, because the store's read model is organization-private and offers no
+ * cross-organization read.
  */
 
 const PRODUCTS_API_PATH = 'products/items'
@@ -21,10 +30,8 @@ export type ProductOption = {
   spec: string
   unit: string
   /**
-   * The product's optional link to the installed catalog product.
-   *
-   * Callers that must write a *variant* reference (the sales chain books fulfilment per variant)
-   * resolve it from this id; a product without the link simply has no variant to offer.
+   * The catalog product this option stands for — the option's own id, since the product id **is**
+   * the catalog product id.
    */
   catalogProductId: string
 }
@@ -41,7 +48,8 @@ function toProductOption(item: Record<string, unknown>): ProductOption {
     model: typeof item.manufacturerModel === 'string' ? item.manufacturerModel : '',
     spec: typeof item.specSummary === 'string' ? item.specSummary : '',
     unit: typeof item.unit === 'string' ? item.unit : '',
-    catalogProductId: typeof item.catalogProductId === 'string' ? item.catalogProductId : '',
+    catalogProductId:
+      typeof item.catalogProductId === 'string' && item.catalogProductId.length > 0 ? item.catalogProductId : value,
   }
 }
 
@@ -49,17 +57,14 @@ function toProductOption(item: Record<string, unknown>): ProductOption {
 export async function loadProductOptions(
   errorMessage: string,
   query?: string,
-  organizationId?: string | null,
+  _organizationId?: string | null,
 ): Promise<ProductOption[]> {
   const search = typeof query === 'string' ? query.trim() : ''
   try {
     const payload = await fetchCrudList<Record<string, unknown>>(PRODUCTS_API_PATH, {
       status: 'active',
       pageSize: 50,
-      sortField: 'name',
-      sortDir: 'asc',
       ...(search.length > 0 ? { search } : {}),
-      ...(organizationId ? { organizationId } : {}),
     })
     return (payload.items ?? []).map(toProductOption)
   } catch {
@@ -73,12 +78,11 @@ export async function loadProductOptions(
 export async function loadProductOption(
   productId: string,
   errorMessage: string,
-  organizationId?: string | null,
+  _organizationId?: string | null,
 ): Promise<ProductOption | null> {
   const payload = await fetchCrudList<Record<string, unknown>>(PRODUCTS_API_PATH, {
     ids: productId,
     pageSize: 1,
-    ...(organizationId ? { organizationId } : {}),
   })
   const item = payload.items?.[0]
   return item ? toProductOption(item) : null

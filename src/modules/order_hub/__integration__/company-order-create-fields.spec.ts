@@ -118,27 +118,17 @@ test.describe.serial('order_hub — company order create fields', () => {
     internalChannelId = String((await readJsonSafe<ChannelPayload>(channels))?.channels?.internal ?? '')
     expect(internalChannelId, 'the internal trade-type channel is seeded for this organization').toBeTruthy()
 
-    const catalogSku = `CFIELD-${stamp}`.toUpperCase()
-    const catalog = await scoped('POST', '/api/catalog/products', {
-      title: `Company fields product ${stamp}`,
-      sku: catalogSku,
-      description: 'Long enough description for the catalog create validation in QA automation flows.',
-    })
-    const catalogBody = await readJsonSafe<Record<string, unknown>>(catalog)
-    catalogProductId = String(
-      [catalogBody?.id, (catalogBody?.item as Record<string, unknown>)?.id].find(
-        (value): value is string => typeof value === 'string' && value.length > 0,
-      ) ?? '',
-    )
-    expect(catalogProductId, 'the catalog product fixture resolved an id').toBeTruthy()
+    // One action creates the catalog product and its default variant; the returned id is the
+    // catalog product id every downstream document reference uses.
+    const productSku = `CFIELD-${stamp}`.toUpperCase()
     const product = await scoped('POST', '/api/products/items', {
-      sku: catalogSku,
+      sku: productSku,
       name: `Company fields product ${stamp}`,
-      catalogProductId,
       unit: 'PCS',
     })
     productId = String((await readJsonSafe<IdPayload>(product))?.id ?? '')
-    expect(productId, 'the app-owned product fixture resolved an id').toBeTruthy()
+    catalogProductId = productId
+    expect(productId, 'the product fixture resolved an id').toBeTruthy()
 
     const createSalesOrder = async (): Promise<string> => {
       const response = await scoped('POST', '/api/sales/orders', {
@@ -159,7 +149,7 @@ test.describe.serial('order_hub — company order create fields', () => {
       const response = await scoped('POST', '/api/purchasing/purchase-orders', {
         supplierId,
         currencyCode: 'CNY',
-        lines: [{ productId, quantity: 3, unitPrice: 12, taxRate: 0, priceIncludesTax: true }],
+        lines: [{ catalogProductId, quantity: 3, unitPrice: 12, taxRate: 0, priceIncludesTax: true }],
       })
       expect(response.status(), await response.text()).toBe(201)
       return String((await readJsonSafe<IdPayload>(response))?.id ?? '')

@@ -67,12 +67,12 @@ const supplierProductListItemSchema = z
     unitGrossWeight: z.string().nullable().optional(),
     unitVolume: z.string().nullable().optional(),
     innerPacking: z.record(z.string(), z.unknown()).nullable().optional(),
-    productId: z.string().uuid().nullable().optional(),
+    catalogProductId: z.string().uuid().nullable().optional(),
     productSku: z.string().nullable().optional(),
     productName: z.string().nullable().optional(),
     /**
-     * Phase 8: `productId` is set but no live product resolves for it (deleted, or outside this
-     * scope). Presentation only — the list still counts the row as 已建档.
+     * Phase 8: `catalogProductId` is set but no live product resolves for it (deleted, or outside
+     * this scope). Presentation only — the list still counts the row as 已建档.
      */
     productDeleted: z.boolean().optional(),
     status: z.string(),
@@ -141,7 +141,7 @@ const listFields = [
   'discount_percent',
   'inner_packing',
   'image_attachment_ids',
-  'product_id',
+  'catalog_product_id',
   'status',
   'source',
   'last_quote_id',
@@ -180,8 +180,8 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       updated_at: 'updated_at',
       updatedAt: 'updated_at',
     },
-    // The 关联商品 column is resolved live from `products_products`, so the payload must not be
-    // served from the CRUD list cache: a product renamed in the master would otherwise keep
+    // The 关联商品 column is resolved live from the catalog product store, so the payload must not
+    // be served from the CRUD list cache: a product renamed in the store would otherwise keep
     // showing its old name here until the cache expired.
     disableListCache: true,
     buildFilters: async (query: SupplierProductListQuery, ctx) => {
@@ -195,12 +195,13 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         filters.id = { $in: ids }
       }
       if (query.supplierId) filters.supplier_id = query.supplierId
+      if (query.catalogProductId) filters.catalog_product_id = query.catalogProductId
       if (query.status !== 'all') filters.status = query.status
       // 建档状态 (Phase 8): the row's **stored** link decides the bucket, so a row whose product was
       // deleted afterwards stays in 已建档 (the list marks it `productDeleted` instead of dropping it
       // out of sight, which is what a live-label filter would do).
-      if (query.linked === 'linked') filters.product_id = { $ne: null }
-      else if (query.linked === 'unlinked') filters.product_id = null
+      if (query.linked === 'linked') filters.catalog_product_id = { $ne: null }
+      else if (query.linked === 'unlinked') filters.catalog_product_id = null
       if (query.search && query.search.trim().length > 0) {
         const term = `%${escapeLikePattern(query.search.trim())}%`
         // Our own names are searchable because they are what the list leads with; the supplier's
@@ -275,7 +276,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       unitVolume: asNullableString(item.unit_volume),
       discountPercent: asNullableString(item.discount_percent),
       innerPacking: asNullableRecord(item.inner_packing),
-      productId: asNullableString(item.product_id),
+      catalogProductId: asNullableString(item.catalog_product_id),
       status: String(item.status ?? 'active'),
       source: String(item.source ?? 'manual'),
       lastQuoteId: asNullableString(item.last_quote_id),
@@ -305,21 +306,21 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       const productIds = Array.from(
         new Set(
           payload.items
-            .map((item) => (typeof item.productId === 'string' ? item.productId : null))
+            .map((item) => (typeof item.catalogProductId === 'string' ? item.catalogProductId : null))
             .filter((id): id is string => id !== null),
         ),
       )
       if (productIds.length > 0) {
         const labels = await loadProductLabels(em, { tenantId, organizationId }, productIds)
         for (const item of payload.items) {
-          const productId = typeof item.productId === 'string' ? item.productId : null
-          const label = productId ? labels[productId] : undefined
+          const catalogProductId = typeof item.catalogProductId === 'string' ? item.catalogProductId : null
+          const label = catalogProductId ? labels[catalogProductId] : undefined
           item.productSku = label?.sku ?? null
           item.productName = label?.name ?? null
-          // The link can outlive its target: `product_id` is a scalar id with no foreign key, so a
-          // linked row that resolves to no live product is flagged instead of rendering as if it
+          // The link can outlive its target: `catalog_product_id` is a scalar id with no foreign key,
+          // so a linked row that resolves to no live product is flagged instead of rendering as if it
           // were simply unlinked — promote would skip it and sync-fields would refuse it.
-          item.productDeleted = productId !== null && label === undefined
+          item.productDeleted = catalogProductId !== null && label === undefined
         }
       }
 
@@ -355,8 +356,8 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         // 本公司报价 is no longer entered on the library row (2026-09-24): the column reads the linked
         // product's 内部结算价. A `company_offer` row stored before that change is still shown when the
         // product quotes no such price, so historical data does not vanish from the page.
-        const productId = typeof item.productId === 'string' ? item.productId : null
-        const internal = productId ? internalPrices[productId] ?? null : null
+        const catalogProductId = typeof item.catalogProductId === 'string' ? item.catalogProductId : null
+        const internal = catalogProductId ? internalPrices[catalogProductId] ?? null : null
         const legacyOffer = entry?.companyOffer ?? null
         item.companyOfferPrice = internal ?? legacyOffer
         item.companyOfferSource = internal ? 'product' : legacyOffer ? 'library' : null

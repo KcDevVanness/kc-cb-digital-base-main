@@ -21,7 +21,8 @@ import { getTokenContext, readJsonSafe } from '@open-mercato/core/helpers/integr
  *
  * The legacy value is written with SQL on purpose: no API can produce it (`products.items.create`
  * validates the pattern), and that is exactly the state a database migrated from the spreadsheet era
- * is in. Without the grandfathering fix, step 3 below returns 400 and the row is uneditable forever.
+ * is in. The SKU itself lives in the installed catalog (`catalog_products.sku`) since the single-store
+ * cutover. Without the grandfathering rule, step 2 below returns 400 and the row is uneditable forever.
  */
 
 const ITEMS_URL = '/api/products/items'
@@ -106,7 +107,7 @@ test.describe.serial('products — legacy SKU grandfathering', () => {
 
     // Reproduce the migrated state: an SKU the pattern rejects, written where only a migration can.
     await withClient(async (client) => {
-      await client.query('update products_products set sku = $1 where id = $2', [LEGACY_SKU, productId])
+      await client.query('update catalog_products set sku = $1 where id = $2', [LEGACY_SKU, productId])
     })
     const legacy = await readProduct()
     expect(legacy.sku, 'the legacy value is in the row').toBe(LEGACY_SKU)
@@ -137,5 +138,23 @@ test.describe.serial('products — legacy SKU grandfathering', () => {
     expect(legalChange.status()).toBe(200)
     const afterLegalChange = await readProduct()
     expect(afterLegalChange.sku).toBe(`${legalSku}-2`)
+
+    // 4. An **old code** a row was migrated away from still finds it: the list search unions
+    // `product_codes_aliases` (kind `product`) into its matches, which is the reason the alias table
+    // survived the cutover while the issuance flow was retired. The alias row itself is written by
+    // SQL here because nothing can create one any more — that is the state the table is in.
+    const retiredCode = `RETIRED-${stamp.toUpperCase()}`
+    await withClient(async (client) => {
+      await client.query(
+        `insert into product_codes_aliases (tenant_id, organization_id, alias_code, target_kind, target_id, note, created_at)
+         values ($1, $2, $3, 'product', $4, 'integration fixture', now())`,
+        [tenantId, hqOrgId, retiredCode, productId],
+      )
+    })
+    const byAlias = await staffRequest('GET', `${ITEMS_URL}?search=${encodeURIComponent(retiredCode)}&pageSize=5`)
+    expect(byAlias.status(), 'searching by the retired code answers').toBe(200)
+    const matches = (await readJsonSafe<{ items?: Array<{ id: string; sku: string }> }>(byAlias))?.items ?? []
+    expect(matches.map((entry) => entry.id)).toContain(productId)
+    expect(matches[0]?.sku, 'the hit is the current SKU, not the retired code').toBe(`${legalSku}-2`)
   })
 })

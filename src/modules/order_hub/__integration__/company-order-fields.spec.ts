@@ -163,34 +163,17 @@ test.describe.serial('order_hub — company order fields', () => {
     internalChannelId = String((await readJsonSafe<{ channels?: { internal?: string | null } }>(channels))?.channels?.internal ?? '')
     expect(internalChannelId, 'the internal trade-type channel is seeded').toBeTruthy()
 
-    // Catalog product + variant + installed product bridge (needed by shipment allocations).
-    const catalogSku = `FIELDS-${stamp}`.toUpperCase()
-    const catalog = await scoped('POST', '/api/catalog/products', {
-      title: `Fields product ${stamp}`,
-      sku: catalogSku,
-      description: 'Long enough description for the catalog create validation in QA automation flows.',
-    })
-    const catalogBody = await readJsonSafe<Record<string, unknown>>(catalog)
-    catalogProductId = String(
-      [catalogBody?.id, (catalogBody?.item as Record<string, unknown> | undefined)?.id].find(
-        (value): value is string => typeof value === 'string' && value.length > 0,
-      ) ?? '',
-    )
-    expect(catalogProductId, 'the catalog product fixture resolved an id').toBeTruthy()
-    await expectOk(await scoped('POST', '/api/catalog/variants', {
-      productId: catalogProductId,
-      sku: catalogSku,
-      isDefault: true,
-      isActive: true,
-    }))
+    // One action creates the catalog product and its default variant; the returned id is the
+    // catalog product id every downstream document reference uses (shipment allocations included).
+    const productSku = `FIELDS-${stamp}`.toUpperCase()
     const product = await scoped('POST', '/api/products/items', {
-      sku: catalogSku,
+      sku: productSku,
       name: `Fields product ${stamp}`,
-      catalogProductId,
       unit: 'PCS',
     })
     productId = String((await readJsonSafe<IdPayload>(product))?.id ?? '')
-    expect(productId, 'the app-owned product fixture resolved an id').toBeTruthy()
+    catalogProductId = productId
+    expect(productId, 'the product fixture resolved an id').toBeTruthy()
 
     const supplier = await scoped('POST', '/api/purchasing/suppliers', {
       name: `Fields supplier ${stamp}`,
@@ -226,7 +209,7 @@ test.describe.serial('order_hub — company order fields', () => {
       supplierId,
       currencyCode: 'CNY',
       depositAmount: '10.00',
-      lines: [{ productId, quantity: 3, unitPrice: 12, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 3, unitPrice: 12, taxRate: 0, priceIncludesTax: true }],
     })
     expect(purchaseOrder.status(), await purchaseOrder.text()).toBe(201)
     purchaseOrderId = String((await readJsonSafe<IdPayload>(purchaseOrder))?.id ?? '')

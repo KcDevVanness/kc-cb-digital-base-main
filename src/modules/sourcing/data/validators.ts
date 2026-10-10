@@ -80,7 +80,17 @@ export const quoteCurrencyCodeSchema = z
   .trim()
   .regex(/^[A-Z]{3}$/, 'currency code must be a three-letter uppercase ISO code')
 
-const SKU_PATTERN = /^[A-Za-z0-9._\-/]{1,64}$/
+/**
+ * The charset a derived SKU may carry — **catalog's own** (`^[A-Za-z0-9._\-]+$`, no slash).
+ *
+ * It has to match `lib/skuDerivation.ts` (which maps a supplier's `/` to `-` before the value ever
+ * gets here) and the product side: a derived SKU is written to `catalog_products.sku` and to the
+ * product's default variant by the promotion, and both of catalog's schemas reject a slash — a
+ * value accepted here would fail *inside* the promotion with an unreadable 422 instead of at the
+ * operator's input. Measured 2026-10-10: this copy still allowed `/` while the derivation and the
+ * product schema had already been aligned.
+ */
+const SKU_PATTERN = /^[A-Za-z0-9._\-]{1,64}$/
 
 const dimensionsSchema = z
   .object({
@@ -152,7 +162,7 @@ export const quoteLineCreateSchema = z.object({
   sectionLabel: nullableText(120),
   itemNo: nullableText(120),
   productName: nullableText(300),
-  derivedSku: z.string().trim().regex(SKU_PATTERN, 'sku must be letters, digits, dot, dash, slash or underscore').nullable().optional(),
+  derivedSku: z.string().trim().regex(SKU_PATTERN, 'sku must be letters, digits, dot, dash or underscore').nullable().optional(),
   hsCode: nullableText(32),
   description: nullableText(2000),
   unit: z.string().trim().max(24).default('PCS'),
@@ -193,7 +203,7 @@ export const quoteLinesBatchUpdateSchema = z.object({
         updatedAt: z.string().trim().min(1),
         selected: z.boolean().optional(),
         derivedSku: z
-          .union([z.string().trim().regex(SKU_PATTERN, 'sku must be letters, digits, dot, dash, slash or underscore'), z.null()])
+          .union([z.string().trim().regex(SKU_PATTERN, 'sku must be letters, digits, dot, dash or underscore'), z.null()])
           .optional(),
         productName: nullableText(300),
         moqQuantity: nullableNonNegativeIntegerSchema,

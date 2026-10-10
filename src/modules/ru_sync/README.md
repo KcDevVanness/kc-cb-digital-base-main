@@ -58,7 +58,7 @@ key for it, so the row's own `sku` (verbatim, it may be an unparseable factory c
 | `/backend/ru-sync/health` | per endpoint: snapshot date, cursor, its age, the last run's outcome |
 | `GET/PUT /api/ru_sync/sku-map` | the same list (derived) and the decision command `ru_sync.sku-map.update` |
 | `GET /api/ru_sync/health` | the health projection |
-| `POST /api/ru_sync/plan/draft-pos` | the command `ru_sync.plan.draft-pos`: turn plan gaps into **draft** purchase orders (drafts only — placing still goes through the existing purchasing path) |
+| `POST /api/ru_sync/plan/draft-pos` | the command `ru_sync.plan.draft-pos`: turn plan gaps into **draft** purchase orders (drafts only — placing still goes through the existing purchasing path). The line it dispatches carries the mapped product as **`catalogProductId`** — purchasing's line schema refuses a line without a product reference, and the old `productId` key is retired (2026-10-10; pinned by `commands/__tests__/draftPosLines.test.ts`) |
 | `notifications: ru_sync.pull_failed` | raised through `ru_sync.pull.failed` when a walk fails |
 | `notifications: ru_sync.alert.*` (4) | 断货 / 超储 / ДРР 破线 / 未识别在途, evaluated after the endpoint whose data decides them (`lib/alerts.ts`) |
 
@@ -81,13 +81,18 @@ a `groupKey` and the notification service refreshes the active notification with
 
 ## Verification
 
-- `yarn test src/modules/ru_sync` — 43 cases over five suites: the SKU normalization and the
+- `yarn test src/modules/ru_sync` — 47 cases over six suites: the SKU normalization and the
   single-match rule, the cursor codec and watermark math, the eight supply contract schemas and the
   nine ads schemas against the fixture payloads (including the negative cases: no `as_of`, money as
   a number, a three-decimal amount, a Russian enum value, a withdrawn `_label` key), and a full pull
   against a mock contract server with an in-memory projection: one row per fixture row, replay of
   the same `as_of` creating nothing, a failing page leaving the cursor untouched, RU codes
   registered, and an envelope without `as_of` rejected without storing anything.
+- The sixth suite (`commands/__tests__/draftPosLines.test.ts`) pins the draft-PO line builder: the
+  `catalogProductId` key, the plan-quantity fallback, the zero-price + note rule when the RU cost is
+  in another currency, and the three `unmapped` reasons. End-to-end, the same command was exercised
+  against a live app on 2026-10-10 (seeded plan snapshot + mapped SKU → `201`,
+  `planAsOf: 2026-10-10`, and the created line read back as `catalogProductId` + `unitPrice 12.3000`).
 - The boundary: those tests drive the real adapter, client, schemas and cursor rules against real
   HTTP, but with an in-memory store. The ORM store, the `data_sync` run plumbing and the notification
   path are exercised in the app (see the plan's progress table for the run evidence).

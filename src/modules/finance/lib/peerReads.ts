@@ -37,7 +37,7 @@ type FinanceReadDatabase = {
     id: string
     order_id: string
     line_number: number
-    product_id: string | null
+    catalog_product_id: string | null
     quantity: string
     net_total: string
     product_snapshot: Record<string, unknown> | null
@@ -53,25 +53,44 @@ type FinanceReadDatabase = {
     tenant_id: string
     organization_id: string
   }
-  products_products: {
+  catalog_products: {
     id: string
-    sku: string
-    name: string
-    name_en: string | null
-    catalog_product_id: string | null
+    sku: string | null
+    title: string
+    is_active: boolean
     deleted_at: Date | null
     tenant_id: string
     organization_id: string
   }
-  products_prices: {
-    product_id: string
-    price_tier: string
+  catalog_product_variant_prices: {
+    id: string
+    product_id: string | null
+    price_kind_id: string
     currency_code: string
-    unit_price: string
+    unit_price_net: string | null
     min_quantity: number
-    is_active: boolean
+    starts_at: Date | null
+    ends_at: Date | null
     tenant_id: string
     organization_id: string
+  }
+  catalog_price_kinds: {
+    id: string
+    code: string
+    deleted_at: Date | null
+    tenant_id: string
+  }
+  custom_field_values: {
+    entity_id: string
+    record_id: string
+    field_key: string
+    value_text: string | null
+    value_int: number | null
+    value_float: number | null
+    value_bool: boolean | null
+    deleted_at: Date | null
+    tenant_id: string | null
+    organization_id: string | null
   }
   wms_inventory_balances: {
     warehouse_id: string
@@ -167,8 +186,8 @@ export async function loadShipmentPurchaseLines(
     .selectFrom('cross_border_shipment_allocations as a')
     .innerJoin('purchasing_purchase_order_lines as l', 'l.id', 'a.purchase_order_line_id')
     .innerJoin('purchasing_purchase_orders as o', 'o.id', 'a.purchase_order_id')
-    .leftJoin('products_products as p', (join) =>
-      join.onRef('p.id', '=', 'l.product_id').on('p.deleted_at', 'is', null),
+    .leftJoin('catalog_products as p', (join) =>
+      join.onRef('p.id', '=', 'l.catalog_product_id').on('p.deleted_at', 'is', null),
     )
     .select([
       'a.id as allocation_id',
@@ -178,14 +197,13 @@ export async function loadShipmentPurchaseLines(
       'o.business_number as business_number',
       'o.currency_code as currency_code',
       'l.line_number as line_number',
-      'l.product_id as product_id',
+      'l.catalog_product_id as product_id',
       'l.quantity as quantity',
       'l.net_total as net_total',
       'l.product_snapshot as product_snapshot',
       'a.quantity as allocated_quantity',
       'p.sku as product_sku',
-      'p.name as product_name',
-      'p.name_en as product_name_en',
+      'p.title as product_name',
     ])
     .where('a.shipment_id', '=', shipmentId)
     .where('a.tenant_id', '=', scope.tenantId)
@@ -206,7 +224,7 @@ export async function loadShipmentPurchaseLines(
       businessNumber: row.business_number ?? null,
       lineNumber: Number(row.line_number ?? 0),
       productId: row.product_id ?? null,
-      productTitle: row.product_name_en ?? row.product_name ?? snapshotTitle,
+      productTitle: row.product_name ?? snapshotTitle,
       sku: row.product_sku ?? snapshotSku,
       orderCurrencyCode: String(row.currency_code ?? 'CNY'),
       netTotal: String(row.net_total ?? '0'),
@@ -227,8 +245,8 @@ export async function loadProductRefs(
   const ids = [...new Set(productIds.filter((value) => value.length > 0))]
   if (ids.length === 0) return new Map()
   const rows = await readDb(em)
-    .selectFrom('products_products')
-    .select(['id', 'sku', 'name', 'name_en'])
+    .selectFrom('catalog_products')
+    .select(['id', 'sku', 'title'])
     .where('id', 'in', ids)
     .where('tenant_id', '=', scope.tenantId)
     .where('organization_id', 'in', scope.organizationIds)
@@ -238,7 +256,7 @@ export async function loadProductRefs(
   return new Map(
     rows.map((row) => [
       String(row.id),
-      { id: String(row.id), sku: String(row.sku), title: row.name_en ?? row.name ?? null },
+      { id: String(row.id), sku: String(row.sku ?? ''), title: row.title ?? null },
     ]),
   )
 }
@@ -291,8 +309,8 @@ export type VariantRefRow = {
 
 /**
  * Inventory is booked against the installed catalog's **variant**, so a balance maps back to a
- * product through `catalog_product_variants.product_id` (the catalog product id) and from there
- * through `products_products.catalog_product_id` — the bridge the receipt path writes.
+ * product through `catalog_product_variants.product_id` — which **is** the product id the app uses
+ * everywhere since the single-store cutover removed the second identity.
  */
 export async function loadVariantRefs(
   em: EntityManager,
@@ -322,7 +340,7 @@ export async function loadVariantRefs(
   )
 }
 
-/** `products_products` rows of one organization keyed by the optional catalog bridge id. */
+/** `catalog_products` rows of one organization keyed by id; the title prefers the English custom field. */
 export async function loadProductsByCatalogId(
   em: EntityManager,
   scope: ReadScope,
@@ -330,25 +348,20 @@ export async function loadProductsByCatalogId(
 ): Promise<Map<string, ProductRefRow>> {
   const ids = [...new Set(catalogProductIds.filter((value) => value.length > 0))]
   if (ids.length === 0) return new Map()
-  const rows = await readDb(em)
-    .selectFrom('products_products')
-    .select(['id', 'sku', 'name', 'name_en', 'catalog_product_id'])
-    .where('catalog_product_id', 'in', ids)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', 'in', scope.organizationIds)
+  const refs = await loadProductRefs(em, scope, ids)
+  const englishNames = await readDb(em)
+    .selectFrom('custom_field_values')
+    .select(['record_id', 'value_text'])
+    .where('entity_id', '=', 'catalog:catalog_product')
+    .where('field_key', '=', 'name_en')
+    .where('record_id', 'in', ids)
     .where('deleted_at', 'is', null)
     .execute()
-
-  return new Map(
-    rows.flatMap((row) =>
-      row.catalog_product_id
-        ? [[
-            String(row.catalog_product_id),
-            { id: String(row.id), sku: String(row.sku), title: row.name_en ?? row.name ?? null },
-          ] as const]
-        : [],
-    ),
-  )
+  for (const row of englishNames) {
+    const ref = refs.get(String(row.record_id))
+    if (ref && row.value_text) ref.title = row.value_text
+  }
+  return refs
 }
 
 export type ChannelRef = { id: string; name: string; code: string }
@@ -396,16 +409,28 @@ export async function loadActivePriceRows(
   if (ids.length === 0) return result
 
   const rows = await readDb(em)
-    .selectFrom('products_prices')
-    .select(['product_id', 'price_tier', 'currency_code', 'unit_price', 'min_quantity'])
-    .where('product_id', 'in', ids)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', 'in', scope.organizationIds)
-    .where('is_active', '=', true)
-    .orderBy('min_quantity', 'asc')
+    .selectFrom('catalog_product_variant_prices as p')
+    .innerJoin('catalog_price_kinds as k', 'k.id', 'p.price_kind_id')
+    .select([
+      'p.product_id as product_id',
+      'k.code as price_tier',
+      'p.currency_code as currency_code',
+      'p.unit_price_net as unit_price',
+      'p.min_quantity as min_quantity',
+      'p.ends_at as ends_at',
+    ])
+    .where('p.product_id', 'in', ids)
+    .where('p.tenant_id', '=', scope.tenantId)
+    .where('p.organization_id', 'in', scope.organizationIds)
+    .where('k.deleted_at', 'is', null)
+    .orderBy('p.min_quantity', 'asc')
     .execute()
 
+  const now = Date.now()
   for (const row of rows) {
+    // The catalog price table has no soft-delete column: a closed window (`ends_at` in the past) is
+    // what "no longer an active price" means since the single-store cutover.
+    if (row.ends_at && new Date(row.ends_at).getTime() <= now) continue
     const productId = String(row.product_id)
     const list = result.get(productId) ?? []
     list.push({
@@ -427,9 +452,10 @@ export type ReceivedShipmentRow = {
 }
 
 /**
- * Containers that carry a given SKU, newest first. Matches both the authoritative product SKU (the
- * line's `product_id` link) and the line's own display snapshot, so a historical catalog-linked
- * line is found too. Bounded: the caller is a report, not an export of the whole table.
+ * Containers that carry a given SKU, newest first. Matches both the authoritative product SKU
+ * (through the line's `catalog_product_id` link) and the line's own display snapshot, so a
+ * historical line whose product has since been renamed is found too. Bounded: the caller is a
+ * report, not an export of the whole table.
  */
 export async function findShipmentIdsBySku(
   em: EntityManager,
@@ -441,8 +467,8 @@ export async function findShipmentIdsBySku(
     .selectFrom('cross_border_shipment_allocations as a')
     .innerJoin('cross_border_shipments as s', 's.id', 'a.shipment_id')
     .innerJoin('purchasing_purchase_order_lines as l', 'l.id', 'a.purchase_order_line_id')
-    .leftJoin('products_products as p', (join) =>
-      join.onRef('p.id', '=', 'l.product_id').on('p.deleted_at', 'is', null),
+    .leftJoin('catalog_products as p', (join) =>
+      join.onRef('p.id', '=', 'l.catalog_product_id').on('p.deleted_at', 'is', null),
     )
     .select(['a.shipment_id as shipment_id'])
     .distinct()

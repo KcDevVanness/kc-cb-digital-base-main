@@ -1,5 +1,9 @@
 # Product Taxonomy Consolidation — one page, one tree, one vocabulary
 
+> **Superseded 2026-10-10** by [`.ai/specs/2026-10-10-catalog-single-store.md`](2026-10-10-catalog-single-store.md)（单一商品存储改造）：
+> 自建类型/分类表族（`products_types`/`products_categories`）与目录树重建算法已随迁移删除，分类改用 catalog 原生分类树
+> （可选，手工建），报价 section → 品类自动建树砍掉；本文件保留为历史记录。
+
 **Date**: 2026-09-23
 **Status**: Implemented (Phases 0–3)
 

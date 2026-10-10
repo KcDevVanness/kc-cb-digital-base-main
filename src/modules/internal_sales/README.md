@@ -4,8 +4,7 @@ app 自有**界面层**模块：为**对内（总部 → 分公司）与对外�
 报价单/订单**列表、新建与编辑**页。**列表**：报价单是一条合并列表——`/backend/quotes`（类型列 + 类型筛选，两个
 旧入口 URL 307 到这里）；订单列表由 `order_hub` 的工作台承担，两个旧入口 URL 也 307 过去。**新建与编辑**仍是
 每种类型一个专属入口（对内 `/backend/internal-sales/**`、对外 `/backend/external-sales/**`），入口即类型，
-表单的买方来源与单据的通道标记都只覆盖自己那一半。**行引用自建商品主数据**
-（`products_products.id`）。单据本体仍由官方
+表单的买方来源与单据的通道标记都只覆盖自己那一半。**行引用自有商品库的商品**（单一存储改造后就是 catalog 商品 id：`catalog_products.id`）。单据本体仍由官方
 `sales` 链承载（编号、状态、金额引擎、发货、发票、退货、收款），本模块只通过其公开 API 驱动，不重写引擎。
 
 需求与证据见 [`.ai/specs/2026-09-22-products-and-trade-docs.md`](../../../.ai/specs/2026-09-22-products-and-trade-docs.md) 的 Phase 6。
@@ -225,8 +224,8 @@ customerSnapshot = {
 
 | 字段 | 含义 |
 |---|---|
-| `productId` | 自建商品主数据 id（**唯一权威**，选品器只给 `products` 的商品，且按当前组织收敛） |
-| `productVariantId` | **桥接**：商品填了「官方目录链接」时，自动取其默认启用变体（`/api/catalog/variants`，响应是 snake_case）；否则留空。**目录链接是履约前提**：把本单行分摊到发运单时要求该商品能经 `catalog_product_id` 桥接到官方目录（否则 422，`cross_border` 的销售分摊）、收货时 `resolveDefaultVariantId` 取不到变体同样 **422**（`has no variant, so stock cannot be received`）；官方 `sales` 的发货命令本身只挂订单行（`sales_shipment_items` 无变体列），不校验变体 |
+| `productId` | **catalog 商品 id**（唯一权威——商品就是 catalog 行；选品器读 `/api/products/items`，按当前组织收敛） |
+| `productVariantId` | 商品默认启用变体 id（`/api/catalog/variants`，响应是 snake_case；商品没有启用变体时留空）。**变体是履约前提**：把本单行分摊到发运单时要求该商品有启用变体（否则 422，`cross_border` 的销售分摊）、收货时 `resolveDefaultVariantId` 取不到同样 **422**（`has no variant, so stock cannot be received`）；官方 `sales` 的发货命令本身只挂订单行（`sales_shipment_items` 无变体列），不校验变体 |
 | `catalogSnapshot` | 打印/展示快照（sku/name/spec），写入时冻结，商品改名不改写历史单据 |
 
 > 选择器解析完选中标签后**会以同一个商品 id 再触发一次 `onChange`**（2026-09-28 真机确认）。表单只在商品
@@ -267,18 +266,18 @@ customerSnapshot = {
 yarn generate && yarn typecheck && yarn lint && yarn ds:check
 npx jest src/modules/internal_sales                     # 买方值协议 / 快照 / 组织选项装配 / 报价载入 / 贸易类型 / 列表请求参数的单元测试（6 suites / 60 tests）
 # 冒烟（dev server 在跑时）：
-#  UI 新建报价/订单（选自建商品 + 数量 + 未税单价）→ 201；落库行 productId=products_products.id、
-#  有官方目录链接的商品 productVariantId 自动填默认变体、catalogSnapshot 有 sku/name/spec；
+#  UI 新建报价/订单（选自有商品库选中商品 + 数量 + 未税单价）→ 201；落库行 productId=catalog 商品 id、
+#  有启用变体的商品 productVariantId 自动填默认变体、catalogSnapshot 有 sku/name/spec；
 #  列表出现该单；行操作进入本模块编辑页；改数量保存 → PUT 抬头 200 + PUT …-lines 200，行 id 不变、引用与快照保留。
 #  买方：下拉出现「关联组织：<分公司名>」与「外部客户：<CODE — name>」；选组织 → 名称回填 → 保存后
 #  customer_snapshot 含 name + customer.displayName + internalSales.organizationId；编辑页回显同一选项，
 #  改数量保存 → 抬头 PUT 200 + 行 PUT 200、行 id 不变、快照保留；选外部客户 → 快照带 partyId 且名称为档案名；
 #  清选择器（名称仍在）→ 快照降为 { name, customer.displayName }；选择器与名称都清空 → 快照写显式 null。
 #  （2026-09-28 在 dev 逐条实测：QUOTE-20260928-00004 全流程 + 上述四种快照形状）
-#  选带「官方目录链接」的商品 → 落库 product_variant_id = 该目录商品的默认启用变体
-#  （2026-09-28 实测 LOWMOQ-1790586676106 → 96861c70-…），无链接的商品留空；编辑保存后变体保留。
+#  选有启用变体的商品 → 落库 product_variant_id = 该商品的默认启用变体
+#  （2026-09-28 实测 LOWMOQ-1790586676106 → 96861c70-…）；没有启用变体的商品留空；编辑保存后变体保留。
 #  订单侧同套验证（2026-09-28 真机）：`/backend/internal-sales/orders/create` 选「关联组织：俄罗斯 AB 有限公司」+
-#  商品 P4108-UVC（无目录链接 → 变体留空）→ `ORDER-20260928-00004`（合计 176）→ 列表行操作进编辑页 →
+#  商品 P4108-UVC（当时无启用变体 → 变体留空）→ `ORDER-20260928-00004`（合计 176）→ 列表行操作进编辑页 →
 #  改数量保存 `PUT orders` 200 + `PUT order-lines` 200、行 id 不变、快照与变体状态保留（探针单已删）。
 #  /backend/sales/documents/create 只做 `navHidden`：不在侧边栏，但 URL 仍可解析（不是 404）。
 #  从报价单载入（2026-09-29 真机，dev + @open-mercato/core@0.8.0；探针单已删）：

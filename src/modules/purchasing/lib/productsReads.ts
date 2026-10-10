@@ -1,201 +1,51 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
+import { listStorePrices, listStoreProducts, type StoreScope } from '../../products/lib/store'
 
 /**
- * Scoped reads of the product master's tables.
+ * Scoped product-store reads the purchasing surfaces need beyond the store's own API.
  *
- * Raw Kysely on purpose, like `cross_border/lib/purchasingReads.ts`: this module must not import
- * another module's entities, it needs a handful of columns for a comparison, and every query is
- * filtered by the caller's tenant + organization scope. Nothing here writes — product changes go
- * through the products module's commands.
+ * The store (`../../products/lib/store.ts`) is the one place that knows the catalog's shape; the
+ * reads here are the few shapes it does not expose as a batch:
  *
- * Soft-deleted products are returned on purpose: `products_products.sku` is unique including
- * soft-deleted rows, so a promotion has to know that a SKU is taken by a deleted product instead
- * of failing on the unique index.
+ * - **batch labels** for a page of library rows (one store list instead of one read per row), and
+ * - **batch tier prices** for the same page.
+ *
+ * Nothing here writes: product changes go through the store's commands.
+ *
+ * Two probes used to live here and both rested on a **soft-delete** premise that does not hold:
+ * `catalog.products.delete` (`@open-mercato/core/modules/catalog/commands/products.ts`) removes the
+ * row (`em.remove`), so a deleted product is `missing`, never a row with `deleted_at` set, and its
+ * SKU is free again. The store's own reads filter `deleted_at is null` anyway, which is why a
+ * product that no longer exists answers a plain 404 instead of a repair instruction (measured
+ * 2026-10-10; the integration specs were rewritten to the hard-delete reality).
  */
-export type ProductRow = {
-  id: string
-  sku: string
-  name: string | null
-  nameEn: string | null
-  specSummary: string | null
-  hsCode: string | null
-  unit: string | null
-  netWeight: string | null
-  grossWeight: string | null
-  volume: string | null
-  dimensions: Record<string, unknown> | null
-  cartonQuantity: number | null
-  categoryId: string | null
-  deletedAt: Date | null
-}
-
-export type ProductPriceRow = {
-  id: string
-  priceTier: string
-  currencyCode: string
-  minQuantity: number
-  unitPrice: string
-  startsAt: string | null
-  endsAt: string | null
-  isActive: boolean
-}
-
-export type CategoryRow = { id: string; code: string; name: string }
 
 /**
- * The projection every product-master read in this module shares.
+ * Display labels for the catalog products a supplier library row points at.
  *
- * A cross-module read is a projection, not an entity dependency, so the shape is declared once
- * here and mapped once — a second select list would be a second truth about what the master has.
+ * Resolved for a whole page in one store list: the list's 关联商品 column needs the live label, and
+ * a product deleted since the link simply contributes no entry — the caller renders "已关联的商品已删除".
  */
-const PRODUCT_COLUMNS = [
-  'id',
-  'sku',
-  'name',
-  'name_en',
-  'spec_summary',
-  'hs_code',
-  'unit',
-  'net_weight',
-  'gross_weight',
-  'volume',
-  'dimensions',
-  'carton_quantity',
-  'category_id',
-  'deleted_at',
-] as const
-
-type RawProductRow = {
-  id: string
-  sku: string
-  name: string | null
-  name_en: string | null
-  spec_summary: string | null
-  hs_code: string | null
-  unit: string | null
-  net_weight: string | null
-  gross_weight: string | null
-  volume: string | null
-  dimensions: Record<string, unknown> | null
-  carton_quantity: number | null
-  category_id: string | null
-  deleted_at: Date | null
-}
-
-function toProductRow(row: RawProductRow): ProductRow {
-  return {
-    id: String(row.id),
-    sku: String(row.sku),
-    name: row.name ?? null,
-    nameEn: row.name_en ?? null,
-    specSummary: row.spec_summary ?? null,
-    hsCode: row.hs_code ?? null,
-    unit: row.unit ?? null,
-    netWeight: row.net_weight === null || row.net_weight === undefined ? null : String(row.net_weight),
-    grossWeight: row.gross_weight === null || row.gross_weight === undefined ? null : String(row.gross_weight),
-    volume: row.volume === null || row.volume === undefined ? null : String(row.volume),
-    dimensions: row.dimensions ?? null,
-    // Carton count is an integer count, not money.
-    cartonQuantity: row.carton_quantity === null || row.carton_quantity === undefined ? null : Number(row.carton_quantity),
-    categoryId: row.category_id ?? null,
-    deletedAt: row.deleted_at ?? null,
+export async function loadProductLabels(
+  em: EntityManager,
+  scope: StoreScope,
+  ids: readonly string[],
+): Promise<Record<string, { sku: string; name: string }>> {
+  if (ids.length === 0) return {}
+  const { items } = await listStoreProducts({
+    em,
+    scope,
+    ids: [...ids],
+    pageSize: Math.min(200, ids.length),
+  })
+  const labels: Record<string, { sku: string; name: string }> = {}
+  for (const item of items) {
+    labels[item.id] = { sku: item.sku, name: item.name }
   }
+  return labels
 }
 
-/** `date` columns arrive as `Date` or `YYYY-MM-DD` depending on the driver's parser. */
-function toDateOnly(value: unknown): string | null {
-  if (value === null || value === undefined) return null
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString().slice(0, 10)
-  const text = String(value)
-  return text.length >= 10 ? text.slice(0, 10) : null
-}
-
-export async function findProductBySku(
-  em: EntityManager,
-  scope: { tenantId: string; organizationId: string },
-  sku: string,
-): Promise<ProductRow | null> {
-  const rows = (await (em.fork().getKysely<any>())
-    .selectFrom('products_products')
-    .select(PRODUCT_COLUMNS)
-    .where('sku', '=', sku)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', '=', scope.organizationId)
-    .limit(1)
-    .execute()) as RawProductRow[]
-  const row = rows[0]
-  return row ? toProductRow(row) : null
-}
-
-/**
- * One product master row by id, in the caller's scope.
- *
- * `includeDeleted` is what the link action needs: `product_id` is a scalar id with no foreign key,
- * so a link can outlive its target and 换绑 / 解除关联 have to be able to name that state. Every
- * other caller wants the live row only.
- *
- * `forUpdate` runs the read on the passed EntityManager (never a fork) and takes a row lock, which
- * is only meaningful inside `em.transactional`: it is how the link command makes "the product still
- * exists and is live" and "write the link" one atomic step.
- */
-export async function findProductById(
-  em: EntityManager,
-  scope: { tenantId: string; organizationId: string },
-  id: string,
-  options: { includeDeleted?: boolean; forUpdate?: boolean } = {},
-): Promise<ProductRow | null> {
-  const handle = options.forUpdate ? em.getKysely<any>() : em.fork().getKysely<any>()
-  let query = handle
-    .selectFrom('products_products')
-    .select(PRODUCT_COLUMNS)
-    .where('id', '=', id)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', '=', scope.organizationId)
-  if (!options.includeDeleted) query = query.where('deleted_at', 'is', null)
-  if (options.forUpdate) query = query.forUpdate()
-  const rows = (await query.limit(1).execute()) as RawProductRow[]
-  const row = rows[0]
-  return row ? toProductRow(row) : null
-}
-
-export async function loadProductPrices(
-  em: EntityManager,
-  scope: { tenantId: string; organizationId: string },
-  productId: string,
-): Promise<ProductPriceRow[]> {
-  const rows = (await (em.fork().getKysely<any>())
-    .selectFrom('products_prices')
-    .select(['id', 'price_tier', 'currency_code', 'min_quantity', 'unit_price', 'starts_at', 'ends_at', 'is_active'])
-    .where('product_id', '=', productId)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', '=', scope.organizationId)
-    .orderBy('price_tier')
-    .orderBy('currency_code')
-    .orderBy('min_quantity')
-    .execute()) as Array<{
-    id: string
-    price_tier: string
-    currency_code: string
-    min_quantity: number
-    unit_price: string
-    starts_at: unknown
-    ends_at: unknown
-    is_active: boolean
-  }>
-  return rows.map((row) => ({
-    id: String(row.id),
-    priceTier: String(row.price_tier),
-    currencyCode: String(row.currency_code),
-    // Price-ladder step: an integer count, not money (`unitPrice` below is the price).
-    minQuantity: Number(row.min_quantity),
-    unitPrice: String(row.unit_price),
-    startsAt: toDateOnly(row.starts_at),
-    endsAt: toDateOnly(row.ends_at),
-    isActive: row.is_active === true,
-  }))
-}
-
-/** One product-master price cell, as the library list renders it. The tier is the query, not a field. */
+/** One product's price cell, as the library list renders it. The tier is the query, not a field. */
 export type ProductTierPriceCell = {
   currencyCode: string
   unitPrice: string
@@ -205,104 +55,42 @@ export type ProductTierPriceCell = {
 /**
  * The base price of one tier for many products, keyed by product id.
  *
- * The library list's 本公司报价 column reads the **master's** `internal`（内部结算价）tier since
- * 2026-09-24: our own offer is a fact about the product, so the library shows it instead of keeping a
- * second editable copy. Resolved for a whole page in one scoped query, exactly like the product
- * labels, and "base" is the same rule the library's own price cells use — the lowest minimum quantity,
- * with the currency code breaking ties (`lib/supplierProductPrices.ts`), so both columns read alike.
- * Only active rows count: a withdrawn price must not be shown as current.
+ * The library list's 本公司报价 column reads the **store's** `internal`（内部结算价）tier: our own
+ * offer is a fact about the product, so the library shows it instead of keeping a second editable
+ * copy. "Base" is the same rule the library's own price cells use — the lowest minimum quantity,
+ * with the currency code breaking ties — so both columns read alike. Only active rows count.
+ *
+ * The store reads prices per product, so this is one scoped read per id; the caller passes one page
+ * of library rows (≤50), which keeps that bounded.
  */
 export async function loadBaseTierPricesByProduct(
   em: EntityManager,
-  scope: { tenantId: string; organizationId: string },
+  scope: StoreScope,
   productIds: readonly string[],
   priceTier: string,
 ): Promise<Record<string, ProductTierPriceCell>> {
   const byProduct: Record<string, ProductTierPriceCell> = {}
-  if (productIds.length === 0) return byProduct
-
-  const rows = (await (em.fork().getKysely<any>())
-    .selectFrom('products_prices')
-    .select(['product_id', 'currency_code', 'min_quantity', 'unit_price'])
-    .where('product_id', 'in', [...productIds])
-    .where('price_tier', '=', priceTier)
-    .where('is_active', '=', true)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', '=', scope.organizationId)
-    .orderBy('min_quantity')
-    .orderBy('currency_code')
-    .execute()) as Array<{
-    product_id: string
-    currency_code: string
-    min_quantity: number
-    unit_price: string
-  }>
-
-  for (const row of rows) {
-    const productId = String(row.product_id)
-    const candidate: ProductTierPriceCell = {
-      currencyCode: String(row.currency_code),
-      unitPrice: String(row.unit_price),
-      // Price-ladder step: an integer count, not money.
-      minQuantity: Number(row.min_quantity),
-    }
-    const current = byProduct[productId]
-    if (
-      !current ||
-      candidate.minQuantity < current.minQuantity ||
-      (candidate.minQuantity === current.minQuantity &&
-        candidate.currencyCode.localeCompare(current.currencyCode) < 0)
-    ) {
-      byProduct[productId] = candidate
-    }
-  }
-
+  await Promise.all(
+    productIds.map(async (productId) => {
+      const prices = await listStorePrices({ em, scope, productId })
+      for (const price of prices) {
+        if (price.tier !== priceTier || !price.isActive) continue
+        const candidate: ProductTierPriceCell = {
+          currencyCode: price.currencyCode,
+          unitPrice: price.unitPrice,
+          minQuantity: price.minQuantity,
+        }
+        const current = byProduct[productId]
+        if (
+          !current ||
+          candidate.minQuantity < current.minQuantity ||
+          (candidate.minQuantity === current.minQuantity &&
+            candidate.currencyCode.localeCompare(current.currencyCode) < 0)
+        ) {
+          byProduct[productId] = candidate
+        }
+      }
+    }),
+  )
   return byProduct
-}
-
-export async function findCategoryByCode(
-  em: EntityManager,
-  scope: { tenantId: string; organizationId: string },
-  code: string,
-): Promise<CategoryRow | null> {
-  const rows = (await (em.fork().getKysely<any>())
-    .selectFrom('products_categories')
-    .select(['id', 'code', 'name'])
-    .where('code', '=', code)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', '=', scope.organizationId)
-    .where('deleted_at', 'is', null)
-    .limit(1)
-    .execute()) as Array<{ id: string; code: string; name: string }>
-  const row = rows[0]
-  return row ? { id: String(row.id), code: String(row.code), name: String(row.name) } : null
-}
-
-/**
- * Display labels for the products a supplier library row is linked to.
- *
- * The library list resolves `product_id` for a whole page at once: one scoped query instead of
- * one per row, and soft-deleted products are filtered out (a synced product cannot be deleted
- * while a library row still points at it, but the read must not show a label for a row that is
- * gone). Missing ids simply contribute no entry — the caller renders "not synced".
- */
-export async function loadProductLabels(
-  em: EntityManager,
-  scope: { tenantId: string; organizationId: string },
-  ids: string[],
-): Promise<Record<string, { sku: string; name: string }>> {
-  if (ids.length === 0) return {}
-  const rows = (await (em.fork().getKysely<any>())
-    .selectFrom('products_products')
-    .select(['id', 'sku', 'name'])
-    .where('id', 'in', ids)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', '=', scope.organizationId)
-    .where('deleted_at', 'is', null)
-    .execute()) as Array<{ id: string; sku: string; name: string | null }>
-  const labels: Record<string, { sku: string; name: string }> = {}
-  for (const row of rows) {
-    labels[String(row.id)] = { sku: String(row.sku), name: row.name ?? '' }
-  }
-  return labels
 }

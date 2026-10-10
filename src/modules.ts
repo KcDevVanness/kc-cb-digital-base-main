@@ -45,24 +45,15 @@ export const enabledModules: ModuleEntry[] = [
     from: '@open-mercato/core',
     overrides: {
       widgets: { injection: { 'catalog.injection.product-seo': null } },
-      // The app owns its product master (`src/modules/products/**`, see
-      // .ai/specs/2026-09-22-products-and-trade-docs.md): the installed catalog's product,
-      // variant and category pages are hidden from the navigation so the admin shows exactly
-      // one product surface. The module and its API stay enabled on purpose — `sales` document
-      // lines still resolve catalog offers/price kinds, `cross_border` receives stock through
-      // `catalog_product_variants`, and existing rows keep working. This is a registry-level
-      // hide; no installed file is touched.
+      // The product data now lives in this module (`catalog_products` / variants / prices /
+      // categories), but the app draws its own product surfaces on top of it (own-product library,
+      // supplier-library 建档) and the installed product/variant/category pages stay out of the
+      // navigation so the admin shows one product surface. The module and its API are the store —
+      // nothing is disabled. This is a registry-level hide; no installed file is touched.
       //
-      // `config/catalog` is hidden as well (2026-09-23, owner request: fewer entries in the
-      // Settings panel). The page manages catalog price kinds and the EU unit-price display
-      // toggle, and no app-owned surface reads either one: the app's price vocabulary is
-      // `products_prices.price_tier`, `purchasing`/`sourcing` carry their own
-      // `supplier_cost`/`company_offer` codes in their own tables, and `catalog_price_kinds` is
-      // empty (the module's `seedDefaults` never ran for this tenant). Hiding is `navHidden`,
-      // not `null`, for two reasons: the catalog search presenter resolves
-      // `catalog:catalog_price_kind` hits to this URL (`catalog/search.ts`), and re-enabling the
-      // entry is deleting this one line. The page keeps working by URL while hidden — the
-      // price-kind API and the `unit_price_display_enabled` PUT are untouched.
+      // `config/catalog` stays hidden for menu minimalism. The app does seed and read price kinds
+      // (`catalog_price_kinds`: purchase/internal/export, ensured by the products store), so the
+      // page is functional rather than vestigial; hiding it only keeps the Settings panel short.
       //
       // Hidden means `navHidden`, not `null`: `catalog.product.low_stock` notifies with
       // `linkHref: /backend/catalog/products/{sourceEntityId}`, so the URL must stay resolvable.
@@ -271,12 +262,16 @@ enabledModules.push({ id: 'data_sync', from: '@open-mercato/core' })
 // reconciliation queue. See .ai/specs/2026-09-21-platform-ops.md
 enabledModules.push({ id: 'platform_ops', from: '@app' })
 
-// App-owned products module — the business product master (types, category tree, products and
-// the three price tiers). See .ai/specs/2026-09-22-products-and-trade-docs.md
+// App-owned products module — the business's own product surface (own-product library page and the
+// catalog write/read store in `lib/store.ts`). The product data itself lives in the installed
+// `catalog` module since the single-store cutover: no app-owned product tables remain, and every
+// write goes through the catalog's own commands. See
+// .ai/specs/2026-10-10-catalog-single-store.md
 enabledModules.push({ id: 'products', from: '@app' })
 
-// App-owned product-codes module — the code rules, the issuance ledger and the parser behind the
-// supplier library's 生成 button. See .ai/specs/2026-09-24-supplier-product-code-rules.md
+// App-owned product-codes module — retired to two things: the searchable alias table for codes that
+// documents still carry, and the brand/category dictionaries the product domain reads. See
+// .ai/specs/2026-10-10-catalog-single-store.md (code issuance retired)
 enabledModules.push({ id: 'product_codes', from: '@app' })
 
 // App-owned sourcing module — supplier quotations (imported from supplier workbooks or typed by

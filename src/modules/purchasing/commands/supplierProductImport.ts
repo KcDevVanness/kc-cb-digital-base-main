@@ -1,6 +1,6 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
 import { z } from 'zod'
-import type { CommandHandler } from '@open-mercato/shared/lib/commands'
+import type { CommandHandler, CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import { registerCommand } from '@open-mercato/shared/lib/commands'
 import { badRequest, CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import { supplierProductCreateSchema } from '../data/validators'
@@ -11,8 +11,15 @@ import {
   type SupplierProductExcelImportInput,
   MAX_FAILURE_REASON_LENGTH,
 } from '../lib/supplierProductExcelImport/rows'
-import type { CommandBusLike } from '../lib/supplierProductPromotion'
 import { ensureScope, loadSupplierName } from './shared'
+
+/** The command bus this command uses to create each library row through the standard write path. */
+type CommandBusLike = {
+  execute<TInput = Record<string, unknown>, TResult = unknown>(
+    commandId: string,
+    options: { input: TInput; ctx: CommandRuntimeContext },
+  ): Promise<{ result: TResult }>
+}
 
 /**
  * `purchasing.supplier-products.import-excel` — create one library row per uploaded spreadsheet row.

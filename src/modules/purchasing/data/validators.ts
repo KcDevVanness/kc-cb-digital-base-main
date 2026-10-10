@@ -348,8 +348,8 @@ export const supplierProductUpdateSchema = supplierProductCreateSchema.omit({ su
 /**
  * 建档状态 — the list's link-state filter.
  *
- * The filter reads the row's **stored** `product_id`, not the live-resolved label: a row whose
- * product was deleted afterwards still owns its link and must not silently fall out of the
+ * The filter reads the row's **stored** `catalog_product_id`, not the live-resolved label: a row
+ * whose product was deleted afterwards still owns its link and must not silently fall out of the
  * 已建档 bucket (the list marks it separately instead).
  */
 export const supplierProductLinkedFilters = ['all', 'linked', 'unlinked'] as const
@@ -358,7 +358,13 @@ export const supplierProductListSchema = z.object({
   id: z.string().uuid().optional(),
   ids: z.string().max(4000).optional(),
   supplierId: z.string().uuid().optional(),
-  /** 建档状态 (Phase 8): filters the stored `product_id` server-side. */
+  /**
+   * Narrow to the library row that points at one catalog product. The purchase-order form's price
+   * autofill uses it — it knows the picked product, not the supplier's code — and the exact
+   * pointer is what makes the lookup unambiguous.
+   */
+  catalogProductId: z.string().uuid().optional(),
+  /** 建档状态 (Phase 8): filters the stored `catalog_product_id` server-side. */
   linked: z.enum(supplierProductLinkedFilters).optional().default('all'),
   search: z.string().max(200).optional(),
   status: z.enum([...supplierProductStatuses, 'all']).default('active'),
@@ -432,7 +438,7 @@ export const supplierProductPriceRowSchema = z.object({
 
 /**
  * The whole price set of one library item, in one request — rows missing from `rows` are
- * deactivated, never deleted (`products.prices.replace` semantics). Bounded so one request cannot
+ * deactivated, never deleted (`catalog.prices.replace` semantics). Bounded so one request cannot
  * write an unbounded set.
  */
 export const supplierProductPricesReplaceSchema = z.object({

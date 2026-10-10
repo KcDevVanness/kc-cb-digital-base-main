@@ -2,15 +2,15 @@ import type { EntityManager } from '@mikro-orm/postgresql'
 import type { ModuleSetupConfig } from '@open-mercato/shared/modules/setup'
 import { Dictionary, DictionaryEntry } from '@open-mercato/core/modules/dictionaries/data/entities'
 import { normalizeDictionaryValue } from '@open-mercato/core/modules/dictionaries/lib/utils'
-import { ProductCodeRule } from './data/entities'
 import { PRODUCT_BRAND_DICTIONARY_KEY, PRODUCT_CATEGORY_DICTIONARY_KEY } from './lib/dictionaryValues'
 
 /**
- * The brand code list — the prefix of every generated code.
+ * The brand list — the brand a supplier item is sold under.
  *
  * A brand is a proper noun, so the label is the name itself and carries one language. `PK` is PetKit:
- * goods bought from PetKit are sold under that brand, which is why the prefix names the brand and not
- * the supplier — the same item sourced from a second factory keeps its code.
+ * goods bought from PetKit are sold under that brand, and the same item sourced from a second factory
+ * keeps it. SKUs are typed by hand since the code-issuance retirement, so this list is now a plain
+ * vocabulary, not a code-prefix table.
  */
 export const PRODUCT_BRAND_SEEDS = [
   { value: 'SP', label: 'Super pawers', position: 10 },
@@ -19,49 +19,52 @@ export const PRODUCT_BRAND_SEEDS = [
 ] as const
 
 /**
- * The category letters, taken from the codes the business already uses on its product sheets
- * (`SP-CL001` 猫砂, `SP-TP002` 尿片, `SP-LB006` 猫砂盆, `SP-LS011` 猫砂铲, `SP-CB012` 餐具).
- *
- * The letters are the stable part and are stored on the code; the label is what an operator reads.
- * A category the list does not carry can be added on the 字典库 page — this is a starting set, not a
- * closed one.
+ * The category letters the business already uses on its sheets; `product_category` also serves as the
+ * 订单描述 code on the company order and the purchase order, so the list stays a small controlled one.
  */
 export const PRODUCT_CATEGORY_SEEDS = [
   { value: 'CL', label: '猫砂', position: 10 },
   { value: 'TP', label: '尿片', position: 20 },
   { value: 'LB', label: '猫砂盆', position: 30 },
-  { value: 'LS', label: '猫砂铲', position: 40 },
-  { value: 'CB', label: '餐具', position: 50 },
+  { value: 'FD', label: '喂食器', position: 40 },
+  { value: 'WD', label: '饮水机', position: 50 },
+  { value: 'AC', label: '配件', position: 60 },
+  { value: 'CLN', label: '清洁用品', position: 70 },
 ] as const
 
-/** The name of the seeded rule; also its uniqueness key per organization. */
-export const DEFAULT_SKU_RULE_NAME = 'SKU 型号'
-
 /**
- * ACL defaults for newly created tenants.
+ * Dictionary seeding only: the code-issuance machinery (rules, ledger, parse, the value guard) is
+ * retired (`.ai/specs/2026-10-10-catalog-single-store.md`), and these two lists are the part of it
+ * other modules still read — `product_brand` on supplier/product forms, `product_category` as the
+ * 订单描述 code on the company order and the purchase order.
  *
- * `superadmin`/`admin` receive the module so the first operator can work without a bootstrap
- * deadlock; `employee` is deliberately left ungranted, exactly as `purchasing` does it — which
- * purchasing capabilities a role needs is an operational decision, not a default this module makes.
- * Generation is its own feature so a buyer can issue a code without being able to edit rules.
+ * Insert-only and idempotent: re-running `yarn mercato seed:defaults --module product_codes` never
+ * creates a second dictionary for the same organization and never rewrites an entry an operator edited.
  */
 export const setup: ModuleSetupConfig = {
-  defaultRoleFeatures: {
-    superadmin: ['product_codes.*'],
-    admin: ['product_codes.*'],
-  },
-  /**
-   * Insert-only and idempotent: re-running `yarn mercato seed:defaults --module product_codes` never
-   * creates a second dictionary for the same organization and never rewrites an entry or a rule an
-   * operator has edited. Seeding the rule matters more than it looks — without it the form's 生成
-   * button has nothing to resolve, so a fresh tenant would ship with the feature dead.
-   */
   async seedDefaults(ctx) {
     const em = ctx.em
     const now = new Date()
-    await seedDictionary(em, ctx.tenantId, ctx.organizationId, now, PRODUCT_BRAND_DICTIONARY_KEY, 'Product brands', 'Brand abbreviations used as code prefixes', PRODUCT_BRAND_SEEDS)
-    await seedDictionary(em, ctx.tenantId, ctx.organizationId, now, PRODUCT_CATEGORY_DICTIONARY_KEY, 'Product categories', 'Category letters used in product codes', PRODUCT_CATEGORY_SEEDS)
-    await seedDefaultRule(em, ctx.tenantId, ctx.organizationId)
+    await seedDictionary(
+      em,
+      ctx.tenantId,
+      ctx.organizationId,
+      now,
+      PRODUCT_BRAND_DICTIONARY_KEY,
+      'Product brands',
+      'Brand abbreviations used on supplier items and product records',
+      PRODUCT_BRAND_SEEDS,
+    )
+    await seedDictionary(
+      em,
+      ctx.tenantId,
+      ctx.organizationId,
+      now,
+      PRODUCT_CATEGORY_DICTIONARY_KEY,
+      'Product categories',
+      'Category letters; also the 订单描述 code stored on orders',
+      PRODUCT_CATEGORY_SEEDS,
+    )
   },
 }
 
@@ -114,42 +117,6 @@ async function seedDictionary(
       }),
     )
   }
-  await em.flush()
-}
-
-/**
- * The one rule a new organization starts with: brand + category + a three-digit serial, joined by a
- * dash — the `PK-CL001` shape the business already writes by hand. The serial scope is
- * `brand_category` because the workbook's own counters run per product family, and `enforce` stays
- * `warn`: an operator typing a legacy-style code must not be blocked by a rule that arrived after it.
- */
-async function seedDefaultRule(em: EntityManager, tenantId: string, organizationId: string): Promise<void> {
-  const existing = await em.findOne(ProductCodeRule, {
-    tenantId,
-    organizationId,
-    name: DEFAULT_SKU_RULE_NAME,
-    deletedAt: null,
-  })
-  if (existing) return
-  em.persist(
-    em.create(ProductCodeRule, {
-      tenantId,
-      organizationId,
-      name: DEFAULT_SKU_RULE_NAME,
-      mode: 'generate',
-      segments: [
-        { kind: 'dictionary', key: 'brand', dictionaryKey: PRODUCT_BRAND_DICTIONARY_KEY, length: 2, upper: true, join: false },
-        { kind: 'dictionary', key: 'category', dictionaryKey: PRODUCT_CATEGORY_DICTIONARY_KEY, length: 2, upper: true, join: false },
-        // `join` reproduces the codes the business already writes: `SP-CL001`, never `SP-CL-001`.
-        { kind: 'serial', key: 'serial', length: 3, join: true },
-      ],
-      separator: '-',
-      serialLength: 3,
-      serialScope: 'brand_category',
-      enforce: 'warn',
-      isActive: true,
-    }),
-  )
   await em.flush()
 }
 

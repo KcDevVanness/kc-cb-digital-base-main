@@ -8,13 +8,17 @@ import {
 /**
  * The app's unit-of-measure vocabulary, as the pickers see it.
  *
- * The list lives in the `supplier_product_unit` dictionary this app seeds
- * (`src/modules/purchasing/setup.ts`, the module that owns the supplier product library): its codes
- * are what a customs declaration, a quotation and the product master all print, so the product form
- * and the trade-document lines read that one store instead of each keeping a copy. The installed
- * `catalog` module seeds a **different** list under the key `unit` (engineering units for catalog
- * pricing, lowercase codes); it is deliberately not read here, because a product's unit must match
- * the trade vocabulary rather than the catalog's.
+ * The list is the `supplier_product_unit` dictionary this app seeds (`products/setup.ts` since
+ * 2026-10-10, `lib/unitVocabulary.ts` for the codes): its entries are the codes a customs
+ * declaration, a quotation and the product master all print, so the product form and the
+ * trade-document lines read that one store instead of each keeping a copy.
+ *
+ * Every code in it must also be a valid **catalog** unit: a product's unit is catalog's
+ * `default_unit`, and the installed resolver (`catalog/lib/unitResolution.ts`) refuses a code its own
+ * `unit` dictionary does not list (`uom.unit_not_found` → 400). Its own seeded entries are lowercase
+ * engineering units, so the app inserts the codes catalog lacks and — for the eight it ships —
+ * accepts catalog's spelling, which is what the product ends up storing. A picker that offered a code
+ * the write path rejects would fail only at save time.
  *
  * A dictionary that is missing, empty or not readable yields no options rather than an error — the
  * field keeps the value it already holds, so an unreadable list never blocks a save.

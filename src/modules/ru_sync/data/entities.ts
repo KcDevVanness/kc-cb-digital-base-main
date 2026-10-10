@@ -35,7 +35,7 @@ export class RuSyncSkuMap {
   @Property({ name: 'ru_sku', type: 'text' })
   ruSku!: string
 
-  /** The product this code resolves to; scalar id into `products_products`. */
+  /** The product this code resolves to; scalar id into the installed catalog (`catalog_products`). */
   @Property({ name: 'product_id', type: 'uuid', nullable: true })
   productId?: string | null
 

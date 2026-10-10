@@ -47,13 +47,13 @@ export type SupplierProductListRow = {
   cartonQuantity: number | null
   unitNetWeight: string | null
   innerPacking: Record<string, unknown> | null
-  productId: string | null
+  catalogProductId: string | null
   productSku: string | null
   productName: string | null
   /**
-   * `productId` is set but no live product resolves for it (deleted since the link, or not readable
-   * in this scope). The list renders 已关联的商品已删除 instead of a name, and the write actions that
-   * would fail (建档 skips it, 同步字段 refuses it) are withdrawn.
+   * `catalogProductId` is set but no live product resolves for it (deleted since the link, or not
+   * readable in this scope). The list renders 已关联的商品已删除 instead of a name, and the write
+   * actions that would fail (建档 skips it, 同步字段 refuses it) are withdrawn.
    */
   productDeleted: boolean
   status: SupplierProductStatus
@@ -73,7 +73,7 @@ export type SupplierProductPriceCell = {
 }
 
 export type SupplierProductPromotionResult = {
-  productId: string
+  catalogProductId: string
   action: 'created' | 'updated' | 'skipped'
   priceSkipped: boolean
 }

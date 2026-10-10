@@ -204,35 +204,19 @@ test.describe.serial('cross_border — shipment archival closure', () => {
     })
     staffToken = await getAuthToken(api, staffEmail, STAFF_PASSWORD)
 
-    // The allocation guard refuses a purchase line that is not bridged to the installed catalog,
-    // and the receipt books stock at variant level, so catalog product, active default variant and
-    // the product-master bridge all have to exist before a shipment can be received.
-    const catalogSku = `CBLC-${stamp.toUpperCase()}`
-    const catalogProduct = await post(api, '/api/catalog/products', rootToken, organizationId, {
-      title: `Shipment close product ${stamp}`,
-      sku: catalogSku,
-    })
-    expect(catalogProduct.status(), 'POST /api/catalog/products should return 201').toBe(201)
-    catalogProductId = String((await readJsonSafe<IdPayload>(catalogProduct))?.id ?? '')
-    expect(catalogProductId, 'the catalog product fixture resolved an id').toBeTruthy()
-
-    const variant = await post(api, '/api/catalog/variants', rootToken, organizationId, {
-      productId: catalogProductId,
-      sku: `${catalogSku}-V`,
-      isDefault: true,
-      isActive: true,
-    })
-    expect(variant.status(), 'POST /api/catalog/variants should return 201').toBe(201)
-
+    // The product store creates the catalog product **and** its default variant in one action; the
+    // returned id is the catalog product id, which is what purchase lines, allocations and the
+    // variant-level receipt all reference.
+    const productSku = `CBLC-${stamp.toUpperCase()}`
     const product = await post(api, '/api/products/items', staffToken, organizationId, {
-      sku: catalogSku,
+      sku: productSku,
       name: `Shipment close product ${stamp}`,
-      catalogProductId,
       unit: 'PCS',
     })
     expect(product.status(), 'POST /api/products/items should return 201').toBe(201)
     productId = String((await readJsonSafe<IdPayload>(product))?.id ?? '')
-    expect(productId).toBeTruthy()
+    catalogProductId = productId
+    expect(productId, 'the product fixture resolved an id').toBeTruthy()
 
     const supplier = await post(api, '/api/purchasing/suppliers', staffToken, organizationId, {
       name: `Shipment close supplier ${stamp}`,
@@ -246,7 +230,7 @@ test.describe.serial('cross_border — shipment archival closure', () => {
     const order = await post(api, '/api/purchasing/purchase-orders', staffToken, organizationId, {
       supplierId,
       currencyCode: 'CNY',
-      lines: [{ productId, quantity: 20, unitPrice: 100, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 20, unitPrice: 100, taxRate: 0, priceIncludesTax: true }],
     })
     expect(order.status(), 'POST /api/purchasing/purchase-orders should return 201').toBe(201)
     purchaseOrderId = String((await readJsonSafe<IdPayload>(order))?.id ?? '')

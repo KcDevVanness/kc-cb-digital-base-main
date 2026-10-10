@@ -28,7 +28,7 @@ const line = (overrides: Partial<QuoteLineFacts> & { lineId: string }): QuoteLin
   unitCost: null,
   currencyCode: 'CNY',
   moqQuantity: null,
-  promotedProductId: null,
+  catalogProductId: null,
   sourceRowNumber: null,
   ...overrides,
 })
@@ -206,9 +206,9 @@ describe('buildVersionChains', () => {
 describe('buildItemTimeline', () => {
   it('marks the first quote and the movement after it', () => {
     const points = buildItemTimeline([
-      { quoteId: 'q2', number: 'SQ-2', day: '2026-09-05', signature: 'sig', itemNo: 'P1', name: 'Item', unitCost: '12', currencyCode: 'CNY', moqQuantity: null, promotedProductId: null },
-      { quoteId: 'q1', number: 'SQ-1', day: '2026-09-01', signature: 'sig', itemNo: 'P1', name: 'Item', unitCost: '10', currencyCode: 'CNY', moqQuantity: null, promotedProductId: null },
-      { quoteId: 'q3', number: 'SQ-3', day: '2026-09-09', signature: 'sig', itemNo: 'P1', name: 'Item', unitCost: '11', currencyCode: 'CNY', moqQuantity: null, promotedProductId: null },
+      { quoteId: 'q2', number: 'SQ-2', day: '2026-09-05', signature: 'sig', itemNo: 'P1', name: 'Item', unitCost: '12', currencyCode: 'CNY', moqQuantity: null, catalogProductId: null },
+      { quoteId: 'q1', number: 'SQ-1', day: '2026-09-01', signature: 'sig', itemNo: 'P1', name: 'Item', unitCost: '10', currencyCode: 'CNY', moqQuantity: null, catalogProductId: null },
+      { quoteId: 'q3', number: 'SQ-3', day: '2026-09-09', signature: 'sig', itemNo: 'P1', name: 'Item', unitCost: '11', currencyCode: 'CNY', moqQuantity: null, catalogProductId: null },
     ])
 
     expect(points.map((point) => point.quoteId)).toEqual(['q1', 'q2', 'q3'])

@@ -38,6 +38,26 @@ yarn initialize           # 建表 + 种子数据；演示账号邮箱会打印�
 生产启动会被 `src/instrumentation.ts` 的 `assertJwtSecretPolicy()` 直接 `exit(1)` 拒绝
 （生成真值：`openssl rand -hex 32`）。见 [deploy/runtime.md](../deploy/runtime.md)。
 
+### 商品单一存储改造后的开发库重建（2026-10-10）
+
+「catalog 单一商品存储」改造（[spec](../../.ai/specs/2026-10-10-catalog-single-store.md)）**不写数据迁移**：
+`products_products` / `products_variants` / `products_prices` / `products_types` / `products_categories`
+五表与 `product_codes` 的规则/台账两表由新迁移**删除**，SKU 与商品数据重建在官方 `catalog` 表上。
+开发库按「重建」处理：
+
+```bash
+# 1) 应用/删除表结构（迁移由 yarn db:generate 生成并审阅后应用；见 docs/dev/parallel-development.md 的库分配）
+yarn db:migrate
+# 2) 装载业务自定义字段（product_erp 字段集，catalog 商品/变体上）
+yarn mercato entities install
+# 3) 重新播种字典（品牌/类别）与其它 seed
+yarn mercato seed:defaults --module product_codes
+# 4) 单位词表（`supplier_product_unit` 的 11 个海关常用码 + catalog `unit` 字典缺的三个码）
+yarn mercato seed:defaults --module products
+```
+
+历史商品数据不迁移：需要演示数据时按新流程重新建档（供应商产品库「建商品档案」或自有商品库新建）。
+
 ## 演示账号
 
 | 账号 | 角色 | 密码 |
@@ -86,6 +106,7 @@ curl -s -X POST http://localhost:3100/api/auth/login \
 yarn dev          # dev supervisor：Next dev + MCP + 生成物热更新
 yarn generate     # 改了 src/modules.ts / 路由 / 页面 / 事件 / 组件 / i18n 字典后必跑
 yarn db:generate  # 改了实体后生成迁移，先 review SQL 再 apply
+                  # 商品单一存储改造会生成 drop products_* 与 product_codes 规则/台账表的迁移，按「无 back-compat」直接应用
 ```
 
 `yarn dev` 的端口：Next dev 的对外基址由 `.env` 的 `APP_URL` 决定（本机端口分配块里是

@@ -37,10 +37,9 @@ type ProductItem = {
   sku: string
   name: string
   sourceProductId?: string | null
-  typeId?: string | null
   catalogProductId?: string | null
   updatedAt?: string | null
-  variants?: Array<{ code: string; isDefault?: boolean }>
+  variants?: Array<{ sku: string; isDefault?: boolean }>
 }
 
 type DistributeResult = {
@@ -104,8 +103,8 @@ test.describe.serial('products — distribution to branches', () => {
       selectedOrgId: organizationId,
     })
     expect(response.status()).toBe(200)
-    const body = await readJsonSafe<{ items?: Array<{ priceTier?: string; unitPrice?: string }> }>(response)
-    const exportRow = (body?.items ?? []).find((row) => row.priceTier === 'export')
+    const body = await readJsonSafe<{ items?: Array<{ tier?: string; unitPrice?: string }> }>(response)
+    const exportRow = (body?.items ?? []).find((row) => row.tier === 'export')
     return exportRow?.unitPrice ? Number(exportRow.unitPrice) : null
   }
 
@@ -152,7 +151,7 @@ test.describe.serial('products — distribution to branches', () => {
     expect(sourceAId.value).toBeTruthy()
     const priceWrite = await hqRequest('PUT', PRICES_URL, {
       productId: sourceAId.value,
-      rows: [{ priceTier: 'export', currencyCode: 'USD', minQuantity: 1, unitPrice: '12.5000' }],
+      rows: [{ tier: 'export', currencyCode: 'USD', minQuantity: 1, unitPrice: '12.5000' }],
     })
     expect(priceWrite.status()).toBe(200)
 
@@ -206,9 +205,8 @@ test.describe.serial('products — distribution to branches', () => {
     const copy = await readProduct(branchOrgId as string, branchCopyAId.value)
     expect(copy.sourceProductId, 'the copy points at its source').toBe(sourceAId.value)
     expect(copy.name).toBe('Distribution source A')
-    expect(copy.variants?.map((variant) => variant.code)).toEqual([variantCodeA])
-    expect(copy.typeId, 'the source taxonomy is not carried over').toBeNull()
-    expect(copy.catalogProductId, 'the source catalog link is not carried over').toBeNull()
+    expect(copy.variants?.map((variant) => variant.sku)).toEqual([variantCodeA])
+    expect(copy.catalogProductId, 'the copy is its own catalog product').toBe(branchCopyAId.value)
     expect(await readExportPrice(branchOrgId as string, branchCopyAId.value)).toBe(12.5)
 
     // The source changes; the branch re-runs the distribution.
@@ -221,7 +219,7 @@ test.describe.serial('products — distribution to branches', () => {
     expect(renamed.status()).toBe(200)
     const repriced = await hqRequest('PUT', PRICES_URL, {
       productId: sourceAId.value,
-      rows: [{ priceTier: 'export', currencyCode: 'USD', minQuantity: 1, unitPrice: '99.9900' }],
+      rows: [{ tier: 'export', currencyCode: 'USD', minQuantity: 1, unitPrice: '99.9900' }],
     })
     expect(repriced.status()).toBe(200)
 

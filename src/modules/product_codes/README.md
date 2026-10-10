@@ -1,61 +1,34 @@
-# product_codes — 编码规则、发号台账与解析器
+# product_codes — retired code issuance, surviving aliases
 
-本模块负责**一个商品编码是什么、由谁发出、以及怎么读懂它**。它不持有商品数据、不持有供应商数据：
-调用方（供应商产品库的表单）拿到编码后自己保存，模块只回答"下一个编号是什么"和"这串字符是什么意思"。
+**放**：旧码别名（`product_codes_aliases`）与品牌/类别字典的播种。
+**不放**：商品身份、价格、变体（→ 官方 `catalog`，经 `products/lib/store.ts`）；供应商侧货品（→ `purchasing`）。
 
-规格：`.ai/specs/2026-09-24-supplier-product-code-rules.md`（Phase 2 = 本模块；Phase 3/4 才是 purchasing 侧的接入）。
+## 这个模块现在是什么
 
-## 三个不变量
+2026-10-10 的「catalog 单一商品存储」大改（`.ai/specs/2026-10-10-catalog-single-store.md`）把
+**编码发号机制整体停用**：编码规则（`product_codes_rules`）、append-only 发号台账
+（`product_codes_ledger_entries`）、三态解析（`/api/product_codes/parse`）、发号
+（`/api/product_codes/generate`）、字典值冻结拦截器与规则后台页全部删除。SKU 现在**手填**
+（组织内唯一、含软删占码，由官方 `catalog_products.sku` / `catalog_product_variants.sku` 约束）。
 
-1. **规则是数据，不是代码。** 段序列、分隔符、序列位数与作用域都存在 `product_codes_rules` 行里，
-   所以新增一套编码方案是加一行 + 加两张码表，不是改代码。
-2. **号一经发出不再回收。** 发号写进 `product_codes_ledger_entries`（append-only，唯一索引
-   `(tenant, organization, code)` 才是真保证），取号撞了就换下一个号重试。行被删掉、或生成后没保存，
-   号照样作废 —— 序列面板上能看到这个空洞，这正是"永不复用"的实现方式。
-3. **正向生成与反向解析共用同一份规则模型**（`lib/ruleModel.ts`）。解析器走的就是生成器格式化时用的
-   段数组，因此拆解结果不可能与系统发出的码不一致。
+留下的两件事：
 
-## 数据模型
-
-| 表 | 作用 |
+| 表面 | 说明 |
 |---|---|
-| `product_codes_rules` | 一条规则：名称、模式（`generate` / `carry_over`）、段序列、分隔符、序列位数与作用域、`enforce`（warn/strict）、启用开关 |
-| `product_codes_ledger_entries` | 发号台账：`code` 唯一、`serial`、品牌/类别值、`rule_id`。**台账里有 = 系统发出的**；没有 = 旧码或手工码，无需回填、无需标记列 |
-| `product_codes_aliases` | 旧码 → 记录 的映射。只在操作员显式"改用规范编码"时写入，供搜索与单据回溯命中旧码 |
+| `product_codes_aliases` | 已废弃的旧码 → 目标记录（`target_kind='product'` 指 catalog 商品、`supplier_product` 指产品库行）。单据上印的旧码仍要能搜到：商品列表搜索（`products/lib/store.ts`）与供应商库列表都按它兜底。手写维护，**不重发**。 |
+| 字典播种（`setup.ts`） | `product_brand`（品牌）与 `product_category`（类别；同时是公司订单/采购单的「订单描述」码）。`yarn mercato seed:defaults --module product_codes` 幂等、insert-only。 |
 
-迁移 `Migration20260924034626_product_codes.ts` 只建这三张表，纯新增，未应用到任何库（`yarn db:migrate` 需先批准）。
+## 关键约束
 
-## 接口
+- **不发号、不解析、不冻结**：字典值不再因为「发过号」而不可改——保护对象（台账）已经不在了；
+  改一个品牌/类别码只影响以后的显示与录入，不会重写任何已存在的 SKU。
+- 别名表**没有反向生成**：没有任何代码路径会从 SKU 推回规则；别名的唯一用途是搜索兜底。
+- 旧码表随 `product_codes_aliases` 保留；其余两张表由 `yarn db:generate` 生成删除迁移（开发库重建）。
 
-| 方法 | 路径 | 权限 |
-|---|---|---|
-| GET/POST/PUT/DELETE | `/api/product_codes/rules` | `product_codes.rules.view` / `product_codes.rules.manage` |
-| POST | `/api/product_codes/generate` | `product_codes.codes.generate`（`dryRun: true` 只试算不占号） |
-| GET | `/api/product_codes/parse?code=` | `product_codes.rules.view` |
-| GET | `/api/product_codes/sequences?ruleId=` | `product_codes.rules.view` |
-| POST | `/api/product_codes/aliases` | `product_codes.rules.manage` |
+## 验证方式
 
-命令：`product_codes.rules.create|update|delete`（update/delete 带乐观锁与 undo）、
-`product_codes.codes.issue`、`product_codes.aliases.create`。
-事件：`product_codes.rule.created|updated|deleted`、`product_codes.code.issued`、`product_codes.alias.created`。
-
-页面：`/backend/product-codes/rules`（列表）、`/rules/create`、`/rules/[id]/edit`（编辑页含试算与发号面板）。
-
-## 码表与"值不可改"
-
-品牌与类别码表是**字典库里的 `product_brand` / `product_category`**（本模块 `setup.ts` 播种，
-业务人员在「字典库」页面维护）。因为一条已发出的编码里存的是**值**（`SP`、`CL`），
-`commands/interceptors.ts` 拦下字典条目的 `update`/`delete`：值一旦出现在台账里就不能改值、不能删，
-只能改显示名或停用 —— 否则所有旧码的含义会被悄悄改写，解析器会把系统自己发过的值报成"未登记"。
-
-## 验证
-
-- 单元：`yarn test src/modules/product_codes`（规则模型、解析三态）。
-- 生成：`yarn generate`（页面/路由/事件/权限注册）。
-- 迁移：`yarn db:generate`（探针；只审不应用）。
-- 门禁：`yarn typecheck`、`yarn lint`、`yarn ds:check`、`yarn build`。
-
-## 回滚
-
-从 `src/modules.ts` 移除 `enabledModules.push({ id: 'product_codes', from: '@app' })` 并 `yarn generate`：
-路由与页面消失，三张表留作历史（**台账不要删** —— 它是唯一一份"哪些号已经发出去"的记录）。
+```bash
+yarn test src/modules/product_codes           # 如仍有单测（当前无）
+# 搜索兜底（dev server 在跑时）：给一条 catalog 商品登记别名 → GET /api/products/items?search=<旧码> 命中该商品
+# 字典播种：yarn mercato seed:defaults --module product_codes → 重复执行不产生第二份字典
+```

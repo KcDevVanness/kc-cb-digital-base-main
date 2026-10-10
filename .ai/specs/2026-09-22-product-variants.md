@@ -1,5 +1,9 @@
 # App-owned Product Variants (SKU level)
 
+> **Superseded 2026-10-10** by [`.ai/specs/2026-10-10-catalog-single-store.md`](2026-10-10-catalog-single-store.md)：
+> 变体不再由本 app 拥有（`products_variants` 表已删除），商品与变体都落在官方 `catalog`（`catalog_product_variants`
+> 是唯一库存单位）；本文件保留为历史记录，正文不再作为实现依据。推迟的 wms round 仍推迟。
+
 **Date**: 2026-09-22
 **Status**: Implemented — Phases 1–2 shipped and verified 2026-09-22; Phase 3 (wms cutover) stays deferred to the wms round
 

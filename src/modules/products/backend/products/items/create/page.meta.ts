@@ -1,7 +1,7 @@
 export const metadata = {
   requireAuth: true,
   requireFeatures: ['products.items.manage'],
-  pageTitle: 'Create Product',
+  pageTitle: 'New product',
   pageTitleKey: 'products.items.form.createTitle',
   pageGroup: 'Products',
   pageGroupKey: 'products.nav.group',
