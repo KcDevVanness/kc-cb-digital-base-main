@@ -181,6 +181,12 @@ export const companyOrderListSchema = z.object({
 export const companyOrderLinksListSchema = z.object({
   companyOrderId: z.string().uuid().optional(),
   refId: z.string().uuid().optional(),
+  /**
+   * The reverse lookup for **many children at once** — the purchase-order list asks "which of these
+   * orders already sit on a company order" for a whole page in one request. Comma-separated uuids,
+   * capped at 200 (the page size the callers read).
+   */
+  refIds: z.string().max(8000).optional(),
   kind: z.enum(COMPANY_ORDER_LINK_KINDS).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),

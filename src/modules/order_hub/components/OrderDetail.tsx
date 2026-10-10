@@ -55,6 +55,7 @@ import { AttachmentsSection } from '@/lib/attachments/AttachmentsSection'
 import { OrderDocumentsSection } from './OrderDocumentsSection'
 import { withReturnTo } from '@/lib/navigation/returnTo'
 import { childStatusAppearance } from './companyOrderChildStatus'
+import { formatDepositPercent } from '@/lib/orders/depositPercent'
 import LinkedRecordPreviewDrawer from './LinkedRecordPreviewDrawer'
 import type { LinkedRecordPreviewKind, LinkedRecordPreviewTarget } from './linkedRecordPreviewSources'
 import { resolveCompanyOrderForDocument } from '../lib/companyOrderResolve'
@@ -121,18 +122,6 @@ type PurchaseAmountRow = {
   /** 备注 — the order's own note, shown in the row (owner 2026-10-10). */
   notes: string | null
   currencyCode: string
-}
-
-/**
- * `50.000` → `50%`: the percent column carries `numeric(6,3)`, so the row shows the term the
- * operator typed and never a trailing-zero wall. A value that is not a finite number is shown as
- * stored (the cell never blanks a fact the record holds).
- */
-function formatDepositPercent(value: string | null): string | null {
-  if (!value) return null
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed)) return value
-  return `${Number(parsed.toFixed(3))}%`
 }
 
 /** The three order kinds this phase attaches; a purchase child needs no trade type. */

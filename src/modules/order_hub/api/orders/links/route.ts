@@ -56,9 +56,11 @@ function toIsoTimestamp(value: unknown): string | null {
 /**
  * The company-order links: the attach block of one root, and the reverse lookup by child.
  *
- * `GET` answers both reads through one scoped collection — `?companyOrderId=` for the hub's attach
- * blocks, `?refId=` for "which company order holds this document" (the legacy-URL resolution). A
- * request that names neither is refused. `POST` is the **replace** action
+ * `GET` answers three reads through one scoped collection — `?companyOrderId=` for the hub's attach
+ * blocks, `?refId=` for "which company order holds this document" (the legacy-URL resolution), and
+ * `?refIds=` for the same question about a whole page of children (the purchase-order list marks
+ * each row 打开公司订单 / 未关联公司订单 before the operator clicks anything). A request that names
+ * none is refused. `POST` is the **replace** action
  * (`order_hub.orders.links.replace`): a whole-set write for one kind, not a per-row CRUD update,
  * because the dialog edits the set as a whole and the command owns uniqueness, scope and the lock.
  *
@@ -97,12 +99,23 @@ export const { metadata, GET, POST } = makeCrudRoute({
     ],
     defaultSort: { field: 'created_at', dir: 'asc' },
     buildFilters: async (query, ctx) => {
-      if (!query.companyOrderId && !query.refId) {
-        throw badRequest('Either companyOrderId or refId is required')
+      if (!query.companyOrderId && !query.refId && !query.refIds) {
+        throw badRequest('Either companyOrderId, refId or refIds is required')
       }
       const filters: Record<string, unknown> = {}
       if (query.companyOrderId) filters.company_order_id = query.companyOrderId
       if (query.refId) filters.ref_id = query.refId
+      // The batched reverse lookup: unknown or malformed entries are dropped (a page of ids the
+      // caller could not name simply matches nothing), and the count is capped like `pageSize`.
+      if (query.refIds) {
+        const refIds = Array.from(new Set(
+          query.refIds
+            .split(',')
+            .map((id) => id.trim())
+            .filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)),
+        )).slice(0, 200)
+        filters.ref_id = { $in: refIds.length > 0 ? refIds : [NO_MATCH_ID] }
+      }
       if (query.kind) filters.kind = query.kind
 
       const tenantId = ctx.auth?.tenantId ?? null

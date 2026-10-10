@@ -632,7 +632,9 @@ function useSupplierProductFields(
             id: 'supplierName',
             label: t('purchasing.supplierProducts.form.field.supplier', 'Supplier'),
             type: 'text',
-            readOnly: true,
+            // The supplier of a library row is fixed once the row exists; `disabled` renders the
+            // greyed, non-editable state (owner 2026-10-10: 不能编辑的填写项需要变灰).
+            disabled: true,
           },
         ]
 

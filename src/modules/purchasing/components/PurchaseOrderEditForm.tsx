@@ -136,7 +136,10 @@ function PurchaseOrderEditFormBody({
       type: 'select',
       required: true,
       layout: 'half',
-      readOnly: locked,
+      // `readOnly` is a near no-op in CrudForm (it only reaches text-like controls and the single
+      // select, and drops the number type entirely — owner 2026-10-10: 不能编辑的填写项需要变灰);
+      // `disabled` is the path that renders the design system's greyed, inert state everywhere.
+      disabled: locked,
       loadOptions: (query) => loadSupplierOptions(t('purchasing.orders.form.loadFailed'), query),
     },
     {
@@ -153,7 +156,7 @@ function PurchaseOrderEditFormBody({
       type: 'select',
       required: true,
       layout: 'half',
-      readOnly: locked,
+      disabled: locked,
       loadOptions: () => loadCurrencyOptions(t('purchasing.orders.form.loadFailed')),
     },
     {
@@ -167,14 +170,14 @@ function PurchaseOrderEditFormBody({
       label: t('purchasing.orders.form.field.depositPercent'),
       type: 'number',
       layout: 'half',
-      readOnly: locked,
+      disabled: locked,
     },
     {
       id: 'depositAmount',
       label: t('purchasing.orders.form.field.depositAmount'),
       type: 'number',
       layout: 'half',
-      readOnly: locked,
+      disabled: locked,
     },
     {
       id: 'notes',

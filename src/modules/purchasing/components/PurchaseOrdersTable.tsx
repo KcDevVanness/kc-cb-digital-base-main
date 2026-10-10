@@ -189,30 +189,41 @@ export default function PurchaseOrdersTable() {
   )
 
   /**
-   * The row's 「打开公司订单」 answer, once the reverse lookup has been attempted: `none` when the
-   * order carries no root link, `failed` when the lookup itself could not be answered (a role
-   * without `order_hub.view` gets a 403 here). Both turn the action into a greyed hint instead of a
-   * jump into a blank page; the lookup never raises a toast and never fails the list.
+   * Which of this page's orders already sit on a company order — **one batched reverse lookup**, so
+   * the row says 「打开公司订单」 or 「未关联公司订单」 up front instead of discovering the answer when
+   * the operator clicks (owner 2026-10-10: the click-first flow was 很傻很差). Deliberate states:
+   *   - a Map  — the answer is in; each row shows the jump (linked) or a greyed hint (unlinked);
+   *   - `null` — the lookup failed (a role without `order_hub.view` gets a 403 here): the row offers
+   *     no company-order slot at all rather than a wrong state, and the list itself never breaks.
    */
-  const [companyOrderUnavailable, setCompanyOrderUnavailable] = React.useState<Record<string, 'none' | 'failed'>>({})
-
-  const openCompanyOrder = React.useCallback(
-    async (row: PurchaseOrderRecord) => {
+  const rowIds = rows.map((row) => row.id)
+  const companyOrdersQuery = useQuery({
+    queryKey: ['purchasing-order-company-orders', rowIds.join(','), scopeVersion],
+    enabled: rowIds.length > 0,
+    queryFn: async (): Promise<Map<string, string> | null> => {
       try {
         const payload = await fetchCrudList<Record<string, unknown>>('order_hub/orders/links', {
-          refId: row.id,
+          refIds: rowIds.join(','),
           kind: 'purchase_order',
-          pageSize: 1,
+          pageSize: 200,
         })
-        const companyOrderId = payload.items?.[0]?.companyOrderId
-        if (typeof companyOrderId === 'string' && companyOrderId.length > 0) {
-          router.push(`/backend/orders/${encodeURIComponent(companyOrderId)}`)
-          return
+        const byRefId = new Map<string, string>()
+        for (const item of payload.items ?? []) {
+          const refId = String(item.refId ?? '')
+          const companyOrderId = String(item.companyOrderId ?? '')
+          if (refId && companyOrderId) byRefId.set(refId, companyOrderId)
         }
-        setCompanyOrderUnavailable((previous) => ({ ...previous, [row.id]: 'none' }))
+        return byRefId
       } catch {
-        setCompanyOrderUnavailable((previous) => ({ ...previous, [row.id]: 'failed' }))
+        return null
       }
+    },
+  })
+  const companyOrders = companyOrdersQuery.data
+
+  const openCompanyOrder = React.useCallback(
+    (companyOrderId: string) => {
+      router.push(`/backend/orders/${encodeURIComponent(companyOrderId)}`)
     },
     [router],
   )
@@ -284,46 +295,38 @@ export default function PurchaseOrdersTable() {
         />
       )}
       rowActions={(row) => {
-        const blocked = companyOrderUnavailable[row.id]
-        if (blocked) {
-          // `RowActions` items have no disabled state, so an unavailable jump is a greyed, inert
-          // button carrying the reason instead of a menu entry that would navigate nowhere. The
-          // 「打开」 entry stays in the menu beside it, so the row keeps its own detail action.
-          const reason = t(blocked === 'none'
-            ? 'purchasing.orders.list.actions.noCompanyOrder'
-            : 'purchasing.orders.list.actions.companyOrderUnavailable')
-          return (
-            <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
-              <RowActions
-                items={[
-                  {
-                    id: 'open',
-                    label: t('purchasing.orders.actions.open'),
-                    onSelect: () => router.push(detailHref(row)),
-                  },
-                ]}
-              />
-              <Button type="button" variant="ghost" size="sm" disabled className="text-muted-foreground" title={reason}>
-                {reason}
-              </Button>
-            </div>
-          )
-        }
+        const companyOrderId = companyOrders?.get(row.id) ?? null
         return (
-          <RowActions
-            items={[
-              {
-                id: 'open',
-                label: t('purchasing.orders.actions.open'),
-                onSelect: () => router.push(detailHref(row)),
-              },
-              {
-                id: 'openCompanyOrder',
-                label: t('purchasing.orders.list.actions.openCompanyOrder'),
-                onSelect: () => void openCompanyOrder(row),
-              },
-            ]}
-          />
+          // The company-order slot is a **state**, not a discovery (owner 2026-10-10): a linked row
+          // links straight through, an unlinked row says so and stays inert, and a viewer the batched
+          // lookup could not answer for gets no slot at all — never a click that reveals bad news.
+          <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+            <RowActions
+              items={[
+                {
+                  id: 'open',
+                  label: t('purchasing.orders.actions.open'),
+                  onSelect: () => router.push(detailHref(row)),
+                },
+              ]}
+            />
+            {companyOrders === undefined || companyOrders === null ? null : companyOrderId ? (
+              <Button type="button" variant="ghost" size="sm" onClick={() => openCompanyOrder(companyOrderId)}>
+                {t('purchasing.orders.list.actions.openCompanyOrder')}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled
+                className="text-muted-foreground"
+                title={t('purchasing.orders.list.actions.noCompanyOrder')}
+              >
+                {t('purchasing.orders.list.actions.noCompanyOrder')}
+              </Button>
+            )}
+          </div>
         )
       }}
       pagination={{
