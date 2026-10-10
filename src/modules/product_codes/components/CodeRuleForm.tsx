@@ -17,6 +17,7 @@ import { Spinner } from '@open-mercato/ui/primitives/spinner'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useBackHref } from '@/lib/navigation/returnTo'
 
 /**
  * The code-rule form.
@@ -356,6 +357,7 @@ function RuleFields({
   t: TranslateFn
 }) {
   const router = useRouter()
+  const backHref = useBackHref(LIST_HREF)
   const fields = React.useMemo<CrudField[]>(
     () => [
       { id: 'name', label: t('product_codes.form.field.name'), type: 'text', required: true, maxLength: 120 },
@@ -425,8 +427,8 @@ function RuleFields({
     <CrudForm<CodeRuleValues>
       title={mode === 'create' ? t('product_codes.form.createTitle') : t('product_codes.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
-      cancelHref={LIST_HREF}
+      backHref={backHref}
+      cancelHref={backHref}
       successRedirect={LIST_HREF}
       fields={fields}
       groups={groups}

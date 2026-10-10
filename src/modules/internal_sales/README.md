@@ -154,6 +154,8 @@ app 自有**界面层**模块：为**对内（总部 → 分公司）与对外�
   `missingChannel` 并**不发明请求**——不会退化成「不过滤」把两类混在一起；
 - **行内动作跟随行**：编辑 / 转为订单 / 按此报价新建订单用该行自己的类型拼路径
   （`documentEditHrefForTradeType`、`listHrefForTradeType('order', …)`）——对外报价不会把操作者带到对内编辑页；
+  「按此报价新建订单」的目标页（订单 create）自己那条台账是**订单工作台**，所以这条跳转另带
+  `?returnTo=<本工作台当前 URL>`（含类型筛选与搜索，`withReturnTo`），新标签页打开也能返回报价单列表；
 - **新建报价单**：单个弹窗（`internal_sales.quotes.createDialog.title`）→ 选对内 / 对外 → 进对应类型的 create 页
   （表单的类型仍是入口决定的只读值）；
 - **旧 URL**：`/backend/internal-sales/quotes` → `/backend/quotes?type=internal`、
@@ -253,6 +255,13 @@ customerSnapshot = {
 [`.ai/lessons/edit-page-is-not-its-own-back-target.md`](../../../.ai/lessons/edit-page-is-not-its-own-back-target.md)。
 **2026-09-29 起**：入口化的跳转统一走 `documentEditHrefForTradeType(kind, id, tradeType)`（哪个入口的编辑页
 由单据自己的类型决定），不带类型的 `documentEditHref` 已删除——它只会算出对内那一条路径。
+
+**2026-10-10 修正（owner 反馈：返回要回到「我来的那一页」）**：`backHref`/`cancelHref` 不再固定取入口台账，
+而是共享件 `src/lib/navigation/returnTo.ts` 的 `useBackHref(<入口台账兜底>)`：① `?returnTo=`（跨模块跳转显式携带）；
+② 本标签页导航轨迹（`BackendNavOriginReporter` 记录上一步所在的页面）兜底；③ 没有轨迹（新标签页 / 深链）才回退
+入口台账。触发场景：工作台 `/backend/quotes` 的「按此报价新建订单」→ 订单新建页「← 返回」原本落到**订单工作台**
+（那是 create 页自己的台账），现在回到带筛选的报价单工作台。规则与机制见
+[`.ai/lessons/opened-page-returns-to-its-origin.md`](../../../.ai/lessons/opened-page-returns-to-its-origin.md)。
 
 **四个 create/edit 页的面包屑（2026-09-29 修正）**：`quotes|orders/create` 与 `quotes|orders/[id]/edit` 的
 面包屑此前是 `{ labelKey: 'internal_sales.page.title', href: '/backend/sales/{quotes,orders}' }`——标签是

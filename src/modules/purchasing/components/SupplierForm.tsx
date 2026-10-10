@@ -8,6 +8,7 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { createCrud, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { loadCodeListOptions } from '@/lib/dictionaries/codeListOptions'
 import { PRODUCT_BRAND_DICTIONARY_KEY } from '../../product_codes/lib/dictionaryValues'
 // Deliberate cross-module reuse: the bank block is one value object with one editor, and `parties`
@@ -252,6 +253,7 @@ function useSupplierFields(t: TranslateFn, mode: 'create' | 'edit'): CrudField[]
 
 function SupplierCreateForm() {
   const t = useT()
+  const backHref = useBackHref(LIST_HREF)
   const fields = useSupplierFields(t, 'create')
   const groups = React.useMemo(() => supplierGroups('create'), [])
   const successRedirect = React.useMemo(
@@ -272,12 +274,12 @@ function SupplierCreateForm() {
     <CrudForm<SupplierFormValues>
       title={t('purchasing.suppliers.form.createTitle')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={groups}
       initialValues={EMPTY_SUPPLIER_VALUES}
       submitLabel={t('purchasing.suppliers.form.save')}
-      cancelHref={LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       onSubmit={handleSubmit}
     />
@@ -286,6 +288,7 @@ function SupplierCreateForm() {
 
 function SupplierEditForm({ supplierId }: { supplierId: string }) {
   const t = useT()
+  const backHref = useBackHref(LIST_HREF)
   const fields = useSupplierFields(t, 'edit')
   const groups = React.useMemo(() => supplierGroups('edit'), [])
   const [initial, setInitial] = React.useState<SupplierRecord | null>(null)
@@ -359,7 +362,7 @@ function SupplierEditForm({ supplierId }: { supplierId: string }) {
     return (
       <RecordNotFoundState
         label={t('purchasing.suppliers.form.loadFailed')}
-        backHref={LIST_HREF}
+        backHref={backHref}
       />
     )
   }
@@ -370,12 +373,12 @@ function SupplierEditForm({ supplierId }: { supplierId: string }) {
     <CrudForm<SupplierFormValues>
       title={t('purchasing.suppliers.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={groups}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('purchasing.suppliers.form.save')}
-      cancelHref={LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       isLoading={loading}
       onSubmit={handleSubmit}

@@ -9,6 +9,7 @@ import { createCrud, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { buildCountryOptions, resolveCountryName } from '@open-mercato/shared/lib/location/countries'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { BankAccountsEditor, readBankAccountRows, type PartyBankAccountValue } from './BankAccountsEditor'
 
 const API_PATH = 'parties'
@@ -243,6 +244,7 @@ function usePartyFields(t: TranslateFn): CrudField[] {
 function PartyCreateForm() {
   const t = useT()
   const fields = usePartyFields(t)
+  const backHref = useBackHref(LIST_HREF)
   const successRedirect = React.useMemo(
     () => withFlash(LIST_HREF, t('parties.form.saved'), 'success'),
     [t],
@@ -264,12 +266,12 @@ function PartyCreateForm() {
     <CrudForm<PartyFormValues>
       title={t('parties.form.createTitle')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={PARTY_GROUPS}
       initialValues={EMPTY_PARTY_VALUES}
       submitLabel={t('parties.form.save')}
-      cancelHref={LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       onSubmit={handleSubmit}
     />
@@ -289,6 +291,7 @@ async function fetchParty(id: string, errorMessage: string): Promise<PartyRecord
 function PartyEditForm({ partyId }: { partyId: string }) {
   const t = useT()
   const fields = usePartyFields(t)
+  const backHref = useBackHref(LIST_HREF)
   const [initial, setInitial] = React.useState<PartyRecord | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -348,7 +351,7 @@ function PartyEditForm({ partyId }: { partyId: string }) {
   )
 
   if (isNotFound) {
-    return <RecordNotFoundState label={t('parties.form.loadFailed')} backHref={LIST_HREF} />
+    return <RecordNotFoundState label={t('parties.form.loadFailed')} backHref={backHref} />
   }
 
   if (error) return <ErrorMessage label={error} />
@@ -357,12 +360,12 @@ function PartyEditForm({ partyId }: { partyId: string }) {
     <CrudForm<PartyFormValues>
       title={t('parties.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={PARTY_GROUPS}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('parties.form.save')}
-      cancelHref={LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       isLoading={loading}
       onSubmit={handleSubmit}

@@ -7,6 +7,7 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { loadChannelOptions, loadExpenseTypeOptions, EXPENSES_API_PATH, EXPENSES_LIST_HREF } from './expenseOptions'
 import { loadPartyOptions, readOptionText } from './shipmentCostOptions'
 
@@ -167,6 +168,7 @@ function useExpenseFields(t: TranslateFn): CrudField[] {
 function ExpenseCreateForm() {
   const t = useT()
   const fields = useExpenseFields(t)
+  const backHref = useBackHref(EXPENSES_LIST_HREF)
   const successRedirect = React.useMemo(
     () => withFlash(EXPENSES_LIST_HREF, t('finance.expenses.form.saved'), 'success'),
     [t],
@@ -187,12 +189,12 @@ function ExpenseCreateForm() {
     <CrudForm<ExpenseFormValues>
       title={t('finance.expenses.form.createTitle')}
       titleHeadingLevel={1}
-      backHref={EXPENSES_LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={FORM_GROUPS}
       initialValues={EMPTY_VALUES}
       submitLabel={t('finance.expenses.form.save')}
-      cancelHref={EXPENSES_LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       onSubmit={handleSubmit}
     />
@@ -202,6 +204,7 @@ function ExpenseCreateForm() {
 function ExpenseEditForm({ expenseId }: { expenseId: string }) {
   const t = useT()
   const fields = useExpenseFields(t)
+  const backHref = useBackHref(EXPENSES_LIST_HREF)
   const [initial, setInitial] = React.useState<ExpenseRecord | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -264,7 +267,7 @@ function ExpenseEditForm({ expenseId }: { expenseId: string }) {
   )
 
   if (isNotFound) {
-    return <RecordNotFoundState label={t('finance.expenses.form.loadFailed')} backHref={EXPENSES_LIST_HREF} />
+    return <RecordNotFoundState label={t('finance.expenses.form.loadFailed')} backHref={backHref} />
   }
   if (error) return <ErrorMessage label={error} />
 
@@ -272,12 +275,12 @@ function ExpenseEditForm({ expenseId }: { expenseId: string }) {
     <CrudForm<ExpenseFormValues>
       title={t('finance.expenses.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={EXPENSES_LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={FORM_GROUPS}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('finance.expenses.form.save')}
-      cancelHref={EXPENSES_LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       isLoading={loading}
       onSubmit={handleSubmit}

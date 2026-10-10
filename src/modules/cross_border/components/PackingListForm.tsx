@@ -30,7 +30,7 @@ import {
 } from '@open-mercato/ui/primitives/dialog'
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
-import { useReturnHref } from '@/lib/navigation/returnTo'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { loadProductOption } from '../../products/components/formOptions'
 import {
   PACKING_LISTS_LIST_HREF,
@@ -679,7 +679,7 @@ export default function PackingListForm({ mode, documentId }: PackingListFormPro
   const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const backHref = useReturnHref(PACKING_LISTS_LIST_HREF)
+  const backHref = useBackHref(PACKING_LISTS_LIST_HREF)
   const contractId = searchParams.get('contractId')?.trim() ?? ''
   const [record, setRecord] = React.useState<ShipmentDocumentRecord | null>(null)
   const [initialValues, setInitialValues] = React.useState<PackingListFormValues | null>(
@@ -889,7 +889,7 @@ export default function PackingListForm({ mode, documentId }: PackingListFormPro
       groups={groups}
       initialValues={initialValues}
       submitLabel={t('cross_border.shipments.form.save')}
-      cancelHref={PACKING_LISTS_LIST_HREF}
+      cancelHref={backHref}
       onSubmit={handleSubmit}
     />
   )

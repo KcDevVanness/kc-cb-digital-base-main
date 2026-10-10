@@ -28,6 +28,7 @@ import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import {
   documentDirectionLabel,
   documentKindLabel,
@@ -569,6 +570,7 @@ export default function DocumentDetail({ kind, documentId }: { kind: DocumentKin
   const queryClient = useQueryClient()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const listHref = documentListHref(kind)
+  const backHref = useBackHref(listHref)
   const [isMutating, setIsMutating] = React.useState(false)
   const [isGenerating, setIsGenerating] = React.useState(false)
   const [isDownloading, setIsDownloading] = React.useState(false)
@@ -791,12 +793,12 @@ export default function DocumentDetail({ kind, documentId }: { kind: DocumentKin
   if (headQuery.error) {
     const status = (headQuery.error as { status?: number }).status
     if (status === 404) {
-      return <RecordNotFoundState label={t('trade_docs.documents.form.notFound', '未找到该单据，或你没有访问权限。')} backHref={listHref} />
+      return <RecordNotFoundState label={t('trade_docs.documents.form.notFound', '未找到该单据，或你没有访问权限。')} backHref={backHref} />
     }
     return <ErrorMessage label={t('trade_docs.documents.form.loadFailed', '单据加载失败')} />
   }
   if (!head) {
-    return <RecordNotFoundState label={t('trade_docs.documents.form.notFound', '未找到该单据，或你没有访问权限。')} backHref={listHref} />
+    return <RecordNotFoundState label={t('trade_docs.documents.form.notFound', '未找到该单据，或你没有访问权限。')} backHref={backHref} />
   }
 
   const actions = ALLOWED_ACTIONS[head.status]
@@ -818,7 +820,7 @@ export default function DocumentDetail({ kind, documentId }: { kind: DocumentKin
     <div className="space-y-6">
       <FormHeader
         mode="detail"
-        backHref={listHref}
+        backHref={backHref}
         entityTypeLabel={documentKindLabel(t, kind)}
         title={head.number ?? documentStatusLabel(t, head.status)}
         statusBadge={(

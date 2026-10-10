@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '@open-mercato/ui/primitives/select'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { useAttachmentPreview } from '@/lib/attachments/AttachmentPreview'
 // The unit vocabulary is seeded by this module and read through the app's one client loader; the
 // currency picker is this module's own loader (the same one the supplier and order forms use).
@@ -946,6 +947,7 @@ async function saveSupplierProductPrices(
 
 function SupplierProductCreateForm() {
   const t = useT()
+  const backHref = useBackHref(LIST_HREF)
   const router = useRouter()
   const searchParams = useSearchParams()
   const fields = useSupplierProductFields(t, { supplierEditable: true, productId: null, masterProductId: null })
@@ -1069,12 +1071,12 @@ function SupplierProductCreateForm() {
         entityId={ENTITY_ID}
         title={t('purchasing.supplierProducts.form.createTitle', 'New supplier product')}
         titleHeadingLevel={1}
-        backHref={LIST_HREF}
+        backHref={backHref}
         fields={fields}
         groups={groups}
         initialValues={initialValues}
         submitLabel={t('purchasing.supplierProducts.form.save', 'Save')}
-        cancelHref={LIST_HREF}
+        cancelHref={backHref}
         successRedirect={successRedirect}
         onSubmit={handleSubmit}
       />
@@ -1084,6 +1086,7 @@ function SupplierProductCreateForm() {
 
 function SupplierProductEditForm({ productId }: { productId: string }) {
   const t = useT()
+  const backHref = useBackHref(LIST_HREF)
   const [masterProductId, setMasterProductId] = React.useState<string | null>(null)
   const fields = useSupplierProductFields(t, { supplierEditable: false, productId, masterProductId })
   const groups = useSupplierProductGroups(t, { productId })
@@ -1173,7 +1176,7 @@ function SupplierProductEditForm({ productId }: { productId: string }) {
     return (
       <RecordNotFoundState
         label={t('purchasing.supplierProducts.form.loadFailed', 'The product could not be loaded')}
-        backHref={LIST_HREF}
+        backHref={backHref}
       />
     )
   }
@@ -1185,12 +1188,12 @@ function SupplierProductEditForm({ productId }: { productId: string }) {
       entityId={ENTITY_ID}
       title={t('purchasing.supplierProducts.form.editTitle', 'Edit supplier product')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={groups}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('purchasing.supplierProducts.form.save', 'Save')}
-      cancelHref={LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       isLoading={loading}
       onSubmit={handleSubmit}

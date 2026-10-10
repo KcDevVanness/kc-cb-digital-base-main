@@ -9,6 +9,7 @@ import { createCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionaries/lib/clientEntries'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useBackHref } from '@/lib/navigation/returnTo'
 
 /**
  * This file owns the channel contract shared with the list surface: the record shape, the
@@ -199,6 +200,7 @@ function useChannelFields(t: TranslateFn): CrudField[] {
 function ChannelCreateForm() {
   const t = useT()
   const fields = useChannelFields(t)
+  const backHref = useBackHref(CHANNELS_LIST_HREF)
   const successRedirect = React.useMemo(
     () => withFlash(CHANNELS_LIST_HREF, t('platform_ops.channels.form.saved'), 'success'),
     [t],
@@ -217,12 +219,12 @@ function ChannelCreateForm() {
     <CrudForm<ChannelFormValues>
       title={t('platform_ops.channels.form.createTitle')}
       titleHeadingLevel={1}
-      backHref={CHANNELS_LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={CHANNEL_GROUPS}
       initialValues={EMPTY_CHANNEL_VALUES}
       submitLabel={t('platform_ops.channels.form.save')}
-      cancelHref={CHANNELS_LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       onSubmit={handleSubmit}
     />
@@ -232,6 +234,7 @@ function ChannelCreateForm() {
 function ChannelEditForm({ channelId }: { channelId: string }) {
   const t = useT()
   const fields = useChannelFields(t)
+  const backHref = useBackHref(CHANNELS_LIST_HREF)
   const [initial, setInitial] = React.useState<ChannelRecord | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -294,7 +297,7 @@ function ChannelEditForm({ channelId }: { channelId: string }) {
     return (
       <RecordNotFoundState
         label={t('platform_ops.channels.form.loadFailed')}
-        backHref={CHANNELS_LIST_HREF}
+        backHref={backHref}
       />
     )
   }
@@ -305,12 +308,12 @@ function ChannelEditForm({ channelId }: { channelId: string }) {
     <CrudForm<ChannelFormValues>
       title={t('platform_ops.channels.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={CHANNELS_LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={CHANNEL_GROUPS}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('platform_ops.channels.form.save')}
-      cancelHref={CHANNELS_LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       isLoading={loading}
       onSubmit={handleSubmit}

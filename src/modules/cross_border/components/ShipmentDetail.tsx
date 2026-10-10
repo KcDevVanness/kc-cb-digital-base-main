@@ -38,7 +38,7 @@ import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
-import { useReturnHref } from '@/lib/navigation/returnTo'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import {
   SHIPMENT_ALLOCATIONS_API_PATH,
   SHIPMENT_CANCEL_API_PATH,
@@ -942,7 +942,7 @@ export default function ShipmentDetail({ shipmentId }: { shipmentId: string }) {
   const locale = useLocale()
   const scopeVersion = useOrganizationScopeVersion()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
-  const backHref = useReturnHref(SHIPMENTS_LIST_HREF)
+  const backHref = useBackHref(SHIPMENTS_LIST_HREF)
   const [shipment, setShipment] = React.useState<ShipmentRecord | null>(null)
   const [contracts, setContracts] = React.useState<ShipmentContractRecord[]>([])
   const [allocations, setAllocations] = React.useState<ShipmentAllocationRecord[]>([])

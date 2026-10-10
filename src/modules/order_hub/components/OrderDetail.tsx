@@ -53,7 +53,7 @@ import { CompanyOrderCollaboratorsDialog } from './CompanyOrderCollaboratorsDial
 import { CompanyOrderStatusDialog } from './CompanyOrderStatusDialog'
 import { AttachmentsSection } from '@/lib/attachments/AttachmentsSection'
 import { OrderDocumentsSection } from './OrderDocumentsSection'
-import { withReturnTo } from '@/lib/navigation/returnTo'
+import { withReturnTo, useBackHref } from '@/lib/navigation/returnTo'
 import { childStatusAppearance } from './companyOrderChildStatus'
 import { formatDepositPercent } from '@/lib/orders/depositPercent'
 import LinkedRecordPreviewDrawer from './LinkedRecordPreviewDrawer'
@@ -501,6 +501,7 @@ function SalesChildPickerDialog({
 export default function OrderDetail({ orderId }: { orderId: string }) {
   const t = useT()
   const router = useRouter()
+  const backHref = useBackHref('/backend/orders')
   const queryClient = useQueryClient()
   const scopeVersion = useOrganizationScopeVersion()
   const { entries: salesStatusEntries } = useSalesStatusEntries()
@@ -1008,7 +1009,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
     <>
       <FormHeader
         mode="detail"
-        backHref="/backend/orders"
+        backHref={backHref}
         entityTypeLabel={t('order_hub.companyOrders.entityLabel')}
         title={head.number || t('order_hub.companyOrders.untitled')}
         subtitle={head.title ?? undefined}

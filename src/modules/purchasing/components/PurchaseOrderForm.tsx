@@ -30,6 +30,7 @@ import { StatusBadge, type StatusMap } from '@open-mercato/ui/primitives/status-
 import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primitives/date-format'
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import {
   findOptionSnapshot,
   loadCustomerOptions,
@@ -883,6 +884,7 @@ function useOrderFields(
 
 export default function PurchaseOrderForm() {
   const t = useT()
+  const backHref = useBackHref(ORDERS_LIST_HREF)
   const router = useRouter()
   const searchParams = useSearchParams()
   const pickerOptionsRef = React.useRef<Record<string, CrudFieldOption[]>>({})
@@ -1092,12 +1094,12 @@ export default function PurchaseOrderForm() {
     <CrudForm<PurchaseOrderFormValues>
       title={t('purchasing.orders.form.createTitle')}
       titleHeadingLevel={1}
-      backHref={ORDERS_LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={groups}
       initialValues={prefillState.status === 'ready' ? prefillState.values : EMPTY_ORDER_VALUES}
       submitLabel={t('purchasing.orders.form.save')}
-      cancelHref={ORDERS_LIST_HREF}
+      cancelHref={backHref}
       onSubmit={handleSubmit}
     />
     </>

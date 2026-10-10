@@ -9,6 +9,7 @@ import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { extractCustomFieldEntries } from '@open-mercato/shared/lib/crud/custom-fields-client'
 import type { TodoListItem } from '../types'
 import extensionPoints from '../extension-points'
+import { useBackHref } from '@/lib/navigation/returnTo'
 
 // Derived from the declared host rather than duplicated: `hasDeclarationBinding`
 // (packages/cli/src/lib/generators/module-extension-facts.ts) only treats a host as
@@ -93,6 +94,7 @@ export function toTodoFormValues(item: TodoListItem): TodoFormValues {
 
 export function TodoCreateForm() {
   const t = useT()
+  const backHref = useBackHref(LIST_HREF)
   const fields = useTodoFields(t)
   const tipsGroup = React.useMemo<CrudFormGroup>(() => ({
     id: 'tips',
@@ -114,12 +116,12 @@ export function TodoCreateForm() {
     <CrudForm
       title={t('example.todos.form.create.title')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={backHref}
       entityId={ENTITY_ID}
       fields={fields}
       groups={groups}
       submitLabel={t('example.todos.form.create.submit')}
-      cancelHref={LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       onSubmit={async (vals) => { await createCrud('example/todos', vals) }}
     />
@@ -128,6 +130,7 @@ export function TodoCreateForm() {
 
 export function TodoEditForm({ id }: { id: string }) {
   const t = useT()
+  const backHref = useBackHref(LIST_HREF)
   const [initial, setInitial] = React.useState<TodoFormValues | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [err, setErr] = React.useState<string | null>(null)
@@ -209,7 +212,7 @@ export function TodoEditForm({ id }: { id: string }) {
     return (
       <RecordNotFoundState
         label={t('example.todos.form.error.notFound')}
-        backHref={LIST_HREF}
+        backHref={backHref}
         backLabel={t('example.todos.form.actions.backToList', 'Back to todos')}
       />
     )
@@ -221,7 +224,7 @@ export function TodoEditForm({ id }: { id: string }) {
     <CrudForm<TodoFormValues>
       title={t('example.todos.form.edit.title')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={backHref}
       extraActions={(
         <SendObjectMessageDialog
           object={{
@@ -245,7 +248,7 @@ export function TodoEditForm({ id }: { id: string }) {
       groups={groups}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('example.todos.form.edit.submit')}
-      cancelHref={LIST_HREF}
+      cancelHref={backHref}
       successRedirect={successRedirect}
       deleteRedirect={deleteRedirect}
       isLoading={loading}

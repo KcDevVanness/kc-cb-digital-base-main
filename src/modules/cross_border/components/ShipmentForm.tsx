@@ -36,6 +36,7 @@ import {
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { parseSourceOrderParams } from '@/lib/orders/sourceOrderParams'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { loadProductOption, loadProductOptions, type ProductOption } from '../../products/components/formOptions'
 import {
   loadCarrierOptions,
@@ -1924,6 +1925,7 @@ export default function ShipmentForm() {
   const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const backHref = useBackHref(SHIPMENTS_LIST_HREF)
   const { organizationId } = useOrganizationScopeDetail()
   const fields = useShipmentFields(t)
 
@@ -2137,12 +2139,12 @@ export default function ShipmentForm() {
       <CrudForm<ShipmentFormValues>
         title={t('cross_border.shipments.form.createTitle')}
         titleHeadingLevel={1}
-        backHref={SHIPMENTS_LIST_HREF}
+        backHref={backHref}
         fields={fields}
         groups={groups}
         initialValues={prefillState.status === 'ready' ? prefillState.values : contractPrefill}
         submitLabel={t('cross_border.shipments.form.save')}
-        cancelHref={SHIPMENTS_LIST_HREF}
+        cancelHref={backHref}
         onSubmit={handleSubmit}
       />
     </>
