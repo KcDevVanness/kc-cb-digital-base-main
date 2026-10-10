@@ -11,6 +11,7 @@ import {
   s3ConfigArgument,
   seedAttachmentRow,
   withDb,
+  missingStorageOpsTestEnvVars,
   writePartitionFile,
 } from './helpers'
 
@@ -25,6 +26,12 @@ const NAME = '1790144700010_resume.txt'
 const CANONICAL = `org_${REHEARSAL_ORG}/tenant_${REHEARSAL_TENANT}/${NAME}`
 const KEY = `${PARTITION}/${CANONICAL}`
 const BYTES = Buffer.from('resume fixture\n', 'utf8')
+
+const missingStorageOpsEnv = missingStorageOpsTestEnvVars()
+test.skip(
+  missingStorageOpsEnv.length > 0,
+  `STORAGE_OPS_TEST_S3_CONFIG/OM_ENABLE_STORAGE_S3 not configured (missing: ${missingStorageOpsEnv.join(', ')}) — see __integration__/meta.ts`,
+)
 
 test.describe.configure({ mode: 'serial' })
 

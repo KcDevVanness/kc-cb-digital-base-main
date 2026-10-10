@@ -12,6 +12,7 @@ import {
   s3ConfigArgument,
   seedAttachmentRow,
   withDb,
+  missingStorageOpsTestEnvVars,
   writePartitionFile,
 } from './helpers'
 
@@ -35,6 +36,12 @@ type AuditPayload = {
 }
 
 const canonical = (name: string, org = REHEARSAL_ORG, tenant = REHEARSAL_TENANT) => `org_${org}/tenant_${tenant}/${name}`
+
+const missingStorageOpsEnv = missingStorageOpsTestEnvVars()
+test.skip(
+  missingStorageOpsEnv.length > 0,
+  `STORAGE_OPS_TEST_S3_CONFIG/OM_ENABLE_STORAGE_S3 not configured (missing: ${missingStorageOpsEnv.join(', ')}) — see __integration__/meta.ts`,
+)
 
 test.describe.configure({ mode: 'serial' })
 

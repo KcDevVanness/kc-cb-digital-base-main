@@ -1,1 +1,3 @@
-export const dependsOnModules = ["internal_sales", "sales"]
+export const integrationMeta = {
+  dependsOnModules: ['internal_sales', 'sales'],
+}

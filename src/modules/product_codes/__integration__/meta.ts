@@ -5,4 +5,6 @@
  * panel. It deliberately does not touch `purchasing` — the form that calls it is covered by that
  * module's own specs.
  */
-export const dependsOnModules = ['product_codes']
+export const integrationMeta = {
+  dependsOnModules: ['product_codes'],
+}

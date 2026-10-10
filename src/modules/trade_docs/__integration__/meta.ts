@@ -8,4 +8,6 @@
  * through the app-owned product master) and the installed catalog product that bridges them
  * (`catalog`, `products`). All of them have to be present for the suite to be discovered.
  */
-export const dependsOnModules = ['trade_docs', 'parties', 'cross_border', 'purchasing', 'sales', 'catalog', 'products']
+export const integrationMeta = {
+  dependsOnModules: ['trade_docs', 'parties', 'cross_border', 'purchasing', 'sales', 'catalog', 'products'],
+}

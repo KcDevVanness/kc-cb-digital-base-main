@@ -6,4 +6,6 @@
  * library row) and `products` (the sync action writes the product master). All three modules must
  * therefore be present.
  */
-export const dependsOnModules = ['sourcing', 'purchasing', 'products']
+export const integrationMeta = {
+  dependsOnModules: ['sourcing', 'purchasing', 'products'],
+}
