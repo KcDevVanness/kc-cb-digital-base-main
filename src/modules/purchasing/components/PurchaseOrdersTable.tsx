@@ -9,7 +9,7 @@ import type { SortingState } from '@tanstack/react-table'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
 import type { FilterValues } from '@open-mercato/ui/backend/FilterBar'
 import { ListEmptyState } from '@open-mercato/ui/backend/filters/ListEmptyState'
-import { RowActions } from '@open-mercato/ui/backend/RowActions'
+import { ActionsDropdown } from '@open-mercato/ui/backend/forms'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
@@ -28,6 +28,7 @@ import {
   PurchaseOrderStatusBadge,
   purchaseOrderStatusLabel as orderStatusLabel,
 } from '@/lib/orders/purchaseOrderStatus'
+import { buildPurchaseOrderRowActions } from './purchaseOrderRowActions'
 
 const PAGE_SIZE = 50
 const QUERY_KEY_ROOT = 'purchasing-purchase-orders'
@@ -294,41 +295,26 @@ export default function PurchaseOrdersTable() {
           createLabel={t('purchasing.orders.actions.create')}
         />
       )}
-      rowActions={(row) => {
-        const companyOrderId = companyOrders?.get(row.id) ?? null
-        return (
-          // The company-order slot is a **state**, not a discovery (owner 2026-10-10): a linked row
-          // links straight through, an unlinked row says so and stays inert, and a viewer the batched
-          // lookup could not answer for gets no slot at all — never a click that reveals bad news.
-          <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
-            <RowActions
-              items={[
-                {
-                  id: 'open',
-                  label: t('purchasing.orders.actions.open'),
-                  onSelect: () => router.push(detailHref(row)),
-                },
-              ]}
-            />
-            {companyOrders === undefined || companyOrders === null ? null : companyOrderId ? (
-              <Button type="button" variant="ghost" size="sm" onClick={() => openCompanyOrder(companyOrderId)}>
-                {t('purchasing.orders.list.actions.openCompanyOrder')}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled
-                className="text-muted-foreground"
-                title={t('purchasing.orders.list.actions.noCompanyOrder')}
-              >
-                {t('purchasing.orders.list.actions.noCompanyOrder')}
-              </Button>
-            )}
-          </div>
-        )
-      }}
+      rowActions={(row) => (
+        // The company-order entry lives **inside** the ⋯ menu (owner 2026-10-10 复查·三: a second
+        // button beside the menu 很丑): linked rows jump to the root from the menu, unlinked rows
+        // show 未关联公司订单 as the menu's disabled item, and a viewer the batched lookup could not
+        // answer for gets no entry at all — never a click that reveals bad news.
+        <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+          <ActionsDropdown
+            triggerMode="icon"
+            triggerClassName="border-0 bg-transparent shadow-none"
+            ariaLabel={t('ui.rowActions.openActions')}
+            items={buildPurchaseOrderRowActions({
+              t,
+              rowId: row.id,
+              companyOrders,
+              open: () => router.push(detailHref(row)),
+              openCompanyOrder,
+            })}
+          />
+        </div>
+      )}
       pagination={{
         page,
         pageSize: PAGE_SIZE,
