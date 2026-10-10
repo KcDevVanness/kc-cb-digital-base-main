@@ -3,7 +3,7 @@
 **Source doc:** `.ai/specs/2026-10-09-company-order-root.md` 的「第十轮」节（REQ-040…REQ-046）
 **Base:** `origin/dev`（`caa5598`）
 **Branch:** `feat/company-order-round10`（worktree `../kc-cb-digital-base-min-co-round10`）
-**PR:** 待开（draft 先行）
+**PR:** #162（draft → ready；截图证据见 PR 评论）
 
 ## Goal
 
@@ -72,10 +72,10 @@ owner 2026-10-10 对五个页面的 12 点设计反馈落地；当日问答定�
 
 ### Phase 10.D: 收口
 
-- [ ] 4.1 迁移在本地开发库应用 + 宽门禁
-- [ ] 4.2 浏览器实测（五个页面逐点）
-- [ ] 4.3 文档（spec/README/计划/状态板）
-- [ ] 4.4 PR draft → ready
+- [x] 4.1 迁移在本地开发库应用 + 宽门禁
+- [x] 4.2 浏览器实测（五个页面逐点）
+- [x] 4.3 文档（spec/README/计划/状态板）
+- [x] 4.4 PR draft → ready（#162）
 
 ## Risks
 
@@ -113,7 +113,7 @@ owner 2026-10-10 对五个页面的 12 点设计反馈落地；当日问答定�
 - [x] 4.1 迁移在本地开发库应用（dev supervisor 启动时 `order_hub: 1 migration applied`）+ 宽门禁
 - [x] 4.2 浏览器实测（五个页面逐点，见下）
 - [x] 4.3 文档（spec 第十轮 + 状态/Changelog、`order_hub`/`purchasing`/`sourcing` README、计划行 六·补60、状态板、`business-architecture` 决策行、lesson）
-- [ ] 4.4 PR draft → ready
+- [x] 4.4 PR draft → ready（#162，labels: review / feature / priority-high / risk-medium / qa-self-verified）
 
 ## Evidence（实现期实测，2026-10-10）
 
