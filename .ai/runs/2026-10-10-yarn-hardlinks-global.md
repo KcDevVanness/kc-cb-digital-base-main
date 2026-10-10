@@ -104,4 +104,4 @@ PR: #172
 ### Phase 3: verification + PR
 
 - [x] 3.1 broad gate (`validation.commands`) green — `generate` ✓ (known OpenAPI bundle fallback, pre-existing), `typecheck` 0 error, `lint` 0 error / 12 pre-existing warnings, `check-lessons` ✓ (67 records), `ds:check` 1109 files, `test` 94 suites · 832 tests, `build` ✓
-- [ ] 3.2 PR opened, labelled, reviewed, flipped to ready
+- [x] 3.2 PR #172 opened, labelled, reviewed, flipped to ready — review [5478297147](https://github.com/KcDevVanness/kc-cb-digital-base-main/pull/172#pullrequestreview-5478297147) verdict approve (GitHub blocks self-approval, so it landed as a COMMENT review), labels `merge-queue` / `dependencies` / `skip-qa` / `priority-medium` / `risk-medium`, both nits fixed in `01fd3a1`
