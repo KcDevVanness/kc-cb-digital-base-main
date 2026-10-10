@@ -85,6 +85,8 @@ Yarn's own store mode rather than migrating to pnpm.
 
 ## Progress
 
+PR: #172
+
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
 ### Phase 1: config + canary
@@ -101,5 +103,5 @@ Yarn's own store mode rather than migrating to pnpm.
 
 ### Phase 3: verification + PR
 
-- [ ] 3.1 broad gate (`validation.commands`) green
+- [x] 3.1 broad gate (`validation.commands`) green — `generate` ✓ (known OpenAPI bundle fallback, pre-existing), `typecheck` 0 error, `lint` 0 error / 12 pre-existing warnings, `check-lessons` ✓ (67 records), `ds:check` 1109 files, `test` 94 suites · 832 tests, `build` ✓
 - [ ] 3.2 PR opened, labelled, reviewed, flipped to ready
