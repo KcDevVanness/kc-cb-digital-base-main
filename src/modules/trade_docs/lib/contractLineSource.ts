@@ -278,7 +278,11 @@ export function sourceLineToContractLine(
 ): ContractLineDraft {
   if (kind === 'purchase_order') {
     return {
-      productId: readSourceText(item, 'productId', 'product_id'),
+      // The purchase-order line projection names its owned-master reference `catalogProductId`
+      // (the `product_id` column was dropped in the single-store cutover); reading the old key
+      // silently produced an unlinked contract line. Trade-document lines keep the name `product_id`
+      // for the same uuid, so only this read changes.
+      productId: readSourceText(item, 'catalogProductId', 'catalog_product_id'),
       name: readSourceText(item, 'productTitle', 'product_title'),
       sku:
         readSourceText(item, 'productSku', 'product_sku') ||

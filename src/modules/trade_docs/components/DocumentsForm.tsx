@@ -504,7 +504,10 @@ function salesLineToDraft(item: Record<string, unknown>): OrderLineDraft {
 
 function purchaseLineToDraft(item: Record<string, unknown>): OrderLineDraft {
   return {
-    productId: readText(item, 'productId', 'product_id'),
+    // The purchase-order line projection renamed the owned-master reference to `catalogProductId`
+    // (single-store cutover); the old key is no longer sent, and reading it wrote lines with an
+    // empty product reference.
+    productId: readText(item, 'catalogProductId', 'catalog_product_id'),
     name: readText(item, 'productTitle', 'product_title'),
     sku: readText(item, 'productSku', 'product_sku') || readText(item, 'supplierSku', 'supplier_sku'),
     unit: readText(item, 'productUnit', 'product_unit'),
