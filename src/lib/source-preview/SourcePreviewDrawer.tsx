@@ -95,28 +95,33 @@ export function SourcePreviewDrawer({
                   ))}
                 </dl>
               ) : null}
-              <section className="flex flex-col gap-2">
-                <SectionHeader title={t('ui.sourcePreview.lines', 'Lines')} />
-                {rows.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {t('ui.sourcePreview.noLines', 'This document has no lines.')}
-                  </p>
-                ) : (
-                  <ul className="flex flex-col divide-y divide-border">
-                    {rows.map((line) => (
-                      <li key={line.key} className="flex flex-col gap-1 py-2">
-                        <span className="text-sm font-medium">{line.name}</span>
-                        {line.meta ? (
-                          <span className="text-xs text-muted-foreground">{line.meta}</span>
-                        ) : null}
-                        {line.amount ? (
-                          <span className="text-sm text-muted-foreground">{line.amount}</span>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
+              {/* A caller that maps head fields only (the hub's row preview) passes no `lines` at
+                  all — that is not the same as "this document has no lines", so the section and its
+                  empty sentence stay out of the drawer entirely. */}
+              {lines ? (
+                <section className="flex flex-col gap-2">
+                  <SectionHeader title={t('ui.sourcePreview.lines', 'Lines')} />
+                  {rows.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {t('ui.sourcePreview.noLines', 'This document has no lines.')}
+                    </p>
+                  ) : (
+                    <ul className="flex flex-col divide-y divide-border">
+                      {rows.map((line) => (
+                        <li key={line.key} className="flex flex-col gap-1 py-2">
+                          <span className="text-sm font-medium">{line.name}</span>
+                          {line.meta ? (
+                            <span className="text-xs text-muted-foreground">{line.meta}</span>
+                          ) : null}
+                          {line.amount ? (
+                            <span className="text-sm text-muted-foreground">{line.amount}</span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              ) : null}
             </div>
           )}
         </DrawerBody>

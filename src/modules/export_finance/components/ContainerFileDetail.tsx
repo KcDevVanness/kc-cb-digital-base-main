@@ -47,6 +47,7 @@ import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primiti
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
+import { useReturnHref } from '@/lib/navigation/returnTo'
 import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { useCurrencyOptions, withCurrentCurrency } from '../../currency_policy/lib/clientOptions'
@@ -649,6 +650,7 @@ export default function ContainerFileDetail({ shipmentId }: { shipmentId: string
   const locale = useLocale()
   const router = useRouter()
   const scopeVersion = useOrganizationScopeVersion()
+  const backHref = useReturnHref(CONTAINERS_LIST_HREF)
   const [row, setRow] = React.useState<ContainerFileRow | null>(null)
   const [refund, setRefund] = React.useState<RefundRecord | null>(null)
   const [documents, setDocuments] = React.useState<RefundDocumentRecord[]>([])
@@ -942,7 +944,7 @@ export default function ContainerFileDetail({ shipmentId }: { shipmentId: string
     return (
       <RecordNotFoundState
         label={t('export_finance.cabinets.errors.notFound')}
-        backHref={CONTAINERS_LIST_HREF}
+        backHref={backHref}
       />
     )
   }
@@ -965,7 +967,7 @@ export default function ContainerFileDetail({ shipmentId }: { shipmentId: string
     <>
       <FormHeader
         mode="detail"
-        backHref={CONTAINERS_LIST_HREF}
+        backHref={backHref}
         entityTypeLabel={t('export_finance.cabinets.detail.title')}
         title={row.shipmentNumber ?? shipmentStatusLabel(t, 'draft')}
         statusBadge={statusVariant ? (

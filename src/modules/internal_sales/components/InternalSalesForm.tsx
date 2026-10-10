@@ -56,6 +56,7 @@ import {
   resolveInitialCurrency,
   writeStoredCurrency,
 } from '../lib/currencyDefault'
+import { useReturnHref } from '@/lib/navigation/returnTo'
 import { parseCompanyOrderParam } from '@/lib/orders/companyOrderParams'
 import { loadCompanyOrderDefaults } from '@/lib/orders/companyOrderDefaults'
 import { SALES_STATUS_DRAFT, SALES_STATUS_SENT } from '../lib/salesStatus'
@@ -1137,6 +1138,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
   const companyOrderParam = React.useMemo(() => parseCompanyOrderParam(searchParams), [searchParams])
   const { organizationId } = useOrganizationScopeDetail()
   const entryHref = listHrefForTradeType(kind, entryTradeType)
+  const backHref = useReturnHref(entryHref)
   /**
    * The starting currency.
    *
@@ -1269,7 +1271,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
           : (kind === 'quote' ? 'internal_sales.form.quote.createTitle' : 'internal_sales.form.order.createTitle'),
       )}
       titleHeadingLevel={1}
-      backHref={entryHref}
+      backHref={backHref}
       fields={fields}
       groups={groups}
       initialValues={{
@@ -1293,6 +1295,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
   const fields = useFields(t, entryTradeType)
   const { channels, hasAll: hasAllChannels, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
   const entryHref = listHrefForTradeType(kind, entryTradeType)
+  const backHref = useReturnHref(entryHref)
   const groups = useGroups(t, {
     withQuoteLoad: kind === 'order',
     mode: 'edit',
@@ -1416,7 +1419,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
   }, [channels, documentId, hasAllChannels, initial, kind, loadedLineIds, missingChannelMessage, t])
 
   if (isNotFound) {
-    return <RecordNotFoundState label={t('internal_sales.form.notFound')} backHref={entryHref} />
+    return <RecordNotFoundState label={t('internal_sales.form.notFound')} backHref={backHref} />
   }
   if (error) return <ErrorMessage label={error} />
 
@@ -1431,7 +1434,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
       // This module has no per-document detail view — the edit page *is* the document's page.
       // Back/cancel must therefore leave for the list; built from the document's own edit href they
       // addressed the page the operator was already on and clicking them did nothing.
-      backHref={entryHref}
+      backHref={backHref}
       fields={fields}
       groups={groups}
       initialValues={initial ?? fallback}

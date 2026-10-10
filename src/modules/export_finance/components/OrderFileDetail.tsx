@@ -45,6 +45,7 @@ import { formatDisplayDate, toUtcDateInputValue } from '@open-mercato/ui/primiti
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT } from '@open-mercato/shared/lib/i18n/context'
+import { useReturnHref } from '@/lib/navigation/returnTo'
 import { AttachmentPreviewLink, useAttachmentPreview } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { useCurrencyOptions, withCurrentCurrency } from '../../currency_policy/lib/clientOptions'
@@ -1150,6 +1151,7 @@ export default function OrderFileDetail({ purchaseOrderId }: { purchaseOrderId: 
   const t = useT()
   const locale = useLocale()
   const scopeVersion = useOrganizationScopeVersion()
+  const backHref = useReturnHref(ORDER_FILES_LIST_HREF)
   const [activeTab, setActiveTab] = React.useState<'business' | 'finance'>('business')
   // Optimistic until the capability probe answers: a failed probe must never lock a manager out.
   const [canManage, setCanManage] = React.useState(true)
@@ -1203,7 +1205,7 @@ export default function OrderFileDetail({ purchaseOrderId }: { purchaseOrderId: 
     return (
       <RecordNotFoundState
         label={t('export_finance.orders.errors.notFound')}
-        backHref={ORDER_FILES_LIST_HREF}
+        backHref={backHref}
       />
     )
   }
@@ -1215,7 +1217,7 @@ export default function OrderFileDetail({ purchaseOrderId }: { purchaseOrderId: 
     <>
       <FormHeader
         mode="detail"
-        backHref={ORDER_FILES_LIST_HREF}
+        backHref={backHref}
         entityTypeLabel={t('export_finance.orders.detail.title')}
         title={row.businessNumber ?? row.number ?? EMPTY_CELL}
         subtitle={row.supplierName ?? undefined}
@@ -1257,7 +1259,7 @@ export default function OrderFileDetail({ purchaseOrderId }: { purchaseOrderId: 
                 <TextValue value={row.ownerName} />
               </SummaryField>
               <SummaryField label={t('export_finance.orders.detail.field.productCategory')}>
-                <TextValue value={row.productCategory} />
+                <TextValue value={row.productCategoryLabel ?? row.productCategory} />
               </SummaryField>
               <SummaryField label={t('export_finance.orders.detail.field.status')}>
                 <BusinessStatusBadge status={row.businessStatus} />

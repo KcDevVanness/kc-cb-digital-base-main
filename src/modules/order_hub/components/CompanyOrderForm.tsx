@@ -24,10 +24,13 @@ import { COMPANY_ORDER_PAYMENT_STATUSES, companyOrderStatusOptions } from '../da
  * The create/edit surface for a **company order** (`order_hub_company_orders`) — the root record the
  * workbench lists and `/backend/orders/<id>` opens as a hub.
  *
- * The form owns the root's own fields (title / dates / status / notes), its optional default
- * customer/supplier (the buyer/supplier the child forms prefill from) and — on create only — the
+ * The form owns the root's own fields (dates / status / notes), its optional customer/supplier (the
+ * buyer/supplier the child forms prefill from) and — on create only — the
  * "link an existing document" multi-selects that attach sales/purchase orders while the root is
- * created, in one call. Dates are date-only (`YYYY-MM-DD`): the command writes them as UTC midnight
+ * created, in one call. `title` is not part of the form (owner 2026-10-09): the column stays for
+ * backfilled roots and the hub still prints it under the number, but nobody fills one in.
+ *
+ * Dates are date-only (`YYYY-MM-DD`): the command writes them as UTC midnight
  * and the hub reads them back in that frame, so a `date` field is the only input that cannot shift a
  * calendar day across time zones.
  *
@@ -43,7 +46,6 @@ export const ORDERS_LIST_HREF = '/backend/orders'
 
 export type CompanyOrderFormValues = {
   id?: string
-  title: string | null
   orderDate: string | null
   etaDate: string | null
   status: string
@@ -64,15 +66,18 @@ export type CompanyOrderFormValues = {
 }
 
 /**
- * The root's own fields plus the two default-counterparty ids. The kept snake→camel contract is the
+ * The root's own fields plus the two counterparty ids. The kept snake→camel contract is the
  * command's; an empty id is sent as `null` so an update clears the stored pair and a create leaves
  * it unset (both nullable).
+ *
+ * `title` is deliberately not sent: the create/edit form no longer asks for one (owner 2026-10-09),
+ * and the update command leaves an absent field alone — a save therefore never clears the title a
+ * backfilled root already carries (the hub still shows it as the header subtitle).
  */
 export function buildCompanyOrderPayload(values: CompanyOrderFormValues): Record<string, unknown> {
   // A date-only field hands back `''`/`undefined` when empty; the command rejects an empty string.
-  // `orderDate` is not nullable, so empty omits it (create defaults to today); `etaDate`/`title`/
-  // `notes` are nullable, so an empty field clears them explicitly rather than being omitted.
-  const title = typeof values.title === 'string' && values.title.trim().length > 0 ? values.title : null
+  // `orderDate` is not nullable, so empty omits it (create defaults to today); `etaDate`/`notes`
+  // are nullable, so an empty field clears them explicitly rather than being omitted.
   const notes = typeof values.notes === 'string' && values.notes.trim().length > 0 ? values.notes : null
   const orderDate = typeof values.orderDate === 'string' && values.orderDate.trim().length > 0
     ? values.orderDate.trim()
@@ -83,7 +88,6 @@ export function buildCompanyOrderPayload(values: CompanyOrderFormValues): Record
   const text = (value: unknown): string | null =>
     typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
   return {
-    title,
     orderDate,
     etaDate,
     status: values.status,
@@ -159,12 +163,6 @@ function useCompanyOrderFields(t: TranslateFn, withLinks: boolean, currentStatus
   }, [])
 
   return React.useMemo<CrudField[]>(() => [
-    {
-      id: 'title',
-      label: t('order_hub.companyOrders.form.title'),
-      type: 'text',
-      layout: 'full',
-    },
     {
       id: 'orderDate',
       label: t('order_hub.companyOrders.form.orderDate'),
@@ -324,7 +322,6 @@ function toCompanyOrderFormValues(item: Record<string, unknown>): CompanyOrderFo
   const updatedAtRaw = item.updatedAt ?? item.updated_at
   return {
     id: typeof item.id === 'string' ? item.id : undefined,
-    title: readProjectedText(item, 'title'),
     orderDate: readProjectedText(item, 'orderDate'),
     etaDate: readProjectedText(item, 'etaDate'),
     status: readProjectedText(item, 'status') || 'placed',

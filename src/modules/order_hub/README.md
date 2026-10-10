@@ -47,18 +47,35 @@ app 自有模块。**公司订单是一个真表**：`order_hub_company_orders`�
 
 ## 详情 hub（`components/OrderDetail.tsx`，`/backend/orders/<companyOrderId>`）
 
-- 抬头卡（编号/标题/下单/预计交货/状态 + 默认客户/默认供应商 + 备注 + 编辑）+ 八个区块，锚点 `internal-orders` / `external-orders` /
-  `purchasing` / `contracts` / `documents` / `shipments` / `packing-lists` / `money`（后六个沿用旧 hub 的 id，
-  工作台深链可继续解析）。
-- **三个可写关联区块**（对内/对外销售订单、采购订单）：行来自 `GET /api/order_hub/orders/links?companyOrderId=&kind=`，
-  显示冻结快照；「打开」→ 销售单编辑页（`/backend/{internal,external}-sales/orders/<refId>/edit`）/ 采购单详情页；
-  「移除」= 用当前 `updatedAt` 做一次成套替换；「关联…」打开 `CompanyOrderLinkDialog`（成套替换、保存带版本、409 走
-  平台冲突条并重读、跨组织/未知 422）；「新建」带 `?companyOrderId=`（采购单在恰有一张销售子单时另带
-  `&orderKind=&orderId=`，让来源锚一起写）。
+- 抬头卡（编号 + 标题副标题 + 下单/预计交货/备注/是否已收款/客户/供应商 六格 + 编辑；动作区只留 编辑 / 协作组织，
+  协作者为「修改状态与备注」——「全字段」是**工作台行操作**，详情页本身就是填写面，不再重复入口），区块按**业务板块**
+  分组（与 nav_shell 导航树同构）：采购（`purchasing`）→ 出口销售（`sales`）→ 合同与单据（`contracts` / `documents`）→
+  发运与装箱（`shipments` / `packing-lists`）→ 收汇·退税（`money`）→ 文件（`files`）；`#purchasing`/`#contracts`/
+  `#documents`/`#shipments`/`#packing-lists`/`#money`/`#files` 沿用，`#internal-orders`/`#external-orders` 退役
+  （对内/对外合并为一个「销售订单」区块）。
+- **两个可写关联区块**（销售订单 = 对内 + 对外两个 kind 的合并列表，行带 对内/对外 徽标；采购订单）：行来自
+  `GET /api/order_hub/orders/links?companyOrderId=`（一次读全量，按 kind 渲染）显示冻结快照；行号「点开」= 右侧
+  **只读预览抽屉**（打开时按 id 现场读该单据）；「编辑」→ 模块自己的页面（销售单/采购单的编辑页，带 `?returnTo=`
+  回到本页）；「移除」= 用当前 `updatedAt` 做一次成套替换；「关联…」打开 `CompanyOrderLinkDialog`（销售区块在对话框
+  内选 对内/对外，成套替换、保存带版本、409 走平台冲突条并重读、跨组织/未知 422）；「新建」带 `?companyOrderId=`
+  （采购单在恰有一张销售子单时另带 `&orderKind=&orderId=`，让来源锚一起写；销售区块先在对话框里选类型）。
+- **预览抽屉**（`components/LinkedRecordPreviewDrawer.tsx` + `linkedRecordPreviewSources.tsx`）：所有区块的行「点开」
+  都走它——复用 app 级 `SourcePreviewDrawer`，按 kind（销售/采购/合同/PI·CI/税务发票/发运单/装箱单/收汇/退税）各自
+  读一条并映射为只读字段，缺失字段显示「—」；抽屉底部「编辑」才离开本页（带 `?returnTo=`），读失败在抽屉内给重试。
+- **返回本页**：hub 生成的所有跳转链接都带 `returnTo=<本页>`，目标模块页面用共享件
+  `src/lib/navigation/returnTo.ts` 的 `useReturnHref()` 作为自己的「返回」链接（白名单：仅 `/backend/` 开头、
+  无空白/控制字符的同站路径，非法值回退各模块默认台账）。
+- **子单行的状态徽标**：有状态才渲染（销售走销售字典、采购走采购词表、未知码回原值）；无状态的行**不渲染徽标**——
+  本开发库 9 张销售单里 8 张没有状态，只写「—」的徽章不承载信息（owner 2026-10-09 复查）。纯函数在
+  `components/companyOrderChildStatus.ts`，单测 `components/__tests__/companyOrderChildStatus.test.ts`。
 - **五个下游只读区块**（合同/单据/发运/装箱/收汇·退税）：按**子单集合并集**读各模块既有 API（每个子单一次，按 id
-  去重，子单数上限 20，超出在区块尾部提示）；每区块独立 query、独立 loading/error(+重试)；下游行沿用
-  `QuickEditDialog` 就地改头部字段；「新建」的目标子单解析：无子单时禁用并提示，恰一个直连，多个先弹选择器。
-  「查看全部」：恰一个相关子单时带该子单过滤，否则落到不带过滤的台账页（单值过滤表达不了并集）。
+  去重，子单数上限 20，超出在区块尾部提示）；每区块独立 query、独立 loading/error(+重试)；行号「点开」同样走预览
+  抽屉，合同/单据/发运仍保留 `QuickEditDialog` 就地改头部字段；「新建」的目标子单解析：无子单时禁用并提示，恰一个
+  直连，多个先弹选择器（都带 `returnTo`）。「查看全部」：恰一个相关子单时带该子单过滤，否则落到不带过滤的台账页
+  （单值过滤表达不了并集）。
+- **单据字段槽位**（第七轮）：`components/OrderDocumentsSection.tsx` 在 `#documents` 板块下逐槽位一行（本单文件
+  chips + 该行独立上传 + 子单来源信号），数据来自 `GET /api/order_hub/orders/documents`；通用文件区仍在其下
+  （「其他文件」）。详见「第七轮」节。
 - **失败隔离**：某区块读失败只在该区块显示错误 + 重试，其余照常。
 
 ## 关联与预填（写入闭环）
@@ -138,6 +155,28 @@ owner 看 `/backend/orders` 后反馈：`对方` 看不出是什么，整行「�
 - **「是否已收款」列**（第六轮字段）：`paid_full`/`unpaid` 按第六轮标签渲染，`null`（迁移前的历史行）渲染 `—`。
 - 口径与证据：spec「第八轮」节（REQ-028 / TEST-021–022 / AC-025）；单测 `components/__tests__/companyOrderDisplay.test.ts`。
 
+## 第九轮：板块布局、关联预览与「回到订单」（2026-10-09，owner 反馈）
+
+> 本轮在本地分支上原按「第六轮」开发；落到 `dev` 时该号已由 #152（订单状态词表/是否已收款）占用，第七轮为
+> #157（字段级附件槽位）、第八轮为 #156（工作台行改显根单字段），故按落地顺序记为**第九轮**
+> （REQ-029…REQ-038 / TEST-023…TEST-026 / AC-026…AC-035）。
+
+- **板块布局**：hub 的区块按 采购 / 出口销售 / 合同与单据 / 发运与装箱 四个业务板块分区（`SectionHeader` 标题，
+  与 `nav_shell` 导航树同构），其后是 收汇·退税 与 文件；「对内销售订单 / 对外销售订单」不再是两个并列区块，而是
+  合并的「销售订单」区块（行徽标区分，单据与通道标记不变）。
+- **关联预览**：任何区块的行「点开」= 右侧只读预览抽屉（`LinkedRecordPreviewDrawer` + `linkedRecordPreviewSources`，
+  复用 `@/lib/source-preview`），「编辑」是独立按钮（子单行 → 模块编辑页）；不再「点开即离开页面」。
+- **回到本页**：hub 跳到模块页面的链接都带 `?returnTo=`，模块页面用 `@/lib/navigation/returnTo` 的 `useReturnHref()`
+  当「返回」目标（改动落在 purchasing / internal_sales / trade_docs / cross_border / export_finance 的
+  详情与编辑页）。
+- **表单与文案**：公司订单建单/编辑页不再填写「标题」（列保留、历史值仍在抬头副标题显示，保存不发送 `title`）；
+  抬头「默认客户/默认供应商」改称「客户/供应商」；采购单「订单描述」改读字典库的 **Product categories**
+  （`product_category`，product_codes 播种），`purchasing` 不再播种 `order_product_category`。
+- **空状态徽标退役（复查）**：子单行只在**有状态**时渲染徽章；无状态（本库 8/9 张销售单）不再出现只写「—」的
+  徽章。抽取 `components/companyOrderChildStatus.ts`（单测覆盖 null / 销售字典 / 采购词表 / 原值四条路径）。
+- **「全字段」入口收敛（复查）**：hub 抬头动作区不再放「全字段」按钮；35 列汇总抽屉保留为**工作台行操作**
+  （入口只在列表侧，详情页不重复）。
+
 ## 规则（有意为之）
 
 - **根单不持有业务数据**：客户/币种/金额/明细仍在销售单与采购单里；根单只持有编号/标题/日期/状态/是否已收款/备注与关联。
@@ -158,7 +197,7 @@ owner 看 `/backend/orders` 后反馈：`对方` 看不出是什么，整行「�
 ## 验证
 
 ```bash
-yarn jest --config jest.config.cjs src/modules/order_hub
+yarn jest --config jest.config.cjs src/modules/order_hub src/lib/navigation
 JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral company-orders
 JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral company-order-links
 JWT_SECRET=$(openssl rand -hex 32) yarn test:integration:ephemeral company-order-backfill
@@ -171,6 +210,13 @@ yarn mercato auth sync-role-acls   # 既有租户补授 order_hub.manage
 `/backend/orders/<companyOrderId>`；「关联…」成套替换后区块与工作台计数同步；hub 三个「新建」带
 `?companyOrderId=` 且保存后自动关联并跳回（采购单 `#purchasing`）；旧 `/backend/orders/<salesOrderId>` 归位；
 「未关联」态可一键建根并关联；暗色与窄屏（390×844）正常；对话框 Esc 关闭。
+
+浏览器（第九轮，2026-10-09）：hub 六个板块标题 + 合并「销售订单」区块两行（对内/对外 徽标）；行号「点开」=
+右侧只读预览抽屉（采购/销售两种都实测），抽屉底部「编辑」带 `returnTo=%2Fbackend%2Forders%2F<id>`；跳到对内
+销售编辑页后「← 返回」= 该订单页；`?returnTo=https://evil.example/x` 与缺参都回退模块台账；无状态子单行不出现
+空徽标（有状态的采购行照常）；hub 抬头动作区无「全字段」；工作台「全字段」抽屉 = 订单 / 金额与日期 / 单证与文件 /
+财务 四组数据；建单页无「标题」、抬头 = 客户/供应商；采购单「订单描述」候选 = `TP — 尿片 / CL — 猫砂 / LB — 猫砂盆 /
+LS — 猫砂铲 / CB — 餐具`；窄屏 390×844 正常。
 
 ## 回滚
 

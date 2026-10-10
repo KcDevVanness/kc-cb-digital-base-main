@@ -40,6 +40,7 @@ import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/u
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { AttachmentPreviewLink, useAttachmentPreview } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { useReturnHref } from '@/lib/navigation/returnTo'
 import { PurchaseOrderStatusBadge } from '@/lib/orders/purchaseOrderStatus'
 import { RelatedSection, loadRelatedPage } from '@/lib/related/RelatedSection'
 import { readText } from '../lib/supplierProductFormValues'
@@ -1210,12 +1211,13 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
   const t = useT()
   const locale = useLocale()
   const scopeVersion = useOrganizationScopeVersion()
+  const backHref = useReturnHref(ORDERS_LIST_HREF)
   const [order, setOrder] = React.useState<PurchaseOrderRecord | null>(null)
   const [lines, setLines] = React.useState<OrderLineRecord[]>([])
   const [payments, setPayments] = React.useState<PaymentRecord[]>([])
   const [documents, setDocuments] = React.useState<OrderDocumentRecord[]>([])
   const [documentsLoadFailed, setDocumentsLoadFailed] = React.useState(false)
-  // The `order_product_category` dictionary, resolved to a label for the summary; an empty list
+  // The `product_category` dictionary, resolved to a label for the summary; an empty list
   // (a dictionary the operator has not seeded, or a failed load) falls back to the stored code.
   const [categoryOptions, setCategoryOptions] = React.useState<CrudFieldOption[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -1413,7 +1415,7 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
     return (
       <RecordNotFoundState
         label={t('purchasing.orders.form.loadFailed')}
-        backHref={ORDERS_LIST_HREF}
+        backHref={backHref}
       />
     )
   }
@@ -1433,7 +1435,7 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
     <>
       <FormHeader
         mode="detail"
-        backHref={ORDERS_LIST_HREF}
+        backHref={backHref}
         entityTypeLabel={t('purchasing.orders.page.title')}
         title={order.number ?? EMPTY_CELL}
         subtitle={order.supplierName ?? undefined}

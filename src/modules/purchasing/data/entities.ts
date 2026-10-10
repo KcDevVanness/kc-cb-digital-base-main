@@ -178,7 +178,7 @@ export class PurchasingPurchaseOrder {
   @Property({ name: 'business_number', type: 'text', nullable: true })
   businessNumber?: string | null
 
-  /** Product category (订单描述) — a single dictionary value from `order_product_category`. */
+  /** Product category (订单描述) — a single value from the `product_category` dictionary. */
   @Property({ name: 'product_category', type: 'text', nullable: true })
   productCategory?: string | null
 

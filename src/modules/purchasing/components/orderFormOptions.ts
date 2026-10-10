@@ -8,14 +8,15 @@ import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionar
  * Option loaders for the purchase-order form's reference pickers.
  *
  * Each picker is backed by the owning module's own scoped route, so the form can only offer a
- * record the caller may open: the order description comes from the dictionary this module seeds
- * (`order_product_category`), the purchaser from the platform's user list, the customer from the
- * CRM's company list, and an order line's product from either the product master or a supplier's
- * own library. All but the line's product are optional, so a list that cannot be read yields no
- * options rather than failing the form — an order must stay creatable with a blank pick.
+ * record the caller may open: the order description comes from the shared dictionary-library
+ * `product_category` list (the 字典库「Product categories」 vocabulary `product_codes` seeds), the
+ * purchaser from the platform's user list, the customer from the CRM's company list, and an order
+ * line's product from either the product master or a supplier's own library. All but the line's
+ * product are optional, so a list that cannot be read yields no options rather than failing the
+ * form — an order must stay creatable with a blank pick.
  */
 
-export const PRODUCT_CATEGORY_DICTIONARY_KEY = 'order_product_category'
+export const PRODUCT_CATEGORY_DICTIONARY_KEY = 'product_category'
 
 const USERS_API_PATH = '/api/auth/users'
 const COMPANIES_API_PATH = 'customers/companies'
@@ -93,8 +94,9 @@ export function findOptionSnapshot(options: CrudFieldOption[], id: string): Reco
 }
 
 /**
- * Order descriptions from the `order_product_category` dictionary this module seeds. The order
- * stores the entry's code, so the select and the list column can never disagree about a label.
+ * Order descriptions from the shared `product_category` dictionary (the 字典库「Product categories」
+ * list seeded by `product_codes`). The order stores the entry's code, so the select and the list
+ * column can never disagree about a label.
  */
 export async function loadProductCategoryOptions(errorMessage: string): Promise<CrudFieldOption[]> {
   try {
@@ -103,7 +105,7 @@ export async function loadProductCategoryOptions(errorMessage: string): Promise<
       const value = entry.value.trim()
       if (!value) return []
       // The label is the display name alone; the order stores the code, so the picker shows it in
-      // front (`litter_box — 智能全自动猫厕所`), the same shape the currency and unit pickers use.
+      // front (`CL — 猫砂`), the same shape the currency and unit pickers use.
       const label = entry.label.trim()
       return [{ value, label: label && label !== value ? `${value} — ${label}` : value }]
     })

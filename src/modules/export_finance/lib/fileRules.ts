@@ -150,6 +150,8 @@ export type OrderFileRow = {
   ownerName: string | null
   customerName: string | null
   productCategory: string | null
+  /** The `productCategory` code resolved to its `product_category` dictionary label, or `null`. */
+  productCategoryLabel: string | null
   businessStatus: OrderFileStatus
   placedAt: string | null
   expectedDeliveryAt: string | null

@@ -37,6 +37,7 @@ import {
 import { useOrganizationScopeDetail } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { parseExactDecimal } from '@open-mercato/core/modules/dashboards/lib/exactDecimal'
+import { useReturnHref } from '@/lib/navigation/returnTo'
 import { parseSourceOrderParams, sourceOrderPayload } from '@/lib/orders/sourceOrderParams'
 import { AMOUNT_SCALE, multiplyExactDecimal, toAmountString } from '../lib/money'
 import { OurPartyPicker } from './ContractForm'
@@ -1483,6 +1484,7 @@ function DocumentCreateForm({ kind, listHref, fields, groups }: FormWiring) {
   const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const backHref = useReturnHref(listHref)
 
   // Arriving from a contract's hub (`?contractId=`) starts the document bound to that contract;
   // the picker still lets the operator change or clear it.
@@ -1604,7 +1606,7 @@ function DocumentCreateForm({ kind, listHref, fields, groups }: FormWiring) {
           ? t('trade_docs.documents.form.createTitleCommercial', '新建商业发票（CI）')
           : t('trade_docs.documents.form.createTitleProforma', '新建形式发票（PI）')}
         titleHeadingLevel={1}
-        backHref={listHref}
+        backHref={backHref}
         fields={fields}
         groups={groups}
         initialValues={prefillState.status === 'ready' ? prefillState.values : baseValues}
@@ -1629,6 +1631,7 @@ function DocumentEditForm({
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [isNotFound, setIsNotFound] = React.useState(false)
+  const backHref = useReturnHref(listHref)
 
   React.useEffect(() => {
     let cancelled = false
@@ -1695,7 +1698,7 @@ function DocumentEditForm({
   )
 
   if (isNotFound) {
-    return <RecordNotFoundState label={t('trade_docs.documents.form.notFound', '未找到该单据，或你没有访问权限。')} backHref={listHref} />
+    return <RecordNotFoundState label={t('trade_docs.documents.form.notFound', '未找到该单据，或你没有访问权限。')} backHref={backHref} />
   }
   if (error) return <ErrorMessage label={error} />
 
@@ -1705,7 +1708,7 @@ function DocumentEditForm({
         ? t('trade_docs.documents.form.editTitleCommercial', '编辑商业发票（CI）')
         : t('trade_docs.documents.form.editTitleProforma', '编辑形式发票（PI）')}
       titleHeadingLevel={1}
-      backHref={listHref}
+      backHref={backHref}
       fields={fields}
       groups={groups}
       initialValues={initial ?? fallbackInitialValues}
