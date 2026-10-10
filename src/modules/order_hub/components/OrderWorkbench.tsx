@@ -20,7 +20,7 @@ import { formatMoneyAmount } from '@/lib/money/format'
 import type { CompanyOrderStageSummary } from '../lib/orderStages'
 import { COMPANY_ORDER_STATUSES } from '../data/validators'
 import OrderFieldsDrawer, { type OrderFieldsTarget } from './OrderFieldsDrawer'
-import { toOrderWorkbenchRow, type OrderWorkbenchRow } from './companyOrderDisplay'
+import { primaryOrderAmount, toOrderWorkbenchRow, type OrderWorkbenchRow } from './companyOrderDisplay'
 
 /**
  * The order workbench: one row per **company order** (`order_hub_company_orders`), the root that
@@ -235,13 +235,14 @@ export default function OrderWorkbench() {
         cell: ({ row }) => {
           const amounts = stageById.get(row.original.id)?.amounts ?? []
           if (amounts.length === 0) return '—'
-          // The money side of the deal: the sales figure, or the purchase figure when the order has
-          // no sales child yet — each currency on its own (`¥` and `$` are never added together).
+          // The money side of the deal: the **purchase** figure leads (owner 2026-10-10, REQ-042) and
+          // the sales figure answers only when the order has no purchase child yet — each currency on
+          // its own (`¥` and `$` are never added together).
           return (
             <span className="tabular-nums">
               {amounts
                 .map((amount) => {
-                  const value = amount.sales !== '0.00' ? amount.sales : amount.purchase
+                  const value = primaryOrderAmount(amount)
                   return formatMoneyAmount(value, amount.currencyCode, locale) ?? `${amount.currencyCode} ${value}`
                 })
                 .join(' · ')}

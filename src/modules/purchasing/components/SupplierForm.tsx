@@ -8,7 +8,7 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { createCrud, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
-import { loadCodeListOptions } from '../lib/codeListOptions'
+import { loadCodeListOptions } from '@/lib/dictionaries/codeListOptions'
 import { PRODUCT_BRAND_DICTIONARY_KEY } from '../../product_codes/lib/dictionaryValues'
 // Deliberate cross-module reuse: the bank block is one value object with one editor, and `parties`
 // owns the only implementation (multiple accounts, exactly one default, clear affordances). Copying
@@ -183,12 +183,13 @@ function useSupplierFields(t: TranslateFn, mode: 'create' | 'edit'): CrudField[]
     },
     // Only the edit form renders the code, and only as a read-only value: the command issues it on
     // create, and it is already frozen into purchase-order snapshots by the time anyone sees it.
+    // `disabled` (not `readOnly`) so it renders greyed — owner 2026-10-10: 不能编辑的填写项需要变灰.
     ...(mode === 'edit'
       ? [{
           id: 'code',
           label: t('purchasing.suppliers.form.field.code'),
           type: 'text' as const,
-          readOnly: true,
+          disabled: true,
           description: t('purchasing.suppliers.form.help.code'),
         }]
       : []),

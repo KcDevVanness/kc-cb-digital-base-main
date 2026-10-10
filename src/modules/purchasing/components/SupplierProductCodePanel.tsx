@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@open-mercato/ui/primitives/spinner'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import type { TranslateFn } from '@open-mercato/shared/lib/i18n/context'
-import { useCodeListOptions } from '../lib/codeListOptions'
+import { useCodeListOptions } from '@/lib/dictionaries/codeListOptions'
 import {
   PRODUCT_BRAND_DICTIONARY_KEY,
   PRODUCT_CATEGORY_DICTIONARY_KEY,

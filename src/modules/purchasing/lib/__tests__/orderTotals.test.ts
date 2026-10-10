@@ -6,6 +6,7 @@ import {
   computeLineTotals,
   computeOrderTotals,
   derivePaymentState,
+  stagePaidTotals,
 } from '../orderTotals'
 
 /**
@@ -112,6 +113,39 @@ describe('derivePaymentState', () => {
       paidTotal: '0.01',
       outstanding: '0.02',
       paymentStatus: 'partially_paid',
+    })
+  })
+})
+
+describe('stagePaidTotals', () => {
+  it('reads an empty set as two zero amounts', () => {
+    expect(stagePaidTotals([])).toEqual({ paidDeposit: '0.00', paidBalance: '0.00' })
+  })
+
+  it('sums each stage separately and ignores `other` payments', () => {
+    expect(
+      stagePaidTotals([
+        { stage: 'deposit', amount: '300.00' },
+        { stage: 'balance', amount: '700.00' },
+        { stage: 'other', amount: '55.55' },
+      ]),
+    ).toEqual({ paidDeposit: '300.00', paidBalance: '700.00' })
+  })
+
+  it('adds multiple payments of one stage exactly, at the cent', () => {
+    expect(
+      stagePaidTotals([
+        { stage: 'deposit', amount: '0.01' },
+        { stage: 'deposit', amount: '0.02' },
+        { stage: 'balance', amount: '1234.56' },
+      ]),
+    ).toEqual({ paidDeposit: '0.03', paidBalance: '1234.56' })
+  })
+
+  it('keeps a stage with no payment at 0.00 while the other has a value', () => {
+    expect(stagePaidTotals([{ stage: 'balance', amount: '10' }])).toEqual({
+      paidDeposit: '0.00',
+      paidBalance: '10.00',
     })
   })
 })

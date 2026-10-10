@@ -24,7 +24,7 @@
 
 import { detectColumnMappings } from './columnMapping'
 import { cellToText, isNullToken } from './valueNormalization'
-import type { CellValue } from './workbook'
+import type { CellValue } from '@/lib/workbook'
 
 export type StructureWarning =
   | 'unit_row_folded'

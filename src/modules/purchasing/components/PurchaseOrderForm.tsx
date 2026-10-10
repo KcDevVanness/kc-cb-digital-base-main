@@ -34,8 +34,6 @@ import {
   findOptionSnapshot,
   loadCustomerOptions,
   loadOwnedProductOptions,
-  loadOwnerOptions,
-  loadProductCategoryOptions,
   loadSupplierProductOptions,
   type SupplierProductOption,
 } from './orderFormOptions'
@@ -117,6 +115,9 @@ export type PurchaseOrderRecord = {
   total: string
   /** Derived from the payment rows by the read API; not stored on the order. */
   paidTotal: string
+  /** Recorded sums per stage (`deposit` / `balance` payments only), derived by the read API. */
+  paidDeposit: string
+  paidBalance: string
   outstanding: string
   paymentStatus: PaymentStatus
   expectedShipAt: string | null
@@ -180,6 +181,8 @@ export function toPurchaseOrderRecord(item: Record<string, unknown>): PurchaseOr
     taxTotal: readText(item, 'taxTotal', 'tax_total') || '0',
     total: readText(item, 'total') || '0',
     paidTotal: readText(item, 'paidTotal', 'paid_total') || '0',
+    paidDeposit: readText(item, 'paidDeposit', 'paid_deposit') || '0.00',
+    paidBalance: readText(item, 'paidBalance', 'paid_balance') || '0.00',
     outstanding: readText(item, 'outstanding') || '0',
     paymentStatus: PAYMENT_STATUSES.includes(item.paymentStatus as PaymentStatus)
       ? (item.paymentStatus as PaymentStatus)
@@ -358,11 +361,6 @@ async function loadLineProductOptions(
 export type PurchaseOrderFormValues = {
   /** The business's own order number; the system `number` is assigned when the order is placed. */
   businessNumber: string
-  /** Dictionary code of the `product_category` list. */
-  productCategory: string
-  ownerUserId: string
-  /** Frozen display snapshot of the picked purchaser, sent by the client (see handleSubmit). */
-  ownerSnapshot: Record<string, unknown> | null
   customerId: string
   /** Frozen display snapshot of the picked customer, sent by the client (see handleSubmit). */
   customerSnapshot: Record<string, unknown> | null
@@ -383,9 +381,6 @@ export type PurchaseOrderFormValues = {
 
 export const EMPTY_ORDER_VALUES: PurchaseOrderFormValues = {
   businessNumber: '',
-  productCategory: '',
-  ownerUserId: '',
-  ownerSnapshot: null,
   customerId: '',
   customerSnapshot: null,
   supplierId: '',
@@ -462,17 +457,16 @@ function toOptionalText(value: unknown): string | null {
  * coerces them onto their fixed-scale columns) and blank optional fields as `null` so
  * "not set" cannot be read as the previous value.
  *
- * A snapshot without its id is dropped: clearing the purchaser must clear what the order was
+ * A snapshot without its id is dropped: clearing the customer must clear what the order was
  * filed under, otherwise the detail page would keep showing a name the order no longer owns.
+ *
+ * 订单描述 (`productCategory`) and 采购负责人 (`ownerUserId`/`ownerSnapshot`) are **not** built here:
+ * the company order root owns them and mirrors them down (see `mirror-root-order-fields`).
  */
 export function buildPurchaseOrderPayload(values: PurchaseOrderFormValues): Record<string, unknown> {
-  const ownerUserId = toOptionalText(values.ownerUserId)
   const customerId = toOptionalText(values.customerId)
   return {
     businessNumber: toOptionalText(values.businessNumber),
-    productCategory: toOptionalText(values.productCategory),
-    ownerUserId,
-    ownerSnapshot: ownerUserId ? values.ownerSnapshot ?? null : null,
     customerId,
     customerSnapshot: customerId ? values.customerSnapshot ?? null : null,
     supplierId: toOptionalText(values.supplierId) ?? '',
@@ -831,16 +825,6 @@ function useOrderFields(
       layout: 'half',
     },
     {
-      id: 'productCategory',
-      label: t('purchasing.orders.form.field.productCategory'),
-      type: 'select',
-      layout: 'half',
-      loadOptions: () =>
-        rememberPickerOptions(pickerOptions, 'productCategory', () =>
-          loadProductCategoryOptions(t('purchasing.orders.form.optionsLoadFailed')),
-        ),
-    },
-    {
       id: 'supplierId',
       label: t('purchasing.orders.form.field.supplier'),
       type: 'select',
@@ -851,16 +835,6 @@ function useOrderFields(
       // as "no supplier" while the value is actually set.
       options: supplierSeed ? [supplierSeed] : undefined,
       loadOptions: (query) => loadSupplierOptions(t('purchasing.orders.form.loadFailed'), query),
-    },
-    {
-      id: 'ownerUserId',
-      label: t('purchasing.orders.form.field.owner'),
-      type: 'select',
-      layout: 'half',
-      loadOptions: (query) =>
-        rememberPickerOptions(pickerOptions, 'ownerUserId', () =>
-          loadOwnerOptions(t('purchasing.orders.form.optionsLoadFailed'), query),
-        ),
     },
     {
       id: 'customerId',
@@ -997,9 +971,7 @@ export default function PurchaseOrderForm() {
       column: 1,
       fields: [
         'businessNumber',
-        'productCategory',
         'supplierId',
-        'ownerUserId',
         'customerId',
         'currencyCode',
         'expectedShipAt',
@@ -1025,12 +997,11 @@ export default function PurchaseOrderForm() {
 
   const handleSubmit = React.useCallback(async (values: PurchaseOrderFormValues) => {
     // The write command must not read another module's tables to resolve a display name, so the
-    // purchaser and customer snapshots are frozen here, from the option the operator picked:
-    // the label a renamed or departed user would otherwise rewrite on an order already filed.
-    // A picked id that is not on the loaded page (a user beyond the first page) sends `null`.
+    // customer snapshot is frozen here, from the option the operator picked: the label a renamed
+    // company would otherwise rewrite on an order already filed. A picked id that is not on the
+    // loaded page sends `null`.
     const payload = buildPurchaseOrderPayload({
       ...values,
-      ownerSnapshot: resolvePickerSnapshot(pickerOptionsRef, 'ownerUserId', values.ownerUserId),
       customerSnapshot: resolvePickerSnapshot(pickerOptionsRef, 'customerId', values.customerId),
     })
     try {

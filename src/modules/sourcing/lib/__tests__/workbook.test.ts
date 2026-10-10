@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 import { detectStructure } from '../headerDetection'
-import { WorkbookReadError, layoutSignature, readWorkbook } from '../workbook'
+import { WorkbookReadError, layoutSignature, readWorkbook } from '@/lib/workbook'
 import { describe, expect, it } from '@jest/globals'
 
 const SHEET_NAME = 'quotation sheet'

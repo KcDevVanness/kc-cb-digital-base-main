@@ -24,6 +24,7 @@ import { hasFeature } from '@open-mercato/shared/security/features'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import SupplierProductLinkDialog from './SupplierProductLinkDialog'
+import SupplierProductImportDialog from './SupplierProductImportDialog'
 import { trimDecimalText } from '../lib/priceKinds'
 import { formatMoneyAmount } from '@/lib/money/format'
 import { PRICE_SCALE } from '../../trade_docs/lib/money'
@@ -329,6 +330,7 @@ export default function SupplierProductsTable() {
   }, [])
 
   const [linkTarget, setLinkTarget] = React.useState<SupplierProductListRow | null>(null)
+  const [importOpen, setImportOpen] = React.useState(false)
   const [nextStep, setNextStep] = React.useState<{ productId: string; label: string } | null>(null)
 
   const refreshList = React.useCallback(() => {
@@ -738,11 +740,18 @@ export default function SupplierProductsTable() {
         columns={columns}
         data={rows}
         actions={(
-          <Button asChild>
-            <Link href={`${LIST_HREF}/create${supplierId !== ALL ? `?supplierId=${encodeURIComponent(supplierId)}` : ''}`}>
-              {t('purchasing.supplierProducts.actions.create', 'New product')}
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button asChild>
+              <Link href={`${LIST_HREF}/create${supplierId !== ALL ? `?supplierId=${encodeURIComponent(supplierId)}` : ''}`}>
+                {t('purchasing.supplierProducts.actions.create', 'New product')}
+              </Link>
+            </Button>
+            {canManage ? (
+              <Button type="button" variant="outline" onClick={() => setImportOpen(true)}>
+                {t('purchasing.supplierProducts.import.action', 'Excel import')}
+              </Button>
+            ) : null}
+          </div>
         )}
         searchValue={search}
         onSearchChange={handleSearchChange}
@@ -914,6 +923,12 @@ export default function SupplierProductsTable() {
           if (!open) setLinkTarget(null)
         }}
         onSubmit={handleLinkSubmit}
+      />
+      <SupplierProductImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        defaultSupplierId={supplierId !== ALL ? supplierId : null}
+        onImported={refreshList}
       />
     </>
   )

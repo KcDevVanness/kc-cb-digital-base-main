@@ -216,5 +216,9 @@
   "sourcing.changes.timeline.status.notInLibrary": "not in the library",
   "sourcing.changes.timeline.status.product": "Product record",
   "sourcing.changes.timeline.status.reported": "quoted in the latest version",
-  "sourcing.changes.timeline.status.notReported": "not quoted in the latest version"
+  "sourcing.changes.timeline.status.notReported": "not quoted in the latest version",
+  "sourcing.quotes.archiveConfirmBody": "An archived quotation leaves the working list and takes no further part in the flow.",
+  "sourcing.wizard.remapConfirmTitle": "Rebuild the lines?",
+  "sourcing.wizard.remapConfirmBody": "The {count} lines built so far are replaced by the sheet’s current mapping.",
+  "sourcing.wizard.remap": "Rebuild"
 }

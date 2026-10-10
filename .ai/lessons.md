@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 63 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 64 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -52,7 +52,7 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [Next inlines only static process.env reads, so a framework dynamic lookup sees browser defaults](lessons/next-client-env-dynamic-lookup.md) — area:backend-ui,framework-context; module:auth,platform; topic:password-policy,client-env,process-env,next-inlining,auth-forms,ssr-hydration
 - [src/modules.ts is loaded by the CLI: page overrides shadow the package file, never import client code](lessons/modules-ts-must-stay-node-loadable.md) — area:umes,architecture,framework-context; module:platform,dictionaries; topic:module-overrides,route-overrides,page-override,module-registry,cli-bootstrap,client-boundary
 - [yarn mercato module add rewrites src/modules.ts and drops its comments — diff the file before anything else](lessons/module-add-rewrites-modules-ts.md) — area:architecture,framework-context; module:platform; topic:module-registry,cli-side-effects,comments,code-review,generated-files
-- [An option loader must ask for no more rows than the route's pageSize cap](lessons/option-loaders-must-respect-page-size-caps.md) — area:debugging,backend-ui; module:sourcing,purchasing,internal_sales; topic:option-sources,pickers,page-size,zod-rejection,empty-dropdown
+- [An option loader must ask for no more rows than the route's pageSize cap](lessons/option-loaders-must-respect-page-size-caps.md) — area:debugging,backend-ui; module:sourcing,purchasing,internal_sales,order_hub; topic:option-sources,pickers,page-size,zod-rejection,empty-dropdown
 - [A control inside a clickable DataTable row must stop the click from reaching the row](lessons/datatable-inline-control-needs-stop-propagation.md) — area:backend-ui,debugging; module:platform,purchasing,products,dictionaries; topic:data-table,row-click,inline-actions,stop-propagation,smoke-test
 - [A create page under a list route renders as an indented sidebar child unless `navHidden` is set](lessons/create-page-under-list-becomes-sidebar-child.md) — area:backend-ui,framework-context; module:platform,products; topic:navigation,nav-hidden,page-meta,sidebar,create-route,admin-nav
 - [Enabling the S3 provider is a three-way contract: the flag at build, the flag at runtime, and a scope-carrying driver config](lessons/s3-storage-enablement-traps.md) — area:integration,framework-context; module:attachments,storage_s3; topic:s3,env-parity,driver-resolution,tenant-scope,generated-files,minio
@@ -91,3 +91,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [A page opened from another page must carry where it came from, in a parameter that is whitelisted](lessons/opened-page-returns-to-its-origin.md) — area:backend-ui,module-data; module:order_hub,purchasing,internal_sales,trade_docs,cross_border,export_finance; topic:navigation,return-to,back-link,cross-module-jump,open-redirect,hub
 - [In a worktree session, verify which tree an edit landed in — file tools may resolve against the session root](lessons/worktree-tools-may-edit-the-primary-checkout.md) — area:spec-pr; module:platform; topic:worktree,parallel-development,tooling,relative-paths,branch-hygiene
 - [Orca→Linear writes need a read-back; the write response alone is not proof](lessons/orca-linear-writes-need-readback.md) — area:spec-pr,ai-workflow; module:platform; topic:orca-cli,linear,write-verification,idempotency,sync-tooling
+- [A row state belongs in the ⋯ menu, and the installed RowActions cannot render it disabled — ActionsDropdown can](lessons/row-state-needs-a-menu-with-disabled-items.md) — area:backend-ui,framework-context; module:purchasing,platform; topic:row-actions,actions-dropdown,disabled-state,data-table,installed-ui,owner-feedback

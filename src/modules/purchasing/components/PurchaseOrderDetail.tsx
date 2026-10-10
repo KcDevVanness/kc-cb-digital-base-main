@@ -4,7 +4,6 @@ import * as React from 'react'
 import Link from 'next/link'
 import { z } from 'zod'
 import { Loader2, Plus, Upload } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
 import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
 import {
@@ -40,10 +39,9 @@ import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/u
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { AttachmentPreviewLink, useAttachmentPreview } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { formatDepositPercent } from '@/lib/orders/depositPercent'
 import { useReturnHref } from '@/lib/navigation/returnTo'
 import { PurchaseOrderStatusBadge } from '@/lib/orders/purchaseOrderStatus'
-import { RelatedSection, loadRelatedPage } from '@/lib/related/RelatedSection'
-import { readText } from '../lib/supplierProductFormValues'
 import {
   ORDERS_API_PATH,
   ORDERS_LINES_API_PATH,
@@ -59,14 +57,18 @@ import {
   type PurchaseOrderRecord,
 } from './PurchaseOrderForm'
 import { loadProductCategoryOptions } from './orderFormOptions'
+import {
+  ROOT_ATTACHMENT_BYTES_HREF,
+  ROOT_DOCUMENTS_API_PATH,
+  ROOT_SOURCE_ANCHOR,
+  toRootDocumentSlots,
+  type RootDocumentSlot,
+} from './rootDocuments'
 
 const ORDER_LINES_PAGE_SIZE = 200
 const PAYMENT_PAGE_SIZE = 100
-const DOCUMENT_PAGE_SIZE = 100
-const EMPTY_CELL = '—'
 
-/** The order's own document sub-resource, and the page the documents table reads. */
-const ORDER_DOCUMENTS_API_PATH = 'purchasing/purchase-orders/documents'
+const EMPTY_CELL = '—'
 
 /**
  * Attachments entity id for a recorded payment: the same `entityId` the upload endpoint
@@ -80,27 +82,13 @@ const PAYMENT_ATTACHMENT_ENTITY_ID = 'purchasing:purchase_payment'
  * belongs to — the document row does not exist yet when the operator picks the file — and the
  * document command stores only the returned id.
  */
-const ORDER_DOCUMENT_ATTACHMENT_ENTITY_ID = 'purchasing:purchase_order'
 
-/** The contract link set covering this purchase order, and the contract list its ids resolve on. */
-const CONTRACTS_ORDERS_API_PATH = 'trade_docs/contracts/orders'
-const CONTRACTS_API_PATH = 'trade_docs/contracts'
-
-/** The shipments carrying goods from this purchase order, and the ledger its 「查看全部」 link opens. */
-const SHIPMENTS_API_PATH = 'cross_border/shipments'
-const SHIPMENTS_LIST_HREF = '/backend/cross_border/shipments'
-const RELATED_CONTRACT_PAGE_SIZE = 50
 
 /** Document types the module accepts — the same literals the command's enum offers. */
-const ORDER_DOCUMENT_TYPES = ['supplier_invoice', 'packing_list', 'purchase_payment_receipt', 'other'] as const
-type OrderDocumentType = (typeof ORDER_DOCUMENT_TYPES)[number]
 
-const ORDER_DOCUMENT_TYPE_LABEL_KEYS: Record<OrderDocumentType, string> = {
-  supplier_invoice: 'purchasing.orders.documents.docType.supplier_invoice',
-  packing_list: 'purchasing.orders.documents.docType.packing_list',
-  purchase_payment_receipt: 'purchasing.orders.documents.docType.purchase_payment_receipt',
-  other: 'purchasing.orders.documents.docType.other',
-}
+
+
+
 
 type OrderTransitionAction = 'place' | 'mark_shipped' | 'mark_received' | 'close' | 'cancel'
 export type PaymentStage = 'deposit' | 'balance' | 'other'
@@ -117,6 +105,8 @@ type OrderLineRecord = {
   quantity: string
   unitPrice: string
   taxRate: string
+  /** Whether the unit price already carries the tax — set in the editor, so the detail shows it. */
+  priceIncludesTax: boolean
   lineTotal: string
   note: string | null
 }
@@ -173,52 +163,6 @@ const PAYMENT_STATUS_MAP: StatusMap<PaymentStatus> = {
 
 const PAYMENT_STAGES: readonly PaymentStage[] = ['deposit', 'balance', 'other']
 
-/** A contract covering this purchase order, as `trade_docs/contracts` projects it. */
-type RelatedContractRow = {
-  id: string
-  number: string | null
-  status: string
-  currencyCode: string
-  total: string
-}
-
-/** A shipment carrying goods from this purchase order, as `cross_border/shipments` projects it. */
-type RelatedShipmentRow = {
-  id: string
-  number: string | null
-  status: string
-  containerNumber: string | null
-  eta: string | null
-}
-
-/** The two kinds a purchase order's source anchor can name — the contract page's own kind keys. */
-const SOURCE_ORDER_KIND_LABEL_KEYS: Record<string, string> = {
-  internal_sales_order: 'trade_docs.contracts.detail.orders.kind.internal_sales_order',
-  external_sales_order: 'trade_docs.contracts.detail.orders.kind.external_sales_order',
-}
-
-const CONTRACT_STATUS_LABEL_KEYS: Record<string, string> = {
-  draft: 'trade_docs.contracts.status.draft',
-  issued: 'trade_docs.contracts.status.issued',
-  signed: 'trade_docs.contracts.status.signed',
-  closed: 'trade_docs.contracts.status.closed',
-  cancelled: 'trade_docs.contracts.status.cancelled',
-}
-
-const SHIPMENT_STATUS_LABEL_KEYS: Record<string, string> = {
-  draft: 'cross_border.shipments.status.draft',
-  in_transit: 'cross_border.shipments.status.in_transit',
-  received: 'cross_border.shipments.status.received',
-  closed: 'cross_border.shipments.status.closed',
-  cancelled: 'cross_border.shipments.status.cancelled',
-}
-
-/** The stored status resolved to its label; an unknown value shows as stored, never as a raw key. */
-function relatedStatusLabel(t: TranslateFn, keys: Record<string, string>, status: string): string {
-  const key = keys[status]
-  return key ? t(key) : status
-}
-
 function toOrderLineRecord(item: Record<string, unknown>): OrderLineRecord {
   return {
     id: String(item.id ?? ''),
@@ -230,6 +174,7 @@ function toOrderLineRecord(item: Record<string, unknown>): OrderLineRecord {
     quantity: String(item.quantity ?? '0'),
     unitPrice: String(item.unitPrice ?? '0'),
     taxRate: String(item.taxRate ?? '0'),
+    priceIncludesTax: item.priceIncludesTax === true,
     lineTotal: String(item.lineTotal ?? '0'),
     note: typeof item.note === 'string' ? item.note : null,
   }
@@ -246,32 +191,6 @@ function toPaymentRecord(item: Record<string, unknown>): PaymentRecord {
     reference: typeof item.reference === 'string' ? item.reference : null,
     methodNote: typeof item.methodNote === 'string' ? item.methodNote : null,
     attachmentId: typeof item.attachmentId === 'string' ? item.attachmentId : null,
-  }
-}
-
-/** A purchase-order document as `/api/purchasing/purchase-orders/documents` projects it. */
-type OrderDocumentRecord = {
-  id: string
-  orderId: string
-  docType: OrderDocumentType
-  documentNumber: string | null
-  issuedAt: string | null
-  attachmentId: string | null
-  note: string | null
-}
-
-function toOrderDocumentRecord(item: Record<string, unknown>): OrderDocumentRecord {
-  const docType = item.docType ?? item.doc_type
-  return {
-    id: String(item.id ?? ''),
-    orderId: String(item.orderId ?? item.order_id ?? ''),
-    docType: ORDER_DOCUMENT_TYPES.includes(docType as OrderDocumentType)
-      ? (docType as OrderDocumentType)
-      : 'other',
-    documentNumber: typeof item.documentNumber === 'string' ? item.documentNumber : null,
-    issuedAt: typeof item.issuedAt === 'string' ? item.issuedAt : null,
-    attachmentId: typeof item.attachmentId === 'string' ? item.attachmentId : null,
-    note: typeof item.note === 'string' ? item.note : null,
   }
 }
 
@@ -336,10 +255,18 @@ function buildLineColumns(t: TranslateFn, currencyCode: string): ColumnDef<Order
       cell: ({ row }) => `${trimDecimalZeros(row.original.taxRate)}%`,
     },
     {
-      accessorKey: 'lineTotal',
-      header: t('purchasing.orders.list.columns.total'),
+      // Set in the editor, so the detail shows it too (owner 2026-10-10: 可填的内容需要在详情页完整显示).
+      accessorKey: 'priceIncludesTax',
+      header: t('purchasing.orders.form.lines.priceIncludesTax'),
       enableSorting: false,
-      meta: { priority: 5, align: 'right' },
+      meta: { priority: 5 },
+      cell: ({ row }) => t(row.original.priceIncludesTax ? 'common.yes' : 'common.no'),
+    },
+    {
+      accessorKey: 'lineTotal',
+      header: t('purchasing.orders.form.lines.total'),
+      enableSorting: false,
+      meta: { priority: 6, align: 'right' },
       cell: ({ row }) => (
         <MoneyAmount currencyCode={currencyCode} amount={row.original.lineTotal} className="items-end" />
       ),
@@ -348,7 +275,7 @@ function buildLineColumns(t: TranslateFn, currencyCode: string): ColumnDef<Order
       accessorKey: 'note',
       header: t('purchasing.orders.form.lines.note'),
       enableSorting: false,
-      meta: { priority: 6, truncate: true, maxWidth: 240 },
+      meta: { priority: 7, truncate: true, maxWidth: 240 },
       cell: ({ row }) => {
         const note = row.original.note
         return note ? note : <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>
@@ -779,431 +706,127 @@ function PurchasePaymentsSection({
   )
 }
 
-/** The editable shape of the 新增/编辑单证 dialog, and the body its command accepts. */
-type OrderDocumentFormValues = {
-  docType: string
-  documentNumber: string
-  issuedAt: string
-  attachmentId: string
-  note: string
+/**
+ * The root order's 「单据与文件」 slots that carry something, or `null` when the page cannot answer.
+ *
+ * The purchase order files no documents of its own any more (REQ-055), so the 单证 section mirrors
+ * the root's slots read-only instead — the associated documents show here without leaving the page
+ * (owner 2026-10-10 复查·三: 会关联什么单证数据，会联动显示在这里). The read is the hub's own summary,
+ * the same projection its 单据与文件 block and field drawer render, never its tables
+ * (`./rootDocuments` owns the payload parse).
+ *
+ * `null` covers all three unusable answers — the order is not linked, the role lacks `order_hub.view`
+ * (403), or the read failed — and each leaves the section with its pointer alone, exactly like the
+ * link lookup below; none may disturb the page's own read.
+ */
+async function fetchRootDocumentSlots(companyOrderId: string): Promise<RootDocumentSlot[] | null> {
+  try {
+    const call = await apiCall<{ documents?: { bySlot?: unknown } }>(
+      `${ROOT_DOCUMENTS_API_PATH}?companyOrderId=${encodeURIComponent(companyOrderId)}`,
+      undefined,
+      { fallback: null },
+    )
+    if (!call.ok || !call.result) return null
+    const bySlot = call.result.documents?.bySlot
+    if (!Array.isArray(bySlot)) return null
+    return toRootDocumentSlots(bySlot)
+  } catch {
+    return null
+  }
 }
 
-const EMPTY_DOCUMENT_VALUES: OrderDocumentFormValues = {
-  docType: '',
-  documentNumber: '',
-  issuedAt: '',
-  attachmentId: '',
-  note: '',
-}
 
-function toOptionalText(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  return trimmed.length ? trimmed : null
-}
 
-function buildOrderDocumentPayload(values: OrderDocumentFormValues): Record<string, unknown> {
-  return {
-    docType: ORDER_DOCUMENT_TYPES.includes(values.docType as OrderDocumentType) ? values.docType : 'other',
-    documentNumber: toOptionalText(values.documentNumber),
-    issuedAt: toOptionalText(values.issuedAt),
-    attachmentId: toOptionalText(values.attachmentId),
-    note: toOptionalText(values.note),
+
+/**
+ * The company order (根单) holding this purchase order, if any — read through the order hub's link
+ * collection with the same `refId` reverse lookup the hub itself uses.
+ *
+ * The root owns 订单描述 / 采购负责人, so this id is only needed to point 「去公司订单修改」 at the right
+ * page. A role without `order_hub.view` gets a 403 and an order that is simply not linked gets no
+ * row; both answer `null`, and neither may disturb the page's own read.
+ */
+async function fetchCompanyOrderId(purchaseOrderId: string): Promise<string | null> {
+  try {
+    const payload = await fetchCrudList<Record<string, unknown>>('order_hub/orders/links', {
+      refId: purchaseOrderId,
+      kind: 'purchase_order',
+      pageSize: 1,
+    })
+    const companyOrderId = payload.items?.[0]?.companyOrderId
+    return typeof companyOrderId === 'string' && companyOrderId.length > 0 ? companyOrderId : null
+  } catch {
+    return null
   }
 }
 
 /**
- * The upload control for a document's file. It talks to the shared attachments endpoint
- * (`POST /api/attachments`, multipart) exactly as the installed attachment surfaces do, and hands
- * the returned id back to the form — the document row stores that id, never a byte of file.
+ * The read-only mirror of the root's document slots: the root's own files with preview/download,
+ * and each child source as a chip deep-linking to that block on the root page. The loader already
+ * drops slots that carry nothing, so an empty list means the root holds no documents at all.
  */
-function PurchaseOrderDocumentAttachmentField({
-  value,
-  setValue,
-  disabled,
-  orderId,
-}: CrudCustomFieldRenderProps & { orderId: string }) {
-  const t = useT()
-  const inputRef = React.useRef<HTMLInputElement | null>(null)
-  const [fileName, setFileName] = React.useState<string | null>(null)
-  const [isUploading, setIsUploading] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
-  const attachmentId = typeof value === 'string' ? value : ''
-
-  const acceptFile = React.useCallback(async (files: FileList | null) => {
-    const file = files?.[0]
-    if (!file) return
-    setError(null)
-    setIsUploading(true)
-    try {
-      const body = new FormData()
-      body.set('entityId', ORDER_DOCUMENT_ATTACHMENT_ENTITY_ID)
-      body.set('recordId', orderId)
-      body.set('file', file)
-      const call = await apiCall<{ item?: { id?: string }; error?: string }>(
-        '/api/attachments',
-        { method: 'POST', body },
-        { fallback: null },
-      )
-      const uploadedId = call.ok && typeof call.result?.item?.id === 'string' ? call.result.item.id : ''
-      if (!uploadedId) throw new Error(t('purchasing.orders.documents.uploadFailed'))
-      setValue(uploadedId)
-      setFileName(file.name)
-    } catch (cause) {
-      setError(mutationErrorMessage(cause, t('purchasing.orders.documents.uploadFailed')))
-    } finally {
-      setIsUploading(false)
-      if (inputRef.current) inputRef.current.value = ''
-    }
-  }, [orderId, setValue, t])
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          disabled={disabled || isUploading}
-          onClick={() => inputRef.current?.click()}
-        >
-          {isUploading
-            ? <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            : <Upload className="size-4" aria-hidden="true" />}
-          {t('purchasing.orders.documents.field.attachmentId')}
-        </Button>
-        {attachmentId ? (
-          <>
-            <AttachmentPreviewLink
-              attachmentId={attachmentId}
-              fileName={fileName}
-              label={t('purchasing.orders.documents.actions.preview')}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={disabled}
-              onClick={() => {
-                setValue('')
-                setFileName(null)
-              }}
-            >
-              {t('purchasing.orders.documents.actions.remove')}
-            </Button>
-          </>
-        ) : null}
-      </div>
-      {fileName ? <p className="text-xs text-muted-foreground">{fileName}</p> : null}
-      {error ? <p className="text-xs font-medium text-status-error-text" role="alert">{error}</p> : null}
-      <input
-        ref={inputRef}
-        type="file"
-        className="hidden"
-        onChange={(event) => { void acceptFile(event.target.files) }}
-      />
-    </div>
-  )
-}
-
-function PurchaseOrderDocumentsSection({
-  orderId,
-  documents,
-  loadFailed,
-  onChanged,
+function RootDocumentsMirror({
+  companyOrderId,
+  slots,
 }: {
-  orderId: string
-  documents: OrderDocumentRecord[]
-  loadFailed: boolean
-  onChanged: () => Promise<void>
+  companyOrderId: string
+  slots: RootDocumentSlot[]
 }) {
   const t = useT()
-  const locale = useLocale()
-  const { confirm, ConfirmDialogElement } = useConfirmDialog()
-  const { openPreview, previewDialog } = useAttachmentPreview()
-  const [dialogOpen, setDialogOpen] = React.useState(false)
-  const [editing, setEditing] = React.useState<OrderDocumentRecord | null>(null)
-  // Bumping the key rebuilds the dialog form, so every open starts from the row it is editing
-  // (or from blank) instead of the values the previous open left behind.
-  const [formKey, setFormKey] = React.useState(0)
-  const dialogContentRef = React.useRef<HTMLDivElement | null>(null)
-
-  const mutationContextId = React.useMemo(() => `purchasing.purchase-order-document:${orderId}`, [orderId])
-  const { runMutation, retryLastMutation } = useGuardedMutation<{
-    formId: string
-    resourceKind: string
-    resourceId?: string
-    retryLastMutation: () => Promise<boolean>
-  }>({ contextId: mutationContextId })
-
-  const mutationContext = React.useMemo(() => ({
-    formId: mutationContextId,
-    resourceKind: 'purchasing.purchase_order_document',
-    resourceId: orderId,
-    retryLastMutation,
-  }), [mutationContextId, orderId, retryLastMutation])
-
-  const initialValues = React.useMemo<OrderDocumentFormValues>(() => {
-    if (!editing) return EMPTY_DOCUMENT_VALUES
-    return {
-      docType: editing.docType,
-      documentNumber: editing.documentNumber ?? '',
-      issuedAt: toUtcDateInputValue(editing.issuedAt) ?? '',
-      attachmentId: editing.attachmentId ?? '',
-      note: editing.note ?? '',
-    }
-  }, [editing])
-
-  const fields = React.useMemo<CrudField[]>(() => [
-    {
-      id: 'docType',
-      label: t('purchasing.orders.documents.field.docType'),
-      type: 'select',
-      required: true,
-      options: ORDER_DOCUMENT_TYPES.map((value) => ({
-        value,
-        label: t(ORDER_DOCUMENT_TYPE_LABEL_KEYS[value]),
-      })),
-    },
-    {
-      id: 'documentNumber',
-      label: t('purchasing.orders.documents.field.documentNumber'),
-      type: 'text',
-    },
-    {
-      id: 'issuedAt',
-      label: t('purchasing.orders.documents.field.issuedAt'),
-      type: 'date',
-    },
-    {
-      id: 'attachmentId',
-      label: t('purchasing.orders.documents.field.attachmentId'),
-      type: 'custom',
-      rendersOwnError: true,
-      component: (props) => <PurchaseOrderDocumentAttachmentField {...props} orderId={orderId} />,
-    },
-    {
-      id: 'note',
-      label: t('purchasing.orders.documents.field.note'),
-      type: 'textarea',
-    },
-  ], [orderId, t])
-
-  const groups = React.useMemo<CrudFormGroup[]>(() => [
-    { id: 'documentDetails', column: 1, fields: ['docType', 'documentNumber', 'attachmentId'] },
-    { id: 'documentStamp', column: 2, fields: ['issuedAt', 'note'] },
-  ], [])
-
-  const handleSubmit = React.useCallback(async (values: OrderDocumentFormValues) => {
-    const payload = buildOrderDocumentPayload(values)
-    try {
-      await runMutation({
-        operation: () => editing
-          ? updateCrud(
-            ORDER_DOCUMENTS_API_PATH,
-            { id: editing.id, ...payload },
-            { errorMessage: t('purchasing.orders.documents.saveFailed') },
-          )
-          : createCrud(
-            ORDER_DOCUMENTS_API_PATH,
-            { orderId, ...payload },
-            { errorMessage: t('purchasing.orders.documents.saveFailed') },
-          ),
-        context: mutationContext,
-        mutationPayload: editing ? { id: editing.id, ...payload } : { orderId, ...payload },
-      })
-    } catch (error) {
-      surfaceRecordConflict(error, t, { onRefresh: () => void onChanged() })
-      throw error
-    }
-    setDialogOpen(false)
-    setEditing(null)
-    await onChanged()
-  }, [editing, mutationContext, onChanged, orderId, runMutation, t])
-
-  const handleRemove = React.useCallback(async (document: OrderDocumentRecord) => {
-    const confirmed = await confirm({
-      title: t('purchasing.orders.documents.deleteConfirmTitle'),
-      description: t('purchasing.orders.documents.deleteConfirmBody'),
-      confirmText: t('purchasing.orders.documents.actions.delete'),
-      variant: 'destructive',
-    })
-    if (!confirmed) return
-    try {
-      await runMutation({
-        operation: () => deleteCrud(
-          ORDER_DOCUMENTS_API_PATH,
-          { id: document.id, errorMessage: t('purchasing.orders.documents.deleteFailed') },
-        ),
-        context: mutationContext,
-        mutationPayload: { id: document.id },
-      })
-      await onChanged()
-    } catch (error) {
-      if (surfaceRecordConflict(error, t, { onRefresh: () => void onChanged() })) return
-      flash(mutationErrorMessage(error, t('purchasing.orders.documents.deleteFailed')), 'error')
-    }
-  }, [confirm, mutationContext, onChanged, runMutation, t])
-
-  const columns = React.useMemo<ColumnDef<OrderDocumentRecord>[]>(() => [
-    {
-      accessorKey: 'docType',
-      header: t('purchasing.orders.documents.columns.type'),
-      enableSorting: false,
-      meta: { priority: 1 },
-      cell: ({ row }) => t(ORDER_DOCUMENT_TYPE_LABEL_KEYS[row.original.docType]),
-    },
-    {
-      accessorKey: 'documentNumber',
-      header: t('purchasing.orders.documents.columns.number'),
-      enableSorting: false,
-      meta: { priority: 2, truncate: true, maxWidth: 240 },
-      cell: ({ row }) => row.original.documentNumber
-        ?? <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>,
-    },
-    {
-      accessorKey: 'issuedAt',
-      header: t('purchasing.orders.documents.columns.issuedAt'),
-      enableSorting: false,
-      meta: { priority: 3 },
-      cell: ({ row }) => formatOrderDate(row.original.issuedAt, locale)
-        ?? <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>,
-    },
-    {
-      accessorKey: 'attachmentId',
-      header: t('purchasing.orders.documents.columns.attachment'),
-      enableSorting: false,
-      meta: { priority: 4 },
-      cell: ({ row }) => {
-        const attachmentId = row.original.attachmentId
-        if (!attachmentId) return <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>
-        return (
-          <div className="flex flex-wrap items-center gap-3">
-            <AttachmentPreviewLink
-              attachmentId={attachmentId}
-              label={t('purchasing.orders.documents.actions.preview')}
-            />
-            <Link
-              href={`/api/attachments/file/${encodeURIComponent(attachmentId)}?download=1`}
-              className="text-sm text-primary hover:underline"
-            >
-              {t('purchasing.orders.documents.actions.download')}
-            </Link>
-          </div>
-        )
-      },
-    },
-    {
-      accessorKey: 'note',
-      header: t('purchasing.orders.documents.columns.note'),
-      enableSorting: false,
-      meta: { priority: 5, truncate: true, maxWidth: 240 },
-      cell: ({ row }) => row.original.note
-        ?? <span className="text-xs text-muted-foreground">{EMPTY_CELL}</span>,
-    },
-  ], [locale, t])
-
-  const handleSubmitForm = React.useCallback(() => {
-    dialogContentRef.current?.querySelector('form')?.requestSubmit()
-  }, [])
-  const handleDialogKeyDown = useDialogKeyHandler({
-    onConfirm: handleSubmitForm,
-    onCancel: () => setDialogOpen(false),
-  })
-
   return (
-    <>
-      <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
-        <SectionHeader
-          title={t('purchasing.orders.detail.documents')}
-          count={documents.length}
-          action={(
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setEditing(null)
-                setFormKey((previous) => previous + 1)
-                setDialogOpen(true)
-              }}
-            >
-              <Plus className="size-4" aria-hidden="true" />
-              {t('purchasing.orders.documents.actions.add')}
-            </Button>
-          )}
-        />
-        {loadFailed ? (
-          <p className="text-sm text-status-error-text" role="alert">
-            {t('purchasing.orders.documents.loadFailed')}
-          </p>
-        ) : (
-          <DataTable<OrderDocumentRecord>
-            embedded
-            columns={columns}
-            data={documents}
-            disableRowClick
-            emptyState={(
-              <EmptyState
-                variant="subtle"
-                size="sm"
-                title={t('purchasing.orders.documents.empty')}
-              />
-            )}
-            rowActions={(row) => (
-              <RowActions
-                items={[
-                  ...(row.attachmentId ? [{
-                    id: 'preview',
-                    label: t('purchasing.orders.documents.actions.preview'),
-                    onSelect: () => openPreview(row.attachmentId as string),
-                  }, {
-                    id: 'download',
-                    label: t('purchasing.orders.documents.actions.download'),
-                    href: `/api/attachments/file/${encodeURIComponent(row.attachmentId)}?download=1`,
-                  }] : []),
-                  {
-                    id: 'edit',
-                    label: t('purchasing.orders.documents.actions.edit'),
-                    onSelect: () => {
-                      setEditing(row)
-                      setFormKey((previous) => previous + 1)
-                      setDialogOpen(true)
-                    },
-                  },
-                  {
-                    id: 'delete',
-                    label: t('purchasing.orders.documents.actions.delete'),
-                    destructive: true,
-                    onSelect: () => { void handleRemove(row) },
-                  },
-                ]}
-              />
-            )}
-          />
-        )}
-      </div>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent ref={dialogContentRef} onKeyDown={handleDialogKeyDown}>
-          <DialogHeader>
-            <DialogTitle>
-              {t(editing ? 'purchasing.orders.documents.dialog.editTitle' : 'purchasing.orders.documents.dialog.createTitle')}
-            </DialogTitle>
-            <DialogDescription>{t('purchasing.orders.detail.documents')}</DialogDescription>
-          </DialogHeader>
-          <CrudForm<OrderDocumentFormValues>
-            key={`${editing?.id ?? 'new'}-${formKey}`}
-            embedded
-            fields={fields}
-            groups={groups}
-            initialValues={initialValues}
-            submitLabel={t('purchasing.orders.form.save')}
-            onSubmit={handleSubmit}
-          />
-        </DialogContent>
-      </Dialog>
-
-      {previewDialog}
-      {ConfirmDialogElement}
-    </>
+    <ul className="flex flex-col gap-2">
+      {slots.map((group) => (
+        <li key={group.slot} className="flex flex-col gap-1.5 rounded-md border px-3 py-2">
+          <span className="text-sm font-medium">{t(`order_hub.documents.slots.${group.slot}`)}</span>
+          {group.files.length > 0 ? (
+            <ul className="flex flex-wrap gap-2">
+              {group.files.map((file) => (
+                <li
+                  key={file.attachmentId}
+                  className="flex flex-wrap items-center gap-2 rounded border bg-muted/30 px-2 py-1 text-xs"
+                >
+                  <span className="text-muted-foreground">{t('order_hub.documents.sourceSelf')}</span>
+                  <span className="font-medium break-all">{file.fileName}</span>
+                  {file.createdAt ? (
+                    <span className="text-muted-foreground">{file.createdAt.slice(0, 10)}</span>
+                  ) : null}
+                  <AttachmentPreviewLink
+                    attachmentId={file.attachmentId}
+                    fileName={file.fileName}
+                    fileHref={ROOT_ATTACHMENT_BYTES_HREF}
+                    label={t('order_hub.documents.preview')}
+                  />
+                  <Link
+                    href={`${ROOT_ATTACHMENT_BYTES_HREF}/${encodeURIComponent(file.attachmentId)}?download=1`}
+                    className="text-sm text-primary hover:underline"
+                  >
+                    {t('order_hub.documents.download')}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {group.childSources.length > 0 ? (
+            <ul className="flex flex-wrap items-center gap-2 text-xs">
+              {group.childSources.map((source, index) => (
+                <li key={`${source.source}-${index}`}>
+                  <Link
+                    href={`/backend/orders/${encodeURIComponent(companyOrderId)}${ROOT_SOURCE_ANCHOR[source.source] ?? ''}`}
+                    className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <span>{t(`order_hub.documents.sources.${source.source}`)}</span>
+                    {source.label ? <span className="font-medium text-foreground">{source.label}</span> : null}
+                    {source.count !== null ? (
+                      <span>{t('order_hub.documents.sourceCount', { count: source.count })}</span>
+                    ) : null}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -1215,11 +838,21 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
   const [order, setOrder] = React.useState<PurchaseOrderRecord | null>(null)
   const [lines, setLines] = React.useState<OrderLineRecord[]>([])
   const [payments, setPayments] = React.useState<PaymentRecord[]>([])
-  const [documents, setDocuments] = React.useState<OrderDocumentRecord[]>([])
-  const [documentsLoadFailed, setDocumentsLoadFailed] = React.useState(false)
   // The `product_category` dictionary, resolved to a label for the summary; an empty list
   // (a dictionary the operator has not seeded, or a failed load) falls back to the stored code.
   const [categoryOptions, setCategoryOptions] = React.useState<CrudFieldOption[]>([])
+  /**
+   * The company order (根单) this purchase order is attached to, when there is one. The root owns
+   * 订单描述 / 采购负责人, so the two summary cells are read-only and this id drives the
+   * 「去公司订单修改」 link; a role without `order_hub.view` cannot read the link and gets `null`.
+   */
+  const [companyOrderId, setCompanyOrderId] = React.useState<string | null>(null)
+  /**
+   * The root order's 「单据与文件」 slots that carry something (REQ-056). `null` = the page cannot
+   * answer (not linked / 403 / read failed) and the section keeps its pointer alone; `[]` = linked,
+   * but the root holds no documents yet.
+   */
+  const [rootDocuments, setRootDocuments] = React.useState<RootDocumentSlot[] | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [notFound, setNotFound] = React.useState(false)
@@ -1242,79 +875,23 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
     retryLastMutation,
   }), [mutationContextId, orderId, retryLastMutation])
 
-  const relatedMessages = React.useMemo(() => ({
-    loading: t('purchasing.orders.detail.related.loading'),
-    loadFailed: t('purchasing.orders.detail.related.loadFailed'),
-    retry: t('purchasing.orders.detail.related.retry'),
-    viewAll: t('purchasing.orders.detail.related.viewAll'),
-  }), [t])
-
-  /**
-   * 关联合同: the contract link rows naming this purchase order, resolved against the live contracts
-   * — the read the order hub does from the other side. The link set is written on the contract's own
-   * 「管理订单关联」 dialog, so this block never offers a writer.
-   */
-  const contractsQuery = useQuery({
-    queryKey: ['purchasing-order-detail-contracts', orderId, scopeVersion],
-    enabled: order !== null,
-    queryFn: async (): Promise<RelatedContractRow[]> => {
-      const links = await fetchCrudList<Record<string, unknown>>(CONTRACTS_ORDERS_API_PATH, {
-        orderKind: 'purchase_order',
-        orderId,
-        pageSize: RELATED_CONTRACT_PAGE_SIZE,
-      })
-      const contractIds = (links.items ?? [])
-        .map((item) => readText(item, 'contractId', 'contract_id'))
-        .filter((id) => id.length > 0)
-      if (contractIds.length === 0) return []
-      const payload = await fetchCrudList<Record<string, unknown>>(CONTRACTS_API_PATH, {
-        ids: contractIds.join(','),
-        pageSize: RELATED_CONTRACT_PAGE_SIZE,
-      })
-      return (payload.items ?? []).map((item) => ({
-        id: String(item.id),
-        number: (item.number ?? null) as string | null,
-        status: readText(item, 'status') || 'draft',
-        currencyCode: readText(item, 'currencyCode', 'currency_code') || 'CNY',
-        total: String(item.total ?? '0'),
-      }))
-    },
-  })
-
-  /** 关联发运单: the shipments whose purchase allocations carry this order's goods. */
-  const shipmentsQuery = useQuery({
-    queryKey: ['purchasing-order-detail-shipments', orderId, scopeVersion],
-    enabled: order !== null,
-    queryFn: () => loadRelatedPage<RelatedShipmentRow>(
-      SHIPMENTS_API_PATH,
-      { purchaseOrderId: orderId },
-      (item) => ({
-        id: String(item.id),
-        number: (item.number ?? null) as string | null,
-        status: readText(item, 'status') || 'draft',
-        containerNumber: (item.containerNumber ?? null) as string | null,
-        eta: (item.eta ?? null) as string | null,
-      }),
-    ),
-  })
-
   const load = React.useCallback(async () => {
     setLoading(true)
     setLoadError(null)
     setNotFound(false)
     try {
-      const [orderPayload, linePayload, paymentPayload, options] = await Promise.all([
+      const [orderPayload, linePayload, paymentPayload, options, rootCompanyOrderId] = await Promise.all([
         fetchCrudList<Record<string, unknown>>(ORDERS_API_PATH, { ids: orderId, pageSize: 1 }),
         fetchCrudList<Record<string, unknown>>(ORDERS_LINES_API_PATH, { orderId, pageSize: ORDER_LINES_PAGE_SIZE }),
         fetchCrudList<Record<string, unknown>>(ORDERS_PAYMENTS_API_PATH, { orderId, pageSize: PAYMENT_PAGE_SIZE }),
         loadProductCategoryOptions(t('purchasing.orders.form.optionsLoadFailed')),
+        fetchCompanyOrderId(orderId),
       ])
       const item = orderPayload.items?.[0]
       if (!item) {
         setOrder(null)
         setLines([])
         setPayments([])
-        setDocuments([])
         setNotFound(true)
         return
       }
@@ -1322,24 +899,14 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
       setLines((linePayload.items ?? []).map(toOrderLineRecord))
       setPayments((paymentPayload.items ?? []).map(toPaymentRecord))
       setCategoryOptions(options)
+      setCompanyOrderId(rootCompanyOrderId)
+      // The mirror needs the link's answer first; a failed read answers `null` and never fails the page.
+      setRootDocuments(rootCompanyOrderId ? await fetchRootDocumentSlots(rootCompanyOrderId) : null)
     } catch {
       setLoadError(t('purchasing.orders.form.loadFailed'))
       return
     } finally {
       setLoading(false)
-    }
-    // The documents load on their own: a documents failure names itself inside its own section
-    // instead of taking the order, lines and payments down with it.
-    try {
-      const documentPayload = await fetchCrudList<Record<string, unknown>>(ORDER_DOCUMENTS_API_PATH, {
-        orderId,
-        pageSize: DOCUMENT_PAGE_SIZE,
-      })
-      setDocuments((documentPayload.items ?? []).map(toOrderDocumentRecord))
-      setDocumentsLoadFailed(false)
-    } catch {
-      setDocuments([])
-      setDocumentsLoadFailed(true)
     }
     // `scopeVersion` is not read inside the callback on purpose: it is the organization-scope
     // generation, and bumping it must rebuild this callback so the effect below refetches after
@@ -1427,9 +994,14 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
   const transitionActions = TRANSITIONS_BY_STATUS[order.status]
   const ownerName = order.ownerName ?? (typeof order.ownerSnapshot?.name === 'string' ? order.ownerSnapshot.name : null)
   const customerName = order.customerName ?? (typeof order.customerSnapshot?.name === 'string' ? order.customerSnapshot.name : null)
+  const sourceSalesOrderHref = (kind: string | null, id: string): string => {
+    const prefix = kind === 'external_sales_order' ? '/backend/external-sales' : '/backend/internal-sales'
+    return `${prefix}/orders/${encodeURIComponent(id)}`
+  }
   const productCategoryLabel = order.productCategory
     ? categoryOptions.find((option) => option.value === order.productCategory)?.label ?? order.productCategory
     : null
+  const depositPercentLabel = formatDepositPercent(order.depositPercent)
 
   return (
     <>
@@ -1442,6 +1014,15 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
         statusBadge={<PurchaseOrderStatusBadge status={order.status} />}
         actionsContent={(
           <div className="flex flex-wrap items-center gap-2">
+            {/* 根单持有后，采购单的「上游」是公司订单（owner 2026-10-10：被公司订单关联了就要有入口，
+                直接跳到那张根单的详情页）。Linked only: an order raised on its own has no root to open. */}
+            {companyOrderId ? (
+              <Button asChild variant="outline">
+                <Link href={`/backend/orders/${encodeURIComponent(companyOrderId)}`}>
+                  {t('purchasing.orders.detail.openCompanyOrder')}
+                </Link>
+              </Button>
+            ) : null}
             <Button asChild variant="outline">
               <Link href={`${ORDERS_LIST_HREF}/${encodeURIComponent(order.id)}/edit`}>
                 {t('purchasing.orders.edit.title')}
@@ -1473,11 +1054,32 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
         <SummaryField label={t('purchasing.orders.detail.businessNumber')}>
           {order.businessNumber ?? EMPTY_CELL}
         </SummaryField>
+        {/* 订单描述 and 采购负责人 are held by the company order (根单): the purchase order only mirrors
+            them, so both cells are read-only and the edit entry jumps to the root. */}
         <SummaryField label={t('purchasing.orders.detail.productCategory')}>
           {productCategoryLabel ?? EMPTY_CELL}
+          {companyOrderId ? (
+            <Link
+              href={`/backend/orders/${encodeURIComponent(companyOrderId)}`}
+              className="ml-2 text-xs text-muted-foreground underline"
+            >
+              {t('purchasing.orders.detail.editAtCompanyOrder')}
+            </Link>
+          ) : null}
         </SummaryField>
         <SummaryField label={t('purchasing.orders.detail.owner')}>{ownerName ?? EMPTY_CELL}</SummaryField>
         <SummaryField label={t('purchasing.orders.detail.customer')}>{customerName ?? EMPTY_CELL}</SummaryField>
+        {order.sourceSalesOrderId ? (
+          // Read-only: the anchor is written by the create flow (or cleared on edit), never typed here.
+          <SummaryField label={t('purchasing.orders.form.sourceOrder.label')}>
+            <Link
+              href={sourceSalesOrderHref(order.sourceSalesOrderKind, order.sourceSalesOrderId)}
+              className="underline"
+            >
+              {order.sourceSalesOrderNumber ?? order.sourceSalesOrderId}
+            </Link>
+          </SummaryField>
+        ) : null}
         <SummaryField label={t('purchasing.orders.form.field.currency')}>{order.currencyCode}</SummaryField>
         <SummaryField label={t('purchasing.orders.list.columns.total')}>
           <MoneyAmount currencyCode={order.currencyCode} amount={order.total} />
@@ -1496,6 +1098,21 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
         <SummaryField label={t('purchasing.orders.list.columns.expectedShipAt')}>
           {formatOrderDate(order.expectedShipAt, locale) ?? EMPTY_CELL}
         </SummaryField>
+        {/* Every field the edit form can still fill belongs here too (owner 2026-10-10: 可填的内容需要
+            在详情页对应完整显示) — the deposit terms and the note were the ones missing. */}
+        <SummaryField label={t('purchasing.orders.detail.depositPercent')}>
+          {depositPercentLabel ?? EMPTY_CELL}
+        </SummaryField>
+        <SummaryField label={t('purchasing.orders.form.field.depositAmount')}>
+          {order.depositAmount ? (
+            <MoneyAmount currencyCode={order.currencyCode} amount={order.depositAmount} />
+          ) : (
+            EMPTY_CELL
+          )}
+        </SummaryField>
+        <SummaryField label={t('purchasing.orders.form.field.notes')}>
+          {order.notes ? <span className="whitespace-pre-wrap">{order.notes}</span> : EMPTY_CELL}
+        </SummaryField>
       </div>
 
       <div className="space-y-3 rounded-lg border bg-card px-4 py-3">
@@ -1508,114 +1125,27 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
         />
       </div>
 
-      {/* 关联订单 — the anchor the create flow wrote, at most one order. It has no writer here (the
-          create/edit forms own it), so the block is a single row: the number links into the order
-          hub, where that order's own work is listed. */}
-      <RelatedSection
-        id="source-order"
-        title={t('purchasing.orders.detail.sourceOrder.title')}
-        isLoading={false}
-        failed={false}
-        isEmpty={!order.sourceSalesOrderId}
-        emptyLabel={t('purchasing.orders.detail.sourceOrder.empty')}
-        framed
-        messages={relatedMessages}
-      >
-        {order.sourceSalesOrderId ? (
-          <ul className="flex flex-col gap-2">
-            <li className="flex flex-wrap items-center gap-3 text-sm">
-              <Link
-                className="font-medium underline"
-                href={`/backend/orders/${encodeURIComponent(order.sourceSalesOrderId)}`}
-              >
-                {order.sourceSalesOrderNumber ?? order.sourceSalesOrderId}
-              </Link>
-              {order.sourceSalesOrderKind && SOURCE_ORDER_KIND_LABEL_KEYS[order.sourceSalesOrderKind] ? (
-                <span className="text-xs text-muted-foreground">
-                  {t(SOURCE_ORDER_KIND_LABEL_KEYS[order.sourceSalesOrderKind])}
-                </span>
-              ) : null}
-            </li>
-          </ul>
+      {/* 单证 lives on the company order (owner 2026-10-10): the purchase order keeps a pointer to
+          where paperwork is filed — and mirrors the root's 「单据与文件」 read-only, so the associated
+          documents show here in sync (复查·三: 会关联什么单证数据，会联动显示在这里). */}
+      <section className="space-y-3 rounded-lg border bg-card px-4 py-3">
+        <SectionHeader title={t('purchasing.orders.detail.documents')} />
+        <p className="text-sm text-muted-foreground">{t('purchasing.orders.documents.rootEntryHint')}</p>
+        {companyOrderId && rootDocuments ? (
+          rootDocuments.length > 0 ? (
+            <RootDocumentsMirror companyOrderId={companyOrderId} slots={rootDocuments} />
+          ) : (
+            <p className="text-xs text-muted-foreground">{t('purchasing.orders.documents.rootEmpty')}</p>
+          )
         ) : null}
-      </RelatedSection>
-
-      {/* 关联合同 — read here and written on the contract's own 「管理订单关联」 dialog: the signed
-          paper decides which orders it covers, so this block never offers the writer. */}
-      <RelatedSection
-        id="contracts"
-        title={t('purchasing.orders.detail.contracts.title')}
-        isLoading={contractsQuery.isLoading}
-        failed={contractsQuery.isError}
-        isEmpty={(contractsQuery.data ?? []).length === 0}
-        emptyLabel={t('purchasing.orders.detail.contracts.empty')}
-        onRetry={() => void contractsQuery.refetch()}
-        framed
-        messages={relatedMessages}
-      >
-        <ul className="flex flex-col gap-2">
-          {(contractsQuery.data ?? []).map((row) => (
-            <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
-              <Link
-                className="font-medium underline"
-                href={`/backend/trade-docs/contracts/${encodeURIComponent(row.id)}`}
-              >
-                {row.number ?? row.id.slice(0, 8)}
-              </Link>
-              <MoneyAmount currencyCode={row.currencyCode} amount={row.total} />
-              <StatusBadge variant="neutral">
-                {relatedStatusLabel(t, CONTRACT_STATUS_LABEL_KEYS, row.status)}
-              </StatusBadge>
-            </li>
-          ))}
-        </ul>
-      </RelatedSection>
-
-      {/* 关联发运单 — the shipments whose purchase allocations carry this order's goods; 「查看全部」
-          opens the shipments ledger with the same filter the block reads through. */}
-      <RelatedSection
-        id="shipments"
-        title={t('purchasing.orders.detail.shipments.title')}
-        isLoading={shipmentsQuery.isLoading}
-        failed={shipmentsQuery.isError}
-        isEmpty={(shipmentsQuery.data?.items ?? []).length === 0}
-        emptyLabel={t('purchasing.orders.detail.shipments.empty')}
-        viewAllHref={
-          shipmentsQuery.data && shipmentsQuery.data.total > shipmentsQuery.data.items.length
-            ? `${SHIPMENTS_LIST_HREF}?purchaseOrderId=${encodeURIComponent(orderId)}`
-            : null
-        }
-        onRetry={() => void shipmentsQuery.refetch()}
-        framed
-        messages={relatedMessages}
-      >
-        <ul className="flex flex-col gap-2">
-          {(shipmentsQuery.data?.items ?? []).map((row) => (
-            <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
-              <Link
-                className="font-medium underline"
-                href={`/backend/cross_border/shipments/${encodeURIComponent(row.id)}`}
-              >
-                {row.number ?? row.id.slice(0, 8)}
-              </Link>
-              <span className="text-muted-foreground">{row.containerNumber ?? EMPTY_CELL}</span>
-              <StatusBadge variant="neutral">
-                {relatedStatusLabel(t, SHIPMENT_STATUS_LABEL_KEYS, row.status)}
-              </StatusBadge>
-              {row.eta ? (
-                <span className="text-xs tabular-nums text-muted-foreground">{formatOrderDate(row.eta, locale)}</span>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </RelatedSection>
-
-      <PurchaseOrderDocumentsSection
-        orderId={order.id}
-        documents={documents}
-        loadFailed={documentsLoadFailed}
-        onChanged={load}
-      />
+        {companyOrderId ? (
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/backend/orders/${encodeURIComponent(companyOrderId)}`}>
+              {t('purchasing.orders.documents.openCompanyOrder')}
+            </Link>
+          </Button>
+        ) : null}
+      </section>
 
       <PurchasePaymentsSection
         orderId={order.id}

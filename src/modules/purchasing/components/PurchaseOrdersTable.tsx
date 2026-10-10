@@ -9,7 +9,7 @@ import type { SortingState } from '@tanstack/react-table'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
 import type { FilterValues } from '@open-mercato/ui/backend/FilterBar'
 import { ListEmptyState } from '@open-mercato/ui/backend/filters/ListEmptyState'
-import { RowActions } from '@open-mercato/ui/backend/RowActions'
+import { ActionsDropdown } from '@open-mercato/ui/backend/forms'
 import { fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
@@ -28,6 +28,7 @@ import {
   PurchaseOrderStatusBadge,
   purchaseOrderStatusLabel as orderStatusLabel,
 } from '@/lib/orders/purchaseOrderStatus'
+import { buildPurchaseOrderRowActions } from './purchaseOrderRowActions'
 
 const PAGE_SIZE = 50
 const QUERY_KEY_ROOT = 'purchasing-purchase-orders'
@@ -78,10 +79,38 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<PurchaseOrderRe
       ),
     },
     {
+      // 预付款金额: what has actually been registered at the `deposit` stage, not the planned term.
+      accessorKey: 'paidDeposit',
+      header: t('purchasing.orders.list.columns.paidDeposit'),
+      enableSorting: false,
+      meta: { priority: 5, align: 'right' },
+      cell: ({ row }) => (
+        <MoneyAmount
+          currencyCode={row.original.currencyCode}
+          amount={row.original.paidDeposit}
+          className="items-end"
+        />
+      ),
+    },
+    {
+      // 尾款金额: what has actually been registered at the `balance` stage.
+      accessorKey: 'paidBalance',
+      header: t('purchasing.orders.list.columns.paidBalance'),
+      enableSorting: false,
+      meta: { priority: 6, align: 'right' },
+      cell: ({ row }) => (
+        <MoneyAmount
+          currencyCode={row.original.currencyCode}
+          amount={row.original.paidBalance}
+          className="items-end"
+        />
+      ),
+    },
+    {
       accessorKey: 'expectedShipAt',
       header: t('purchasing.orders.list.columns.expectedShipAt'),
       enableSorting: false,
-      meta: { priority: 5 },
+      meta: { priority: 7 },
       cell: ({ row }) => {
         const expected = formatOrderDate(row.original.expectedShipAt, locale)
         return expected ? expected : <EmptyCell />
@@ -160,6 +189,46 @@ export default function PurchaseOrdersTable() {
     [],
   )
 
+  /**
+   * Which of this page's orders already sit on a company order — **one batched reverse lookup**, so
+   * the row says 「打开公司订单」 or 「未关联公司订单」 up front instead of discovering the answer when
+   * the operator clicks (owner 2026-10-10: the click-first flow was 很傻很差). Deliberate states:
+   *   - a Map  — the answer is in; each row shows the jump (linked) or a greyed hint (unlinked);
+   *   - `null` — the lookup failed (a role without `order_hub.view` gets a 403 here): the row offers
+   *     no company-order slot at all rather than a wrong state, and the list itself never breaks.
+   */
+  const rowIds = rows.map((row) => row.id)
+  const companyOrdersQuery = useQuery({
+    queryKey: ['purchasing-order-company-orders', rowIds.join(','), scopeVersion],
+    enabled: rowIds.length > 0,
+    queryFn: async (): Promise<Map<string, string> | null> => {
+      try {
+        const payload = await fetchCrudList<Record<string, unknown>>('order_hub/orders/links', {
+          refIds: rowIds.join(','),
+          kind: 'purchase_order',
+          pageSize: 200,
+        })
+        const byRefId = new Map<string, string>()
+        for (const item of payload.items ?? []) {
+          const refId = String(item.refId ?? '')
+          const companyOrderId = String(item.companyOrderId ?? '')
+          if (refId && companyOrderId) byRefId.set(refId, companyOrderId)
+        }
+        return byRefId
+      } catch {
+        return null
+      }
+    },
+  })
+  const companyOrders = companyOrdersQuery.data
+
+  const openCompanyOrder = React.useCallback(
+    (companyOrderId: string) => {
+      router.push(`/backend/orders/${encodeURIComponent(companyOrderId)}`)
+    },
+    [router],
+  )
+
   // The rows themselves carry the frozen source number, so naming the filter costs no extra request.
   const sourceOrderNumber = sourceSalesOrderId
     ? rows.find((row) => row.sourceSalesOrderNumber)?.sourceSalesOrderNumber ?? null
@@ -227,15 +296,24 @@ export default function PurchaseOrdersTable() {
         />
       )}
       rowActions={(row) => (
-        <RowActions
-          items={[
-            {
-              id: 'open',
-              label: t('purchasing.orders.actions.open'),
-              onSelect: () => router.push(detailHref(row)),
-            },
-          ]}
-        />
+        // The company-order entry lives **inside** the ⋯ menu (owner 2026-10-10 复查·三: a second
+        // button beside the menu 很丑): linked rows jump to the root from the menu, unlinked rows
+        // show 未关联公司订单 as the menu's disabled item, and a viewer the batched lookup could not
+        // answer for gets no entry at all — never a click that reveals bad news.
+        <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+          <ActionsDropdown
+            triggerMode="icon"
+            triggerClassName="border-0 bg-transparent shadow-none"
+            ariaLabel={t('ui.rowActions.openActions')}
+            items={buildPurchaseOrderRowActions({
+              t,
+              rowId: row.id,
+              companyOrders,
+              open: () => router.push(detailHref(row)),
+              openCompanyOrder,
+            })}
+          />
+        </div>
       )}
       pagination={{
         page,

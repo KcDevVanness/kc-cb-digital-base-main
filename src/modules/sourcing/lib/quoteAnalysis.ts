@@ -18,7 +18,7 @@ import {
 import { detectStructure, type DetectedSection, type RejectedRow, type SheetStructure, type StructureWarning } from './headerDetection'
 import { buildQuoteLines, type BuiltQuoteLine } from './quoteLines'
 import { cellToText, isNullToken } from './valueNormalization'
-import { layoutSignature, type CellValue, type ParsedSheet, type ParsedWorkbook } from './workbook'
+import { layoutSignature, type CellValue, type ParsedSheet, type ParsedWorkbook } from '@/lib/workbook'
 
 export type SheetSummary = {
   name: string

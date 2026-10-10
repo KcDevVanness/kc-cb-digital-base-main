@@ -216,5 +216,9 @@
   "sourcing.changes.timeline.status.notInLibrary": "未进产品库",
   "sourcing.changes.timeline.status.product": "商品档案",
   "sourcing.changes.timeline.status.reported": "最新一版仍报价",
-  "sourcing.changes.timeline.status.notReported": "最新一版未报价"
+  "sourcing.changes.timeline.status.notReported": "最新一版未报价",
+  "sourcing.quotes.archiveConfirmBody": "归档后这张报价单退出日常列表，不再参与后续流程。",
+  "sourcing.wizard.remapConfirmTitle": "重建报价行？",
+  "sourcing.wizard.remapConfirmBody": "已建立的 {count} 行会被当前映射重新生成。",
+  "sourcing.wizard.remap": "重建行"
 }
