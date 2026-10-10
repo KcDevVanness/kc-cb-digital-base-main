@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 66 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 67 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -94,3 +94,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [A row state belongs in the ⋯ menu, and the installed RowActions cannot render it disabled — ActionsDropdown can](lessons/row-state-needs-a-menu-with-disabled-items.md) — area:backend-ui,framework-context; module:purchasing,platform; topic:row-actions,actions-dropdown,disabled-state,data-table,installed-ui,owner-feedback
 - [Replacing the deploy host carries the image platform, bootstrap distro paths and memory tuning](lessons/deploy-host-replacement-carries-platform-bootstrap-tuning.md) — area:architecture; module:platform; topic:deployment-host,image-platform,bootstrap-scripts,instance-sizing,elastic-ip
 - [A script piped to `bash -s` loses everything after the first command that reads stdin](lessons/stdin-piped-script-loses-rest-after-stdin-reader.md) — area:architecture; module:platform; topic:deploy-script,stdin,health-gate,ssh,fail-open
+- [Yarn copies node_modules per worktree unless nmMode: hardlinks-global shares one store](lessons/yarn-hardlinks-share-store-across-worktrees.md) — area:spec-pr,architecture; module:platform; topic:yarn,worktree,hardlinks,disk-usage,dependency-install,parallel-development

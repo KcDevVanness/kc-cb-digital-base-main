@@ -38,6 +38,33 @@ yarn initialize           # 建表 + 种子数据；演示账号邮箱会打印�
 生产启动会被 `src/instrumentation.ts` 的 `assertJwtSecretPolicy()` 直接 `exit(1)` 拒绝
 （生成真值：`openssl rand -hex 32`）。见 [deploy/runtime.md](../deploy/runtime.md)。
 
+## 依赖安装与磁盘占用
+
+`.yarnrc.yml` 用 `nmMode: hardlinks-global` 安装依赖：**一台机器一份**解压后的 store
+（`~/.yarn/berry/store`），每个工作树的 `node_modules` 用硬链接指回它，而不是各复制一份。
+
+本机实测（2026-10-10，装完依赖的树）：
+
+| 读数 | 值 |
+|---|---|
+| 第一个工作树建立的 store | 约 1.6 GB |
+| 之后每个工作树的增量 | 目录项，一次性副本实测 768 KB（不再复制约 1.8 GB） |
+| 同名文件的 inode | 两份 `node_modules` 里是同一个（`stat -f %l` 链接数 ≥ 2，store 文件在 `~/.yarn/berry/store/v1/<xx>/<hash>.dat`） |
+| zip 缓存 `~/.yarn/berry/cache` | 约 2.4 GB，本来就按机器共享，不受影响 |
+
+两个容易误判的读数：
+
+- `du -sh node_modules` 报的是**逻辑大小**（仍是 1.6 GB）；只有 `du -shc` 跨树一起跑、或看
+  inode / 链接数，才能看出共享——不要据 `du -sh` 判断"没生效"。
+- store 与项目必须在同一个文件系统上，跨文件系统时 Yarn 退回复制、不报错。Docker/CI 里 store
+  落在容器内，天然满足；CI 的 `actions/cache` 只缓存 zip 缓存不缓存 store，所以每次 CI 装依赖会
+  顺带在本地重建 store（纯解压，无网络）。
+
+**写穿风险**：硬链接与 store 共享 inode，凡是**原地改写** `node_modules` 内文件的操作（patch 工具、
+手动编辑、个别安装脚本覆盖自己已发布的文件）都会写穿到 store，影响本机所有正在用它的项目。本仓
+没有 `yarn patch` 工作流（无 `.yarn/patches/`、无 `dependenciesMeta` patch 条目），请保持没有。
+要回收 store：删掉 `~/.yarn/berry/store`，下次 `yarn install` 会从 zip 缓存重建。
+
 ## 演示账号
 
 | 账号 | 角色 | 密码 |
