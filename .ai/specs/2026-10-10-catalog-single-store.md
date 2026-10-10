@@ -270,7 +270,8 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 - **Requirements closed:** REQ-001…REQ-011, REQ-013, REQ-014
 - **Tests:** TEST-001…TEST-004, TEST-006, TEST-007
 - **Validation:** `yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test && yarn build`；`yarn test:integration:ephemeral`；FLOW-G1
-- **Exit gate:** 全新库上 FLOW-G1 绿；浏览器冒烟：建档→下单→发运→收货；`grep -r products_products src` 无生产代码命中
+- **Exit gate:** 全新库上 FLOW-G1 绿；浏览器冒烟：建档→下单→发运→收货；`grep -r products_products src` 无生产代码命中。
+  *2026-10-10 实测*：建档（供应商产品库 UI 建商品档案）→ 下单（采购单 API 一行商品、一行库行）→ 发运（UI「Depart」→ `SHP-2026-0001` In transit）→ **收货**（UI「Receive」，目的仓 `CSWH — Chain smoke WH` / 库位 `B1 — bin` → 状态 Received；`GET /api/wms/inventory/movements` 恰一条 `receipt 10.0000`、运营看板 `todaysMoves` +1、采购行 `receivedQuantity 10.0000`）。
 
 ### Phase 2 — 两页 UI
 
