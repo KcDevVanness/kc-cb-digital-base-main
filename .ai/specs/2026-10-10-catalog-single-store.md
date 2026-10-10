@@ -296,7 +296,7 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 
 - **Depends on:** Phase 1
 - **Outcome:** 按新字段口径重做编码生成（本规格不含）
-- **Non-goal of this spec**
+- **Non-goal of this spec** —— 已另立：[`.ai/specs/2026-10-10-sku-issuance-redo.md`](2026-10-10-sku-issuance-redo.md)（Draft，等 owner 回答 Q1/Q2）
 
 ## Requirement Traceability
 
