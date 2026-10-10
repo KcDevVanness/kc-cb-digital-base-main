@@ -260,7 +260,7 @@ const updateProductCommand: CommandHandler<Record<string, unknown>, StoreProduct
       ctx,
       scope,
       id: current.id,
-      input: toStoreInput(parsed, current),
+      input: storeInput,
       // Omitted leaves the SKUs untouched; a submitted set — empty included — is the new truth, so
       // the store deletes the rows the payload does not name and inserts the rows without an id.
       variants: variantRows ? toStoreVariants(variantRows) : undefined,

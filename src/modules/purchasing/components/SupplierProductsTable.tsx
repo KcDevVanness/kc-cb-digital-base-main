@@ -37,7 +37,7 @@ const PROMOTE_BATCH_URL = '/api/purchasing/supplier-products/promote-batch'
 const LINK_URL = '/api/purchasing/supplier-products/link'
 const SYNC_FIELDS_URL = '/api/purchasing/supplier-products/sync-fields'
 const LIST_HREF = '/backend/purchasing/supplier-products'
-/** Where the created product's 官方目录链接 lives — the step that actually unlocks shipping. */
+/** Where the created product lives — the page that owns its variants, which shipping books against. */
 const PRODUCT_EDIT_HREF = '/backend/products/items'
 const SUPPLIERS_API_PATH = 'purchasing/suppliers'
 /** Master-writing actions (create/update the product record) need `promote`, not just `manage`. */
@@ -339,8 +339,8 @@ export default function SupplierProductsTable() {
 
   /**
    * 建档 — create or update the master record and link it. The flash alone would end the task one
-   * step early: the link is necessary but not sufficient, because shipping and stock receipt need
-   * the product's 官方目录链接 (and a variant), so the row keeps that next step on screen.
+   * step early: shipping and stock receipt book against the product's **variant**, so the row keeps
+   * the product page (where variants live) one click away.
    */
   const handlePromote = React.useCallback(
     async (row: SupplierProductListRow) => {
@@ -714,12 +714,12 @@ export default function SupplierProductsTable() {
             <Link className="text-sm underline" href={`${PRODUCT_EDIT_HREF}/${nextStep.catalogProductId}/edit`}>
               {t(
                 'purchasing.supplierProducts.promote.nextStepAction',
-                'Open the product and fill its official catalog link',
+                'Open the product and check its variants',
               )}
             </Link>
           )}
         >
-          {t('purchasing.supplierProducts.promote.nextStep', 'Product record ready for {name}. Shipping and stock receipt also need the product’s 官方目录链接.', {
+          {t('purchasing.supplierProducts.promote.nextStep', 'Product record ready for {name}. Shipping and stock receipt book against the product’s variant.', {
             name: nextStep.label,
           })}
         </Alert>
