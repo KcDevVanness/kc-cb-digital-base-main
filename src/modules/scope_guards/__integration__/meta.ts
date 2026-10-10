@@ -5,4 +5,6 @@
  * `auth.role-acl.update`, `auth.user-acl.update`) through the real HTTP surface,
  * so both owning modules must be present.
  */
-export const dependsOnModules = ['auth', 'directory']
+export const integrationMeta = {
+  dependsOnModules: ['auth', 'directory'],
+}

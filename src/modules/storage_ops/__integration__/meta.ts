@@ -14,6 +14,16 @@
  *
  * A local MinIO endpoint additionally needs `OM_STORAGE_S3_ALLOW_INTERNAL_ENDPOINTS=true` —
  * see docs/deploy/storage.md §4.
+ *
+ * The shape matters: the installed discovery extractor
+ * (`@open-mercato/cli/lib/testing/integration-discovery`) scans for object-property syntax, taking
+ * the first `name: [` it finds in the file. An `export const requiredEnvVars = [...]` (equals sign)
+ * is read as an empty requirement list and the gate silently disappears — a metadata file no one
+ * can parse is worse than no metadata, because it reads as configured. Keep these lists as
+ * properties of `integrationMeta`, the shape the installed package's own meta files use, and keep
+ * the property name out of any comment above it so the scanner finds the real list.
  */
-export const dependsOnModules = ['attachments', 'storage_s3']
-export const requiredEnvVars = ['STORAGE_OPS_TEST_S3_CONFIG', 'OM_ENABLE_STORAGE_S3']
+export const integrationMeta = {
+  dependsOnModules: ['attachments', 'storage_s3'],
+  requiredEnvVars: ['STORAGE_OPS_TEST_S3_CONFIG', 'OM_ENABLE_STORAGE_S3'],
+}

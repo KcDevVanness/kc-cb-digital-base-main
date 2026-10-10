@@ -13,6 +13,7 @@ import {
   s3ConfigArgument,
   seedAttachmentRow,
   withDb,
+  missingStorageOpsTestEnvVars,
   writePartitionFile,
 } from './helpers'
 
@@ -34,6 +35,12 @@ const MIGRATED_KEY = `${PARTITION}/${MIGRATED_CANONICAL}`
 const POST_KEY = `${PARTITION}/${POST_CANONICAL}`
 const MIGRATED_BYTES = Buffer.from('migrated before the cutover\n', 'utf8')
 const POST_BYTES = Buffer.from('uploaded while the partition was on s3\n', 'utf8')
+
+const missingStorageOpsEnv = missingStorageOpsTestEnvVars()
+test.skip(
+  missingStorageOpsEnv.length > 0,
+  `STORAGE_OPS_TEST_S3_CONFIG/OM_ENABLE_STORAGE_S3 not configured (missing: ${missingStorageOpsEnv.join(', ')}) — see __integration__/meta.ts`,
+)
 
 test.describe.configure({ mode: 'serial' })
 

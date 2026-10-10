@@ -5,4 +5,6 @@
  * Phase 3 option sources it re-pointed (`/api/currency_policy/currencies`), so the owning modules
  * must be present.
  */
-export const dependsOnModules = ['parties', 'currency_policy']
+export const integrationMeta = {
+  dependsOnModules: ['parties', 'currency_policy'],
+}

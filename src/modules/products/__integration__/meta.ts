@@ -5,4 +5,6 @@
  * and touches the database directly for exactly one precondition — a SKU the API can no longer
  * produce, which is what a migrated legacy code looks like.
  */
-export const dependsOnModules = ['products']
+export const integrationMeta = {
+  dependsOnModules: ['products'],
+}

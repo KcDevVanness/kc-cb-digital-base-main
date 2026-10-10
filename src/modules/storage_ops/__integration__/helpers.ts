@@ -16,11 +16,26 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3'
 import { Client } from 'pg'
+import { integrationMeta } from './meta'
 
 export const PROJECT_ROOT = process.cwd()
 export const REHEARSAL_ORG = '11111111-1111-4111-8111-111111111111'
 export const REHEARSAL_TENANT = '22222222-2222-4222-8222-222222222222'
 export const REHEARSAL_PARTITION = 'storageOpsRehearsal'
+
+/**
+ * Names from `meta.ts`'s `requiredEnvVars` that this process has not configured.
+ *
+ * `meta.ts` (via `integrationMeta`) is the single source of the requirement. The harness's
+ * discovery filter now reads it and excludes these specs when the S3 test config is absent, but the
+ * guard stays: it keeps a direct invocation (`npx playwright test <spec>`, which bypasses
+ * discovery) honest, and if the metadata ever stops being parsed again the specs skip with an
+ * explicit reason instead of throwing from `s3TestConfig()`. With both vars present the specs run
+ * exactly as before.
+ */
+export function missingStorageOpsTestEnvVars(): string[] {
+  return integrationMeta.requiredEnvVars.filter((name) => !(process.env[name] ?? '').trim())
+}
 
 export type S3TestConfig = Record<string, unknown>
 
