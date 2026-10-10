@@ -14,6 +14,7 @@ import { parseBooleanWithDefault } from '@open-mercato/shared/lib/boolean'
 import { PageInjectionBoundary } from '@open-mercato/ui/backend/injection/PageInjectionBoundary'
 import { DemoFeedbackWidget } from '@/components/DemoFeedbackWidget'
 import { BackendHeaderChrome } from '@/components/BackendHeaderChrome'
+import { BackendNavOriginReporter } from '@/components/BackendNavOriginReporter'
 import SidebarNavTree from '@/modules/nav_shell/components/SidebarNavTree'
 
 function collectStaticSettingsPathPrefixes(): string[] {
@@ -142,6 +143,7 @@ export default async function BackendLayout({
         <PageInjectionBoundary path={path} context={injectionContext}>
           {children}
         </PageInjectionBoundary>
+        <BackendNavOriginReporter />
         {demoModeEnabled ? <DemoFeedbackWidget demoModeEnabled={demoModeEnabled} /> : null}
       </AppShell>
     </I18nProvider>
