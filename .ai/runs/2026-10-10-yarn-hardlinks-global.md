@@ -89,15 +89,15 @@ Yarn's own store mode rather than migrating to pnpm.
 
 ### Phase 1: config + canary
 
-- [ ] 1.1 worktree + branch off `origin/dev` (`09c6403`), `.env` copied
-- [ ] 1.2 `nmMode: hardlinks-global` added to `.yarnrc.yml`
-- [ ] 1.3 canary install verified (hardlinks, native artifacts, tree cost)
+- [x] 1.1 worktree + branch off `origin/dev` (`09c6403`), `.env` copied
+- [x] 1.2 `nmMode: hardlinks-global` added to `.yarnrc.yml` — `56f98da`
+- [x] 1.3 canary install verified — 23.7 s, link count ≥ 2, `next/dist/server/next.js` inode `30230023` == `~/.yarn/berry/store/v1/2f/5060aba5….dat`, native parity with the primary tree, throwaway second project 768 KB / shared inode, `require` smoke of four native packages green
 
 ### Phase 2: docs + lesson
 
-- [ ] 2.1 `docs/dev/setup.md` documents the mode, the cost and the caveat
-- [ ] 2.2 `docs/dev/parallel-development.md` notes the shared store
-- [ ] 2.3 lesson record + catalog row, `check-lessons` green
+- [x] 2.1 `docs/dev/setup.md` documents the mode, the cost and the caveat — `288ecaf`
+- [x] 2.2 `docs/dev/parallel-development.md` notes the shared store — `288ecaf`
+- [x] 2.3 lesson record + catalog row, `check-lessons` green — `288ecaf`
 
 ### Phase 3: verification + PR
 
