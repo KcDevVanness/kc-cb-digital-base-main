@@ -40,7 +40,7 @@ import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n
 import { AttachmentPreviewLink, useAttachmentPreview } from '@/lib/attachments/AttachmentPreview'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import { formatDepositPercent } from '@/lib/orders/depositPercent'
-import { useReturnHref } from '@/lib/navigation/returnTo'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { PurchaseOrderStatusBadge } from '@/lib/orders/purchaseOrderStatus'
 import {
   ORDERS_API_PATH,
@@ -834,7 +834,7 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
   const t = useT()
   const locale = useLocale()
   const scopeVersion = useOrganizationScopeVersion()
-  const backHref = useReturnHref(ORDERS_LIST_HREF)
+  const backHref = useBackHref(ORDERS_LIST_HREF)
   const [order, setOrder] = React.useState<PurchaseOrderRecord | null>(null)
   const [lines, setLines] = React.useState<OrderLineRecord[]>([])
   const [payments, setPayments] = React.useState<PaymentRecord[]>([])

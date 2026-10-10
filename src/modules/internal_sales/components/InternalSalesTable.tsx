@@ -49,6 +49,7 @@ import {
   type SalesTradeType,
 } from '../lib/tradeType'
 import { isQuoteListType, quoteListRequest, type QuoteListType } from '../lib/quoteListParams'
+import { backendLocation, withReturnTo } from '@/lib/navigation/returnTo'
 import { documentEditHrefForTradeType, listHrefForTradeType } from './InternalSalesForm'
 
 /**
@@ -238,6 +239,12 @@ export default function InternalSalesTable({ kind, tradeType }: {
     && (!chromeReady || hasFeature(chromePayload?.grantedFeatures, 'sales.orders.manage'))
 
   const listHref = listHrefForTradeType(kind, entryTradeType)
+  /**
+   * This list as its own origin: the create-order action leaves the workbench for a page whose own
+   * ledger is the orders workbench, so the jump carries where it came from — including the type
+   * filter and search the operator is looking at.
+   */
+  const listReturnPath = backendLocation(pathname, searchParams?.toString() ?? null) ?? listHref
   const apiPath = kind === 'quote' ? 'sales/quotes' : 'sales/orders'
 
   // Every list request — the merged page and both legacy entries — comes from one pure function:
@@ -627,7 +634,10 @@ export default function InternalSalesTable({ kind, tradeType }: {
                     {
                       id: 'new-order-from-quote',
                       label: t('internal_sales.list.actions.newOrderFromQuote'),
-                      href: `${listHrefForTradeType('order', rowTradeType(row))}/create?fromQuote=${row.id}`,
+                      href: withReturnTo(
+                        `${listHrefForTradeType('order', rowTradeType(row))}/create?fromQuote=${row.id}`,
+                        listReturnPath,
+                      ),
                     },
                     {
                       id: 'convert-to-order',

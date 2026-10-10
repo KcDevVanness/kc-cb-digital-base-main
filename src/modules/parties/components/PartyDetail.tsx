@@ -11,6 +11,7 @@ import { Separator } from '@open-mercato/ui/primitives/separator'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { toPartyFormValues, type PartyRecord } from './PartyForm'
 
 const LIST_HREF = '/backend/parties'
@@ -32,6 +33,7 @@ function DetailRow({ label, value }: { label: string; value: string | null }) {
 export default function PartyDetail({ partyId }: { partyId: string }) {
   const t = useT()
   const scopeVersion = useOrganizationScopeVersion()
+  const backHref = useBackHref(LIST_HREF)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['parties-detail', partyId, scopeVersion],
@@ -50,7 +52,7 @@ export default function PartyDetail({ partyId }: { partyId: string }) {
   if (error) {
     const status = (error as { status?: number }).status
     if (status === 404) {
-      return <RecordNotFoundState label={t('parties.form.loadFailed')} backHref={LIST_HREF} />
+      return <RecordNotFoundState label={t('parties.form.loadFailed')} backHref={backHref} />
     }
     return <ErrorMessage label={error instanceof Error && error.message ? error.message : t('parties.form.loadFailed')} />
   }

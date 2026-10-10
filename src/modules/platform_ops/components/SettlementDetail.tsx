@@ -13,6 +13,7 @@ import { ReceiptText } from 'lucide-react'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useLocale, useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import {
   SETTLEMENTS_API_PATH,
   SETTLEMENT_LINES_API_PATH,
@@ -96,6 +97,7 @@ export default function SettlementDetail({ settlementId }: { settlementId: strin
   const locale = useLocale()
   const scopeVersion = useOrganizationScopeVersion()
   const channelNames = useChannelNameMap()
+  const backHref = useBackHref(SETTLEMENTS_LIST_HREF)
   const [settlement, setSettlement] = React.useState<SettlementRecord | null>(null)
   const [lines, setLines] = React.useState<SettlementLineRecord[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -146,7 +148,7 @@ export default function SettlementDetail({ settlementId }: { settlementId: strin
   if (loading && !settlement) return <LoadingMessage label={t('ui.forms.loading')} />
 
   if (notFound) {
-    return <RecordNotFoundState label={t('api.errors.notFound')} backHref={SETTLEMENTS_LIST_HREF} />
+    return <RecordNotFoundState label={t('api.errors.notFound')} backHref={backHref} />
   }
 
   if (loadError || !settlement) {
@@ -160,7 +162,7 @@ export default function SettlementDetail({ settlementId }: { settlementId: strin
     <>
       <FormHeader
         mode="detail"
-        backHref={SETTLEMENTS_LIST_HREF}
+        backHref={backHref}
         entityTypeLabel={t('platform_ops.settlements.page.title')}
         title={settlement.externalSettlementId}
         statusBadge={<SettlementStatusBadge status={settlement.status} />}

@@ -63,8 +63,10 @@ app 自有模块。**公司订单是一个真表**：`order_hub_company_orders`�
   都走它——复用 app 级 `SourcePreviewDrawer`，按 kind（销售/采购/合同/PI·CI/税务发票/发运单/装箱单/收汇/退税）各自
   读一条并映射为只读字段，缺失字段显示「—」；抽屉底部「编辑」才离开本页（带 `?returnTo=`），读失败在抽屉内给重试。
 - **返回本页**：hub 生成的所有跳转链接都带 `returnTo=<本页>`，目标模块页面用共享件
-  `src/lib/navigation/returnTo.ts` 的 `useReturnHref()` 作为自己的「返回」链接（白名单：仅 `/backend/` 开头、
-  无空白/控制字符的同站路径，非法值回退各模块默认台账）。
+  `src/lib/navigation/returnTo.ts` 的 `useBackHref(<本模块台账>)` 作为自己的「返回」链接（白名单：仅 `/backend/` 开头、
+  无空白/控制字符的同站路径，非法值回退各模块默认台账）；没有显式 `?returnTo=` 的页面（列表行操作、侧边栏、通知链接）
+  由后端外壳记录的**本标签页导航轨迹**兜底——详见
+  [`opened-page-returns-to-its-origin.md`](../../.ai/lessons/opened-page-returns-to-its-origin.md)。
 - **子单行的状态徽标**：有状态才渲染（销售走销售字典、采购走采购词表、未知码回原值）；无状态的行**不渲染徽标**——
   本开发库 9 张销售单里 8 张没有状态，只写「—」的徽章不承载信息（owner 2026-10-09 复查）。纯函数在
   `components/companyOrderChildStatus.ts`，单测 `components/__tests__/companyOrderChildStatus.test.ts`。
@@ -166,9 +168,10 @@ owner 看 `/backend/orders` 后反馈：`对方` 看不出是什么，整行「�
   合并的「销售订单」区块（行徽标区分，单据与通道标记不变）。
 - **关联预览**：任何区块的行「点开」= 右侧只读预览抽屉（`LinkedRecordPreviewDrawer` + `linkedRecordPreviewSources`，
   复用 `@/lib/source-preview`），「编辑」是独立按钮（子单行 → 模块编辑页）；不再「点开即离开页面」。
-- **回到本页**：hub 跳到模块页面的链接都带 `?returnTo=`，模块页面用 `@/lib/navigation/returnTo` 的 `useReturnHref()`
-  当「返回」目标（改动落在 purchasing / internal_sales / trade_docs / cross_border / export_finance 的
-  详情与编辑页）。
+- **回到本页**：hub 跳到模块页面的链接都带 `?returnTo=`，模块页面用 `@/lib/navigation/returnTo` 的
+  `useBackHref(<本模块台账>)` 当「返回」目标（改动落在 purchasing / internal_sales / trade_docs / cross_border /
+  export_finance 的详情与编辑页）；`?returnTo=` 是显式来源（新标签页/收藏/刷新后仍有效），没有它时回退到本标签页
+  导航轨迹里上一步的页面，最后才是模块台账。
 - **表单与文案**：公司订单建单/编辑页不再填写「标题」（列保留、历史值仍在抬头副标题显示，保存不发送 `title`）；
   抬头「默认客户/默认供应商」改称「客户/供应商」；采购单「订单描述」改读字典库的 **Product categories**
   （`product_category`，product_codes 播种），`purchasing` 不再播种 `order_product_category`。

@@ -45,6 +45,7 @@ import {
 } from '../lib/formLayout'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { useSelectedOrganizationId } from './useSelectedOrganizationId'
 import { PRODUCT_PRICE_TIERS, type ProductPriceTier } from '../lib/tiers'
 import { loadUnitOptions } from '../lib/unitOptions'
@@ -1371,6 +1372,7 @@ function buildStepNavGroup(
 function ProductCreateForm() {
   const t = useT()
   const router = useRouter()
+  const backHref = useBackHref(PRODUCTS_LIST_HREF)
   const fields = useProductsFields(t)
   const allGroups = useProductGroups(t)
   const [step, setStep] = React.useState<ProductFormStep>('basics')
@@ -1410,7 +1412,7 @@ function ProductCreateForm() {
     <CrudForm<ProductFormValues>
       title={t('products.items.form.createTitle')}
       titleHeadingLevel={1}
-      backHref={PRODUCTS_LIST_HREF}
+      backHref={backHref}
       contentHeader={
         <ProductFormStepRail
           step={step}
@@ -1423,7 +1425,7 @@ function ProductCreateForm() {
       groups={groups}
       initialValues={EMPTY_PRODUCT_VALUES}
       submitLabel={t('products.items.form.save')}
-      cancelHref={PRODUCTS_LIST_HREF}
+      cancelHref={backHref}
       onSubmit={handleSubmit}
     />
   )
@@ -1432,6 +1434,7 @@ function ProductCreateForm() {
 function ProductEditForm({ productId }: { productId: string }) {
   const t = useT()
   const router = useRouter()
+  const backHref = useBackHref(PRODUCTS_LIST_HREF)
   const [step, setStep] = React.useState<ProductFormStep>('basics')
   const [invalidStep, setInvalidStep] = React.useState<ProductFormStep | null>(null)
   const [initial, setInitial] = React.useState<ProductRecord | null>(null)
@@ -1536,7 +1539,7 @@ function ProductEditForm({ productId }: { productId: string }) {
     return (
       <RecordNotFoundState
         label={t('products.items.form.notFound')}
-        backHref={PRODUCTS_LIST_HREF}
+        backHref={backHref}
       />
     )
   }
@@ -1547,7 +1550,7 @@ function ProductEditForm({ productId }: { productId: string }) {
     <CrudForm<ProductFormValues>
       title={t('products.items.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={PRODUCTS_LIST_HREF}
+      backHref={backHref}
       contentHeader={
         <ProductFormStepRail
           step={step}
@@ -1560,7 +1563,7 @@ function ProductEditForm({ productId }: { productId: string }) {
       groups={groups}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('products.items.form.save')}
-      cancelHref={PRODUCTS_LIST_HREF}
+      cancelHref={backHref}
       isLoading={loading}
       onSubmit={handleSubmit}
     />

@@ -16,6 +16,7 @@ import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/u
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { parseOrganizationSwitcherScope } from '../../dictionaries/lib/dictionariesLibraryApi'
 import { findOrganizationName, organizationChainEntries } from '@/lib/orgs/organizationOptions'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { useOrganizationNames } from '../../products/components/useOrganizationNames'
 import {
   BankAccountsEditor,
@@ -220,6 +221,7 @@ function useOurPartyFields(
 
 export function OurPartyCreateForm() {
   const t = useT()
+  const backHref = useBackHref(LIST_HREF)
   const { entries, loading } = useOrganizationChain()
   const taken = useTakenOrganizationIds()
   const options = React.useMemo<CrudFieldOption[]>(
@@ -247,12 +249,12 @@ export function OurPartyCreateForm() {
     <CrudForm<OurPartyFormValues>
       title={t('our_parties.form.createTitle')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={PROFILE_GROUPS}
       initialValues={EMPTY_PROFILE_VALUES}
       submitLabel={t('our_parties.form.save')}
-      cancelHref={LIST_HREF}
+      cancelHref={backHref}
       successRedirect={LIST_HREF}
       onSubmit={handleSubmit}
       isLoading={loading}
@@ -272,6 +274,7 @@ async function fetchProfile(id: string, errorMessage: string): Promise<OurPartyP
 
 export function OurPartyEditForm({ profileId }: { profileId: string }) {
   const t = useT()
+  const backHref = useBackHref(LIST_HREF)
   const organizationNames = useOrganizationNames()
   const [initial, setInitial] = React.useState<OurPartyProfileRecord | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -326,19 +329,19 @@ export function OurPartyEditForm({ profileId }: { profileId: string }) {
   )
 
   if (loading) return <LoadingMessage label={t('our_parties.form.loading')} />
-  if (isNotFound) return <RecordNotFoundState label={t('our_parties.form.loadFailed')} backHref={LIST_HREF} />
+  if (isNotFound) return <RecordNotFoundState label={t('our_parties.form.loadFailed')} backHref={backHref} />
   if (error || !initial) return <ErrorMessage label={error ?? t('our_parties.form.loadFailed')} />
 
   return (
     <CrudForm<OurPartyFormValues>
       title={organizationLabel || t('our_parties.form.editTitle')}
       titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      backHref={backHref}
       fields={fields}
       groups={PROFILE_GROUPS}
       initialValues={{ ...initial }}
       submitLabel={t('our_parties.form.save')}
-      cancelHref={LIST_HREF}
+      cancelHref={backHref}
       successRedirect={LIST_HREF}
       onSubmit={handleSubmit}
     />

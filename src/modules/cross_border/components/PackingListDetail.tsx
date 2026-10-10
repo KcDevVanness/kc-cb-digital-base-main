@@ -15,6 +15,7 @@ import { deleteCrud, fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { AttachmentPreviewLink } from '@/lib/attachments/AttachmentPreview'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import {
   PACKING_LISTS_LIST_HREF,
   SHIPMENT_DOCUMENTS_API_PATH,
@@ -116,6 +117,7 @@ function buildLineColumns(t: TranslateFn): ColumnDef<PackingListLineValues>[] {
 export default function PackingListDetail({ documentId }: { documentId: string }) {
   const t = useT()
   const router = useRouter()
+  const backHref = useBackHref(PACKING_LISTS_LIST_HREF)
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const [document, setDocument] = React.useState<ShipmentDocumentRecord | null>(null)
   const [shipment, setShipment] = React.useState<ShipmentRecord | null>(null)
@@ -208,7 +210,7 @@ export default function PackingListDetail({ documentId }: { documentId: string }
     <>
       <FormHeader
         mode="detail"
-        backHref={PACKING_LISTS_LIST_HREF}
+        backHref={backHref}
         entityTypeLabel={t('cross_border.packingLists.page.title')}
         title={document.documentNumber ?? t('cross_border.packingLists.detail.untitled')}
         actionsContent={(

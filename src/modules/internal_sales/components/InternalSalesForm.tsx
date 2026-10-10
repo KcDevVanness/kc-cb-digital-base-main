@@ -56,7 +56,7 @@ import {
   resolveInitialCurrency,
   writeStoredCurrency,
 } from '../lib/currencyDefault'
-import { useReturnHref } from '@/lib/navigation/returnTo'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { parseCompanyOrderParam } from '@/lib/orders/companyOrderParams'
 import { loadCompanyOrderDefaults } from '@/lib/orders/companyOrderDefaults'
 import { SALES_STATUS_DRAFT, SALES_STATUS_SENT } from '../lib/salesStatus'
@@ -1138,7 +1138,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
   const companyOrderParam = React.useMemo(() => parseCompanyOrderParam(searchParams), [searchParams])
   const { organizationId } = useOrganizationScopeDetail()
   const entryHref = listHrefForTradeType(kind, entryTradeType)
-  const backHref = useReturnHref(entryHref)
+  const backHref = useBackHref(entryHref)
   /**
    * The starting currency.
    *
@@ -1281,7 +1281,7 @@ function CreateForm({ kind }: { kind: InternalSalesKind }) {
         lines: [{ ...EMPTY_LINE }],
       }}
       submitLabel={t('internal_sales.form.save')}
-      cancelHref={entryHref}
+      cancelHref={backHref}
       onSubmit={handleSubmit}
     />
     </>
@@ -1295,7 +1295,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
   const fields = useFields(t, entryTradeType)
   const { channels, hasAll: hasAllChannels, missingMessage: missingChannelMessage } = useTradeTypeChannels(kind)
   const entryHref = listHrefForTradeType(kind, entryTradeType)
-  const backHref = useReturnHref(entryHref)
+  const backHref = useBackHref(entryHref)
   const groups = useGroups(t, {
     withQuoteLoad: kind === 'order',
     mode: 'edit',
@@ -1442,7 +1442,7 @@ function EditForm({ kind, documentId }: { kind: InternalSalesKind; documentId: s
       // version and every line call carries the row's, so the form must not attach one globally.
       disableOptimisticLock
       submitLabel={t('internal_sales.form.save')}
-      cancelHref={entryHref}
+      cancelHref={backHref}
       isLoading={loading}
       onSubmit={handleSubmit}
     />

@@ -20,6 +20,7 @@ import {
   resolveSupplierLabel,
 } from './companyOrderOptions'
 import { buildCompanyOrderLinks } from '@/lib/orders/companyOrderLinkPayload'
+import { useBackHref } from '@/lib/navigation/returnTo'
 import { loadCodeListOptions } from '@/lib/dictionaries/codeListOptions'
 import { COMPANY_ORDER_PAYMENT_STATUSES, companyOrderStatusOptions } from '../data/validators'
 
@@ -320,6 +321,7 @@ const EMPTY_LINK_REF_ARRAYS: Pick<CompanyOrderFormValues, 'salesLinkRefs' | 'pur
 function CompanyOrderCreateForm() {
   const t = useT()
   const router = useRouter()
+  const backHref = useBackHref(ORDERS_LIST_HREF)
   const pickerOptionsRef = React.useRef<Record<string, CrudFieldOption[]>>({})
   const fields = useCompanyOrderFields(t, true, undefined, pickerOptionsRef)
   const initialValues = React.useMemo<CompanyOrderFormValues>(() => ({
@@ -365,11 +367,11 @@ function CompanyOrderCreateForm() {
     <CrudForm<CompanyOrderFormValues>
       title={t('order_hub.companyOrders.create.title')}
       titleHeadingLevel={1}
-      backHref={ORDERS_LIST_HREF}
+      backHref={backHref}
       fields={fields}
       initialValues={initialValues}
       submitLabel={t('order_hub.companyOrders.form.save')}
-      cancelHref={ORDERS_LIST_HREF}
+      cancelHref={backHref}
       onSubmit={handleSubmit}
     />
   )
@@ -409,6 +411,7 @@ function toCompanyOrderFormValues(item: Record<string, unknown>): CompanyOrderFo
 
 function CompanyOrderEditForm({ id }: { id: string }) {
   const t = useT()
+  const backHref = useBackHref(ORDERS_LIST_HREF)
   const [initial, setInitial] = React.useState<CompanyOrderFormValues | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [loadError, setLoadError] = React.useState<string | null>(null)
@@ -467,7 +470,7 @@ function CompanyOrderEditForm({ id }: { id: string }) {
     return (
       <RecordNotFoundState
         label={t('order_hub.companyOrders.form.notFound')}
-        backHref={ORDERS_LIST_HREF}
+        backHref={backHref}
       />
     )
   }
@@ -493,11 +496,11 @@ function CompanyOrderEditForm({ id }: { id: string }) {
     <CrudForm<CompanyOrderFormValues>
       title={t('order_hub.companyOrders.edit.title')}
       titleHeadingLevel={1}
-      backHref={ORDERS_LIST_HREF}
+      backHref={backHref}
       fields={fields}
       initialValues={initial ?? fallbackInitialValues}
       submitLabel={t('order_hub.companyOrders.form.save')}
-      cancelHref={ORDERS_LIST_HREF}
+      cancelHref={backHref}
       successRedirect={`${ORDERS_LIST_HREF}/${encodeURIComponent(id)}`}
       deleteRedirect={ORDERS_LIST_HREF}
       isLoading={loading}
