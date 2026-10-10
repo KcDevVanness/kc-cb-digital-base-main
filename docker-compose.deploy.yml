@@ -42,7 +42,7 @@ services:
           echo "ERROR: init-or-migrate.sh not found. Rebuild the image." >&2
           exit 1
         fi
-        sh /app/docker/scripts/init-or-migrate.sh
+        NODE_OPTIONS="$${INIT_NODE_OPTIONS}" sh /app/docker/scripts/init-or-migrate.sh
         yarn start
     working_dir: /app
     volumes:
@@ -60,7 +60,12 @@ services:
       # runs instead of the OOM killer, while leaving room for Postgres, Redis,
       # Meilisearch and Caddy — the rest of the working set lives in the 8 GB
       # swapfile. Raise only alongside the instance size.
-      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=384}
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=512}
+      # The init/bootstrap phase loads every module at once and dies at the
+      # server cap (measured: V8 OOM in "Bootstrapping application..." at 384).
+      # It runs once per boot and may page, so it gets its own, larger cap; the
+      # server above keeps the tight one.
+      INIT_NODE_OPTIONS: ${INIT_NODE_OPTIONS:---max-old-space-size=2048}
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-open-mercato}
       DB_POOL_MAX: ${DB_POOL_MAX:-5}
       DB_POOL_MIN: ${DB_POOL_MIN:-2}
