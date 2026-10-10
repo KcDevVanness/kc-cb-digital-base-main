@@ -14,6 +14,7 @@ import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { pushWithFlash } from '@open-mercato/ui/backend/utils/flash'
 import { toUtcDateInputValue } from '@open-mercato/ui/primitives/date-format'
+import { Input } from '@open-mercato/ui/primitives/input'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { useReturnHref } from '@/lib/navigation/returnTo'
@@ -35,11 +36,26 @@ import {
 import {
   findOptionSnapshot,
   loadCustomerOptions,
-  loadOwnerOptions,
-  loadProductCategoryOptions,
 } from './orderFormOptions'
 
 const LINES_PAGE_SIZE = 200
+
+/**
+ * A field the operator can no longer change, rendered as its own value in the design system's
+ * greyed, inert state — used where the built-in field type would not forward `disabled`
+ * (CrudForm's `number` branch). It never writes: the value is display-only, and a locked order's
+ * save body carries only the fields it may still change.
+ */
+function LockedFieldValue({ value }: { value: unknown }) {
+  return (
+    <Input
+      disabled
+      readOnly
+      value={value === null || value === undefined ? '' : String(value)}
+      aria-readonly="true"
+    />
+  )
+}
 
 /**
  * The header metadata a non-draft order still accepts — everything else carries the price the
@@ -48,9 +64,6 @@ const LINES_PAGE_SIZE = 200
  */
 const POST_PLACEMENT_FIELDS = [
   'businessNumber',
-  'productCategory',
-  'ownerUserId',
-  'ownerSnapshot',
   'customerId',
   'customerSnapshot',
   'expectedShipAt',
@@ -81,7 +94,7 @@ function toLineValues(item: Record<string, unknown>): PurchaseOrderLineValues {
 
 /**
  * Keeps the last loaded page of picker options, so the submit handler can freeze the picked
- * person's display snapshot the same way the create form does — the write command never reads
+ * company's display snapshot the same way the create form does — the write command never reads
  * another module's tables to resolve a name.
  */
 async function rememberPickerOptions(
@@ -114,12 +127,6 @@ function PurchaseOrderEditFormBody({
 
   const initialValues = React.useMemo<PurchaseOrderFormValues>(() => ({
     businessNumber: order.businessNumber ?? '',
-    productCategory: order.productCategory ?? '',
-    ownerUserId: order.ownerUserId ?? '',
-    // The list projection returns the resolved display name, not the stored snapshot JSON: seed the
-    // snapshot from the name so saving an order whose picker was never touched keeps the name the
-    // page shows instead of blanking the frozen display data.
-    ownerSnapshot: order.ownerSnapshot ?? (order.ownerName ? { name: order.ownerName } : null),
     customerId: order.customerId ?? '',
     customerSnapshot: order.customerSnapshot ?? (order.customerName ? { name: order.customerName } : null),
     supplierId: order.supplierId,
@@ -142,29 +149,16 @@ function PurchaseOrderEditFormBody({
       layout: 'half',
     },
     {
-      id: 'productCategory',
-      label: t('purchasing.orders.form.field.productCategory'),
-      type: 'select',
-      layout: 'half',
-      loadOptions: () => rememberPickerOptions(pickerOptionsRef, 'productCategory', () =>
-        loadProductCategoryOptions(t('purchasing.orders.form.optionsLoadFailed'))),
-    },
-    {
       id: 'supplierId',
       label: t('purchasing.orders.form.field.supplier'),
       type: 'select',
       required: true,
       layout: 'half',
-      readOnly: locked,
+      // `readOnly` is a near no-op in CrudForm (it only reaches text-like controls and the single
+      // select, and drops the number type entirely — owner 2026-10-10: 不能编辑的填写项需要变灰);
+      // `disabled` is the path that renders the design system's greyed, inert state everywhere.
+      disabled: locked,
       loadOptions: (query) => loadSupplierOptions(t('purchasing.orders.form.loadFailed'), query),
-    },
-    {
-      id: 'ownerUserId',
-      label: t('purchasing.orders.form.field.owner'),
-      type: 'select',
-      layout: 'half',
-      loadOptions: (query) => rememberPickerOptions(pickerOptionsRef, 'ownerUserId', () =>
-        loadOwnerOptions(t('purchasing.orders.form.optionsLoadFailed'), query)),
     },
     {
       id: 'customerId',
@@ -180,7 +174,7 @@ function PurchaseOrderEditFormBody({
       type: 'select',
       required: true,
       layout: 'half',
-      readOnly: locked,
+      disabled: locked,
       loadOptions: () => loadCurrencyOptions(t('purchasing.orders.form.loadFailed')),
     },
     {
@@ -189,20 +183,37 @@ function PurchaseOrderEditFormBody({
       type: 'date',
       layout: 'half',
     },
-    {
-      id: 'depositPercent',
-      label: t('purchasing.orders.form.field.depositPercent'),
-      type: 'number',
-      layout: 'half',
-      readOnly: locked,
-    },
-    {
-      id: 'depositAmount',
-      label: t('purchasing.orders.form.field.depositAmount'),
-      type: 'number',
-      layout: 'half',
-      readOnly: locked,
-    },
+    // CrudForm's `number` branch does not forward `disabled`/`readOnly` to its NumberInput, so a
+    // locked money field would keep looking editable (owner 2026-10-10: 不能编辑的填写项需要变灰).
+    // Locked, the field is a greyed inert value instead; unlocked it stays an ordinary number field.
+    locked
+      ? {
+          id: 'depositPercent',
+          label: t('purchasing.orders.form.field.depositPercent'),
+          type: 'custom',
+          layout: 'half',
+          component: (props) => <LockedFieldValue value={props.value} />,
+        }
+      : {
+          id: 'depositPercent',
+          label: t('purchasing.orders.form.field.depositPercent'),
+          type: 'number',
+          layout: 'half',
+        },
+    locked
+      ? {
+          id: 'depositAmount',
+          label: t('purchasing.orders.form.field.depositAmount'),
+          type: 'custom',
+          layout: 'half',
+          component: (props) => <LockedFieldValue value={props.value} />,
+        }
+      : {
+          id: 'depositAmount',
+          label: t('purchasing.orders.form.field.depositAmount'),
+          type: 'number',
+          layout: 'half',
+        },
     {
       id: 'notes',
       label: t('purchasing.orders.form.field.notes'),
@@ -217,9 +228,7 @@ function PurchaseOrderEditFormBody({
       column: 1,
       fields: [
         'businessNumber',
-        'productCategory',
         'supplierId',
-        'ownerUserId',
         'customerId',
         'currencyCode',
         'expectedShipAt',
@@ -253,18 +262,15 @@ function PurchaseOrderEditFormBody({
 
   const handleSubmit = React.useCallback(async (values: PurchaseOrderFormValues) => {
     // A picker the operator did not touch keeps the snapshot the order was filed with: the picked
-    // person may not be on the loaded page any more, and the name recorded at filing time is the
+    // company may not be on the loaded page any more, and the name recorded at filing time is the
     // one the order owns. The list projection returns the resolved display name rather than the
     // stored snapshot JSON, so an untouched picker falls back to that name instead of clearing it —
     // a save must never blank the order's frozen display data. A changed picker resolves against
     // the options it was chosen from.
-    const ownerSnapshot = values.ownerUserId === (order.ownerUserId ?? '')
-      ? (order.ownerSnapshot ?? (order.ownerName ? { name: order.ownerName } : null))
-      : findOptionSnapshot(pickerOptionsRef.current.ownerUserId ?? [], values.ownerUserId)
     const customerSnapshot = values.customerId === (order.customerId ?? '')
       ? (order.customerSnapshot ?? (order.customerName ? { name: order.customerName } : null))
       : findOptionSnapshot(pickerOptionsRef.current.customerId ?? [], values.customerId)
-    const full = buildPurchaseOrderPayload({ ...values, ownerSnapshot, customerSnapshot })
+    const full = buildPurchaseOrderPayload({ ...values, customerSnapshot })
     const body = locked
       ? Object.fromEntries(POST_PLACEMENT_FIELDS.map((key) => [key, full[key]]))
       : full

@@ -10,7 +10,9 @@ import { pushWithFlash } from '@open-mercato/ui/backend/utils/flash'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import {
+  findOptionSnapshot,
   loadCustomerPartyOptions,
+  loadOwnerOptions,
   loadPurchaseOrderCandidates,
   loadSalesOrderCandidates,
   loadSupplierOptions,
@@ -18,6 +20,7 @@ import {
   resolveSupplierLabel,
 } from './companyOrderOptions'
 import { buildCompanyOrderLinks } from '@/lib/orders/companyOrderLinkPayload'
+import { loadCodeListOptions } from '@/lib/dictionaries/codeListOptions'
 import { COMPANY_ORDER_PAYMENT_STATUSES, companyOrderStatusOptions } from '../data/validators'
 
 /**
@@ -51,6 +54,12 @@ export type CompanyOrderFormValues = {
   status: string
   paymentStatus: string
   notes: string | null
+  /** 订单描述 — the `product_category` dictionary code; empty clears it (sent as `null`). */
+  productCategory: string
+  /** 采购负责人 — a user id; empty clears both halves (the snapshot included). */
+  ownerUserId: string
+  /** The `{name,email}` frozen with the pick, carried so an unchanged pick keeps its stored value. */
+  ownerSnapshot: Record<string, unknown> | null
   customerPartyId: string | null
   supplierId: string | null
   /** Create only: sales-order link picker values (`${kind}:${refId}`). */
@@ -87,6 +96,7 @@ export function buildCompanyOrderPayload(values: CompanyOrderFormValues): Record
     : null
   const text = (value: unknown): string | null =>
     typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+  const ownerUserId = text(values.ownerUserId)
   return {
     orderDate,
     etaDate,
@@ -99,6 +109,12 @@ export function buildCompanyOrderPayload(values: CompanyOrderFormValues): Record
         ? values.paymentStatus
         : null,
     notes,
+    // 订单描述 / 采购负责人: root-held, three-state via the update command — an empty pick sends an
+    // explicit `null` (clears the field / the owner pair), and a pick sends the frozen snapshot
+    // beside the id so the root owns the name it was filed under.
+    productCategory: text(values.productCategory),
+    ownerUserId,
+    ...(ownerUserId ? { ownerSnapshot: values.ownerSnapshot ?? null } : {}),
     customerPartyId: text(values.customerPartyId),
     supplierId: text(values.supplierId),
   }
@@ -144,7 +160,27 @@ function LinkPickerField({
   )
 }
 
-function useCompanyOrderFields(t: TranslateFn, withLinks: boolean, currentStatus?: string | null): CrudField[] {
+/**
+ * Runs a picker loader and remembers its page, so the submit handler can resolve a chosen owner's
+ * snapshot without a second request. A picker only ever holds the first page of its source, so the
+ * remembered map is what `findOptionSnapshot` reads.
+ */
+async function rememberPickerOptions(
+  ref: React.MutableRefObject<Record<string, CrudFieldOption[]>>,
+  key: string,
+  loader: () => Promise<CrudFieldOption[]>,
+): Promise<CrudFieldOption[]> {
+  const options = await loader()
+  ref.current[key] = options
+  return options
+}
+
+function useCompanyOrderFields(
+  t: TranslateFn,
+  withLinks: boolean,
+  currentStatus: string | null | undefined,
+  pickerOptionsRef: React.MutableRefObject<Record<string, CrudFieldOption[]>>,
+): CrudField[] {
   const salesLoadOptions = React.useCallback(async (query?: string): Promise<CrudFieldOption[]> => {
     const candidates = await loadSalesOrderCandidates(query)
     const internalLabel = t('order_hub.companyOrders.links.kind.internal', 'Internal sales order')
@@ -196,6 +232,26 @@ function useCompanyOrderFields(t: TranslateFn, withLinks: boolean, currentStatus
         value,
         label: t(`order_hub.companyOrders.paymentStatus.${value}`),
       })),
+    },
+    {
+      id: 'productCategory',
+      label: t('order_hub.companyOrders.form.productCategory', 'Order description'),
+      type: 'select',
+      layout: 'half',
+      // The shared `product_category` dictionary (the 字典库「Product categories」 list `product_codes`
+      // seeds); the root stores the code and the header/list resolve its label.
+      loadOptions: () => loadCodeListOptions('product_category'),
+    },
+    {
+      id: 'ownerUserId',
+      label: t('order_hub.companyOrders.form.owner', 'Purchaser'),
+      type: 'select',
+      layout: 'half',
+      // 采购负责人: the platform user list, scoped to the caller's active organization; the chosen
+      // option's `{name,email}` snapshot is frozen onto the root at submit time.
+      loadOptions: (query) =>
+        rememberPickerOptions(pickerOptionsRef, 'ownerUserId', () =>
+          loadOwnerOptions(t('order_hub.companyOrders.form.optionsLoadFailed', 'Could not load the options'), query)),
     },
     {
       id: 'customerPartyId',
@@ -253,7 +309,7 @@ function useCompanyOrderFields(t: TranslateFn, withLinks: boolean, currentStatus
       type: 'textarea',
       layout: 'full',
     },
-  ], [currentStatus, purchaseLoadOptions, salesLoadOptions, t, withLinks])
+  ], [currentStatus, pickerOptionsRef, purchaseLoadOptions, salesLoadOptions, t, withLinks])
 }
 
 const EMPTY_LINK_REF_ARRAYS: Pick<CompanyOrderFormValues, 'salesLinkRefs' | 'purchaseLinkRefs'> = {
@@ -264,7 +320,8 @@ const EMPTY_LINK_REF_ARRAYS: Pick<CompanyOrderFormValues, 'salesLinkRefs' | 'pur
 function CompanyOrderCreateForm() {
   const t = useT()
   const router = useRouter()
-  const fields = useCompanyOrderFields(t, true)
+  const pickerOptionsRef = React.useRef<Record<string, CrudFieldOption[]>>({})
+  const fields = useCompanyOrderFields(t, true, undefined, pickerOptionsRef)
   const initialValues = React.useMemo<CompanyOrderFormValues>(() => ({
     title: '',
     orderDate: '',
@@ -272,6 +329,9 @@ function CompanyOrderCreateForm() {
     status: 'placed',
     paymentStatus: 'unpaid',
     notes: '',
+    productCategory: '',
+    ownerUserId: '',
+    ownerSnapshot: null,
     customerPartyId: '',
     supplierId: '',
     ...EMPTY_LINK_REF_ARRAYS,
@@ -280,7 +340,10 @@ function CompanyOrderCreateForm() {
   const handleSubmit = React.useCallback(async (values: CompanyOrderFormValues) => {
     try {
       const links = buildCompanyOrderLinks(values)
-      const payload = buildCompanyOrderPayload(values)
+      // Freeze the chosen owner's `{name,email}` from the page it was picked off (an id off the
+      // loaded page contributes no snapshot, leaving the root's pair honestly empty on that half).
+      const ownerSnapshot = findOptionSnapshot(pickerOptionsRef.current.ownerUserId ?? [], values.ownerUserId)
+      const payload = buildCompanyOrderPayload({ ...values, ownerSnapshot })
       if (links.length > 0) payload.links = links
       const result = await createCrud<{ id?: string }>(ORDERS_API_PATH, payload)
       const createdId = typeof result.result?.id === 'string' ? result.result.id : null
@@ -296,7 +359,7 @@ function CompanyOrderCreateForm() {
       flash(t('order_hub.companyOrders.form.saveFailed'), 'error')
       throw error
     }
-  }, [router, t])
+  }, [pickerOptionsRef, router, t])
 
   return (
     <CrudForm<CompanyOrderFormValues>
@@ -320,6 +383,7 @@ function readProjectedText(source: Record<string, unknown>, key: string): string
 
 function toCompanyOrderFormValues(item: Record<string, unknown>): CompanyOrderFormValues {
   const updatedAtRaw = item.updatedAt ?? item.updated_at
+  const ownerSnapshot = item.ownerSnapshot
   return {
     id: typeof item.id === 'string' ? item.id : undefined,
     orderDate: readProjectedText(item, 'orderDate'),
@@ -328,6 +392,14 @@ function toCompanyOrderFormValues(item: Record<string, unknown>): CompanyOrderFo
     // `null` (a row written before the column existed) reads as “”, which the select shows as unset.
     paymentStatus: readProjectedText(item, 'paymentStatus'),
     notes: readProjectedText(item, 'notes'),
+    // Root-held 订单描述 / 采购负责人 read as select values; the frozen snapshot is carried through so
+    // an untouched pick keeps the name the root was filed with instead of blanking it on save.
+    productCategory: readProjectedText(item, 'productCategory'),
+    ownerUserId: readProjectedText(item, 'ownerUserId'),
+    ownerSnapshot:
+      ownerSnapshot && typeof ownerSnapshot === 'object' && !Array.isArray(ownerSnapshot)
+        ? (ownerSnapshot as Record<string, unknown>)
+        : null,
     customerPartyId: readProjectedText(item, 'customerPartyId'),
     supplierId: readProjectedText(item, 'supplierId'),
     ...EMPTY_LINK_REF_ARRAYS,
@@ -341,7 +413,8 @@ function CompanyOrderEditForm({ id }: { id: string }) {
   const [loading, setLoading] = React.useState(true)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [isNotFound, setIsNotFound] = React.useState(false)
-  const fields = useCompanyOrderFields(t, false, initial?.status ?? null)
+  const pickerOptionsRef = React.useRef<Record<string, CrudFieldOption[]>>({})
+  const fields = useCompanyOrderFields(t, false, initial?.status ?? null, pickerOptionsRef)
 
   React.useEffect(() => {
     let cancelled = false
@@ -381,6 +454,9 @@ function CompanyOrderEditForm({ id }: { id: string }) {
     status: 'placed',
     paymentStatus: '',
     notes: '',
+    productCategory: '',
+    ownerUserId: '',
+    ownerSnapshot: null,
     customerPartyId: '',
     supplierId: '',
     ...EMPTY_LINK_REF_ARRAYS,
@@ -399,10 +475,17 @@ function CompanyOrderEditForm({ id }: { id: string }) {
   if (loadError) return <ErrorMessage label={loadError} />
 
   const handleSubmit = async (values: CompanyOrderFormValues) => {
+    // An untouched owner pick keeps the snapshot the root was filed with — the chosen user may not be
+    // on the loaded page any more, and a save must never blank the frozen name. A changed pick
+    // resolves against the options it was chosen from.
+    const ownerSnapshot =
+      values.ownerUserId === (initial?.ownerUserId ?? '')
+        ? (initial?.ownerSnapshot ?? null)
+        : findOptionSnapshot(pickerOptionsRef.current.ownerUserId ?? [], values.ownerUserId)
     await updateCrud(ORDERS_API_PATH, {
       id,
       updatedAt: values.updatedAt ?? initial?.updatedAt ?? undefined,
-      ...buildCompanyOrderPayload(values),
+      ...buildCompanyOrderPayload({ ...values, ownerSnapshot }),
     })
   }
 

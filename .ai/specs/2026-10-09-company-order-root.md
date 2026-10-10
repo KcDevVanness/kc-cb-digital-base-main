@@ -1,7 +1,7 @@
 # 公司订单根单化（company order as a first-class root entity）
 
 **Date**: 2026-10-09
-**Status**: Phases 1–3 Delivered（PR `feat/company-order-root`，已合入 `dev` f26112b）；**第四轮 Delivered**（PR `feat/company-order-collaboration`，已合入 `dev` 8905b6b）；**第五轮 Delivered**（PR #153，已合入 `dev` dc119ba，含 CSP 修复）：宽门禁全绿（82 suites · 661 tests）+ 集成 `--filter order_hub` 35 passed + 浏览器实测（工作台金额列 / 全字段抽屉 / 无号草稿可选中 / 协作账号列文件与下载）。**第六轮 Delivered**（PR #152，off `dev`）：订单状态换成 7 个业务阶段（已下单→生产→工厂提货→已报关→已装运→路上→到仓库；旧值保留兼容、不回填）+ 根单「是否已收款」（已收全款/未收款），迁移 `Migration20261009064750_order_hub.ts`（加列 + `status` 默认值，无回填）。证据（第六轮，合入第五轮后的合并树）：单测 `src/modules/order_hub` 5 suites · 29 tests；ephemeral 集成 `--filter order_hub` **36 passed**；宽门禁 83 suites · 665 tests + build 全绿；浏览器实测（建单页 7 值下拉 + 是否已收款默认未收款、编辑保存后 hub「已收全款」+ DB 回读、工作台新词表与旧值徽章并存）。**第七轮 Delivered**（字段级附件槽位，PR #157，已合入 `dev` d867630）：10 个命名槽位一字段一附件位（`order_hub_company_order_documents`）+ `documents.bySlot` 汇总 + hub「单据与文件」区块与抽屉按槽位；证据：集成 `--filter order_hub` 42 passed + 浏览器实测（槽位上传/确认删除/抽屉/协作只读+字节一致）。**第八轮 Delivered**（PR #156，owner 反馈）：工作台行改显根单自身字段（编号/标题/下单日期/预计交货/状态/是否已收款/默认客户/默认供应商），与详情页抬头卡同序，`子单号`/`对方` 两列退役。证据：单测 `src/modules/order_hub` 9 suites · 53 tests；宽门禁 86 suites · 682 tests；浏览器实测（表格与抬头卡同值）。证据（前四轮）：`yarn typecheck` 全仓干净；`yarn jest src/modules/order_hub` 3 suites · 28 tests；ephemeral 集成 `company-orders` 6 / `company-order-links` 9 / `company-order-backfill` 3 = **18 passed**；浏览器实测（工作台=公司订单、点进 hub、关联对话框成套替换、旧 URL 归位、「未关联」一键建根、采购/对内销售预填+自动关联、暗色/窄屏/键盘）。迁移应用现状：`order_hub` 全部迁移已由本机 dev supervisor 应用（生产走既有部署流程）；升级步骤（迁移 + `backfill-company-orders --apply` + `auth sync-role-acls`）见模块 README。 **第九轮 Delivered**（PR #154，off `dev`；原编号「第六轮」，落地时后移）：hub 板块布局 + 对内/对外合并「销售订单」区块、行「点开」= 右侧只读预览抽屉、「编辑」独立按钮、`?returnTo=` 返回本页、无状态子单行不再渲染空徽标、hub 抬头「全字段」入口收敛到工作台行操作。证据见「第九轮」节与 run record。
+**Status**: Phases 1–3 Delivered（PR `feat/company-order-root`，已合入 `dev` f26112b）；**第四轮 Delivered**（PR `feat/company-order-collaboration`，已合入 `dev` 8905b6b）；**第五轮 Delivered**（PR #153，已合入 `dev` dc119ba，含 CSP 修复）：宽门禁全绿（82 suites · 661 tests）+ 集成 `--filter order_hub` 35 passed + 浏览器实测（工作台金额列 / 全字段抽屉 / 无号草稿可选中 / 协作账号列文件与下载）。**第六轮 Delivered**（PR #152，off `dev`）：订单状态换成 7 个业务阶段（已下单→生产→工厂提货→已报关→已装运→路上→到仓库；旧值保留兼容、不回填）+ 根单「是否已收款」（已收全款/未收款），迁移 `Migration20261009064750_order_hub.ts`（加列 + `status` 默认值，无回填）。证据（第六轮，合入第五轮后的合并树）：单测 `src/modules/order_hub` 5 suites · 29 tests；ephemeral 集成 `--filter order_hub` **36 passed**；宽门禁 83 suites · 665 tests + build 全绿；浏览器实测（建单页 7 值下拉 + 是否已收款默认未收款、编辑保存后 hub「已收全款」+ DB 回读、工作台新词表与旧值徽章并存）。**第七轮 Delivered**（字段级附件槽位，PR #157，已合入 `dev` d867630）：10 个命名槽位一字段一附件位（`order_hub_company_order_documents`）+ `documents.bySlot` 汇总 + hub「单据与文件」区块与抽屉按槽位；证据：集成 `--filter order_hub` 42 passed + 浏览器实测（槽位上传/确认删除/抽屉/协作只读+字节一致）。**第八轮 Delivered**（PR #156，owner 反馈）：工作台行改显根单自身字段（编号/标题/下单日期/预计交货/状态/是否已收款/默认客户/默认供应商），与详情页抬头卡同序，`子单号`/`对方` 两列退役。证据：单测 `src/modules/order_hub` 9 suites · 53 tests；宽门禁 86 suites · 682 tests；浏览器实测（表格与抬头卡同值）。证据（前四轮）：`yarn typecheck` 全仓干净；`yarn jest src/modules/order_hub` 3 suites · 28 tests；ephemeral 集成 `company-orders` 6 / `company-order-links` 9 / `company-order-backfill` 3 = **18 passed**；浏览器实测（工作台=公司订单、点进 hub、关联对话框成套替换、旧 URL 归位、「未关联」一键建根、采购/对内销售预填+自动关联、暗色/窄屏/键盘）。迁移应用现状：`order_hub` 全部迁移已由本机 dev supervisor 应用（生产走既有部署流程）；升级步骤（迁移 + `backfill-company-orders --apply` + `auth sync-role-acls`）见模块 README。 **第九轮 Delivered**（PR #154，off `dev`；原编号「第六轮」，落地时后移）：hub 板块布局 + 对内/对外合并「销售订单」区块、行「点开」= 右侧只读预览抽屉、「编辑」独立按钮、`?returnTo=` 返回本页、无状态子单行不再渲染空徽标、hub 抬头「全字段」入口收敛到工作台行操作。证据见「第九轮」节与 run record。 **第十轮 Delivered**（`feat/company-order-round10`，off `dev` `caa5598`，PR 见 run record）：**根单持有**——`order_hub_company_orders` 加 `product_category`/`owner_user_id`/`owner_snapshot` 三列（迁移 `Migration20261010025411_order_hub.ts`，已在本地开发库应用），公司订单表单/抬头卡是唯一入口；采购单侧只读并镜像（新事件 `order_hub.company_order.order_fields_updated` + `purchasing` 订阅者），两个表单去掉这两格；hub 采购行显示 订单金额/预付款金额/尾款金额（实际口径）；工作台列改名「订单金额」且取值采购优先；采购单列表列改造 + 行操作「打开公司订单」；采购单详情撤回第三轮三区块（来源单号回到抬头摘要格）；供应商产品库新增 Excel 导入（表头探测 + 别名映射 + 复核 + 逐行复用 create 契约落库）。证据：宽门禁（`yarn generate && yarn typecheck && yarn lint && node scripts/check-lessons.mjs && yarn ds:check && yarn test && yarn build`）全绿 + 浏览器实测七个点（见 AC-036…AC-042）。 **第十轮复查 Delivered**（owner 2026-10-10 复看 5 点）：采购行改「打开详情」、子单状态按状态配色、行内新增 定金比例/备注、已落库的移除/取消类动作统一二次确认（REQ-047…REQ-050 / TEST-034–035 / AC-043…AC-046）。 **第十轮复查·二 Delivered**（owner 同日再复看 5 点）：采购单详情补齐可填字段与行「单价含税」、抬头「打开公司订单」、列表关联状态先算后显、锁定项灰态、单证入口退休并清空历史数据（REQ-051…REQ-055 / TEST-036 / AC-047…AC-051）。**第十轮复查·三 Delivered**（owner 2026-10-10 再复看 2 点）：采购单列表的公司订单动作并入行「⋯」菜单（未关联＝菜单内置灰项）、详情「单证」只读镜像根单「单据与文件」（REQ-056…REQ-057 / TEST-037–039 / AC-052…AC-053）。
 
 > owner 已批准两个结构决策（2026-10-09，见 Resolved decisions）：**容器根单**（新表 + 关联表，模块数据仍归各模块）与**全量补录**（现有渠道内销售单 1:1 生成公司订单）。本规格取代 `2026-10-08-order-centric-entry.md` 里「工作台合并三类既有列表 / 无实体」的口径（该文件的 Phase 4/REQ-001/009/010 与 Non-goals 第一条）。
 
@@ -792,7 +792,180 @@
 
 ---
 
+## 第十轮 — 根单持有字段、采购单明细回退与供应商产品库 Excel 导入（2026-10-10，owner 反馈）
+
+**背景**：owner 2026-10-10 对 `/backend/orders/<id>`、`/backend/orders`、`/backend/purchasing/orders`、
+`/backend/purchasing/orders/<id>`、`/backend/purchasing/supplier-products` 五个页面提出 12 点设计反馈。
+**当日问答定下七条口径**（本节的要求以它们为准）：
+
+1. **根单持有（通用规则）**：「订单描述」「采购负责人」统一由公司订单根单持有；凡涉及关联的显示一律**只读根单**，
+   修改一律**跳回公司订单**修改。此规则今后同样适用于其它「根单字段被关联模块重复开口」的场景——本轮已顺带审计
+   订单树内的同类面（审计结论见 REQ-041）。
+2. 订单描述字典**复用 `product_category`**（「Product categories」，`product_codes` 播种），不恢复模块私有 `order_product_category`。
+3. 预付款/尾款采用**实际口径**（已登记付款的 deposit / balance 阶段合计），而不是 2026-09-22 的「计划」口径。
+4. hub 抬头「供应商」：根单优先，为空时回退所关联采购单的供应商。
+5. 采购单详情**只撤三个关联区块**；`cross_border` 的 `?purchaseOrderId=` 过滤与集成 spec 保留。
+6. 供应商产品库**现在做 Excel 上传 + 解析骨架**（AI 列映射与 PDF 识别后续接入）。
+7. 迁移生成并**在本地开发库应用**（`yarn dev` 由 dev supervisor 应用）。
+
+### REQ（本轮）
+
+- **REQ-040 — 根单新增「订单描述」与「采购负责人」**：`order_hub_company_orders` 加三列——`product_category`（text null）、
+  `owner_user_id`（uuid null）、`owner_snapshot`（jsonb null）。订单描述 = 字典 `product_category` 单选（选项与标签
+  解析走既有 code-list 读法，显示成 `CL — 猫砂` 形状）；采购负责人 = 人员账号（当前组织用户列表，随选择冻结
+  `{name,email}` 快照）。创建/编辑表单可填；hub 抬头卡**只读**显示这两格（抬头卡本身没有行内编辑，编辑走「编辑」表单）。
+- **REQ-041 — 根单持有、子单只读（通用规则落地）**：采购单的「订单描述 / 采购负责人」不再有采购单侧的编辑入口——
+  创建/编辑表单移除这两个字段；死代码 `lib/purchaseOrderQuickEdit.ts` 移除；详情页两格**只读**显示，已关联根单时附
+  「去公司订单修改」链接（`/backend/orders/<rootId>`），未关联（独立采购单）显示自身存量值。根单这两个字段在
+  **关联建立时**与**根单更新时**向后镜像到已关联采购单（`order_hub` 发事件、`purchasing` 订阅落库），使采购台账、
+  订单档案（`export_finance` 的 owner/productCategory 读面）等采购侧显示与根单一致。
+  **同类面审计结论**：订单树内其余子单页面显示的都是子单自身事实（销售单的客户、采购单的供应商与金额、合同/单据/发运的
+  单号与状态），不是根单字段的重复开口——本轮无需改动；本条规则写入本规格，作为后续新字段的默认口径。
+- **REQ-042 — 工作台「金额」列改名「订单金额」**：取值改为按币种**采购金额优先**（Σ 关联采购单 `total`），无采购子单时
+  回退销售金额；展示形状（多币种 `·` 连接、2 位小数、`—` 空态）不变。
+- **REQ-043 — hub 采购单行显示三个金额**：订单金额（`total`）、预付款金额（已登记 `deposit` 阶段合计）、尾款金额
+  （已登记 `balance` 阶段合计）；合计在采购单列表投影的 `afterList` 里算（与 `paidTotal/outstanding/paymentStatus` 同一处），
+  hub 用 `?ids=` **批量**读取，绝不逐行请求。
+- **REQ-044 — 采购单列表列改造与互跳**：`总额` → `订单金额`；新增 `预付款金额`、`尾款金额`（实际口径）；`预计发货` →
+  `预计交货日期`；行操作新增「打开公司订单」——点击时按 `refId` 反查 `order_hub_company_order_links`，未关联时该项
+  置灰并提示原因（不静默跳空页）。
+- **REQ-045 — 采购单详情撤回第三轮三区块**：`#source-order`（关联订单）/ `#contracts`（关联合同）/ `#shipments`（关联发运单）
+  三区块与其 i18n 词条移除，来源单号回到抬头摘要格；`cross_border` 的 `?purchaseOrderId=` 过滤、列表横幅与集成 spec
+  **保留**（owner 口径：只撤 UI 区块）。
+- **REQ-046 — 供应商产品库 Excel 导入（骨架）**：`/backend/purchasing/supplier-products` 抬头在「新建产品」旁新增
+  「Excel 导入」入口；向导三步 = 选供应商 + 上传（`.xlsx`/`.xls`/`.csv`，附件绑到该供应商记录）→ 服务端解析
+  （工作簿读取 + 表头探测 + 别名映射到库字段）→ 复核并导入；导入**逐行复用 create 口径**校验，返回成功/失败计数与失败原因，
+  失败行不写库。AI 列映射与 PDF 识别留后续（本轮不接）。
+
+### Integration Coverage（第十轮）
+
+| Test ID | Level | Setup / fixture | Actions | Assertions | Requirement IDs |
+|---|---|---|---|---|---|
+| TEST-027 | unit | 根单行/表单夹具 | 根单映射（`toHead`、显示解析、表单载荷） | 订单描述/采购负责人缺席、null、有值三态不变形；标签回退原值；快照随选择冻结 | REQ-040 |
+| TEST-028 | unit | 付款行夹具（deposit / balance / other / 空） | 阶段合计 | 只累计对应阶段；空集 `0.00`；既有 `paidTotal/outstanding` 不变 | REQ-043, REQ-044 |
+| TEST-029 | unit | 别名表 + 表头夹具 | 导入列映射 | 中/英表头命中目标字段；未知列标忽略；同目标多列有确定优先级 | REQ-046 |
+| TEST-030 | unit | CSV 工作簿夹具 | 解析 → 行构建 | 表头定位、空行跳过、数值/单位规范化、超限报错 | REQ-046 |
+| TEST-031 | unit | 显示夹具（根单/采购行/阶段金额） | 抬头供应商回退 + 工作台金额优先级 | 根单有值优先、空则取采购行供应商（去重）；金额采购优先、无采购回退销售 | REQ-040, REQ-042 |
+| TEST-032 | smoke（浏览器 + DB 回读） | 本地环境（根单 + 采购单 `PO-2026-0008`） | 改根单两字段；从根单新建采购单 | 采购单两字段与根单一致（`CL` / `employee@acme.com`）；幂等（同值不重发） | REQ-041 |
+| TEST-033 | UI（浏览器） | 本地环境 | 五页面逐点复验 | 见 AC-036…AC-042 | REQ-040…REQ-046 |
+
+> TEST-027 / TEST-031 有永久单测（`src/modules/order_hub/components/__tests__/companyOrderDisplay.test.ts`）；
+> TEST-028 在 `src/modules/purchasing/lib/__tests__/orderTotals.test.ts`；
+> TEST-029 / TEST-030 在 `src/modules/purchasing/lib/supplierProductExcelImport/__tests__/{aliases,columns,rows}.test.ts`；
+> TEST-032（镜像）与 TEST-033 为 **smoke-only**（无永久产物；本轮未写 ephemeral 集成规格，证据是本节的浏览器 + DB 回读）。
+
+### Acceptance Criteria（第十轮）
+
+- [x] **AC-036** — 公司订单建单/编辑页有「订单描述」（字典 `product_category` 候选）与「采购负责人」（人员账号候选）；
+  保存后 hub 抬头卡显示两格（描述为 `CL — 猫砂` 形状标签），值可回读。*证据：浏览器实测（编辑页字段 = 下单日期/预计交货/状态/是否已收款/订单描述/采购负责人/客户/供应商/备注；订单描述候选 = `TP — 尿片 / CL — 猫砂 / LB — 猫砂盆 / LS — 猫砂铲 / CB — 餐具`；采购负责人候选含 `employee@acme.com`；保存后抬头卡 = 「订单描述 CL — 猫砂」「采购负责人 employee@acme.com」）。*
+- [x] **AC-037** — 采购单详情的「订单描述 / 采购负责人」只读，附「去公司订单修改」落到该根单页；采购单建单/编辑页
+  没有这两个输入。*证据：浏览器实测（`PO-2026-0008` 详情 = 「订单描述 CL — 猫砂 + 去公司订单修改 → `/backend/orders/e9ad342f…`」「采购负责人 employee@acme.com」，无输入控件；采购单编辑页字段 = 业务订单号/供应商/客户名称/币种/预计交货日期/定金比例/定金金额/备注——无两格；建单页同）。*
+- [x] **AC-038** — hub 抬头「供应商」：根单为空时显示所关联采购单的供应商；根单有值时优先显示根单值。*证据：浏览器实测（`CO-2026-0004` 根单 supplier 空 → 抬头「供应商 = CI E2E supplier mumhx0rr」；从根单新建一张 PetKit 采购单后 = 「CI E2E supplier mumhx0rr / PetKit」（去重并列），移除该单后回到单值）。*
+- [x] **AC-039** — 工作台列名「订单金额」且取值采购优先；hub 采购单行显示 订单金额 / 预付款金额 / 尾款金额；
+  采购单列表三列同口径（已登记 deposit / balance 合计），列名与列集合为 单号/供应商/状态/订单金额/预付款金额/尾款金额/预计交货日期/操作。
+  *证据：浏览器实测（工作台表头含「订单金额」，`CO-2026-0004` 行 = `¥2,000.00`（采购金额优先，销售子单金额不再占位）；hub 采购行 = 「订单金额 ¥2,000.00 / 预付款金额 ¥0.00 / 尾款金额 ¥0.00」；采购单列表表头 = 单号/供应商/状态/订单金额/预付款金额/尾款金额/预计交货日期/操作，行金额与 hub 一致；接口 `?ids=` 回读 `paidDeposit/paidBalance` = `0.00`）。*
+- [x] **AC-040** — 采购单列表行操作「打开公司订单」落到对应根单页；未关联的采购单该项不可用且有提示。*证据：浏览器实测（`PO-2026-0008` → `/backend/orders/e9ad342f…`；`PO-2026-0010` → `/backend/orders/40f34dd2…`；`PO-2026-0009` 未关联 → 行内出现置灰按钮「未关联公司订单」（title 同文案），页面不跳转）。*
+- [x] **AC-041** — 采购单详情不再出现三个关联区块，来源单号回到抬头摘要格；发运单列表 `?purchaseOrderId=` 过滤仍可用。
+  *证据：浏览器实测（`PO-2026-0008` 详情无「关联订单/关联合同/关联发运单」文本与区块元素；从根单新建的采购单详情 = 「来源销售订单 ORDER-20260929-00007」链接 → `/backend/internal-sales/orders/d245512a…`；`cross_border` 侧本轮零改动，过滤与集成 spec 保留）。*
+- [x] **AC-042** — 供应商产品库「Excel 导入」可用：上传→解析→复核→导入后列表出现新行；故意失败的行有原因且不写库。
+  *证据：浏览器实测（选供应商 → 上传 9 列表（商品 SKU/供应商货号/品名/中文品名/英文品名/单位/每箱数量/最小订量/折扣）→ 「工作表「Sheet1」，表头在第 1 行：已映射 9/9 列」（精确 + 别名置信）→ 预览 2 行 → 「成功导入 2 行」；库里两行 = `SMOKE-IMP-SKU-1/2` + 货号/中英品名/单位 PCS/装箱 24·12/MOQ 120·60/折扣 5·空；缺「商品 SKU/品名」的表在映射步被拦——提交禁用 + 「还需要映射：商品 SKU / 商品名称（供应商原始名）」，接口层同样拒绝（`supplierSku/name` 缺失行到 `failed[]`、不写库））。*
+
+### Migration & Backward Compatibility（第十轮）
+
+| 契约类别 | 改动 | 判定 |
+|---|---|---|
+| Schema/迁移 | `order_hub_company_orders` 加三列（全部可空，无回填） | 允许（加列，向后兼容） |
+| API 响应 | 根单列表/详情新增三字段；采购单列表投影新增 `paidDeposit`/`paidBalance` | 允许（追加式） |
+| API 请求 | 采购单 create/update 契约不变（字段仍在命令 schema 内，UI 不再发送）；新增导入 parse/import 两个路由 | 允许（新增路由；既有字段只停用入口） |
+| UI 入口 | 采购单表单去两字段；采购单详情撤三区块；工作台与采购单列表列名/列集合变化；供应商产品库新增导入入口 | **披露**（owner 指定） |
+| 事件 | 新增根单字段镜像事件（`order_hub` → `purchasing` 订阅） | 允许（模块间只走 ID/快照/事件） |
+
+### Risks（第十轮）
+
+| 风险 | 缓解 |
+|---|---|
+| 镜像同步失败 → 采购侧与根单不一致 | 同步是幂等覆盖写（按 `refId`），失败留日志；采购详情如实显示自身值并保留跳回根单入口 |
+| 独立采购单（无根单）没有这两个字段 | 有意为之：入口统一在根单；独立单据显示自身存量值，关联后再镜像 |
+| 导入行校验与手填口径不一 | 逐行复用 create 命令的 schema；失败行带原因、不写库 |
+| 撤三区块后 `#source-order` 等锚点消失 | 锚点只被本页内部使用（无外部深链）；README/计划同步更新 |
+| 工作台金额改采购优先后销售金额不再显眼 | 销售金额仍在「全字段」抽屉与 hub 板块；本列按 owner 口径指向采购单金额 |
+
 ---
+
+---
+
+### 第十轮复查（owner 2026-10-10 复看 5 点）
+
+**背景**：owner 复看第十轮交付的 `/backend/orders/<id>` 采购区块后提了 5 点：① 行内「编辑」应改为「打开详情」（采购单详情页才是填写单证与付款记录的地方）；② 所有「移除 / 取消」类动作都要二次确认；③ 子单状态徽章要按状态区分颜色；④ 行内新增「定金比例」；⑤ 行内新增「备注」。
+
+#### REQ（复查）
+
+- **REQ-047 — 采购行的动作改「打开详情」**：hub 的 采购 行不再提供「编辑」入口，固定链到 `/backend/purchasing/orders/<id>` 并带 `returnTo`（采购单详情页内自有「编辑采购单」与 单证/付款 入口）。协作者与所有者看到同一个动作。
+- **REQ-048 — 子单状态徽章按状态配色**：采购单状态复用 `PURCHASE_ORDER_STATUS_TONES`（与 `PurchaseOrderStatusBadge` 同一份映射，已导出）；销售单状态用它自己的字典色（与销售列表同一个色点）；未知码保持中性色 + 原值。纯函数 `childStatusAppearance` 返回 `{ label, tone, color }`。
+- **REQ-049 — 采购行新增「定金比例」与「备注」**：两者都取自该区块**已有的**一次批量读（`depositPercent` / `notes`），不新增请求；比例渲染成 `50%` 形状（`numeric(6,3)` 去尾零），备注单行截断、hover 显示全文；没有值时显示「—」。
+- **REQ-050 — 已落库的移除/取消类动作统一二次确认**：hub 子单「移除」（对话框写出被移除的单号）、合同盖章件「移除」、单据替换件「移除」、报价「归档」、报价导入「重建行」（仅当会覆盖已生成的行时）——一律走 `useConfirmDialog`；**表单内尚未保存的行删除不弹窗**（保存前不落库，弹窗只会打扰逐行编辑）。
+
+#### Integration Coverage（复查）
+
+| Test ID | Level | Setup / fixture | Actions | Assertions | Requirement IDs |
+|---|---|---|---|---|---|
+| TEST-034 | unit | 状态夹具（采购词表 / 销售字典带色 / 未知码 / 空） | `childStatusAppearance` | 采购 tone 与 `PurchaseOrderStatusBadge` 一致；销售取字典色；未知码中性 + 原值；空 → null | REQ-048 |
+| TEST-035 | UI（浏览器） | 本地环境（`CO-2026-0004` + `PO-2026-0008`） | 行内动作 / 配色 / 新字段 / 移除 | 见 AC-043…AC-046 | REQ-047…REQ-050 |
+
+#### Acceptance Criteria（复查）
+
+- [x] **AC-043** — 采购行的动作是「打开详情」并落到采购单详情页（带 `returnTo`），行内没有「编辑」。*证据：浏览器实测（行内动作 = 「打开详情」→ `/backend/purchasing/orders/ac8753f3…?returnTo=%2Fbackend%2Forders%2Fe9ad342f…`，落点标题 = 「采购单 PO-2026-0008 已下单 … 编辑采购单 标记已发运 取消订单」）。*
+- [x] **AC-044** — 子单状态徽章按状态配色：采购「已下单」= `info`（不再是中性）；销售状态用字典色点（单测覆盖）；未知码中性 + 原值。*证据：浏览器实测（`#purchasing` 行徽章 `data-variant="info"`，文字「已下单」）；单测 TEST-034。*
+- [x] **AC-045** — 采购行显示「定金比例」与「备注」两格，取值来自同一批量读；无值显示「—」。*证据：浏览器实测（行内 = 「定金比例 —」「备注 —」——本库所有采购单都没有这两项数据；字段来自 `purchasing/purchase-orders?ids=` 的 `depositPercent`/`notes`）。*
+- [x] **AC-046** — hub 移除弹二次确认（写出单号）；取消后行仍在。另外三处已落库移除/取消与一处重建也补了确认。*证据：浏览器实测（点「移除」→ 对话框 = 「移除 / 确定移除关联 PO-2026-0008 吗？/ 取消 确认」；「取消」后行仍在）；代码审计清单见 run record 复查节（30 个文件 ~34 处原本已有确认；本轮补 5 处；18 处表单内未保存行按口径不弹窗）。*
+
+### 第十轮复查·二（owner 同日再复看 5 点：采购单详情与列表）
+
+**背景**：owner 再复看采购单详情/列表/编辑页后提了 5 点：① 详情摘要格缺少可填字段（备注等）；② 被公司订单关联时要有跳转根单的按钮；③ 列表的「未关联公司订单」不该先点一下才出现（「这样操作很傻很差」）；④ 不能编辑的填写项要变灰，可填内容要在详情页完整显示（此逻辑其他模块同样适用）；⑤ 单证已托到根订单统一录入，采购单不再提供录入入口、只做映射（并清空历史数据）。
+
+#### REQ（复查·二）
+
+- **REQ-051 — 详情摘要格与编辑表单一一对应**：抬头摘要补上编辑表单仍可填的字段——定金比例、定金金额、备注——并给采购明细行补「单价含税」列（编辑器可勾选，此前详情页无处显示）；新增共享件 `@/lib/orders/depositPercent.formatDepositPercent`（比例按 `numeric(6,3)` 去尾零渲染成 `50%`）。
+- **REQ-052 — 抬头的根单入口**：采购单被公司订单关联时，详情抬头在「编辑采购单」旁给出「打开公司订单」按钮（链接到那张根单的详情页）；未关联（独立采购单）不显示。
+- **REQ-053 — 列表的关联状态先算后显**：`order_hub/orders/links` 新增 `refIds=`（逗号分隔、去重、uuid 过滤、上限 200）批量反查；采购单列表在页面加载时一次读回本页所有行的根单归属——已关联＝「打开公司订单」按钮直达，未关联＝置灰不可点的「未关联公司订单」，读不到（403/传输失败）＝不显示该位（不给错误状态）。原先「先点再发现」的流程废弃。
+- **REQ-054 — 锁定项一律灰态**：不可编辑的填写项改用 `disabled` 而非 `readOnly`（`readOnly` 在 CrudForm 里对多数类型近似无效，`number` 类型更是完全不转发）——采购单编辑表单的供应商/币种/定金两格（`number` 走自定义只读值渲染，因为内置 number 分支不转发 disabled）、供应商编码、产品库的供应商名。审计结论：其余模块的锁定项本就用 `disabled`（`our_parties` 等），本轮的这条即覆盖全 app 的规则。
+- **REQ-055 — 采购单单证入口退休**：详情页不再有 新增单证/编辑/删除 与单证表读取，改为指向根订单的入口（已关联时给「去公司订单录入单证」按钮）；`purchasing_purchase_order_documents` 的 4 行历史数据按 owner 要求清空（其他环境执行 `delete from purchasing_purchase_order_documents;`）。路由/命令/实体/表保留（不做破坏性删表），README 标注「无 UI 入口」。**披露**：`export_finance` 订单档案「单据齐套」中由该表供数的三项（供应商发票 / 装箱单 / 采购水单）在清空后回到「未上传」；是否改读根单槽位需要业务口径。
+
+#### Integration Coverage（复查·二）
+
+| Test ID | Level | Setup / fixture | Actions | Assertions | Requirement IDs |
+|---|---|---|---|---|---|
+| TEST-036 | UI（浏览器） | 本地环境（`PO-2026-0008` 已关联 / 未关联单） | 详情摘要、抬头入口、列表状态、编辑页灰态 | 见 AC-047…AC-051 | REQ-051…REQ-055 |
+
+#### Acceptance Criteria（复查·二）
+
+- [x] **AC-047** — 详情摘要格含 定金比例 / 定金金额 / 备注，采购明细含「单价含税」。*证据：浏览器实测（摘要 = 「… 预计交货日期 — 定金比例 — 定金金额 — 备注 额温枪」；明细表头 = 商品/数量/单价/税率 %/**单价含税**/金额/备注，行值「是」）。*
+- [x] **AC-048** — 已关联的采购单抬头有「打开公司订单」并落到该根单。*证据：浏览器实测（`PO-2026-0008` 抬头按钮 href = `/backend/orders/e9ad342f…`）。*
+- [x] **AC-049** — 列表加载后即显示关联状态：已关联可点、未关联置灰不可点、读不到不显示。*证据：浏览器实测（8 行首屏：`PO-2026-0008` → 「打开公司订单」（可点）；其余 → 「未关联公司订单」`disabled=true`；无需任何点击）。*
+- [x] **AC-050** — 锁定项灰态：采购单编辑页的供应商/币种/定金两格 `disabled`；业务订单号/备注仍可编辑。*证据：浏览器实测（`depositPercent`/`depositAmount`/`supplierId` 控件 `disabled=true`，`businessNumber` `disabled=false`）。*
+- [x] **AC-051** — 详情「单证」区块只有指向根订单的入口，没有 新增单证/编辑/删除；表内 4 行历史数据已清空。*证据：浏览器实测（区块 = 「单证改在公司订单（根订单）统一录入…」+「去公司订单录入单证」；`新增单证` 按钮不存在；DB `select count(*) from purchasing_purchase_order_documents` = 0）。*
+
+### 第十轮复查·三（owner 2026-10-10 复查 2 点：采购单列表的行菜单 / 详情单证镜像）
+
+**背景**：owner 2026-10-10 再复看采购单列表与详情，两点：① 列表里公司订单的归属被做成「⋯ 旁边的第二个按钮」（已关联可点、未关联置灰），「我希望你这个按钮操作可以放置「。。。」里面，这样放置外面很丑」；② 详情「单证」区块只剩提示与入口，要求「这里显示会关联什么单证数据，会联动显示在这里」。
+
+#### REQ（复查·三）
+
+- **REQ-056 — 采购单详情的「单证」区块只读镜像根单的「单据与文件」**：录入仍只在根单（REQ-055）。本页读 `GET /api/order_hub/orders/fields?companyOrderId=`（hub 自己的汇总路由；`documents.bySlot` 与 hub 的「单据与文件」区块、全字段抽屉**同一投影**，不读它的表），只列出**有内容**的槽位：槽位名下是本单文件 chips（名称/日期/预览/下载；字节走根单的代理 `/api/order_hub/orders/attachments/<id>`）与子单来源 chips（`order_hub.documents.sources.*` + 份数，深链到根单页 `#contracts`/`#shipments`/`#money`/`#purchasing`）。解析是纯函数 `purchasing/components/rootDocuments.ts`（跨模块 HTTP 载荷的边界：空槽位丢弃、坏行丢弃、非数组答空列表）。三条不可用答——未关联 / 无 `order_hub.view` 的 403 / 读失败——一律只留提示与入口按钮，页面自身读取（订单、行、付款、关联反查）不受影响；已关联但根单没有文件时给 `purchasing.orders.documents.rootEmpty`。
+- **REQ-057 — 公司订单归属是行「⋯」菜单里的一项，不再是行内第二个按钮**：列表每行只有一个菜单（`@open-mercato/ui/backend/forms` 的 `ActionsDropdown`，`triggerMode='icon'` + `triggerClassName` 保持与裸行动作图标同形），项由纯函数 `purchasing/components/purchaseOrderRowActions.ts` 构建——「打开」常驻；批量反查（REQ-053 的 `refIds=`）答出「已关联」＝「打开公司订单」项直达根单，「未关联」＝「未关联公司订单」项 `disabled: true`（`pointer-events: none`），未答/失败＝连该项都不出现。行点击（`onRowClick`）与单元格内 `stopPropagation` 的语义不变。
+
+#### Integration Coverage（复查·三）
+
+| Test ID | Level | Setup / fixture | Actions | Assertions | Requirement IDs |
+|---|---|---|---|---|---|
+| TEST-037 | unit | 三态夹具（`undefined`/`null`、已关联 Map、未关联 Map） | `buildPurchaseOrderRowActions` | 未答/失败 → 只有「打开」；已关联 → 「打开公司订单」项带根单 id；未关联 → `disabled: true` 且点不动 | REQ-057 |
+| TEST-038 | unit | 载荷夹具（空槽位、坏行、多文件、来源计数、非数组） | `toRootDocumentSlots` | 空槽位丢弃且保持载荷顺序；文件名缺省回退附件 id；来源 kind/label/count 逐项；非数组答空列表不抛错 | REQ-056 |
+| TEST-039 | UI（浏览器） | 本地环境（`PO-2026-0008` 已关联 / 未关联单；根单 `CO-2026-0004`） | 行菜单两态；详情单证镜像；根单上传/删除的联动 | 见 AC-052…AC-053 | REQ-056, REQ-057 |
+
+#### Acceptance Criteria（复查·三）
+
+- [x] **AC-052** — 列表每行只有一个「⋯」菜单：已关联行 = 打开 / 打开公司订单（可点，落 `/backend/orders/<id>`）；未关联行 = 打开 / 未关联公司订单（`disabled`、`pointer-events: none`）；读不到（403/失败）＝只有「打开」。*证据：浏览器实测（`PO-2026-0008` 菜单 = 「打开 / 打开公司订单」；`PO-2026-0007` 菜单 = 「打开 / 未关联公司订单」`disabled=true` 且计算样式 `pointer-events: none`；行内已无第二个按钮；截图见 PR 评论）+ 单测 TEST-037。*
+- [x] **AC-053** — 详情「单证」区块只读联动根单的「单据与文件」：槽位文件按 名称/日期 显示且可预览/下载（`/api/order_hub/orders/attachments/<id>`），子单来源以 chip + 份数显示并深链根单页对应区块；根单上传一张单 → 采购单页出现该槽位；根单删除 → 采购单页随之消失；未关联/403/失败时只剩提示与入口，页面其余部分正常。*证据：浏览器实测（区块 = 「商业发票（INV.NO） 本单 20260923164549_67_40.jpg 2026-10-10 预览 下载」+「采购水单及发票 采购 1 份 → `#purchasing`」；把 `r10-doc-smoke.txt` 上传到根单「装箱单（PL）」→ 采购单页随之出现该槽位、其下载 200 且字节一致；在根单删除该文件 → 采购单页随之消失；别的 dev 树上传的旧槽位文件在本树答 404「File not available」——根单页自己的下载链在该服务器上同样如此，属本地存储按工作树分开）。实测用的两枚临时文件已清理（根单槽位文件走 hub 删除；付款凭证走 installed `DELETE /api/attachments?id=` 并把付款行的 `attachment_id` 复位）+ 单测 TEST-038。*
 
 ## Rollout, Migration, and Rollback
 
@@ -880,6 +1053,10 @@
 
 | Date | Change |
 |---|---|
+| 2026-10-10 | **第十轮复查·三（owner 复查 2 点：列表行菜单 / 详情单证镜像）**：采购单列表的公司订单归属从「⋯ 旁边的第二个按钮」改为**行菜单里的一项**（`ActionsDropdown`：已关联＝打开公司订单、未关联＝置灰项、读不到＝不出现；纯函数 `buildPurchaseOrderRowActions`，TEST-037）（REQ-057）；采购单详情「单证」区块改为**根单「单据与文件」的只读镜像**（`order_hub/orders/fields` 的 `documents.bySlot`：文件预览/下载走根单字节代理、子单来源 chip 深链根单区块；未关联/403/失败只留入口；解析 `components/rootDocuments.ts`，TEST-038）（REQ-056）。证据：浏览器实测（AC-052/AC-053）+ 宽门禁。 |
+| 2026-10-10 | **第十轮复查·二（owner 同日再复看 5 点）**：采购单详情摘要格补齐编辑表单仍可填的字段（定金比例/定金金额/备注 + 明细「单价含税」列，REQ-051）；抬头在已关联时给出「打开公司订单」（REQ-052）；列表的根单归属**先算后显**——`order_hub/orders/links` 新增 `refIds=` 批量反查，已关联可点、未关联置灰不可点、读不到不显示（REQ-053）；锁定项一律 `disabled` 灰态（含 CrudForm `number` 分支不转发 disabled 的两格，REQ-054）；采购单「单证」入口退休为指向根订单的入口，`purchasing_purchase_order_documents` 4 行历史数据按 owner 要求清空（路由/命令/表保留，REQ-055）。证据：单测（`depositPercent` / 现有套件）+ 浏览器实测（AC-047…AC-051）。 |
+| 2026-10-10 | **第十轮复查（owner 复看 5 点）**：hub 采购行的动作由「编辑」改为「打开详情」（采购单详情页是填写单证/付款记录的地方，REQ-047）；子单状态徽章按状态配色——采购状态复用 `PURCHASE_ORDER_STATUS_TONES`、销售状态用字典色、未知码中性 + 原值（`childStatusAppearance`，REQ-048）；行内新增「定金比例」「备注」两格，取自同一批量读（REQ-049）；已落库的移除/取消类动作统一补二次确认——hub 子单移除、合同盖章件移除、单据替换件移除、报价归档、导入重建行（仅覆盖已有行时），表单内未保存的行删除按口径不弹窗（REQ-050）。证据：单测 TEST-034 + 浏览器实测（AC-043…AC-046）；代码审计 30 文件 ~34 处原本已有确认、本轮补 5 处。 |
+| 2026-10-10 | **第十轮实现并验证**（`feat/company-order-round10`，off `dev`；owner 2026-10-10 对五个页面的 12 点反馈）：① **根单持有** —— 根单加 `product_category`（字典 `product_category`）/`owner_user_id`/`owner_snapshot`（迁移 `Migration20261010025411_order_hub.ts`，本地开发库已应用），公司订单表单与抬头卡是唯一入口；采购单侧只读并**镜像**（新事件 `order_hub.company_order.order_fields_updated`，`purchasing` 订阅者落库；采购单两个表单去掉这两格、详情附「去公司订单修改」）——「根单持有、子单只读、修改跳回根单」定为本规格的通用规则（REQ-040/041）；② 预付款/尾款 = **实际口径**（已登记 deposit/balance 合计，`paidDeposit`/`paidBalance`，REQ-043/044）；③ hub 采购行三金额 + 抬头「供应商」根单优先回退采购单（REQ-040/043）；④ 工作台列「订单金额」采购优先（REQ-042）；⑤ 采购单列表列改造 + 行操作「打开公司订单」（REQ-044）；⑥ 采购单详情撤回第三轮三区块、来源单号回到抬头摘要格（REQ-045）；⑦ 供应商产品库 Excel 导入（表头探测 + 别名映射 + 复核 + 逐行复用 create 契约；必填列在映射步拦截，REQ-046）。实现期自修：hub 批量读金额的 `pageSize` 超过路由上限（400 被吞 → 金额显示「—」），改为 100 分页并记入 lesson。证据：宽门禁全绿（92 suites · 822 tests + `ds:check` 1106 files + build）；浏览器实测七点（本文件 AC-036…AC-042 与 run record `.ai/runs/2026-10-10-company-order-round10.md`）。 |
 | 2026-10-09 | **第九轮实现并验证**（PR #154，off `dev`；本地分支上原编号「第六轮」，落地时后移）：hub 板块布局（采购/出口销售/合同与单据/发运与装箱 + 收汇·退税/文件）+ 对内/对外合并「销售订单」区块；行「点开」= 右侧只读预览抽屉（`LinkedRecordPreviewDrawer`）、「编辑」独立按钮；`?returnTo=` 返回本页（共享件 + 六个模块消费）；公司订单表单去「标题」、抬头改称 客户/供应商、采购单「订单描述」改读 `product_category`；复查两点——无状态子单行不再渲染空徽标（REQ-037）、hub 抬头「全字段」入口收敛到工作台行操作（REQ-038）。REQ-029…REQ-038 / TEST-023…TEST-026 / AC-026…AC-035 建立。证据：单测 `src/modules/order_hub` + `src/lib/navigation` 11 suites · 71 tests；宽门禁 88 suites · 700 tests + `ds:check` 1097 files；浏览器实测（板块/预览抽屉/编辑+返回/无空徽标/工作台抽屉/建单页无标题/订单描述候选）。 |
 | 2026-10-09 | **第八轮口径定案并交付（owner 反馈）**：工作台行改显**根单自身字段**（编号/标题/下单日期/预计交货/状态/是否已收款/默认客户/默认供应商 + 金额 + 四阶段列），与订单详情页抬头卡同序；`子单号`/`对方` 两列退役（子单事实归详情页关联区块；搜索仍可按子单号命中根单）；「是否已收款」列随第六轮字段补上（第六轮未动列集合）。REQ-028 / TEST-021–022 / AC-025 建立；解析抽到 `components/companyOrderDisplay.ts`（hub 抬头卡共用 `snapshotDisplayName`）。 |
 | 2026-10-09 | **第七轮交付并验证**（PR #157，已合入 `dev` d867630）：新表 `order_hub_company_order_documents`（一行=一个槽位文件，行 id 即附件 `recordId`）+ `GET\|POST\|DELETE /orders/documents` + 字节代理扩展；`documents.bySlot` + hub「单据与文件」逐槽位区块 + 抽屉按槽位。实现期修复一处：**无号草稿合同**已盖章但无单号时被漏计来源（改按盖章计数、单号仅作标签）。证据：集成 `--filter order_hub` **42 passed**（含 TEST-017 6 项 / TEST-018）；浏览器实测（槽位上传→行内可见、确认删除→回到未上传、抽屉按槽位、协作账号 0 上传按钮、字节 sha 一致）。 |

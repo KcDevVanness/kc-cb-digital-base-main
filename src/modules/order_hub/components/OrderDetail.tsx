@@ -19,9 +19,15 @@ import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
 import { MoneyAmount } from '@/lib/money/MoneyAmount'
 import type { CrudField } from '@open-mercato/ui/backend/CrudForm'
 import { RelatedSection } from '@/lib/related/RelatedSection'
+import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { QuickEditDialog } from '@/lib/quick-edit/QuickEditDialog'
-import { createDictionaryMap, type DictionaryMap } from '@open-mercato/core/modules/dictionaries/components/dictionaryAppearance'
-import { snapshotDisplayName } from './companyOrderDisplay'
+import { createDictionaryMap, renderDictionaryColor, type DictionaryMap } from '@open-mercato/core/modules/dictionaries/components/dictionaryAppearance'
+import {
+  resolveCodeListLabel,
+  resolveHeaderSupplierName,
+  toCompanyOrderHead,
+} from './companyOrderDisplay'
+import { useCodeListOptions } from '@/lib/dictionaries/codeListOptions'
 import {
   fields as contractQuickEditFields,
   toValues as contractQuickEditValues,
@@ -48,7 +54,8 @@ import { CompanyOrderStatusDialog } from './CompanyOrderStatusDialog'
 import { AttachmentsSection } from '@/lib/attachments/AttachmentsSection'
 import { OrderDocumentsSection } from './OrderDocumentsSection'
 import { withReturnTo } from '@/lib/navigation/returnTo'
-import { childStatusLabel } from './companyOrderChildStatus'
+import { childStatusAppearance } from './companyOrderChildStatus'
+import { formatDepositPercent } from '@/lib/orders/depositPercent'
 import LinkedRecordPreviewDrawer from './LinkedRecordPreviewDrawer'
 import type { LinkedRecordPreviewKind, LinkedRecordPreviewTarget } from './linkedRecordPreviewSources'
 import { resolveCompanyOrderForDocument } from '../lib/companyOrderResolve'
@@ -90,30 +97,6 @@ const ORDER_STATUS_VARIANT: StatusMap = {
   cancelled: 'error',
 }
 
-type CompanyOrderHead = {
-  id: string
-  number: string
-  title: string | null
-  orderDate: string | null
-  etaDate: string | null
-  status: string
-  /** 是否已收款: `paid_full`/`unpaid`, or `null` for a root written before the column existed. */
-  paymentStatus: string | null
-  notes: string | null
-  /** The default customer/supplier frozen names (display-only here; the edit page clears them). */
-  customerName: string | null
-  supplierName: string | null
-  /**
-   * True when the caller's organization is a **collaborator** on this root: the hub then hides every
-   * entry that writes the root or its children and offers only the status/notes dialog (REQ-016).
-   * The server enforces the same split, so this only decides what is shown.
-   */
-  viewerIsCollaborator: boolean
-  /** The root's own organization; never offered as a collaborator of itself. */
-  organizationId: string | null
-  updatedAt: string | null
-}
-
 type LinkRow = {
   id: string
   kind: CompanyOrderLinkKind
@@ -129,6 +112,17 @@ type ShipmentRow = { id: string; number: string | null; status: string; containe
 type PackingListRow = { id: string; documentNumber: string | null; issuedAt: string | null; shipmentId: string; shipmentNumber: string | null }
 type CollectionRow = { purchaseOrderId: string; purchaseOrderNumber: string | null; collectionStatus: string; amount: string | null; currencyCode: string }
 type RefundRow = { shipmentId: string; shipmentNumber: string | null; taxRefundStatus: string; taxRefundAmount: string | null; currencyCode: string }
+/** One linked purchase order's money header, as the batched `?ids=` read projects it (REQ-043). */
+type PurchaseAmountRow = {
+  total: string | null
+  paidDeposit: string | null
+  paidBalance: string | null
+  /** 定金比例 — the term frozen on the order, shown beside the amounts (owner 2026-10-10). */
+  depositPercent: string | null
+  /** 备注 — the order's own note, shown in the row (owner 2026-10-10). */
+  notes: string | null
+  currencyCode: string
+}
 
 /** The three order kinds this phase attaches; a purchase child needs no trade type. */
 function isSalesKind(kind: CompanyOrderLinkKind): kind is 'internal_sales_order' | 'external_sales_order' {
@@ -152,24 +146,6 @@ function readSingleItem(payload: unknown): Record<string, unknown> | null {
   const item = payload.item
   if (!item || typeof item !== 'object' || Array.isArray(item)) return null
   return item as Record<string, unknown>
-}
-
-function toHead(item: Record<string, unknown>): CompanyOrderHead {
-  return {
-    id: String(item.id),
-    number: String(item.number ?? ''),
-    title: (item.title ?? null) as string | null,
-    orderDate: (item.orderDate ?? null) as string | null,
-    etaDate: (item.etaDate ?? null) as string | null,
-    status: String(item.status ?? 'placed'),
-    paymentStatus: (item.paymentStatus ?? null) as string | null,
-    notes: (item.notes ?? null) as string | null,
-    customerName: snapshotDisplayName(item.customerSnapshot),
-    supplierName: snapshotDisplayName(item.supplierSnapshot),
-    viewerIsCollaborator: item.viewerIsCollaborator === true,
-    organizationId: readText(item, 'organizationId', 'organization_id') || null,
-    updatedAt: readText(item, 'updatedAt', 'updated_at') || null,
-  }
 }
 
 function toLinkRow(item: Record<string, unknown>): LinkRow {
@@ -292,6 +268,20 @@ function PreviewNumber({ label, onClick }: { label: string; onClick: () => void 
     <Button type="button" variant="link" size="sm" onClick={onClick}>
       {label}
     </Button>
+  )
+}
+
+/**
+ * One labeled amount on a 采购 row (REQ-043). The value comes from the block's single batched read;
+ * a row the read did not carry — or a viewer the projection refused — renders `—` rather than an
+ * error, because the amount is a read-only extra on a row that is otherwise complete.
+ */
+function PurchaseRowAmount({ label, value, currencyCode }: { label: string; value: string | null; currencyCode: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-muted-foreground">
+      {label}
+      <span className="text-foreground">{value ? <MoneyAmount currencyCode={currencyCode} amount={value} /> : '—'}</span>
+    </span>
   )
 }
 
@@ -518,6 +508,10 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
     () => (salesStatusEntries.length > 0 ? createDictionaryMap(salesStatusEntries) : null),
     [salesStatusEntries],
   )
+  // 订单描述: the header resolves the stored `product_category` code to its option label. A code the
+  // dictionary no longer carries still renders as itself (`resolveCodeListLabel`), so the cell never
+  // blanks a value the record holds.
+  const { options: productCategoryOptions } = useCodeListOptions('product_category')
 
   const [documentsDialog, setDocumentsDialog] = React.useState<{ orderKind: string; orderId: string } | null>(null)
   const [pickerAction, setPickerAction] = React.useState<((child: LinkRow) => void) | null>(null)
@@ -535,12 +529,16 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
     queryKeyPrefix: readonly unknown[]
   } | null>(null)
 
+  // Removals ask first (owner 2026-10-10): the hook's element is rendered once at the end of the
+  // tree, and every `confirm(...)` call awaits the operator's answer.
+  const { confirm, ConfirmDialogElement } = useConfirmDialog()
+
   const headQuery = useQuery({
     queryKey: ['order-hub-company-order', orderId, scopeVersion],
     queryFn: async () => {
       const payload = await fetchCrudList<Record<string, unknown>>(ORDERS_API_PATH, { id: orderId, pageSize: 1 })
       const item = payload.items?.[0]
-      return item ? toHead(item) : null
+      return item ? toCompanyOrderHead(item) : null
     },
   })
   const head = headQuery.data ?? null
@@ -578,6 +576,53 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
     () => readChildren.filter((link) => link.kind === 'purchase_order'),
     [readChildren],
   )
+
+  // ---- 采购单行金额 (REQ-043): one batched `?ids=` read for the whole page, never one per row. A
+  // viewer without `purchasing.orders.view` (a collaborating organization's account) is refused with
+  // a 403; the amounts are a read-only extra, so a refused or partial read simply answers `—` for the
+  // rows it did not carry instead of taking the 采购 block down with it.
+  const purchaseAmountIds = React.useMemo(
+    () => links.filter((link) => link.kind === 'purchase_order').map((link) => link.refId),
+    [links],
+  )
+  const purchaseAmountsQuery = useQuery({
+    queryKey: ['order-hub-purchase-amounts', purchaseAmountIds.join(','), scopeVersion],
+    enabled: Boolean(head) && purchaseAmountIds.length > 0,
+    queryFn: async () => {
+      const byId = new Map<string, PurchaseAmountRow>()
+      try {
+        // The route caps `pageSize` at 100 (asking for more is a 400, see
+        // `.ai/lessons/option-loaders-must-respect-page-size-caps.md`), so the whole id set is read
+        // page by page — a company order with more than 100 purchase links still answers every row.
+        const pageSize = 100
+        for (let page = 1; page <= 5 && byId.size < purchaseAmountIds.length; page += 1) {
+          const payload = await fetchCrudList<Record<string, unknown>>('purchasing/purchase-orders', {
+            ids: purchaseAmountIds.join(','),
+            pageSize,
+            page,
+          })
+          const items = payload.items ?? []
+          for (const item of items) {
+            const id = String(item.id ?? '')
+            if (!id) continue
+            byId.set(id, {
+              total: readText(item, 'total') || null,
+              paidDeposit: readText(item, 'paidDeposit') || null,
+              paidBalance: readText(item, 'paidBalance') || null,
+              depositPercent: readText(item, 'depositPercent') || null,
+              notes: readText(item, 'notes') || null,
+              currencyCode: readText(item, 'currencyCode') || 'CNY',
+            })
+          }
+          if (items.length < pageSize) break
+        }
+      } catch {
+        // See above: a refused or absent projection renders `—`, not a block error.
+      }
+      return byId
+    },
+  })
+  const purchaseAmounts = purchaseAmountsQuery.data ?? new Map<string, PurchaseAmountRow>()
 
   // ---- 购销合同: one link read per child, then one batch read of the contracts they name.
   const contractLinkQueries = useQueries({
@@ -837,6 +882,14 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   const removeLink = React.useCallback(
     async (link: LinkRow) => {
       if (!head) return
+      // Every removal asks first (owner 2026-10-10): the row's own number is what the operator
+      // confirms against, so a mis-click on a list of look-alike rows cannot unlink a child silently.
+      const confirmed = await confirm({
+        title: t('order_hub.detail.orders.remove'),
+        text: t('order_hub.companyOrders.links.removeConfirm', { number: link.refNumber ?? link.refId.slice(0, 8) }),
+        variant: 'destructive',
+      })
+      if (!confirmed) return
       const remaining = links
         .filter((candidate) => candidate.kind === link.kind && candidate.id !== link.id)
         .map((candidate) => ({ refId: candidate.refId }))
@@ -858,7 +911,7 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         flash(error instanceof Error && error.message ? error.message : t('order_hub.companyOrders.links.saveFailed'), 'error')
       }
     },
-    [head, links, queryClient, t],
+    [confirm, head, links, queryClient, t],
   )
 
   const openQuickEdit = React.useCallback(
@@ -931,6 +984,11 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
   }`
   const salesRows = links.filter((link) => isSalesKind(link.kind))
   const purchaseRows = links.filter((link) => link.kind === 'purchase_order')
+  // 订单描述 (dictionary code → label) and 采购负责人 (the name frozen with the pick) are root-held;
+  // the header only reads them. 供应商 leads with the root's frozen name and falls back to the linked
+  // purchase rows' suppliers when the root carries none (owner 2026-10-10).
+  const descriptionLabel = resolveCodeListLabel(head.productCategory, productCategoryOptions)
+  const supplierLabel = resolveHeaderSupplierName(head.supplierName, purchaseRows.map((row) => row.refCounterparty))
   const openPreview = (target: LinkedRecordPreviewTarget) => {
     setPreview(target)
     setPreviewOpen(true)
@@ -1002,15 +1060,27 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
               : '—'}
           </p>
         </div>
+        {/* 订单描述 (a `product_category` code shown as its label) and 采购负责人 (the name frozen
+            with the pick): root-held, read-only here — both are edited on the company-order form
+            (owner 2026-10-10). */}
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">{t('order_hub.companyOrders.header.productCategory')}</p>
+          <p className="text-sm font-medium">{descriptionLabel ?? '—'}</p>
+        </div>
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">{t('order_hub.companyOrders.header.owner')}</p>
+          <p className="text-sm font-medium">{head.ownerName ?? '—'}</p>
+        </div>
         {/* The default customer/supplier are the root's own start-up information; the display name
-            is the one frozen when they were set, and clearing them stays on the edit page. */}
+            is the one frozen when they were set, and clearing them stays on the edit page. 供应商
+            falls back to the linked purchase rows when the root carries no supplier of its own. */}
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">{t('order_hub.companyOrders.header.customer')}</p>
           <p className="text-sm font-medium">{head.customerName ?? '—'}</p>
         </div>
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">{t('order_hub.companyOrders.header.supplier')}</p>
-          <p className="text-sm font-medium">{head.supplierName ?? '—'}</p>
+          <p className="text-sm font-medium">{supplierLabel ?? '—'}</p>
         </div>
       </div>
 
@@ -1040,28 +1110,65 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         messages={relatedSectionMessages}
       >
         <ul className="flex flex-col gap-2">
-          {purchaseRows.map((row) => (
-            <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
-              {/* A collaborator reads the same row but reaches the purchase order's own page
-                  instead of its edit form — the root's write gate is not theirs. */}
-              {previewNumber(
-                { kind: 'purchase_order', refId: row.refId, label: row.refNumber },
-                row.refNumber ?? row.refId.slice(0, 8),
-              )}
-              <span className="text-muted-foreground">{row.refCounterparty ?? '—'}</span>
-              <ChildStatusBadge t={t} kind={row.kind} status={row.refStatus} salesDictionary={salesStatusDictionary} />
-              <Button asChild variant="ghost" size="sm">
-                <Link href={withReturnTo(childHref(row.kind, row.refId, canWrite ? 'edit' : 'detail'), returnTo)}>
-                  {t(canWrite ? 'order_hub.detail.section.edit' : 'order_hub.detail.orders.open')}
-                </Link>
-              </Button>
-              {canWrite ? (
-                <Button type="button" variant="ghost" size="sm" onClick={() => void removeLink(row)}>
-                  {t('order_hub.detail.orders.remove')}
+          {purchaseRows.map((row) => {
+            const amounts = purchaseAmounts.get(row.refId)
+            const amountCurrency = amounts?.currencyCode ?? 'CNY'
+            return (
+              <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
+                {previewNumber(
+                  { kind: 'purchase_order', refId: row.refId, label: row.refNumber },
+                  row.refNumber ?? row.refId.slice(0, 8),
+                )}
+                <span className="text-muted-foreground">{row.refCounterparty ?? '—'}</span>
+                <ChildStatusBadge t={t} kind={row.kind} status={row.refStatus} salesDictionary={salesStatusDictionary} />
+                {/* 订单金额 / 预付款金额 / 尾款金额, from the block's one batched read (REQ-043). The
+                    预付款/尾款 are the actual registered payments (deposit / balance stages), never a
+                    plan; a row or viewer the read did not cover renders `—`. */}
+                <PurchaseRowAmount
+                  label={t('order_hub.detail.purchaseOrders.amount.order')}
+                  value={amounts?.total ?? null}
+                  currencyCode={amountCurrency}
+                />
+                <PurchaseRowAmount
+                  label={t('order_hub.detail.purchaseOrders.amount.deposit')}
+                  value={amounts?.paidDeposit ?? null}
+                  currencyCode={amountCurrency}
+                />
+                <PurchaseRowAmount
+                  label={t('order_hub.detail.purchaseOrders.amount.balance')}
+                  value={amounts?.paidBalance ?? null}
+                  currencyCode={amountCurrency}
+                />
+                {/* 定金比例 + 备注 (owner 2026-10-10): the two facts an operator checks next to the
+                    money. Both come from the same batched read; `—` when the order does not carry
+                    one, and the note is clamped so a long one cannot push the actions off the row. */}
+                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                  {t('order_hub.detail.purchaseOrders.depositPercent')}
+                  <span className="text-foreground">
+                    {formatDepositPercent(amounts?.depositPercent ?? null) ?? '—'}
+                  </span>
+                </span>
+                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                  {t('order_hub.detail.purchaseOrders.notes')}
+                  <span className="max-w-64 truncate text-foreground" title={amounts?.notes ?? undefined}>
+                    {amounts?.notes ?? '—'}
+                  </span>
+                </span>
+                {/* 详情, not 编辑 (owner 2026-10-10): the purchase order's own page is where its
+                    单证 and 付款记录 are filled in, and its edit form is one click from there. */}
+                <Button asChild variant="ghost" size="sm">
+                  <Link href={withReturnTo(childHref(row.kind, row.refId, 'detail'), returnTo)}>
+                    {t('order_hub.detail.orders.openDetail')}
+                  </Link>
                 </Button>
-              ) : null}
-            </li>
-          ))}
+                {canWrite ? (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => void removeLink(row)}>
+                    {t('order_hub.detail.orders.remove')}
+                  </Button>
+                ) : null}
+              </li>
+            )
+          })}
         </ul>
       </RelatedSection>
 
@@ -1441,6 +1548,8 @@ export default function OrderDetail({ orderId }: { orderId: string }) {
         />
       ) : null}
 
+      {ConfirmDialogElement}
+
       {linkDialog ? (
         <CompanyOrderLinkDialog
           open
@@ -1548,7 +1657,21 @@ function ChildStatusBadge({
   status: string | null
   salesDictionary: DictionaryMap | null
 }) {
-  const label = childStatusLabel(t, kind, status, salesDictionary)
-  if (!label) return null
-  return <StatusBadge variant="neutral">{label}</StatusBadge>
+  const appearance = childStatusAppearance(t, kind, status, salesDictionary)
+  if (!appearance) return null
+  // The sales kinds colour their dot with the dictionary's own hex (the sales lists draw the same
+  // swatch); the purchase vocabulary has semantic tones, which the badge renders itself.
+  const dictionaryDot = appearance.color
+    ? renderDictionaryColor(appearance.color, 'inline-flex h-1.5 w-1.5 shrink-0 rounded-full')
+    : null
+  return (
+    <StatusBadge
+      variant={appearance.tone ?? 'neutral'}
+      dot={dictionaryDot === null}
+      className={dictionaryDot ? 'gap-1.5' : undefined}
+    >
+      {dictionaryDot}
+      {appearance.label}
+    </StatusBadge>
+  )
 }

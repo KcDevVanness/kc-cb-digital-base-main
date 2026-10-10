@@ -16,6 +16,7 @@
  */
 
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
+import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import type { CrudFieldOption } from '@open-mercato/ui/backend/CrudForm'
 
 const SUPPLIERS_API_PATH = '/api/purchasing/suppliers'
@@ -23,7 +24,10 @@ const PARTIES_OPTIONS_PATH = '/api/parties/options'
 const SALES_ORDERS_API_PATH = '/api/sales/orders'
 const PURCHASE_ORDERS_API_PATH = '/api/purchasing/purchase-orders'
 const TRADE_TYPE_CHANNELS_API_PATH = '/api/internal_sales/trade-type-channels/orders'
+const USERS_API_PATH = '/api/auth/users'
 const OPTION_PAGE_SIZE = 50
+/** The user list's own page cap; one request holds the organization's purchasers, no paging. */
+const OWNER_OPTION_PAGE_SIZE = 100
 
 /** A raw sales-order candidate; the caller labels it and derives its link kind. */
 export type SalesOrderCandidate = {
@@ -58,6 +62,82 @@ function snapshotName(snapshot: unknown): string {
 function labelFromParts(code: string, name: string, fallback: string): string {
   if (code && name) return `${code} — ${name}`
   return code || name || fallback
+}
+
+/** An option that also carries the display snapshot the company order freezes when it is picked. */
+export type SnapshotOption = CrudFieldOption & { snapshot: Record<string, unknown> }
+
+/**
+ * The snapshot of a chosen option, or `null` when the id is not on the loaded page: a picker only
+ * ever holds the first page of its source, so an owner further down the user list simply contributes
+ * no snapshot and the value already stored on the root is left as it was.
+ */
+export function findOptionSnapshot(options: CrudFieldOption[], id: string): Record<string, unknown> | null {
+  const match = options.find((option) => option.value === id)
+  if (!match || !('snapshot' in match)) return null
+  const snapshot = match.snapshot
+  return snapshot && typeof snapshot === 'object' ? (snapshot as Record<string, unknown>) : null
+}
+
+function optionFromUser(item: Record<string, unknown>): SnapshotOption | null {
+  const value = readText(item, 'id')
+  if (!value) return null
+  const email = readText(item, 'email')
+  const name = readText(item, 'name', 'displayName', 'display_name') || email
+  return { value, label: name || value, snapshot: { name: name || value, email: email || null } }
+}
+
+export function readErrorStatus(error: unknown): number | null {
+  if (!error || typeof error !== 'object' || !('status' in error)) return null
+  const status = error.status
+  return typeof status === 'number' ? status : null
+}
+
+/**
+ * CrudForm swallows a loader rejection, so a picker that cannot load would go blank with no
+ * explanation. A 401/403 is an ordinary answer for an optional picker — the caller's role may simply
+ * not list the resource — and stays silent; anything else is reported once per message per session,
+ * because a combobox re-runs its loader on every keystroke.
+ */
+const reportedLoadFailures = new Set<string>()
+
+export function reportLoadFailureOnce(message: string): void {
+  if (reportedLoadFailures.has(message)) return
+  reportedLoadFailures.add(message)
+  flash(message, 'error')
+}
+
+function reportLoadFailure(errorMessage: string, status: number | null): CrudFieldOption[] {
+  if (status !== 401 && status !== 403) reportLoadFailureOnce(errorMessage)
+  return []
+}
+
+/**
+ * 采购负责人 — from the platform's user list, restricted to the caller's active organization so a
+ * suggestion can actually be the order's owner. The pick is optional: a role without
+ * `auth.users.list` gets a 403 and the field simply stays empty. The returned options carry the
+ * `{name,email}` snapshot the form freezes onto the root when one is chosen.
+ */
+export async function loadOwnerOptions(errorMessage: string, search?: string): Promise<CrudFieldOption[]> {
+  const params = new URLSearchParams({
+    scopeToActiveOrganization: '1',
+    page: '1',
+    pageSize: String(OWNER_OPTION_PAGE_SIZE),
+  })
+  const term = typeof search === 'string' ? search.trim() : ''
+  if (term) params.set('search', term)
+  try {
+    const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
+      `${USERS_API_PATH}?${params.toString()}`,
+      undefined,
+      { fallback: { items: [] }, errorMessage },
+    )
+    return (payload.items ?? [])
+      .map(optionFromUser)
+      .filter((option): option is SnapshotOption => option !== null)
+  } catch (error) {
+    return reportLoadFailure(errorMessage, readErrorStatus(error))
+  }
 }
 
 /** The label a purchase picker prints: `number — supplier`, or the id's head for a numberless draft. */

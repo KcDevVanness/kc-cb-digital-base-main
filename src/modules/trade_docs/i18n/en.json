@@ -574,5 +574,7 @@
   "trade_docs.form.sourceOrder.loadFailed": "The source order lines could not be read — add them by hand",
   "trade_docs.form.sourceOrder.skipped": "{count} line(s) carry no product reference and were not copied",
   "trade_docs.form.sourceOrder.invalid": "The source order parameters are invalid; opening a plain new form",
-  "trade_docs.form.sourceOrder.applied": "Prefilled from the source order"
+  "trade_docs.form.sourceOrder.applied": "Prefilled from the source order",
+  "trade_docs.contracts.attach.removeConfirm": "Remove this stamped scan? The file stays in the attachment library.",
+  "trade_docs.documents.attach.removeConfirm": "Remove this replacement file? It stays in the attachment library."
 }

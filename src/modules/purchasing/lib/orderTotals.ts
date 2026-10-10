@@ -180,6 +180,34 @@ export function applyReceiptQuantity(
 }
 
 export type PaymentRow = { stage: string; amount: string | number }
+export type StagePaidTotals = {
+  /** Sum of the payments whose stage is `deposit`. */
+  paidDeposit: string
+  /** Sum of the payments whose stage is `balance`. */
+  paidBalance: string
+}
+
+/**
+ * The **recorded** deposit and balance: the sums of the payments filed under `stage='deposit'` and
+ * `stage='balance'`, not the planned terms (`depositAmount` / `depositPercent`). A stage with no
+ * payment yet reads as `0.00`, and an `other` payment is deliberately excluded — the two columns
+ * answer "how much of this stage has been paid", not "how much money arrived".
+ *
+ * Summed as scaled integers like the rest of the module, so cents carry exactly.
+ */
+export function stagePaidTotals(payments: PaymentRow[]): StagePaidTotals {
+  let depositUnits = 0n
+  let balanceUnits = 0n
+  for (const payment of payments) {
+    if (payment.stage === 'deposit') depositUnits += toScaledUnits(payment.amount, AMOUNT_SCALE)
+    else if (payment.stage === 'balance') balanceUnits += toScaledUnits(payment.amount, AMOUNT_SCALE)
+  }
+  return {
+    paidDeposit: toAmountString({ units: depositUnits, scale: AMOUNT_SCALE }, AMOUNT_SCALE),
+    paidBalance: toAmountString({ units: balanceUnits, scale: AMOUNT_SCALE }, AMOUNT_SCALE),
+  }
+}
+
 export type OrderPaymentState = {
   paidTotal: string
   outstanding: string

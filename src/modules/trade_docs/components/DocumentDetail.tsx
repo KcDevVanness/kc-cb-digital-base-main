@@ -426,6 +426,8 @@ type DocumentFileSectionProps = {
  */
 function DocumentFileSection({ documentId, attachmentId, onChanged }: DocumentFileSectionProps) {
   const t = useT()
+  // 移除 already-committed writes ask first (owner 2026-10-10).
+  const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const inputRef = React.useRef<HTMLInputElement | null>(null)
   const [isUploading, setIsUploading] = React.useState(false)
   const [isRemoving, setIsRemoving] = React.useState(false)
@@ -483,6 +485,13 @@ function DocumentFileSection({ documentId, attachmentId, onChanged }: DocumentFi
   )
 
   const handleRemove = React.useCallback(async () => {
+    // Writes `attachmentId: null` on the document immediately; the file stays in the library.
+    const confirmed = await confirm({
+      title: t('trade_docs.documents.attach.remove', '移除'),
+      text: t('trade_docs.documents.attach.removeConfirm', '移除这个替换件吗？'),
+      variant: 'destructive',
+    })
+    if (!confirmed) return
     setIsRemoving(true)
     try {
       await updateCrud(
@@ -497,7 +506,7 @@ function DocumentFileSection({ documentId, attachmentId, onChanged }: DocumentFi
     } finally {
       setIsRemoving(false)
     }
-  }, [documentId, flashFailure, onChanged, t])
+  }, [confirm, documentId, flashFailure, onChanged, t])
 
   return (
     <section className="space-y-3">
@@ -550,6 +559,7 @@ function DocumentFileSection({ documentId, attachmentId, onChanged }: DocumentFi
           onChange={(event) => void handleFile(event.target.files)}
         />
       </div>
+      {ConfirmDialogElement}
     </section>
   )
 }

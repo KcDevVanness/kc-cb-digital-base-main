@@ -460,6 +460,8 @@ type ContractScanSectionProps = {
  */
 function ContractScanSection({ contractId, attachmentId, updatedAt, onChanged }: ContractScanSectionProps) {
   const t = useT()
+  // 移除 already-committed writes ask first (owner 2026-10-10).
+  const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const inputRef = React.useRef<HTMLInputElement | null>(null)
   const [isUploading, setIsUploading] = React.useState(false)
   const [isRemoving, setIsRemoving] = React.useState(false)
@@ -514,6 +516,14 @@ function ContractScanSection({ contractId, attachmentId, updatedAt, onChanged }:
   }, [contractId, flashFailure, onChanged, t, updatedAt])
 
   const handleRemove = React.useCallback(async () => {
+    // The removal writes `attachmentId: null` on the contract immediately (owner 2026-10-10: every
+    // committed removal asks first); the file itself stays in the attachment library.
+    const confirmed = await confirm({
+      title: t('trade_docs.contracts.attach.remove'),
+      text: t('trade_docs.contracts.attach.removeConfirm'),
+      variant: 'destructive',
+    })
+    if (!confirmed) return
     setIsRemoving(true)
     try {
       await updateCrud(
@@ -528,7 +538,7 @@ function ContractScanSection({ contractId, attachmentId, updatedAt, onChanged }:
     } finally {
       setIsRemoving(false)
     }
-  }, [contractId, flashFailure, onChanged, t, updatedAt])
+  }, [confirm, contractId, flashFailure, onChanged, t, updatedAt])
 
   return (
     <section className="space-y-3">
@@ -578,6 +588,7 @@ function ContractScanSection({ contractId, attachmentId, updatedAt, onChanged }:
           onChange={(event) => void handleFile(event.target.files)}
         />
       </div>
+      {ConfirmDialogElement}
     </section>
   )
 }

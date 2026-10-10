@@ -295,6 +295,28 @@ export async function resolveCompanyOrderIdsForRefs(
 }
 
 /**
+ * The purchase orders currently attached to one root — the tenth round's **mirror recipients** when
+ * the root's `订单描述` / `采购负责人` change. Read by the `companyOrder` relation inside the
+ * caller's own organization, the same scope every link write uses.
+ */
+export async function listLinkedPurchaseOrderIds(
+  em: EntityManager,
+  scope: CompanyOrderScope,
+  companyOrderId: string,
+): Promise<string[]> {
+  const links = await em.fork().find(
+    CompanyOrderLink,
+    {
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+      companyOrder: companyOrderId,
+      kind: 'purchase_order',
+    } as FilterQuery<CompanyOrderLink>,
+  )
+  return links.map((link) => String(link.refId))
+}
+
+/**
  * **Moves** the given children onto the caller's root.
  *
  * One child document belongs to at most one company order, so both writers that name a child

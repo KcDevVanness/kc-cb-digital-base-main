@@ -62,6 +62,28 @@ export class CompanyOrder {
   notes?: string | null
 
   /**
+   * 订单描述 — the deal's product category as a `product_category` dictionary code (the 「Product
+   * categories」 list `product_codes` seeds). **Root-owned** by the tenth-round rule: the linked
+   * purchase orders only display it, and the editing entry lives here. Nullable with no default, so
+   * every root written before the column existed reads back as “—”.
+   */
+  @Property({ name: 'product_category', type: 'text', nullable: true })
+  productCategory?: string | null
+
+  /**
+   * 采购负责人 — a platform user id plus the display snapshot frozen at write time, exactly the
+   * pair a purchase order carries. Root-owned like `productCategory`: the linked purchase orders
+   * receive a mirror of it (see `order_hub.company_order.order_fields_updated`), never their own
+   * editing entry.
+   */
+  @Property({ name: 'owner_user_id', type: 'uuid', nullable: true })
+  ownerUserId?: string | null
+
+  /** `{ name, email }` frozen at write time; see `ownerUserId`. */
+  @Property({ name: 'owner_snapshot', type: 'jsonb', nullable: true })
+  ownerSnapshot?: Record<string, unknown> | null
+
+  /**
    * The optional default customer of the deal: a scalar `parties` id plus the display name frozen
    * at write time (the party's own `name` is encrypted, so the hub never re-reads it). Omitted at
    * create is `null`; an explicit `null` in an update clears it — an absent key never does (the

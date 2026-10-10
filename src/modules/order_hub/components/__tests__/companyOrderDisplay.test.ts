@@ -1,5 +1,12 @@
 import { describe, expect, it } from '@jest/globals'
-import { snapshotDisplayName, toOrderWorkbenchRow } from '../companyOrderDisplay'
+import {
+  primaryOrderAmount,
+  resolveCodeListLabel,
+  resolveHeaderSupplierName,
+  snapshotDisplayName,
+  toCompanyOrderHead,
+  toOrderWorkbenchRow,
+} from '../companyOrderDisplay'
 
 /**
  * The workbench row's own-field read.
@@ -85,5 +92,110 @@ describe('toOrderWorkbenchRow', () => {
     expect(toOrderWorkbenchRow({ id: 'abc', viewerIsCollaborator: true }).viewerIsCollaborator).toBe(true)
     expect(toOrderWorkbenchRow({ id: 'abc' }).viewerIsCollaborator).toBe(false)
     expect(toOrderWorkbenchRow({ id: 'abc', viewerIsCollaborator: 'true' }).viewerIsCollaborator).toBe(false)
+  })
+})
+
+/**
+ * The hub header's root-held fields and the tenth round's display rules (REQ-040 / REQ-042).
+ *
+ * 订单描述 resolves through the dictionary while an unknown code stays itself; 供应商 falls back to
+ * the linked purchase rows only when the root carries none; the workbench 订单金额 leads with the
+ * purchase total. All three are pure so the ten rules are pinned without a network or a render.
+ */
+
+describe('toCompanyOrderHead', () => {
+  it('reads the root-held 订单描述 / 采购负责人 in all three states', () => {
+    const head = toCompanyOrderHead({
+      id: 'co-1',
+      number: 'CO-2026-0001',
+      status: 'shipped',
+      productCategory: 'CL',
+      ownerSnapshot: { name: '王工', email: 'wang@example.com' },
+      customerSnapshot: { name: '俄方客户' },
+      supplierSnapshot: { name: '宁波供应商' },
+      viewerIsCollaborator: true,
+    })
+
+    expect(head.productCategory).toBe('CL')
+    expect(head.ownerName).toBe('王工')
+    expect(head.customerName).toBe('俄方客户')
+    expect(head.supplierName).toBe('宁波供应商')
+    expect(head.viewerIsCollaborator).toBe(true)
+  })
+
+  it('answers null for absent/blank/non-string fields and keeps the placed default', () => {
+    const head = toCompanyOrderHead({ id: 'co-2' })
+
+    expect(head.productCategory).toBeNull()
+    expect(head.ownerName).toBeNull()
+    expect(head.customerName).toBeNull()
+    expect(head.supplierName).toBeNull()
+    expect(head.paymentStatus).toBeNull()
+    expect(head.notes).toBeNull()
+    expect(head.status).toBe('placed')
+    expect(head.viewerIsCollaborator).toBe(false)
+  })
+
+  it('never turns a non-string field into text', () => {
+    const head = toCompanyOrderHead({
+      id: 'co-3',
+      productCategory: 7,
+      ownerSnapshot: { name: 42 },
+      number: null,
+      status: null,
+    })
+
+    expect(head.productCategory).toBeNull()
+    expect(head.ownerName).toBeNull()
+    expect(head.number).toBe('')
+    expect(head.status).toBe('placed')
+  })
+})
+
+describe('resolveCodeListLabel', () => {
+  const options = [
+    { value: 'CL', label: 'CL — 猫砂' },
+    { value: 'TP', label: 'TP — 尿片' },
+  ]
+
+  it('resolves a stored code to its option label', () => {
+    expect(resolveCodeListLabel('CL', options)).toBe('CL — 猫砂')
+  })
+
+  it('falls back to the code itself when the dictionary no longer carries it', () => {
+    expect(resolveCodeListLabel('ZZ', options)).toBe('ZZ')
+  })
+
+  it('answers null for an absent/blank code', () => {
+    expect(resolveCodeListLabel(null, options)).toBeNull()
+    expect(resolveCodeListLabel('   ', options)).toBeNull()
+    expect(resolveCodeListLabel(undefined, options)).toBeNull()
+  })
+})
+
+describe('resolveHeaderSupplierName', () => {
+  it('prefers the root supplier when it carries one', () => {
+    expect(resolveHeaderSupplierName('Root Supplier', ['Linked A', 'Linked B'])).toBe('Root Supplier')
+  })
+
+  it('falls back to the distinct linked purchase suppliers, joined with “ / ”', () => {
+    expect(resolveHeaderSupplierName(null, ['宁波供应商', '宁波供应商', '深圳供应商'])).toBe('宁波供应商 / 深圳供应商')
+    expect(resolveHeaderSupplierName('   ', [' 宁波供应商 ', null, ''])).toBe('宁波供应商')
+  })
+
+  it('answers null when neither the root nor the rows carry a supplier', () => {
+    expect(resolveHeaderSupplierName(null, [])).toBeNull()
+    expect(resolveHeaderSupplierName(undefined, [null, '   ', undefined])).toBeNull()
+  })
+})
+
+describe('primaryOrderAmount', () => {
+  it('leads with the purchase total while the order has one', () => {
+    expect(primaryOrderAmount({ sales: '10.00', purchase: '20.00' })).toBe('20.00')
+  })
+
+  it('falls back to the sales total only when the purchase figure is 0.00', () => {
+    expect(primaryOrderAmount({ sales: '10.00', purchase: '0.00' })).toBe('10.00')
+    expect(primaryOrderAmount({ sales: '0.00', purchase: '0.00' })).toBe('0.00')
   })
 })

@@ -1,5 +1,5 @@
 import { detectStructure, resolveSectionLabel } from '../headerDetection'
-import { expandMerges, type CellValue } from '../workbook'
+import { expandMerges, type CellValue } from '@/lib/workbook'
 import { describe, expect, it } from '@jest/globals'
 
 /**

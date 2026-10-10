@@ -1,0 +1,850 @@
+{
+  "project": {
+    "id": "574444f8-6aab-4715-b2c4-1e5ebe95d509",
+    "name": "kc-cb-digital-base-main"
+  },
+  "team": {
+    "key": "SP"
+  },
+  "workspace": "f5d1e884-ac15-4650-b2fd-ad37113bcb3c",
+  "entries": {
+    "prd/cross-border-erp#epic": {
+      "id": "a984e337-07b9-4053-9d86-8e7112a2b7d9",
+      "identifier": "SP-8",
+      "title": "【需求】跨境 ERP：采购 / 跨境发运 / 平台结算（PRD）",
+      "state": "In Progress",
+      "hash": "c467294d7652ac8ded83db39e07c9ceab7be7e811edaaaf1da2541d78e382b28",
+      "updatedAt": "2026-10-08T15:42:09.854Z"
+    },
+    "prd/finance-and-cockpit#epic": {
+      "id": "d36dac5c-5554-4cb2-b5c8-eaba8190bf6f",
+      "identifier": "SP-9",
+      "title": "【需求】财务模块完善 · 数据打通 · 老板驾驶舱（PRD）",
+      "state": "Done",
+      "hash": "77aa880a9b8bcecd8a75530d409f9e13745bcc5ad0da12feb1ea322faa85d469",
+      "updatedAt": "2026-10-08T15:42:15.679Z"
+    },
+    "prd/lookup-field-dropdown#epic": {
+      "id": "84fba466-d9d4-481c-ae1f-017e075978a2",
+      "identifier": "SP-10",
+      "title": "【需求】关联字段选择器改为「下拉 + 搜索」（PRD）",
+      "state": "In Progress",
+      "hash": "84c87ec2ab11eb5979bb96c9c112aa65259c3f47c2ad24b17bbb832898f25d59",
+      "updatedAt": "2026-10-08T15:42:21.190Z"
+    },
+    "plans#epic": {
+      "id": "272af4c9-6191-4f3e-8751-f87ca3f340d7",
+      "identifier": "SP-11",
+      "title": "【里程碑】实施计划（docs/plans：跨境 ERP / 财务与驾驶舱 / 关联字段选择器）",
+      "state": "In Progress",
+      "hash": "711ba62788dffa2100926f383a45f6b68239ab680758b61cf15b0d4a599cbf33",
+      "updatedAt": "2026-10-08T15:42:26.542Z"
+    },
+    "dev#epic": {
+      "id": "2e990401-6ca3-4d75-920a-95aff22fb006",
+      "identifier": "SP-12",
+      "title": "【开发文档】docs/dev 开发文档集（8 份）",
+      "state": "Done",
+      "hash": "a40088b0ae38669aee2851f1b9493a1f662c39b249fbda3a0c2e26aea7b2b18f",
+      "updatedAt": "2026-10-08T15:42:35.101Z"
+    },
+    "dev/setup.md": {
+      "id": "c1fb0b14-5c40-4e15-af3a-22d4fce8b202",
+      "identifier": "SP-13",
+      "title": "【开发文档】本地开发环境搭建",
+      "state": "Done",
+      "hash": "bd75099bacc67978ae9cab430fde838d93aa232aa74ea256a92becdb30e864cc",
+      "updatedAt": "2026-10-08T15:42:38.428Z"
+    },
+    "dev/architecture.md": {
+      "id": "2ae8fccc-2c0d-4539-ba41-8e38638bdba1",
+      "identifier": "SP-14",
+      "title": "【开发文档】架构与目录职责",
+      "state": "Done",
+      "hash": "34baaf1413891be8f5573c10a59c590944f7a6dfdfe6483219d2b6aaed7a881a",
+      "updatedAt": "2026-10-08T15:42:41.519Z"
+    },
+    "dev/business-architecture.md": {
+      "id": "5185a858-26ac-4d53-add3-aee1432dd69a",
+      "identifier": "SP-15",
+      "title": "【开发文档】业务架构：外贸 + 跨境电商",
+      "state": "Done",
+      "hash": "7753a4ffbafeb966cfc45df816615615754ce792a8bb9240da5b7a4c15ad8d17",
+      "updatedAt": "2026-10-08T15:42:44.674Z"
+    },
+    "dev/i18n.md": {
+      "id": "232da184-3341-43de-be2e-e6aeeaadd3df",
+      "identifier": "SP-16",
+      "title": "【开发文档】多语言（i18n）",
+      "state": "Done",
+      "hash": "0d20e808d29b5aa54901589b58a772c9aa1fc2fe4adc082526455203a7c2521c",
+      "updatedAt": "2026-10-08T15:42:47.844Z"
+    },
+    "dev/currency-policy.md": {
+      "id": "2394549c-33c7-4c8f-832e-b9415be3a065",
+      "identifier": "SP-17",
+      "title": "【开发文档】币种策略（currency_policy）",
+      "state": "Done",
+      "hash": "16dbee1f3d6e20354962b29dbced3c50c8c8a11e76cbf096ae045e0b5df8d858",
+      "updatedAt": "2026-10-08T15:42:51.040Z"
+    },
+    "dev/multi-company-org-model.md": {
+      "id": "7a7064f8-4c68-4470-88ab-48bd7ce71395",
+      "identifier": "SP-18",
+      "title": "【开发文档】多公司组织模型与权限配置",
+      "state": "Done",
+      "hash": "457f681a3b78e7a5f0240a3d496731ed4e46afccb3df4ef74280d36b4e3e5e99",
+      "updatedAt": "2026-10-08T15:42:54.080Z"
+    },
+    "dev/navigation.md": {
+      "id": "8f5aad6b-6c8b-4239-9ff8-86efc4fd7faf",
+      "identifier": "SP-19",
+      "title": "【开发文档】导航（后台侧边栏树）",
+      "state": "Done",
+      "hash": "df56869e786c8101596cbd93d03c878307de86b696fc0304a494d5335031c3fa",
+      "updatedAt": "2026-10-08T15:42:57.576Z"
+    },
+    "dev/parallel-development.md": {
+      "id": "97f108b2-9994-46cf-a279-639f521cb72e",
+      "identifier": "SP-20",
+      "title": "【开发文档】多路并行开发（worktree + PR 流水线）",
+      "state": "Done",
+      "hash": "ca6fc2c022f29258ab48f67489e7fe3960754aae0dd7e176e1c161c5e9ac72bd",
+      "updatedAt": "2026-10-08T15:43:00.548Z"
+    },
+    "ru-petkit#epic": {
+      "id": "a7ec6a3a-9d9d-4867-bb4a-d074ceadc4cc",
+      "identifier": "SP-21",
+      "title": "【外部系统】RU PETKIT 对接（docs/ru-petkit，外部系统调研）",
+      "state": "In Progress",
+      "hash": "80829e7c7a9ff9b4aa9ec0d53645eaa2ae37515b2096b65612181837194de9b6",
+      "updatedAt": "2026-10-08T15:43:04.438Z"
+    },
+    "ru-petkit/prd.md": {
+      "id": "9e04e7f9-c044-4362-8a80-7df0ce140e09",
+      "identifier": "SP-22",
+      "title": "【外部系统】RU PETKIT · 系统功能 PRD（F-01…F-11）",
+      "state": "Done",
+      "hash": "f35ecb34283aacdfb5da3a50dd409be6c59c3b1f8bc93f474f8cd9c456a87d25",
+      "updatedAt": "2026-10-08T15:43:07.830Z"
+    },
+    "ru-petkit/supply-sync-tech.md": {
+      "id": "80d2b876-7911-4a10-bc37-ba04d3f6449e",
+      "identifier": "SP-23",
+      "title": "【外部系统】RU PETKIT · 对接需求总包 v2（17 个端点技术规范）",
+      "state": "In Progress",
+      "hash": "59b5c141255e7923383f5e0a25323cee4673e6fb8eec7baf7c6e7eb97dba0cf3",
+      "updatedAt": "2026-10-08T15:43:10.658Z"
+    },
+    "ru-petkit/system-analysis.md": {
+      "id": "a7aeac2a-6023-4457-ab0d-5e852c39a80b",
+      "identifier": "SP-24",
+      "title": "【外部系统】RU PETKIT · 系统功能分析（逐页长文）",
+      "state": "Done",
+      "hash": "ad7e9f0759bef7be556bb3df2df4f51653b393e5c27712b7282e9869ac9156c5",
+      "updatedAt": "2026-10-08T15:43:13.687Z"
+    },
+    "ru-petkit/field-mapping.md": {
+      "id": "15357ab7-a594-462c-9824-94e33f5023c2",
+      "identifier": "SP-25",
+      "title": "【外部系统】RU PETKIT · 字段与维度需求清单 + 中方映射",
+      "state": "Done",
+      "hash": "54241e5c09d78ca37cc47651c60df790b8f26ed4d428708c549177e6c6aeeb4b",
+      "updatedAt": "2026-10-08T15:43:17.545Z"
+    },
+    "ru-petkit/integration-brief.md": {
+      "id": "2f9d3eb7-84b2-454e-b513-a4d33820f35a",
+      "identifier": "SP-26",
+      "title": "【外部系统】RU PETKIT · 发俄方对接 brief（架构 + 模块 + 接口规范）",
+      "state": "Done",
+      "hash": "9d313e093a3f9601ca9e70361b91f30974df87e2da467f5c5e69fd54a70636b1",
+      "updatedAt": "2026-10-08T15:43:21.328Z"
+    },
+    "ru-petkit/evidence.md": {
+      "id": "fa2dda92-ab9f-47dc-bdb8-4cc6f1d95753",
+      "identifier": "SP-27",
+      "title": "【外部系统】RU PETKIT · 取证证据包",
+      "state": "Done",
+      "hash": "7add20f72b4c3e493be90ebcbb4c7e842b1228b3d70be754a07ecddb0f53fc66",
+      "updatedAt": "2026-10-08T15:43:24.408Z"
+    },
+    "index/spec-status-board": {
+      "id": "94cc5b41-6112-4dd1-b159-88f0d6962c23",
+      "identifier": "SP-28",
+      "title": "【索引】规格状态板（.ai/specs 快照）",
+      "state": "Backlog",
+      "hash": "ad3564e14db308c7368f16d57d5be5711e83a37beebf19b9b394cb33114ec66d",
+      "updatedAt": "2026-10-08T15:43:27.398Z"
+    },
+    "prd/cross-border-erp#grp-A": {
+      "id": "2dd1ad84-99b7-4b47-a8fa-3219cb8a6231",
+      "identifier": "SP-30",
+      "title": "【需求】A purchasing · 供应商与采购单",
+      "state": "Done",
+      "hash": "a13bc29bfa4c2430203f4397cc1eb3ed9eb69b3075906aef83ccba2fa0e0599d",
+      "updatedAt": "2026-10-08T15:44:58.410Z"
+    },
+    "prd/cross-border-erp#A-1": {
+      "id": "de005eec-f0bd-4f07-b2a5-0997bb65feb6",
+      "identifier": "SP-31",
+      "title": "【需求】A-1 供应商主数据",
+      "state": "Done",
+      "hash": "ff901e5f2b9146b6fc24ffc6ff242de9e047bd7dc5f67414b9daa883d19ddf1e",
+      "updatedAt": "2026-10-08T15:45:02.711Z"
+    },
+    "prd/cross-border-erp#A-2": {
+      "id": "6a979a77-2eca-4498-a3a7-ee2019a5e9d1",
+      "identifier": "SP-32",
+      "title": "【需求】A-2 采购单与明细",
+      "state": "Done",
+      "hash": "688204de58fdff9c921cddc86089e51da60130b9599739a8a9c5af7da3f04f9f",
+      "updatedAt": "2026-10-08T15:45:07.730Z"
+    },
+    "prd/cross-border-erp#A-3": {
+      "id": "8e2c6cf2-affe-4d31-8f59-395315491c98",
+      "identifier": "SP-33",
+      "title": "【需求】A-3 状态机",
+      "state": "Done",
+      "hash": "8b4367ca0e18c6051662847de2b13b494a00727382bfa73fdf277a40ec270f7c",
+      "updatedAt": "2026-10-08T15:45:16.126Z"
+    },
+    "prd/cross-border-erp#A-4": {
+      "id": "bf528710-aaa2-4670-8140-3836ec1b04c2",
+      "identifier": "SP-34",
+      "title": "【需求】A-4 阶段付款",
+      "state": "Done",
+      "hash": "6e7c3e022ddf15edd72884dafc05d9eba76ad3ea04c93ca11d4c24a14deb31db",
+      "updatedAt": "2026-10-08T15:45:20.017Z"
+    },
+    "prd/cross-border-erp#A-5": {
+      "id": "3ae4b26b-3f39-439c-851e-cf7558e9a725",
+      "identifier": "SP-35",
+      "title": "【需求】A-5 并发与审计",
+      "state": "Done",
+      "hash": "2adc2c8feccdbbad284ff7d6a0a6a5ba8cd315234a26a9023b4742b1713a9207",
+      "updatedAt": "2026-10-08T15:45:23.603Z"
+    },
+    "prd/cross-border-erp#grp-B": {
+      "id": "354659b9-3254-44a7-aeaa-cebfe91111dd",
+      "identifier": "SP-36",
+      "title": "【需求】B cross_border · 发运 / 在途 / 出口单证",
+      "state": "Done",
+      "hash": "67ac1dbbd771e28ddd76b2933423501dfc78dc7bc9dc6be87db0c5660d0005fa",
+      "updatedAt": "2026-10-08T15:45:30.360Z"
+    },
+    "prd/cross-border-erp#B-1": {
+      "id": "330c6f66-042e-4353-85b4-07fb77499e34",
+      "identifier": "SP-37",
+      "title": "【需求】B-1 发运单",
+      "state": "Done",
+      "hash": "ae86b7c0f7ccb83d0764228de4263994b80ca3064b43f2795732ee5ecff449b4",
+      "updatedAt": "2026-10-08T15:45:34.241Z"
+    },
+    "prd/cross-border-erp#B-2": {
+      "id": "afc85831-c0ed-4ac1-9f4e-64fd5d47791e",
+      "identifier": "SP-38",
+      "title": "【需求】B-2 在途",
+      "state": "Done",
+      "hash": "8a634b45db6bdca66f4f0b85085e8c9731ed9c26ec92afc8be162e7ee205f6f3",
+      "updatedAt": "2026-10-08T15:45:37.836Z"
+    },
+    "prd/cross-border-erp#B-3": {
+      "id": "2a557bc3-65a0-4b79-a301-48d4983417c0",
+      "identifier": "SP-39",
+      "title": "【需求】B-3 出口单证",
+      "state": "Done",
+      "hash": "a3de1f678010c3c169f2f198b10b3dd3f518c6fe5de01ea99431fdd7acc6c1c0",
+      "updatedAt": "2026-10-08T15:45:42.348Z"
+    },
+    "prd/cross-border-erp#B-4": {
+      "id": "288a7744-39d6-4fe7-b1b2-0b34db9d5b24",
+      "identifier": "SP-40",
+      "title": "【需求】B-4 海外仓收货",
+      "state": "Done",
+      "hash": "9caef971cb45c5ce14cd31754ba2ae48071ecbc4e5b35a20bfc9d39e5faa5fbc",
+      "updatedAt": "2026-10-08T15:45:49.940Z"
+    },
+    "prd/cross-border-erp#B-5": {
+      "id": "fdf62cf5-8791-49c2-8c0b-5d09f55c8731",
+      "identifier": "SP-41",
+      "title": "【需求】B-5 对账",
+      "state": "Done",
+      "hash": "bc64d2ddea2d2e4bf38db24bddf47225be3d65e8eed3e41c1430e20c756f1834",
+      "updatedAt": "2026-10-08T15:45:55.142Z"
+    },
+    "prd/cross-border-erp#grp-C": {
+      "id": "28dcdad1-0545-4986-940e-b6d0393a490f",
+      "identifier": "SP-42",
+      "title": "【需求】C platform_ops · 连接器 / 结算 / 分公司视图",
+      "state": "In Progress",
+      "hash": "7e1ba77e318ba0df799e23f251eef08f6904644cd19fb676b27ca59ee0677c33",
+      "updatedAt": "2026-10-08T15:45:59.851Z"
+    },
+    "prd/cross-border-erp#C-1": {
+      "id": "38b77730-1d04-4db2-9219-cf79ee031053",
+      "identifier": "SP-43",
+      "title": "【需求】C-1 平台连接器",
+      "state": "Done",
+      "hash": "62c0efe0570c683ad4a585b3d4b1cceddaa4d4cc30daf7f60051ad0249b9e341",
+      "updatedAt": "2026-10-08T15:46:04.255Z"
+    },
+    "prd/cross-border-erp#C-2": {
+      "id": "0f55212c-573f-4573-8415-3288fa4baeb8",
+      "identifier": "SP-44",
+      "title": "【需求】C-2 结算与回款",
+      "state": "Done",
+      "hash": "7c218ee7c16e51a9b15ad182eb27a06a1aabcf16efa1650dcc71dc2ac65642a2",
+      "updatedAt": "2026-10-08T15:46:08.146Z"
+    },
+    "prd/cross-border-erp#C-3": {
+      "id": "40024c0d-d8ea-45f1-ac54-48298f5107d7",
+      "identifier": "SP-45",
+      "title": "【需求】C-3 分公司视图",
+      "state": "Todo",
+      "hash": "54e9889a78c7d77704928d3ad3af74c45e56ede28646cf7f574057d972644530",
+      "updatedAt": "2026-10-08T15:46:12.640Z"
+    },
+    "prd/cross-border-erp#grp-E": {
+      "id": "56185c2f-6ed9-4d6d-ac44-2ff80ba667a7",
+      "identifier": "SP-46",
+      "title": "【需求】E products + trade_docs · 商品主数据与购销合同",
+      "state": "Done",
+      "hash": "a9385536d25d30c53a174e5ea435fb9f31ecb2a06e1cd769bd62cff7a23ba261",
+      "updatedAt": "2026-10-08T15:46:19.624Z"
+    },
+    "prd/cross-border-erp#E-1": {
+      "id": "279593ae-822c-47f3-8185-3ecc89989f93",
+      "identifier": "SP-47",
+      "title": "【需求】E-1 产品主数据自建",
+      "state": "Done",
+      "hash": "d8b0a61da52accb91066b1e33a06863883bdc8ce438f97f05d77106bd253b0c7",
+      "updatedAt": "2026-10-08T15:46:23.406Z"
+    },
+    "prd/cross-border-erp#E-2": {
+      "id": "f4b773dc-a7b2-4452-9993-3a74a9875588",
+      "identifier": "SP-48",
+      "title": "【需求】E-2 三档价格",
+      "state": "Done",
+      "hash": "46a4c64497069587b71a40631296d2b66ed5f6b377c9427a04c44edb45dac664",
+      "updatedAt": "2026-10-08T15:46:26.877Z"
+    },
+    "prd/cross-border-erp#E-3": {
+      "id": "80691c8c-b148-4ef1-b984-5a418981b077",
+      "identifier": "SP-49",
+      "title": "【需求】E-3 购销合同",
+      "state": "Done",
+      "hash": "eb7c68f57a408418dc800d8753fc3e83a8ee732f6d060a495c3048e1b305b7a6",
+      "updatedAt": "2026-10-08T15:46:30.565Z"
+    },
+    "prd/cross-border-erp#E-4": {
+      "id": "49f80224-9306-4924-8a06-8d8d92bb4e8d",
+      "identifier": "SP-50",
+      "title": "【需求】E-4 统一金额口径",
+      "state": "Done",
+      "hash": "ea18db57da3dcb6453683d6559407b9d5709e68aef932d64166b9481195c5142",
+      "updatedAt": "2026-10-08T15:46:34.804Z"
+    },
+    "prd/cross-border-erp#E-5": {
+      "id": "5cd6c5b5-68d3-4481-88dd-5acc96d42e6b",
+      "identifier": "SP-51",
+      "title": "【需求】E-5 发票与附件",
+      "state": "Done",
+      "hash": "57773f8d9b38cf2c54ac7ee7d387761a36254cde2af298ad9ff949a402b8a169",
+      "updatedAt": "2026-10-08T15:46:38.857Z"
+    },
+    "prd/cross-border-erp#E-8": {
+      "id": "c9158784-99c2-424c-ae2c-f828df5c8dcd",
+      "identifier": "SP-52",
+      "title": "【需求】E-8 内部销售单据自建界面",
+      "state": "Done",
+      "hash": "d61ad6b918799d55d3ab60f72f039a4b981d4d4d869cfa1dc8b81acb50bffd98",
+      "updatedAt": "2026-10-08T15:46:42.968Z"
+    },
+    "prd/cross-border-erp#E-7": {
+      "id": "4b1329e3-db21-4329-9722-39fbd1cff12f",
+      "identifier": "SP-53",
+      "title": "【需求】E-7 官方商品后台收敛",
+      "state": "Done",
+      "hash": "f6c62361985e7eca700206aef15c53416504fe93a0dbca81fa783ce7fb0abdb9",
+      "updatedAt": "2026-10-08T15:46:46.540Z"
+    },
+    "prd/cross-border-erp#E-6": {
+      "id": "65fb9603-f254-4a03-bb7c-308cac4ef753",
+      "identifier": "SP-54",
+      "title": "【需求】E-6 合同 Excel（已实现）",
+      "state": "Done",
+      "hash": "08e46158186f968e5866459194985185319eba51b49c27505bc4a4bcf41caf73",
+      "updatedAt": "2026-10-08T15:46:50.125Z"
+    },
+    "prd/cross-border-erp#E-9": {
+      "id": "e7097aed-2a60-4589-8b9f-8978c9dcae1b",
+      "identifier": "SP-55",
+      "title": "【需求】E-9 商品变体（SKU）",
+      "state": "Done",
+      "hash": "b6332aac20b0fdd751658a53d736c944421ecf1a8d44b3df51be8c87cdc4e821",
+      "updatedAt": "2026-10-08T15:46:53.603Z"
+    },
+    "prd/cross-border-erp#E-10": {
+      "id": "dfd0e198-b679-4f20-98ba-750437f1ca14",
+      "identifier": "SP-56",
+      "title": "【需求】E-10 自产 / 委托加工商品按普通商品建库（2026-09-23）",
+      "state": "Done",
+      "hash": "ecbe22c1f74cd462960491c07cbca223145bb0cd08d1aa03d99cc8117b79bcad",
+      "updatedAt": "2026-10-08T15:46:57.116Z"
+    },
+    "prd/cross-border-erp#E-11": {
+      "id": "726e8219-80ac-42e0-af3b-888903c7021e",
+      "identifier": "SP-57",
+      "title": "【需求】E-11 订单从报价单载入（引用加载，2026-09-29）",
+      "state": "Done",
+      "hash": "b5859b11e32fbbcec13947aaa0feb148c33e35fcabf900db875c3fd5b7df1377",
+      "updatedAt": "2026-10-08T15:47:00.373Z"
+    },
+    "prd/cross-border-erp#grp-F": {
+      "id": "980a2eee-7ce0-4a75-bd11-d15029cf0a3c",
+      "identifier": "SP-58",
+      "title": "【需求】F sourcing · 供应商报价与导入",
+      "state": "Done",
+      "hash": "91ff27397f6db9826ba6cfa3f1113b0bd4f70412be69ae260663195edb238371",
+      "updatedAt": "2026-10-08T15:47:03.786Z"
+    },
+    "prd/cross-border-erp#F-1": {
+      "id": "ae331a60-b982-478d-bedd-8c92d0602a67",
+      "identifier": "SP-59",
+      "title": "【需求】F-1 报价单中间层",
+      "state": "Done",
+      "hash": "113e5b13a67b3f0c9e9209f4465299caafa7941ab738efafd6ea082e90eea276",
+      "updatedAt": "2026-10-08T15:47:07.024Z"
+    },
+    "prd/cross-border-erp#F-2": {
+      "id": "fc29786c-47a0-4eca-b26f-9dc1ccc55c14",
+      "identifier": "SP-60",
+      "title": "【需求】F-2 任意版式 Excel 导入",
+      "state": "Done",
+      "hash": "1fc399e3f76ee752e49c4428224bc3440898c58eb59f88fbb773a5449a162132",
+      "updatedAt": "2026-10-08T15:47:11.750Z"
+    },
+    "prd/cross-border-erp#F-3": {
+      "id": "7fb0eeb1-08bd-4c6a-ad5f-7db940ba8e88",
+      "identifier": "SP-61",
+      "title": "【需求】F-3 列映射兼容",
+      "state": "Done",
+      "hash": "7315a38c027ddb4702f28f890d3c3aaa183af2b856d421a773aa4d1c4f274eb0",
+      "updatedAt": "2026-10-08T15:47:16.039Z"
+    },
+    "prd/cross-border-erp#F-4": {
+      "id": "284ec76c-4897-40f7-a915-dfb6d04d5801",
+      "identifier": "SP-62",
+      "title": "【需求】F-4 复核台",
+      "state": "Done",
+      "hash": "20eb861911cdd308aeedd51f87bad2df0776dd5c07d0406f52342b977605c597",
+      "updatedAt": "2026-10-08T15:47:19.320Z"
+    },
+    "prd/cross-border-erp#F-5": {
+      "id": "01635e69-797e-4c6b-a89c-af8b290068d4",
+      "identifier": "SP-63",
+      "title": "【需求】F-5 SKU 规则",
+      "state": "Done",
+      "hash": "90bfcf58bf6c76b1114a4f65134c16aa97fc7c258d66dc201fbff52a34098930",
+      "updatedAt": "2026-10-08T15:47:22.596Z"
+    },
+    "prd/cross-border-erp#F-6": {
+      "id": "22f9f9cb-294c-4a7e-95fa-f8c2fa238129",
+      "identifier": "SP-64",
+      "title": "【需求】F-6 确认与提升",
+      "state": "Done",
+      "hash": "e7cd39f0ff8898310dd528e4d8b7651ebcf9615ef3cd480f5808613ccc746a50",
+      "updatedAt": "2026-10-08T15:47:25.960Z"
+    },
+    "prd/cross-border-erp#F-7": {
+      "id": "a0b8a7af-c2e5-4ec1-8802-65f9f9b0b311",
+      "identifier": "SP-65",
+      "title": "【需求】F-7 手工建单",
+      "state": "Done",
+      "hash": "930f789da94fbad929454dbbe038ab9319d77124af8b5ac0192439ce5bbd8c3e",
+      "updatedAt": "2026-10-08T15:47:29.110Z"
+    },
+    "prd/cross-border-erp#F-8": {
+      "id": "885ae7a6-c4d7-4651-8e33-caab4ae8d25e",
+      "identifier": "SP-66",
+      "title": "【需求】F-8 标准模板 + AI 兜底",
+      "state": "Done",
+      "hash": "f8a8ce619c9c894fa38e7d6eecd1ceb0bc89fd5078911472ef282d98a788abaa",
+      "updatedAt": "2026-10-08T15:47:32.705Z"
+    },
+    "prd/cross-border-erp#grp-G": {
+      "id": "1605f905-eeba-4a35-bed2-06b74766bdea",
+      "identifier": "SP-67",
+      "title": "【需求】G parties / export_finance / internal_sales · 交易对手与出口财务",
+      "state": "Done",
+      "hash": "bb4382715d8dd48790ce415f0332e0beb6c6021f9a22f6e463c2834e0e0139fc",
+      "updatedAt": "2026-10-08T15:47:36.885Z"
+    },
+    "prd/cross-border-erp#G-1": {
+      "id": "3095d489-630f-4d36-bbad-bccfab4c51b5",
+      "identifier": "SP-68",
+      "title": "【需求】G-1 交易对手方主数据自建",
+      "state": "Done",
+      "hash": "663519ac7a789117acec3c2b2ea0ac8454c64ad518fd3b890f35bf90cf67538c",
+      "updatedAt": "2026-10-08T15:47:40.401Z"
+    },
+    "prd/cross-border-erp#G-2": {
+      "id": "2de43218-d848-4dcc-be85-4f6e9465b548",
+      "identifier": "SP-69",
+      "title": "【需求】G-2 出口收汇与出口退税档案",
+      "state": "Done",
+      "hash": "ee34e43fdf46d1795079b012ccc612e0a0e16bb0915e131f71290eeb64c5662d",
+      "updatedAt": "2026-10-08T15:47:44.442Z"
+    },
+    "prd/cross-border-erp#G-3": {
+      "id": "51eab0f1-825c-4a27-b508-5f0f018a448c",
+      "identifier": "SP-70",
+      "title": "【需求】G-3 内部销售自建界面",
+      "state": "Done",
+      "hash": "d78ffa60f479e3d925c210c697019ddd334ce0670fccc04c3422c5f6f5fddd47",
+      "updatedAt": "2026-10-08T15:47:47.436Z"
+    },
+    "prd/cross-border-erp#G-4": {
+      "id": "7da7f773-dead-48c6-97f0-41b4944b966c",
+      "identifier": "SP-71",
+      "title": "【需求】G-4 订单档案两种只读输出",
+      "state": "Done",
+      "hash": "0d671dee3a44e5a1b8ea46e59ae25a88f31fd0bbebcd1906e9dc57eebb4a3432",
+      "updatedAt": "2026-10-08T15:47:51.357Z"
+    },
+    "prd/cross-border-erp#grp-D": {
+      "id": "a68b8799-8c5a-47bc-ae08-6f6c9307fd6a",
+      "identifier": "SP-72",
+      "title": "【需求】D 横向要求 · 组织可见性 / 国际化 / 一致性 / 测试",
+      "state": "Done",
+      "hash": "4c76dead2718e17688a047e708aa9519c574d7bba1020798b2b4eb97d541c77c",
+      "updatedAt": "2026-10-08T15:47:55.760Z"
+    },
+    "prd/cross-border-erp#D-1": {
+      "id": "c7ce1982-2175-40ac-8378-670fce5e72cf",
+      "identifier": "SP-73",
+      "title": "【需求】D-1 组织可见性",
+      "state": "Done",
+      "hash": "a160f278d1c818ec15d5c20b05c66ba6bf74c7c8305c03f63853cec9934aa7c1",
+      "updatedAt": "2026-10-08T15:48:02.199Z"
+    },
+    "prd/cross-border-erp#D-2": {
+      "id": "0cc0e3c8-7073-401b-8978-4a679cd73ac9",
+      "identifier": "SP-74",
+      "title": "【需求】D-2 国际化",
+      "state": "Done",
+      "hash": "4f273f7448fdbad87b45133ad1a1bb3b2fb4c527c6cc6690f13b909b3e0691a4",
+      "updatedAt": "2026-10-08T15:48:05.590Z"
+    },
+    "prd/cross-border-erp#D-3": {
+      "id": "716017cc-4a8b-428c-89d5-e6b10b712244",
+      "identifier": "SP-75",
+      "title": "【需求】D-3 数据一致性",
+      "state": "Done",
+      "hash": "b84d296ad1cead2c071c3a8f80dbbb7ab7df6ae2860951f9253bf0c1d46ad6b0",
+      "updatedAt": "2026-10-08T15:48:10.000Z"
+    },
+    "prd/cross-border-erp#D-4": {
+      "id": "16b229e4-45aa-498a-b065-6f66790d929c",
+      "identifier": "SP-76",
+      "title": "【需求】D-4 测试",
+      "state": "Done",
+      "hash": "53baaf64fb98f935afce5d72fcf506447c2a224cc13e69ed67f9ddabd5a2775d",
+      "updatedAt": "2026-10-08T15:48:13.966Z"
+    },
+    "prd/cross-border-erp#acceptance": {
+      "id": "25c90411-7beb-4e31-bae4-a740d6dd1fbf",
+      "identifier": "SP-77",
+      "title": "【需求】跨境 ERP · 整体验收清单（7/7 已实测）",
+      "state": "Done",
+      "hash": "898363b4a266df87787dac66cd5a4898104595acfbcbcb99c1117cf8e076fabe",
+      "updatedAt": "2026-10-08T15:48:17.369Z"
+    },
+    "prd/cross-border-erp#open-questions": {
+      "id": "dbd3160a-4460-4bfc-9792-d35b2ccf14c5",
+      "identifier": "SP-78",
+      "title": "【需求】跨境 ERP · 开放问题（Q1–Q6）",
+      "state": "Backlog",
+      "hash": "ad45bd2832bd3fa90f2542f73f0fc26d44ad6f6cffb065cf21345b3b417f6a91",
+      "updatedAt": "2026-10-08T15:48:20.645Z"
+    },
+    "prd/finance-and-cockpit#ac-1": {
+      "id": "ebcf9106-870d-4c0a-b3ed-6c40beb19c75",
+      "identifier": "SP-79",
+      "title": "【需求】财务 · 验收 1｜到岸成本分摊等式",
+      "state": "Done",
+      "hash": "41f7fb887c5af3f570e0bcc9c24d7f62be1c2fc21f9ad840cbcc79f6a2259e64",
+      "updatedAt": "2026-10-08T15:48:25.150Z"
+    },
+    "prd/finance-and-cockpit#ac-2": {
+      "id": "068bb760-8e38-43fd-82a9-03f3fbbf7553",
+      "identifier": "SP-80",
+      "title": "【需求】财务 · 验收 2｜权重退化与缺汇率处理",
+      "state": "Done",
+      "hash": "6f45beb50dd7e9ed179aeb972a185dbbd4911901b563a118e3335820bdf53306",
+      "updatedAt": "2026-10-08T15:48:28.529Z"
+    },
+    "prd/finance-and-cockpit#ac-3": {
+      "id": "3190eb77-0a83-446e-9154-c367a5673d3a",
+      "identifier": "SP-81",
+      "title": "【需求】财务 · 验收 3｜库存资金占用三源解析",
+      "state": "Done",
+      "hash": "825b0ba67c2680b90e00137c581e4cfd23d43bf824d06fa00f76827eef2a6226",
+      "updatedAt": "2026-10-08T15:48:32.016Z"
+    },
+    "prd/finance-and-cockpit#ac-4": {
+      "id": "ccfcca5b-7529-45a0-8dda-a9845c2ee902",
+      "identifier": "SP-82",
+      "title": "【需求】财务 · 验收 4｜应付 / 应收台账与收汇金额",
+      "state": "Done",
+      "hash": "10b4ec24ce07b6054362cd628ca4d525e9a3d961ca0cea6bf45dd315934d3531",
+      "updatedAt": "2026-10-08T15:48:35.790Z"
+    },
+    "prd/finance-and-cockpit#ac-5": {
+      "id": "fe35e9b5-f9cf-4d16-a12a-22ffd3976bb0",
+      "identifier": "SP-83",
+      "title": "【需求】财务 · 验收 5｜损益与俄方对齐",
+      "state": "Done",
+      "hash": "2e047ee119b28c0658c71de65046263a4f387b308e4210ce51dd0b21a73d0626",
+      "updatedAt": "2026-10-08T15:48:39.282Z"
+    },
+    "prd/finance-and-cockpit#ac-6": {
+      "id": "685b6d7a-e15f-456b-bfd1-4e3fe387016c",
+      "identifier": "SP-84",
+      "title": "【需求】财务 · 验收 6｜RU 8 端点幂等拉取",
+      "state": "Done",
+      "hash": "ebc0a7a34eee19f308d74abd4d8bad43b904f453cc90c8dc68481ac02549a1a3",
+      "updatedAt": "2026-10-08T15:48:45.733Z"
+    },
+    "prd/finance-and-cockpit#ac-7": {
+      "id": "44c9b4e0-d0ce-4ad5-8f9a-bcd967eb2276",
+      "identifier": "SP-85",
+      "title": "【需求】财务 · 验收 7｜驾驶舱 KPI 与 stale 标出",
+      "state": "Done",
+      "hash": "66877121950e2890397a51af5aa78f6b57c80c2a5a110ee16eb18b2b6b882437",
+      "updatedAt": "2026-10-08T15:48:49.420Z"
+    },
+    "prd/finance-and-cockpit#ac-8": {
+      "id": "1e3ffe10-768a-4d67-8005-0ed839cc9a59",
+      "identifier": "SP-86",
+      "title": "【需求】财务 · 验收 8｜全链脚本验收",
+      "state": "Done",
+      "hash": "a808ac296a60b15be18701f05aa51bd10f93fd968c803bd181446b4cfad45406",
+      "updatedAt": "2026-10-08T15:48:52.644Z"
+    },
+    "prd/finance-and-cockpit#open-questions": {
+      "id": "08dd56cf-0d46-467c-9bdd-b2ae7caae179",
+      "identifier": "SP-87",
+      "title": "【需求】财务 · 开放问题（Q-006…Q-011）",
+      "state": "Backlog",
+      "hash": "95f564596b08eed8c40a1bf05de59ba0e8ab5ce01565b2e020586bad20f7c1e1",
+      "updatedAt": "2026-10-08T15:48:56.178Z"
+    },
+    "prd/lookup-field-dropdown#ac-1": {
+      "id": "1c7bc467-0ab5-4e5f-a7c5-448cfcba1d6c",
+      "identifier": "SP-88",
+      "title": "【需求】选择器 · 验收 1｜聚焦即见首页选项",
+      "state": "Todo",
+      "hash": "6dd572c9b58c81018251009293431163dd943742f5a14a037e4b0bb7d5d117f5",
+      "updatedAt": "2026-10-08T15:49:00.069Z"
+    },
+    "prd/lookup-field-dropdown#ac-2": {
+      "id": "d975fc57-1e48-4d8e-9ef9-50e78903c018",
+      "identifier": "SP-89",
+      "title": "【需求】选择器 · 验收 2｜选中语义与不泄露 UUID",
+      "state": "Todo",
+      "hash": "2e41c6a0c73ff6fbaa1a29f526d1ffd0d654d48403cb632f73afce105ec45ca6",
+      "updatedAt": "2026-10-08T15:49:03.551Z"
+    },
+    "prd/lookup-field-dropdown#ac-3": {
+      "id": "77c76ccd-d4de-4f24-b7df-5465ded8f30d",
+      "identifier": "SP-90",
+      "title": "【需求】选择器 · 验收 3｜键盘与 ARIA 语义",
+      "state": "Todo",
+      "hash": "6582c83233b966d24578c00f7cb485bc78ca8f64e02b460e6107733649e399e8",
+      "updatedAt": "2026-10-08T15:49:07.246Z"
+    },
+    "prd/lookup-field-dropdown#ac-4": {
+      "id": "f4854056-759d-45b9-8dcf-83d9481c6c13",
+      "identifier": "SP-91",
+      "title": "【需求】选择器 · 验收 4｜minQuery ≥ 1 保持类型搜索",
+      "state": "Todo",
+      "hash": "ad18998fa73f9cfa77f15b24bfb2e8c6989d9d8e88f2dcc4463fae2ba38cd7f7",
+      "updatedAt": "2026-10-08T15:49:11.419Z"
+    },
+    "prd/lookup-field-dropdown#ac-5": {
+      "id": "9f9ec229-8c53-4326-bb70-0ebefd3a0f2a",
+      "identifier": "SP-92",
+      "title": "【需求】选择器 · 验收 5｜disabled 字段惰性只读",
+      "state": "Todo",
+      "hash": "3e1f3ba5ca5562d3c36fc7a00bafd03c76ce34a7370c0fac94163764706b1376",
+      "updatedAt": "2026-10-08T15:49:29.060Z"
+    },
+    "prd/lookup-field-dropdown#ac-6": {
+      "id": "3971d8a6-e91f-4a73-854e-9ad0d8c5561b",
+      "identifier": "SP-93",
+      "title": "【需求】选择器 · 验收 6｜未交互零请求",
+      "state": "Todo",
+      "hash": "53ebe654971647b703acc4c8130f60314e759e2f5e58934bae03885bd3a34cb6",
+      "updatedAt": "2026-10-08T15:49:33.257Z"
+    },
+    "prd/lookup-field-dropdown#ac-7": {
+      "id": "3ddac153-d5f5-4bd2-b345-f863275fd986",
+      "identifier": "SP-94",
+      "title": "【需求】选择器 · 验收 7｜窄屏面板跟随不跳版",
+      "state": "Todo",
+      "hash": "5441debdcc01c6b0aaaff8462ed758d8ff0f0d91db46353f75a4bf2d8520c464",
+      "updatedAt": "2026-10-08T15:49:36.930Z"
+    },
+    "prd/lookup-field-dropdown#open-questions": {
+      "id": "8af33565-d150-471a-afe1-537f4ab5e6ee",
+      "identifier": "SP-95",
+      "title": "【需求】选择器 · 开放问题（3 条）",
+      "state": "Backlog",
+      "hash": "96d3adea81b5446820d31c95341c3c5c5952cc1753b131ca3ff742272ad34b7a",
+      "updatedAt": "2026-10-08T15:49:41.041Z"
+    },
+    "plans/cross-border-erp#phase-1": {
+      "id": "91a2fbab-05f3-43ea-945f-a9d82fb1022e",
+      "identifier": "SP-96",
+      "title": "【里程碑】跨境 ERP · 阶段一 purchasing：供应商主数据",
+      "state": "Done",
+      "hash": "32e140907eb8bb3ba3c5f58c727fed3ca747f685c82526d3e2055de9f58cde1c",
+      "updatedAt": "2026-10-08T15:49:46.672Z"
+    },
+    "plans/cross-border-erp#phase-2": {
+      "id": "76ccf3f2-a68a-448a-9b3f-b69504153ee8",
+      "identifier": "SP-97",
+      "title": "【里程碑】跨境 ERP · 阶段二 purchasing：采购单 + 明细 + 阶段付款",
+      "state": "Done",
+      "hash": "192f25354f44e8395bc8d269dcf5263b8df7641312fb77d6f0973c16e86f10a0",
+      "updatedAt": "2026-10-08T15:49:50.862Z"
+    },
+    "plans/cross-border-erp#phase-3": {
+      "id": "8a18048b-740c-4a17-8a00-dee0d5e1bf73",
+      "identifier": "SP-98",
+      "title": "【里程碑】跨境 ERP · 阶段三 cross_border：发运 / 在途 / 出口单证",
+      "state": "Done",
+      "hash": "6df6c8f736b7997f130b1b818225c1fb342f318cd04b01119ceb3036ad00e1e8",
+      "updatedAt": "2026-10-08T15:49:55.992Z"
+    },
+    "plans/cross-border-erp#phase-4": {
+      "id": "693d4468-0a10-4c8a-9539-635e181713bd",
+      "identifier": "SP-99",
+      "title": "【里程碑】跨境 ERP · 阶段四 platform_ops：平台连接器与结算对账",
+      "state": "Done",
+      "hash": "e957aa09d9afd6ada3c241af6a1940e6cfc043f4378fcd95b1ead777abd68373",
+      "updatedAt": "2026-10-08T15:50:00.189Z"
+    },
+    "plans/cross-border-erp#phase-5": {
+      "id": "05f5196c-fc58-4a7a-afe3-9ceb5d7ca352",
+      "identifier": "SP-100",
+      "title": "【里程碑】跨境 ERP · 阶段五 收尾",
+      "state": "In Progress",
+      "hash": "f1bc2e9be7f2b3075e808f285750980a8a0fe63fcf8ddfc353c764f9aab7bea7",
+      "updatedAt": "2026-10-08T15:50:05.407Z"
+    },
+    "plans/cross-border-erp#supplements": {
+      "id": "483a98c4-aef8-4dd3-822f-80c024542cf1",
+      "identifier": "SP-101",
+      "title": "【里程碑】跨境 ERP · 阶段五历史补记（六·补48–52）",
+      "state": "Done",
+      "hash": "6a673f9597ed28e40e3e4ff962c7f85c950320dfa00ac21ce8b15b727ef1266c",
+      "updatedAt": "2026-10-08T15:50:09.507Z"
+    },
+    "plans/finance-and-cockpit#phase-1": {
+      "id": "885c746d-f31e-4992-941f-787173808bec",
+      "identifier": "SP-102",
+      "title": "【里程碑】财务与驾驶舱 · 阶段一 finance 成本底座",
+      "state": "Done",
+      "hash": "f4e8f6c21d46fb38b3c6bf5eeaf6d366c0a08ae5671d0b8e123f42bfe5a2e7d5",
+      "updatedAt": "2026-10-08T15:50:13.194Z"
+    },
+    "plans/finance-and-cockpit#phase-2": {
+      "id": "f2ed4171-642f-46fc-987b-ce5f5cf07bf8",
+      "identifier": "SP-103",
+      "title": "【里程碑】财务与驾驶舱 · 阶段二 费用与台账",
+      "state": "Done",
+      "hash": "e3e49861c148a0c9345510d7562387575060b51e921f2a5618a3bbc554ef0e80",
+      "updatedAt": "2026-10-08T15:50:20.894Z"
+    },
+    "plans/finance-and-cockpit#phase-3": {
+      "id": "f8afc4b2-133f-4ed5-9025-83555b0733db",
+      "identifier": "SP-104",
+      "title": "【里程碑】财务与驾驶舱 · 阶段三 ru_sync supply 8 端点",
+      "state": "Done",
+      "hash": "9d9c21f78ab41837698b5df018cddfb9be26eb15a3037e13070af3dd452ad07d",
+      "updatedAt": "2026-10-08T15:50:27.716Z"
+    },
+    "plans/finance-and-cockpit#phase-4": {
+      "id": "9be48493-2bc2-45d4-be0e-5f323ffcfea2",
+      "identifier": "SP-105",
+      "title": "【里程碑】财务与驾驶舱 · 阶段四 boss_cockpit v1",
+      "state": "Done",
+      "hash": "dc832181a853876ab70dab3feac5b0d369eef55c81af50de9ab091ff9e118a48",
+      "updatedAt": "2026-10-08T15:50:35.959Z"
+    },
+    "plans/finance-and-cockpit#phase-5": {
+      "id": "601a4fdf-4e1a-41b2-99c7-fce189761c9c",
+      "identifier": "SP-106",
+      "title": "【里程碑】财务与驾驶舱 · 阶段五 供应计划闭环",
+      "state": "Done",
+      "hash": "c342c8b7d5cfe14d97977499ef2e41c5a367a36d849b04760a9b9a3741addb49",
+      "updatedAt": "2026-10-08T15:50:40.832Z"
+    },
+    "plans/finance-and-cockpit#phase-6": {
+      "id": "bb5f760d-e6c8-4f60-bc99-d0f4dda00c63",
+      "identifier": "SP-107",
+      "title": "【里程碑】财务与驾驶舱 · 阶段六 ads 9 端点 + 损益",
+      "state": "Done",
+      "hash": "ed4167fe22f818955a3a79d219589d389d12bac13fec267ffd30f279c2795f0e",
+      "updatedAt": "2026-10-08T15:50:45.143Z"
+    },
+    "plans/finance-and-cockpit#phase-7": {
+      "id": "ae244813-3e36-400b-a86b-5bed541b6b3b",
+      "identifier": "SP-108",
+      "title": "【里程碑】财务与驾驶舱 · 阶段七 驾驶舱 v2 + 四预警",
+      "state": "Done",
+      "hash": "2a95c0a0c8801afd69469a01b1e56497ab78641558e277427f1071c80b00d865",
+      "updatedAt": "2026-10-08T15:50:49.750Z"
+    },
+    "plans/finance-and-cockpit#phase-8": {
+      "id": "2e0f38f4-9e80-45ac-93b4-265cbf154933",
+      "identifier": "SP-109",
+      "title": "【里程碑】财务与驾驶舱 · 阶段八 流程收尾",
+      "state": "Done",
+      "hash": "81193d27ff92c33ea055fd3f773f2fadf28c627d7e494941f19c9bda7fb39d1f",
+      "updatedAt": "2026-10-08T15:50:53.232Z"
+    },
+    "plans/lookup-field-dropdown#phase-1": {
+      "id": "83d64c9b-03ec-49d6-b247-6a21eeceb2cd",
+      "identifier": "SP-110",
+      "title": "【里程碑】关联字段选择器 · 阶段一：补丁进入上游 / 内部版本",
+      "state": "In Progress",
+      "hash": "5224f530a4dcfc4fe2876bdb82d27d5dd90c7a822a3f366bbee942958ec338cf",
+      "updatedAt": "2026-10-08T15:50:56.613Z"
+    },
+    "plans/lookup-field-dropdown#phase-2": {
+      "id": "85d33b84-6ff6-41a2-949e-9db39758cabd",
+      "identifier": "SP-111",
+      "title": "【里程碑】关联字段选择器 · 阶段二：本仓升级依赖并回归",
+      "state": "Todo",
+      "hash": "e4ffe310f8869ab6eced949697936a6fb2e213fde61531913bd7c29c4bbba56b",
+      "updatedAt": "2026-10-08T15:51:00.606Z"
+    },
+    "plans/lookup-field-dropdown#phase-3": {
+      "id": "454e9c96-4595-4ee8-a2ef-b152a8c660ea",
+      "identifier": "SP-112",
+      "title": "【里程碑】关联字段选择器 · 阶段三（可选）：后续项",
+      "state": "Todo",
+      "hash": "b9f33fcbf83f1b6417140bf168b0e07f9593371631e962a932a1757d996585a3",
+      "updatedAt": "2026-10-08T15:51:04.186Z"
+    }
+  },
+  "docs": {
+    "root": "/Users/vanness/Developer/kc-cb-digital-base-min",
+    "commit": "e545eaf2957a35ea857e3d6c8d496221ae6b4995",
+    "branch": "dev"
+  },
+  "updatedAt": "2026-10-08T15:51:04.186Z"
+}

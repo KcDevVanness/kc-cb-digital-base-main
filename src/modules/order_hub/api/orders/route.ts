@@ -63,6 +63,10 @@ const companyOrderListItemSchema = z
     status: z.enum(COMPANY_ORDER_STORED_STATUSES),
     paymentStatus: z.enum(COMPANY_ORDER_PAYMENT_STATUSES).nullable().optional(),
     notes: z.string().nullable().optional(),
+    /** 订单描述（`product_category` 字典码）与 采购负责人（人员 id + 冻结快照）——根单持有。 */
+    productCategory: z.string().nullable().optional(),
+    ownerUserId: z.string().uuid().nullable().optional(),
+    ownerSnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
     customerPartyId: z.string().uuid().nullable().optional(),
     customerSnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
     supplierId: z.string().uuid().nullable().optional(),
@@ -108,6 +112,9 @@ const listFields = [
   'status',
   'payment_status',
   'notes',
+  'product_category',
+  'owner_user_id',
+  'owner_snapshot',
   'customer_party_id',
   'customer_snapshot',
   'supplier_id',
@@ -276,6 +283,12 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       // `null` for rows written before the column existed — the UI shows “—”, never a guess.
       paymentStatus: (item.payment_status ?? null) as string | null,
       notes: (item.notes ?? null) as string | null,
+      // Root-owned identity of the deal: 订单描述 (a `product_category` dictionary code) and
+      // 采购负责人 (a user id plus the name it was frozen under). Both nullable for every row
+      // written before the columns existed — the UI shows “—”.
+      productCategory: (item.product_category ?? null) as string | null,
+      ownerUserId: (item.owner_user_id ?? null) as string | null,
+      ownerSnapshot: (item.owner_snapshot ?? null) as Record<string, unknown> | null,
       // Default customer/supplier: the id plus the name frozen at write time, so the form's pickers
       // can resolve a label and the child forms can prefill without a second read.
       customerPartyId: (item.customer_party_id ?? null) as string | null,

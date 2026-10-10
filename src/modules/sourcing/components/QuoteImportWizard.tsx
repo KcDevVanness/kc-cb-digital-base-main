@@ -14,6 +14,7 @@ import { Input } from '@open-mercato/ui/primitives/input'
 import { Switch } from '@open-mercato/ui/primitives/switch'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { useDialogKeyHandler } from '@open-mercato/ui/hooks/useDialogKeyHandler'
+import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { ColumnMappingTable } from './ColumnMappingTable'
 import { QuoteLinesGrid, buildLineDrafts, type LineDraftState } from './QuoteLinesGrid'
@@ -99,6 +100,9 @@ export function QuoteImportWizard({
   const [drafts, setDrafts] = React.useState<LineDraftState>({})
   const [promotions, setPromotions] = React.useState<string[]>([])
   const { runMutation } = useGuardedMutation({ contextId: 'sourcing-import' })
+  // Rebuilding the lines replaces what the review step holds, so it asks first when there is
+  // something to lose (owner 2026-10-10).
+  const { confirm, ConfirmDialogElement } = useConfirmDialog()
 
   const quoteStatusQuery = useQuery({
     queryKey: ['sourcing-quote-status', quoteId],
@@ -199,6 +203,21 @@ export function QuoteImportWizard({
 
   const handleRemap = React.useCallback(async () => {
     if (!quoteId) return
+    // A first mapping has nothing to lose and stays one click; a rebuild over lines already built
+    // (or edited) asks first — it replaces them from the sheet (owner 2026-10-10).
+    if (lines.length > 0) {
+      const confirmed = await confirm({
+        title: t('sourcing.wizard.remapConfirmTitle', 'Rebuild the lines?'),
+        description: t(
+          'sourcing.wizard.remapConfirmBody',
+          'The {count} lines built so far are replaced by the sheet\'s current mapping.',
+          { count: lines.length },
+        ),
+        confirmText: t('sourcing.wizard.remap', 'Rebuild'),
+        variant: 'destructive',
+      })
+      if (!confirmed) return
+    }
     setBusy('remap')
     try {
       const columnMap: Record<string, { sourceIndex: number; sourceHeader: string }> = {}
@@ -231,7 +250,7 @@ export function QuoteImportWizard({
     } finally {
       setBusy(null)
     }
-  }, [applyOutcome, columns, headerRowIndex, onReviewReady, profileName, quoteId, saveProfile, sheetName, t])
+  }, [applyOutcome, columns, confirm, headerRowIndex, lines.length, onReviewReady, profileName, quoteId, saveProfile, sheetName, t])
 
   const handleAiMapping = React.useCallback(async () => {
     if (!quoteId) return
@@ -444,6 +463,8 @@ export function QuoteImportWizard({
           </div>
         </div>
       ) : null}
+
+      {ConfirmDialogElement}
     </div>
   )
 }

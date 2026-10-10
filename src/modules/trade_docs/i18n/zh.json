@@ -574,5 +574,7 @@
   "trade_docs.form.sourceOrder.loadFailed": "来源订单的行读取失败，请手动补充",
   "trade_docs.form.sourceOrder.skipped": "{count} 行缺少商品引用，未复制",
   "trade_docs.form.sourceOrder.invalid": "来源订单参数无效，已按新建处理",
-  "trade_docs.form.sourceOrder.applied": "已按来源订单预填"
+  "trade_docs.form.sourceOrder.applied": "已按来源订单预填",
+  "trade_docs.contracts.attach.removeConfirm": "移除这份盖章扫描件吗？（文件仍留在附件库）",
+  "trade_docs.documents.attach.removeConfirm": "移除这个替换件吗？（文件仍留在附件库）"
 }
