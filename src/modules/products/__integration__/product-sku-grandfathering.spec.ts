@@ -138,5 +138,23 @@ test.describe.serial('products — legacy SKU grandfathering', () => {
     expect(legalChange.status()).toBe(200)
     const afterLegalChange = await readProduct()
     expect(afterLegalChange.sku).toBe(`${legalSku}-2`)
+
+    // 4. An **old code** a row was migrated away from still finds it: the list search unions
+    // `product_codes_aliases` (kind `product`) into its matches, which is the reason the alias table
+    // survived the cutover while the issuance flow was retired. The alias row itself is written by
+    // SQL here because nothing can create one any more — that is the state the table is in.
+    const retiredCode = `RETIRED-${stamp.toUpperCase()}`
+    await withClient(async (client) => {
+      await client.query(
+        `insert into product_codes_aliases (tenant_id, organization_id, alias_code, target_kind, target_id, note, created_at)
+         values ($1, $2, $3, 'product', $4, 'integration fixture', now())`,
+        [tenantId, hqOrgId, retiredCode, productId],
+      )
+    })
+    const byAlias = await staffRequest('GET', `${ITEMS_URL}?search=${encodeURIComponent(retiredCode)}&pageSize=5`)
+    expect(byAlias.status(), 'searching by the retired code answers').toBe(200)
+    const matches = (await readJsonSafe<{ items?: Array<{ id: string; sku: string }> }>(byAlias))?.items ?? []
+    expect(matches.map((entry) => entry.id)).toContain(productId)
+    expect(matches[0]?.sku, 'the hit is the current SKU, not the retired code').toBe(`${legalSku}-2`)
   })
 })

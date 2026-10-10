@@ -1096,6 +1096,25 @@ test.describe.serial('purchasing — supplier product library', () => {
     expect(relisted?.companyOfferPrice?.currencyCode).toBe('USD')
     expect(Number(relisted?.companyOfferPrice?.unitPrice)).toBe(21.5)
 
+    // A price set submitted as a whole replaces itself: the row a later submission drops is
+    // **closed**, not deleted (`ends_at` = now), so a document it once fed can still be explained.
+    // Catalog's price table has no soft-delete column, which is why the window is the mechanism.
+    const narrowed = await staffRequest('PUT', '/api/products/prices', {
+      productId,
+      rows: [{ tier: 'internal', currencyCode: 'USD', minQuantity: 1, unitPrice: '23.0000' }],
+    })
+    expect(narrowed.status(), `narrowing the price set answered ${await narrowed.text()}`).toBe(200)
+    const priceRows = await readJsonSafe<{
+      items?: Array<{ tier: string; currencyCode: string; unitPrice: string; endsAt: string | null; isActive: boolean }>
+    }>(await staffRequest('GET', `/api/products/prices?productId=${encodeURIComponent(String(productId))}`))
+    const closed = (priceRows?.items ?? []).find((row) => row.tier === 'purchase' && row.currencyCode === 'CNY')
+    const live = (priceRows?.items ?? []).find((row) => row.tier === 'internal' && row.currencyCode === 'USD')
+    expect(closed, 'the dropped row survives for the record').toBeTruthy()
+    expect(closed?.endsAt, 'the dropped row is closed with a window end').toBeTruthy()
+    expect(closed?.isActive, 'a closed row reads as inactive').toBe(false)
+    expect(live?.unitPrice, 'the submitted row carries the new price').toBe('23.0000')
+    expect(live?.endsAt, 'the submitted row stays open').toBeNull()
+
     // The discount is bounded and whole-numbered, and clearing it puts the printed price back in
     // charge of the net.
     for (const discountPercent of ['101', '-1', '5.12345', '3.75']) {

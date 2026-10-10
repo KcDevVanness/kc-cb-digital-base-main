@@ -955,6 +955,34 @@ export async function deleteStoreProduct(input: {
  * document it once fed, and it stops being an active price. Rows of other kinds (platform
  * promotions and the like) are untouched.
  */
+/**
+ * The variant a product's price rows hang on: its default one, else the first active variant.
+ *
+ * A product without any variant cannot carry a price set the platform can update — the write is
+ * refused with a message that names the repair instead of leaving a half-written set behind.
+ */
+async function resolvePriceVariantId(
+  em: EntityManager,
+  scope: StoreScope,
+  productId: string,
+): Promise<string> {
+  const byProduct = await loadVariantsByProduct(em, scope, [productId])
+  const rows = byProduct.get(productId) ?? []
+  const target =
+    rows.find((variant) => variant.isDefault && variant.isActive) ??
+    rows.find((variant) => variant.isDefault) ??
+    rows.find((variant) => variant.isActive) ??
+    rows[0]
+  if (!target) {
+    throw new CrudHttpError(422, {
+      error:
+        'This product has no variant, so its price set cannot be stored; add a sellable unit (variants) on the product first',
+      code: 'product_has_no_variant',
+    })
+  }
+  return target.id
+}
+
 export async function replaceStorePrices(input: {
   em: EntityManager
   ctx: CommandRuntimeContext
@@ -966,6 +994,17 @@ export async function replaceStorePrices(input: {
   const { em, ctx, scope, productId } = input
   const origin = input.origin ?? 'products:store-prices'
   const existing = await listStorePrices({ em, scope, productId })
+  /**
+   * Every row is written against the product's **default variant**.
+   *
+   * Catalog accepts a variant-less price row on create (it keeps `product_id`), but the platform's
+   * `catalog.prices.update` guard resolves a row's scope **through its variant**: with none, the
+   * organization it checks is empty and the command answers `403 Forbidden` (measured 2026-10-10 —
+   * which is why "a tier disappears → the row is closed" silently never worked, and a narrowing
+   * submission left a half-written set behind). The demo/installed data attaches prices to variants
+   * for the same reason, and stock receipt is variant-level anyway, so the price set belongs there.
+   */
+  const variantId = await resolvePriceVariantId(em, scope, productId)
 
   const kindIds = new Map<PriceTier, string>()
   const kindId = async (tier: PriceTier) => {
@@ -986,6 +1025,7 @@ export async function replaceStorePrices(input: {
       tenantId: scope.tenantId,
       organizationId: scope.organizationId,
       productId,
+      variantId,
       currencyCode: row.currencyCode,
       priceKindId,
       minQuantity,
@@ -1007,6 +1047,18 @@ export async function replaceStorePrices(input: {
   for (const price of existing) {
     if (!price.isActive) continue
     if (seen.has(`${price.tier}|${price.currencyCode}|${price.minQuantity}`)) continue
-    await runPeer(ctx, 'catalog.prices.update', { id: price.id, tenantId: scope.tenantId, organizationId: scope.organizationId, endsAt: now }, `${origin}:close`)
+    await runPeer(
+      ctx,
+      'catalog.prices.update',
+      {
+        id: price.id,
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        productId,
+        variantId,
+        endsAt: now,
+      },
+      `${origin}:close`,
+    )
   }
 }

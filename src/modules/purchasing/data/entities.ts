@@ -466,8 +466,8 @@ export class PurchasingPurchaseOrderDocument {
  * purchase order still freezes its own `unitPrice` (purchasing Q-P-004); nothing here pre-fills an
  * order line, so an order can never be placed at a stale stored price.
  *
- * `supplier_sku` is unique per supplier **including soft-deleted rows** (same rule as
- * `products_variants`): a supplier code is a stable business identity, so a deleted row keeps
+ * `supplier_sku` is unique per supplier **including soft-deleted rows** (same rule this module's
+ * supplier master uses): a supplier code is a stable business identity, so a deleted row keeps
  * owning its code until it is restored. Duplicate checks must therefore query soft-deleted rows
  * too, or the unique index turns a readable 409 into a 500.
  *

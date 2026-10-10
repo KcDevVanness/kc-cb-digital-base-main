@@ -108,41 +108,12 @@ const draftPosCommand: CommandHandler<Record<string, unknown>, Record<string, un
       if (sku) planRows.set(sku, row)
     }
 
-    const unmapped: Array<{ sku: string; reason: string }> = []
-    const lines: Array<Record<string, unknown>> = []
-
-    for (const requested of parsed.lines) {
-      const decision = decisions.get(requested.sku)
-      if (!decision || decision.status !== 'mapped' || !decision.product_id) {
-        unmapped.push({
-          sku: requested.sku,
-          reason: decision ? `sku map status is ${decision.status}` : 'the code has no mapping decision',
-        })
-        continue
-      }
-      const planRow = planRows.get(requested.sku)
-      if (!planRow) {
-        unmapped.push({ sku: requested.sku, reason: 'the RU plan has no row for this code' })
-        continue
-      }
-      const quantity = requested.quantity ?? readDecimal(planRow.recommended_qty) ?? '0'
-      if (!quantity || Number(quantity) <= 0) {
-        unmapped.push({ sku: requested.sku, reason: 'the RU plan recommends no quantity' })
-        continue
-      }
-
-      const ruCost = readAmount(planRow.unit_cost)
-      const sameCurrency = ruCost !== null && ruCost.currency === parsed.currencyCode
-      lines.push({
-        productId: decision.product_id,
-        quantity,
-        unitPrice: sameCurrency ? ruCost.amount : '0',
-        priceIncludesTax: true,
-        note: sameCurrency
-          ? `RU plan ${requested.sku}`
-          : `RU plan ${requested.sku}; RU unit cost ${ruCost ? `${ruCost.amount} ${ruCost.currency}` : 'not provided'} — set the price before placing`,
-      })
-    }
+    const { lines, unmapped } = buildDraftPosLines({
+      requested: parsed.lines,
+      decisions,
+      planRows,
+      currencyCode: parsed.currencyCode,
+    })
 
     if (unmapped.length > 0) {
       throw new CrudHttpError(422, {
@@ -180,6 +151,65 @@ const draftPosCommand: CommandHandler<Record<string, unknown>, Record<string, un
       lines: (result as { lines?: number }).lines ?? 0,
     },
   }),
+}
+
+export type DraftPosLineInput = { sku: string; quantity?: string }
+export type DraftPosPlanRowLookup = Map<string, Record<string, unknown>>
+
+/**
+ * The purchase-order lines a plan selection produces, and the codes that cannot be ordered yet.
+ *
+ * Pure on purpose: the peer contract is the part that breaks silently. `purchasing`'s line schema
+ * takes the product as **`catalogProductId`** (a product *is* the catalog product since the
+ * single-store cutover; the old `productId` key is refused with 400 "each line needs a product
+ * reference"), and this was the one caller still sending the old key — no spec covered it, so the
+ * cockpit's only write path would have failed at runtime. Exporting the builder keeps that key
+ * pinned by a unit test instead of by luck.
+ */
+export function buildDraftPosLines(input: {
+  requested: DraftPosLineInput[]
+  decisions: Map<string, SkuDecisionRow>
+  planRows: DraftPosPlanRowLookup
+  currencyCode: string
+}): { lines: Array<Record<string, unknown>>; unmapped: Array<{ sku: string; reason: string }> } {
+  const { requested, decisions, planRows, currencyCode } = input
+  const unmapped: Array<{ sku: string; reason: string }> = []
+  const lines: Array<Record<string, unknown>> = []
+
+  for (const row of requested) {
+    const decision = decisions.get(row.sku)
+    if (!decision || decision.status !== 'mapped' || !decision.product_id) {
+      unmapped.push({
+        sku: row.sku,
+        reason: decision ? `sku map status is ${decision.status}` : 'the code has no mapping decision',
+      })
+      continue
+    }
+    const planRow = planRows.get(row.sku)
+    if (!planRow) {
+      unmapped.push({ sku: row.sku, reason: 'the RU plan has no row for this code' })
+      continue
+    }
+    const quantity = row.quantity ?? readDecimal(planRow.recommended_qty) ?? '0'
+    if (!quantity || Number(quantity) <= 0) {
+      unmapped.push({ sku: row.sku, reason: 'the RU plan recommends no quantity' })
+      continue
+    }
+
+    const ruCost = readAmount(planRow.unit_cost)
+    const sameCurrency = ruCost !== null && ruCost.currency === currencyCode
+    lines.push({
+      catalogProductId: decision.product_id,
+      quantity,
+      unitPrice: sameCurrency ? ruCost.amount : '0',
+      priceIncludesTax: true,
+      note: sameCurrency
+        ? `RU plan ${row.sku}`
+        : `RU plan ${row.sku}; RU unit cost ${ruCost ? `${ruCost.amount} ${ruCost.currency}` : 'not provided'} — set the price before placing`,
+    })
+  }
+
+  return { lines, unmapped }
 }
 
 async function loadLatestPlan(

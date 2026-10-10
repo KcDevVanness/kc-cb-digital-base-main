@@ -79,7 +79,7 @@
 | 编号 | 需求 | 验收标准 |
 |---|---|---|
 | E-1 | 商品主数据单一存储（2026-10-10 改口径） | 商品身份/变体/价格/分类全部落在官方 `catalog`（`catalog_products` / `catalog_product_variants` / `catalog_product_variant_prices` / `catalog_product_categories`）；业务字段（中英名、品牌/系列/型号、申报要素、装箱、毛重净重、体积、尺寸、图片、认证、电池、备注、分发来源）走 `product_erp` 自定义字段集（`ce.ts` 声明 + `yarn mercato entities install`）；app 侧不再有商品表，自绘页面经 `products/lib/store.ts` 读写。详见 [`.ai/specs/2026-10-10-catalog-single-store.md`](../../.ai/specs/2026-10-10-catalog-single-store.md) |
-| E-2 | 三档价格 | 同一商品可同时存在 `purchase`/`internal`/`export` 三档（catalog price kind 同名）、各自币种与起订量、可选生效/失效窗口；整组提交，载荷里消失的行以 `ends_at` 关窗（价表无软删列） |
+| E-2 | 三档价格 | 同一商品可同时存在 `purchase`/`internal`/`export` 三档（catalog price kind 同名）、各自币种与起订量、可选生效/失效窗口；整组提交，载荷里消失的行以 `ends_at` 关窗（价表无软删列）；价行挂在商品的**默认启用变体**上（catalog 的 update guard 经变体解析行归属，缺变体的行会 403） |
 | E-3 | 购销合同 | `direction ∈ {purchase, sales}`；`draft→issued→signed→closed`，`cancel` 必填原因；单号 `PC/SC-<年>-<4位>` 组织内唯一；行存商品快照，商品改名不影响已出合同 |
 | E-4 | 统一金额口径 | 财务金额 = `HALF_UP(数量×单价, 2)`，绑定**已确认**发票行时取发票金额；合同金额 = `HALF_UP(数量×单价, 2)`；差额落合同头；金额与币种无关（恒 2 位）、单价恒 4 位；量化走 BigInt，**禁止 `toFixed`** |
 | E-5 | 发票与附件 | 进项/销项发票挂合同与合同行；`confirm` 后财务口径生效、`void` 回退；发票扫描件上传即归档，可下载（本期不解析） |

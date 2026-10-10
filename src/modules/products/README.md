@@ -42,6 +42,7 @@
 - **SKU 字符集 = catalog 的**（`^[A-Za-z0-9._\-]{1,64}$`，无 `/`）：SKU 同时写进 `catalog_products.sku` 与默认变体的 `sku`，两条 catalog 正则在写路径上拒绝斜杠。sourcing 的 Item No. 清洗把 `/` 换成 `-`（`P4117/1` → `P4117-1`），因为删掉斜杠会把两个不同货号并成一个。
 - **变体的 `name` / `barcode` 是「可选字符串」不是「可空字符串」**：catalog 的 schema 只收字符串（`null` → `invalid_type`），GTIN 细则又拒绝出现但为空的 `barcode`（`''`），所以载荷**只有非空才带这两个键**——留空 = 保持原值，清空在本平台契约下无法表达。`lib/store.ts` 的 `variantTextPayload` 是唯一实现。
 - **单位必须存在于 catalog 的 `unit` 字典**（见上节）。
+- **价行挂在商品的默认变体上**（`variantId` + `productId` 一起发）：catalog 的 `catalog.prices.create` 接受只有 `productId` 的行，但 `catalog.prices.update` 的 scope guard 是**经变体**解析这条行的组织归属的——没有变体时它拿到的组织是空的，命令答 403 `Forbidden`（2026-10-10 实测：于是「消失的行以 `ends_at` 关窗」这条口径从来没生效过，而且半写：本次 PUT 里别的行已经落库）。`lib/store.ts` 的 `resolvePriceVariantId` 是唯一实现（默认启用变体 → 默认变体 → 任意启用变体）；商品没有变体时 422 `product_has_no_variant`（附修法），不留半写。
 - **删除商品是硬删**：`catalog.products.delete` 直接移除行（连同变体与价格，`em.remove`），没有软删态——编码随之释放，可被重新建档；单据里的商品快照不受影响，指向它的供应商产品库行按「已关联的商品已删除」显示（`productDeleted`），再存档点「建商品档案」会重新建一个同码商品。要保留档案请用**停用**（`is_active`），那是列表与选择器的常规做法。
 - 同伴命令的 zod 失败会被 `summarizePeerFailure` 收成一句可读消息（`catalog rejected the write — barcode: …`），而不是把 issues 数组原样塞进表单错误条；单位不在名单里则答 422 `unit_not_in_catalog_dictionary`（附可执行的修法）。
 - 其他模块（`trade_docs`、`finance`、`ru_sync`、`purchasing`、`sourcing`）用它的读函数做跨模块投影——不要直接写 catalog 表。
