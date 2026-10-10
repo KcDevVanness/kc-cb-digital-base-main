@@ -130,7 +130,11 @@ export async function PUT(request: Request) {
   }
 }
 
-/** Delete a product (`?id=`); the catalog row is soft-deleted and its SKU stays occupied. */
+/**
+ * Delete a product (`?id=`): the catalog command removes the row together with its variants and
+ * prices, so the SKU is free again. Documents that already reference the product keep their frozen
+ * snapshots, and a supplier library row still pointing at it reads as 已关联的商品已删除.
+ */
 export async function DELETE(request: Request) {
   const resolved = await resolveProductRouteScope(request)
   if (!resolved.ok) return resolved.response

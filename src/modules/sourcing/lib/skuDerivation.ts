@@ -26,16 +26,26 @@ export type DerivedSku = {
   generated: boolean
 }
 
-const SKU_PATTERN = /^[A-Za-z0-9._\-/]{1,64}$/
+const SKU_PATTERN = /^[A-Za-z0-9._\-]{1,64}$/
 const MAX_SKU_LENGTH = 64
 const MAX_VARIANT_LENGTH = 20
 
-/** Keeps only the characters `catalog_products.sku` accepts; null when nothing usable is left. */
+/**
+ * Keeps only the characters `catalog_products.sku` accepts; null when nothing usable is left.
+ *
+ * A supplier Item No. may carry a slash (`P4117/1` is one code, not `P41171`), and catalog's SKU
+ * charset has none, so the slash becomes a dash instead of being dropped — dropping it would merge
+ * two different item numbers into one code, which the duplicate detector could not even report
+ * because nothing looks duplicated.
+ */
 export function sanitizeSkuCandidate(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null
   const trimmed = String(value).replace(/\s+/g, ' ').trim()
   if (trimmed.length === 0 || NULL_TOKENS[trimmed.toLowerCase()] === true) return null
-  const cleaned = trimmed.replace(/[^A-Za-z0-9._\-/]+/g, '').replace(/^[._\-/]+|[._\-/]+$/g, '')
+  const cleaned = trimmed
+    .replace(/\//g, '-')
+    .replace(/[^A-Za-z0-9._\-]+/g, '')
+    .replace(/^[._\-]+|[._\-]+$/g, '')
   if (cleaned.length === 0) return null
   return cleaned.slice(0, MAX_SKU_LENGTH)
 }

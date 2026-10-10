@@ -189,7 +189,7 @@ export default function ProductsTable() {
         title: t('products.items.actions.deleteConfirmTitle', 'Delete this product?'),
         description: t(
           'products.items.actions.deleteConfirmBody',
-          'The row is soft-deleted and its code stays reserved. Contracts and invoices that already reference it keep their own snapshot.',
+          'The catalog row, its variants and its prices are removed; the code becomes free again. Contracts, orders and invoices that already reference it keep their own frozen snapshot.',
         ),
         confirmText: t('products.items.actions.delete', 'Delete'),
         variant: 'destructive',

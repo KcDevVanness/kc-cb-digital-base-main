@@ -1,85 +1,24 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
-import type { Kysely } from 'kysely'
 import { listStorePrices, listStoreProducts, type StoreScope } from '../../products/lib/store'
 
 /**
  * Scoped product-store reads the purchasing surfaces need beyond the store's own API.
  *
  * The store (`../../products/lib/store.ts`) is the one place that knows the catalog's shape; the
- * reads here are the few shapes it does not expose as a batch or cannot answer at all:
+ * reads here are the few shapes it does not expose as a batch:
  *
  * - **batch labels** for a page of library rows (one store list instead of one read per row), and
- * - **batch tier prices** for the same page,
- * - a **liveness probe** that can tell a soft-deleted product from a missing one — the store filters
- *   soft-deleted rows out on purpose, but `catalog_products.sku` is unique *including* soft-deleted
- *   rows, so the SKU-ownership guard a promotion needs cannot come from the store's live read.
+ * - **batch tier prices** for the same page.
  *
  * Nothing here writes: product changes go through the store's commands.
- */
-
-type CatalogLivenessTables = {
-  catalog_products: {
-    id: string
-    sku: string | null
-    tenant_id: string
-    organization_id: string
-    deleted_at: Date | null
-  }
-}
-
-/** `getKysely()` is untyped at the platform boundary; the probes below supply the shape. */
-function catalogDb(em: EntityManager): Kysely<CatalogLivenessTables> {
-  return em.fork().getKysely() as unknown as Kysely<CatalogLivenessTables>
-}
-
-export type ProductLiveness = 'live' | 'deleted' | 'missing'
-
-/**
- * Whether a catalog product exists in the caller's scope, and whether it is soft-deleted.
  *
- * The store refuses to return a soft-deleted row, so it answers "not found" for both a deleted and
- * a missing product; the link/sync paths have to tell them apart because one is a 422 with a repair
- * ("restore it or re-link") and the other a 404.
+ * Two probes used to live here and both rested on a **soft-delete** premise that does not hold:
+ * `catalog.products.delete` (`@open-mercato/core/modules/catalog/commands/products.ts`) removes the
+ * row (`em.remove`), so a deleted product is `missing`, never a row with `deleted_at` set, and its
+ * SKU is free again. The store's own reads filter `deleted_at is null` anyway, which is why a
+ * product that no longer exists answers a plain 404 instead of a repair instruction (measured
+ * 2026-10-10; the integration specs were rewritten to the hard-delete reality).
  */
-export async function loadProductLiveness(
-  em: EntityManager,
-  scope: StoreScope,
-  id: string,
-): Promise<ProductLiveness> {
-  const row = await catalogDb(em)
-    .selectFrom('catalog_products')
-    .select(['id', 'deleted_at'])
-    .where('id', '=', id)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', '=', scope.organizationId)
-    .executeTakeFirst()
-  if (!row) return 'missing'
-  return row.deleted_at ? 'deleted' : 'live'
-}
-
-/**
- * The id of the soft-deleted catalog product that owns a SKU, when one does.
- *
- * `catalog_products_sku_scope_unique` includes soft-deleted rows, so a promotion that matched only
- * live products would try to create a second row with an occupied SKU and fail on the unique index
- * with an unreadable error. This probe turns that into the explicit `sku_belongs_to_deleted_product`
- * refusal.
- */
-export async function findDeletedProductIdBySku(
-  em: EntityManager,
-  scope: StoreScope,
-  sku: string,
-): Promise<string | null> {
-  const row = await catalogDb(em)
-    .selectFrom('catalog_products')
-    .select(['id'])
-    .where('sku', '=', sku)
-    .where('tenant_id', '=', scope.tenantId)
-    .where('organization_id', '=', scope.organizationId)
-    .where('deleted_at', 'is not', null)
-    .executeTakeFirst()
-  return row ? String(row.id) : null
-}
 
 /**
  * Display labels for the catalog products a supplier library row points at.

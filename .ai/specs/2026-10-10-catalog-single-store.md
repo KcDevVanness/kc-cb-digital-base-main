@@ -6,11 +6,15 @@
 > - **单位是写路径闸门**（正文只把单位列为字段）：商品的单位就是 catalog 的 `default_unit`，而 catalog 的解析器只认自己 `unit` 字典里的码、并存字典条目的 `value`——首次集成跑测出 19 个用例在 `POST /api/products/items` 上 400 `uom.unit_not_found`。修法是词表并入而非并行：`products/lib/unitVocabulary.ts` 定义 11 个码，`products/setup.ts` 幂等把 catalog 缺的 `PCS`/`CTN`/`BAG` 补进 `unit` 字典，`set`/`pair`/`box`/`roll`/`kg`/`g`/`m`/`l` 沿用 catalog 的小写拼写（改拼写会让已存商品的下一次写失败，或造出 normalized key 冲突）。播种从 `purchasing/setup.ts` 移到 `products/setup.ts`；规则沉淀见 `.ai/lessons/unit-pickers-read-the-app-unit-dictionary.md`。
 > - **分发副本保留 provenance**：`custom_field_values` 的 `cf_source_product_id` 记录来源商品（正文未提），`products.items.distribute` 写入。
 > - **价格档的"消失行"以 `ends_at` 关窗**（Q8 的落地形态），不是删除。
+> - **SKU 字符集对齐 catalog**（`^[A-Za-z0-9._\-]{1,64}$`）：SKU 同时写 `catalog_products.sku` 与默认变体 `sku`，catalog 两条正则不收 `/`，故 app 的 `SKU_PATTERN` 去掉斜杠（sourcing 的 Item No. 清洗把 `/` 换成 `-`，避免两个货号并成一个）。
+> - **变体 `name`/`barcode` 只发非空值**：catalog 的 schema 是 optional-string（`null` 报 `invalid_type`，`''` 被 GTIN 细则拒），留空即保持原值；实现见 `lib/store.ts` 的 `variantTextPayload`，同伴命令的校验失败由 `summarizePeerFailure` 收成一句可读消息。
+> - **catalog 的删除是硬删**：`catalog.products.delete` 移除行（连变体与价格），没有软删占码——REQ-006 / 字段表 / 安全段 / TEST-007 / AC-006 等处的「含软删占码」已按此改正；指向已删商品的链接读作「已关联的商品已删除」，重新建档即得同码新商品。`purchasing`/`sourcing` 里两条「SKU 属于已软删商品」的探测与 422 分支随之删除（它们的前提不成立）。删除商品请优先用**停用**。
+> - **采购单行的引用键是 `catalogProductId`**（`supplierProductId` 为另一选项）：集成 spec 原先发 `productId`，已随本轮改名。
 
 > 本规格取代 / 修订：`.ai/specs/2026-09-22-products-and-trade-docs.md`（自建主数据的决定）、
 > `.ai/specs/2026-09-22-product-variants.md`（变体归属 + 推迟的 wms round）、
 > `.ai/specs/2026-09-23-product-taxonomy-consolidation.md`（分类法收敛）、
-> `.ai/specs/2026-09-24-supplier-product-code-rules.md` + `2026-09-24-supplier-code-issuance.md`（编码规则 → 停用待重做）、
+> `.ai/specs/2026-09-24-supplier-product-code-rules.md`（商品编码规则 → 停用待重做；**注意**：`2026-09-24-supplier-code-issuance.md` 的供应商编号 `SUP-####` 不受影响，仍在 `purchasing/commands/suppliers.ts` 里发号）、
 > `.ai/specs/2026-09-22-supplier-product-library.md`（关联章节）、
 > `.ai/specs/2026-09-28-product-distribution-to-branches.md`（分发 → 在 catalog 上重造）。
 > `src/modules/products/README.md` 记载的「官方链切到本模块」计划作废（方向相反）。
@@ -48,7 +52,7 @@ UI 两套全部自绘：供应商产品库保持现版式，自有商品库按�
 - **REQ-003** — 供应商侧「建商品档案」= 一次动作产生 catalog 商品 + 默认启用变体（按 SKU 幂等），回填 `catalog_product_id`；不写官方代码，只经 catalog 命令/API。
 - **REQ-004** — 自有商品建档 = 自绘页面写 catalog（商品 + 变体 + 价格 + 分类 + 自定义字段），与 REQ-003 共用同一段写入。
 - **REQ-005** — 三档价落 catalog：`catalog_price_kinds`（purchase / internal / export，tenant 级码表）× 币种 × `min_quantity`/`max_quantity`，挂商品级；整组替换（消失的行停用不删）；**不保留有效期窗口**。
-- **REQ-006** — SKU 全部手填：唯一性 = 组织内唯一（含软删占码）；保留 `product_codes_aliases` 旧码别名（单据上的旧码可搜到）；发号规则表、发号台账、`product_brand` 码表、生成/拆解 API、编码面板全部删除；品牌改自由文本。
+- **REQ-006** — SKU 全部手填：唯一性 = 组织内唯一（catalog 的删除是硬删，删除即释放编码）；保留 `product_codes_aliases` 旧码别名（单据上的旧码可搜到）；发号规则表、发号台账、`product_brand` 码表、生成/拆解 API、编码面板全部删除；品牌改自由文本。
 - **REQ-007** — 单据引用商品统一为 catalog 商品 id + 冻结快照（采购行、发运分摊、销售行、合同/发票行、装箱单行）；改名/删除不改历史。
 - **REQ-008** — 发运分摊与收货的变体解析直读 catalog（去掉经 `products_products` 的一跳）；无变体仍 422，报错文案指向新路径。
 - **REQ-009** — `ru_sync` SKU 映射 `map_status='mapped'` 的断言目标改 `catalog_products`；草稿采购单按映射生成（`productId` = catalog 商品 id）。
@@ -94,7 +98,7 @@ UI 两套全部自绘：供应商产品库保持现版式，自有商品库按�
 | 供应商货品 | 某供应商卖的一件货：供应商 × 货号，候选期即存在 | `purchasing_supplier_products` | 货号重复（含软删）→ 409 |
 | 建档 | 供应商行 → catalog 商品 + 默认变体 + 指针；幂等（已建档 skipped） | 本规格 REQ-003 | 失败逐行隔离，可重试 |
 | 三档价 | purchase / internal / export，各含币种与起订量台阶；整组替换、消失即停用 | catalog 价格 + price kinds | 币种不在字典 → 400 |
-| SKU | 我方编码，组织内唯一、含软删永久占用；手填；旧码登记别名 | catalog 商品/变体的 `sku` + `product_codes_aliases` | 重复 → 409；改码后旧码仍可搜 |
+| SKU | 我方编码，组织内唯一；手填；旧码登记别名 | catalog 商品/变体的 `sku` + `product_codes_aliases` | 重复 → 409；改码后旧码仍可搜；删除商品释放编码 |
 | 订单为根 | 公司订单是唯一订单入口；三类子单关联式挂载；下游按子单并集只读 | `order_hub`（已交付） | 旧 URL 经关联表解析，解析不到显示未关联 |
 | 快照 | 单据引用商品存 id + 冻结快照，改名不改历史 | 各单据模块 | — |
 
@@ -147,7 +151,7 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 1. 采购员在产品库编辑行（供应商方向字段），点「建商品档案」。
 2. 系统在 catalog 建商品（sku = 我方 SKU、中英名、单位）+ 默认启用变体，回填指针；价格档写 purchase（折后价）。
 3. 采购单行选择该行 → 保存草稿解析出 catalog 商品与变体（快照冻结）→ 下单。
-4. 失败：SKU 被软删商品占用 → 409/422 可读文案；catalog 写入失败逐行隔离、可重试，不留半写。
+4. 失败：SKU 已被活商品占用 → 409 可读文案；catalog 写入失败逐行隔离、可重试，不留半写。
 
 ### Journey J-002 — 自有商品建档并分发
 
@@ -230,7 +234,7 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 - **Authorization:** 页面/API 闸门用 app feature（REQ-013）；catalog 命令自身的校验照旧；不新增角色名判断。
 - **Tenant isolation:** 所有读写沿用会话作用域；跨组织读取 404、越界写 403 且零写入（沿用现有测试口径）。
 - **Sensitive data:** 无新增 PII；供应商银行等既有加密面不动。
-- **Abuse and failure modes:** SKU 唯一性（含软删）；重复建档幂等；catalog 写入失败不留半写（先建商品再建变体，失败补偿/重试可读）。
+- **Abuse and failure modes:** SKU 唯一性（活行内）；重复建档幂等；catalog 写入失败不留半写（先建商品再建变体，失败补偿/重试可读）。
 
 ## Integration Coverage
 
@@ -242,7 +246,7 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 | TEST-004 | security | 两个组织 + 缺权限角色 | 跨组织读写、无 feature 调用 | 404/403 且零写入 | REQ-013 |
 | TEST-005 | UI | 自有商品页 | 新建/编辑/冲突/窄屏/暗色/键盘 | 白名单字段齐全、官方字段不可见 | REQ-012 |
 | TEST-006 | integration | 两个组织 | 分发（catalog 副本） | 副本 + 变体 + 来源标记；幂等；价格仅首次复制 | REQ-011 |
-| TEST-007 | integration | 历史旧码 + 手填 SKU | 搜索、唯一性 | 旧码命中；重复 409；软删占码 | REQ-006 |
+| TEST-007 | integration | 历史旧码 + 手填 SKU | 搜索、唯一性 | 旧码命中；重复 409；删除后编码可复用 | REQ-006 |
 
 ## Implementation Phases
 
@@ -336,7 +340,7 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 - [ ] **AC-003** — 建档一次产生 catalog 商品 + 默认启用变体；重复建档 skipped。
 - [ ] **AC-004** — 自有商品建档写出 catalog 商品/变体/价格/分类/自定义字段。
 - [ ] **AC-005** — 三档价 = price kind × 币种 × 起订量；整组替换、消失停用。
-- [ ] **AC-006** — 手填 SKU 组织内唯一（含软删）；旧码可搜。
+- [ ] **AC-006** — 手填 SKU 组织内唯一（活行）；旧码可搜。
 - [ ] **AC-007** — 单据引用 = catalog id + 快照；改名不改历史。
 - [ ] **AC-008** — 发运/收货直读 catalog 变体；无变体 422。
 - [ ] **AC-009** — RU 映射指向 catalog 商品；草稿采购单按映射生成。

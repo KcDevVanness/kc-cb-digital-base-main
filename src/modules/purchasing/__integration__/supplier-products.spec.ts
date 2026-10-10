@@ -712,7 +712,9 @@ test.describe.serial('purchasing — supplier product library', () => {
     expect(foreign.status(), `linking a product of the child organization answered ${JSON.stringify(foreignBody)}`).toBe(404)
     expect(foreignBody?.code).toBe('product_not_found')
 
-    // A soft-deleted target is refused too, and nothing is written.
+    // A deleted target is refused too, and nothing is written. Catalog's `products.delete` removes
+    // the row rather than flagging it, so a vanished target and one outside the scope answer the
+    // same 404 — there is no "deleted but present" state to report.
     const doomedTarget = await staffRequest('POST', '/api/products/items', {
       sku: `${supplierCode}-LINK-DELETED`,
       name: `Deleted link target ${stamp}`,
@@ -721,12 +723,12 @@ test.describe.serial('purchasing — supplier product library', () => {
     const doomedTargetId = String((await readJsonSafe<{ id?: string }>(doomedTarget))?.id ?? '')
     expect(doomedTarget.status(), 'the doomed link target exists').toBe(201)
     const removeDoomed = await staffRequest('DELETE', `/api/products/items?id=${encodeURIComponent(doomedTargetId)}`)
-    expect(removeDoomed.status(), 'DELETE /api/products/items soft-deletes the product').toBe(200)
+    expect(removeDoomed.status(), 'DELETE /api/products/items removes the product').toBe(200)
 
     const toDeleted = await staffRequest('POST', `${LIBRARY_URL}/link`, { id: rowId, productId: doomedTargetId })
     const toDeletedBody = await readJsonSafe<{ code?: string }>(toDeleted)
-    expect(toDeleted.status(), `linking a deleted product answered ${JSON.stringify(toDeletedBody)}`).toBe(422)
-    expect(toDeletedBody?.code).toBe('product_deleted')
+    expect(toDeleted.status(), `linking a deleted product answered ${JSON.stringify(toDeletedBody)}`).toBe(404)
+    expect(toDeletedBody?.code).toBe('product_not_found')
     const stillCleared = await staffRequest('GET', `${LIBRARY_URL}?ids=${encodeURIComponent(rowId)}`)
     expect(
       (await readJsonSafe<ListResponse<LibraryItem>>(stillCleared))?.items?.[0]?.catalogProductId,
@@ -745,7 +747,7 @@ test.describe.serial('purchasing — supplier product library', () => {
     const linkVanishing = await staffRequest('POST', `${LIBRARY_URL}/link`, { id: rowId, productId: vanishingTargetId })
     expect(linkVanishing.status(), 'a live product links').toBe(200)
     const removeVanishing = await staffRequest('DELETE', `/api/products/items?id=${encodeURIComponent(vanishingTargetId)}`)
-    expect(removeVanishing.status(), 'the linked product is soft-deleted afterwards').toBe(200)
+    expect(removeVanishing.status(), 'the linked product is deleted afterwards').toBe(200)
 
     const orphaned = await staffRequest('GET', `${LIBRARY_URL}?ids=${encodeURIComponent(rowId)}`)
     const orphanedRow = (await readJsonSafe<ListResponse<LibraryItem & { productDeleted?: boolean }>>(orphaned))?.items?.[0]
@@ -906,10 +908,10 @@ test.describe.serial('purchasing — supplier product library', () => {
   test('Phase 8 — promote-batch isolates one row’s failure, collapses duplicates and refuses an empty payload (TEST-SPL-011)', async () => {
     const batchNewSku = `${supplierCode}-BATCH-NEW`
     const batchExistingSku = `${supplierCode}-BATCH-EXISTING`
-    const batchDeletedSku = `${supplierCode}-BATCH-DELETED`
+    const batchBadUnitSku = `${supplierCode}-BATCH-BAD-UNIT`
 
-    const createRow = async (supplierSku: string, name: string) => {
-      const created = await staffRequest('POST', LIBRARY_URL, { supplierId, supplierSku, name, unit: 'PCS' })
+    const createRow = async (supplierSku: string, name: string, unit = 'PCS') => {
+      const created = await staffRequest('POST', LIBRARY_URL, { supplierId, supplierSku, name, unit })
       const body = await readJsonSafe<{ id?: string }>(created)
       expect(created.status(), `POST ${LIBRARY_URL} for ${supplierSku} answered ${JSON.stringify(body)}`).toBe(201)
       return String(body?.id ?? '')
@@ -917,8 +919,12 @@ test.describe.serial('purchasing — supplier product library', () => {
 
     const rowNew = await createRow(batchNewSku, 'Batch item (new SKU)')
     const rowExisting = await createRow(batchExistingSku, 'Batch item (existing SKU)')
-    const rowDeleted = await createRow(batchDeletedSku, 'Batch item (deleted SKU)')
-    expect(rowNew && rowExisting && rowDeleted, 'the three batch rows exist').toBeTruthy()
+    // The failing row carries a unit no catalog write accepts (`ROLLL` is a typo for `roll`): the
+    // library stores any code, catalog resolves it against its own unit list, and the batch has to
+    // report that row alone. A deleted-product SKU is no longer a reachable failure — catalog's
+    // delete removes the row, so the SKU is free and the promotion simply creates the product.
+    const rowBadUnit = await createRow(batchBadUnitSku, 'Batch item (unknown unit)', 'ROLLL')
+    expect(rowNew && rowExisting && rowBadUnit, 'the three batch rows exist').toBeTruthy()
 
     // The second row's SKU already exists as a live product, but under a different name, so the
     // promotion has something to write (`updated`) instead of nothing (`skipped`).
@@ -932,18 +938,6 @@ test.describe.serial('purchasing — supplier product library', () => {
     const existingProductId = String(existingProductBody?.id ?? '')
     expect(existingProductId, 'the row’s SKU is already owned by a product').toBeTruthy()
 
-    // The third row's SKU is owned by a product that is already soft-deleted: the promotion must
-    // refuse it alone instead of reviving the deleted row.
-    const deletedProduct = await staffRequest('POST', '/api/products/items', {
-      sku: batchDeletedSku,
-      name: `Deleted master name ${stamp}`,
-      unit: 'PCS',
-    })
-    const deletedProductBody = await readJsonSafe<{ id?: string }>(deletedProduct)
-    expect(deletedProduct.status(), `the deleted product answered ${JSON.stringify(deletedProductBody)}`).toBe(201)
-    const deletedProductId = String(deletedProductBody?.id ?? '')
-    const removeDeletedProduct = await staffRequest('DELETE', `/api/products/items?id=${encodeURIComponent(deletedProductId)}`)
-    expect(removeDeletedProduct.status(), 'the third row’s SKU belongs to a soft-deleted product').toBe(200)
 
     const productCount = async () => {
       const list = await staffRequest('GET', `/api/products/items?pageSize=1&search=${encodeURIComponent(supplierCode)}`)
@@ -959,20 +953,20 @@ test.describe.serial('purchasing — supplier product library', () => {
       failed?: Array<{ id: string; code: string; message: string }>
     }
     const batch = await staffRequest('POST', `${LIBRARY_URL}/promote-batch`, {
-      ids: [rowNew, rowExisting, rowDeleted],
+      ids: [rowNew, rowExisting, rowBadUnit],
     })
     const batchBody = await readJsonSafe<BatchResult>(batch)
     expect(batch.status(), `POST ${LIBRARY_URL}/promote-batch answered ${JSON.stringify(batchBody)}`).toBe(200)
     expect(batchBody?.created, 'the row whose SKU is unknown creates a product').toBe(1)
     expect(batchBody?.updated, 'the row whose SKU already existed updates that product').toBe(1)
     expect(batchBody?.skipped).toBe(0)
-    expect(batchBody?.failed?.length, 'only the row owned by a deleted product fails').toBe(1)
-    expect(batchBody?.failed?.[0]?.id).toBe(rowDeleted)
-    expect(batchBody?.failed?.[0]?.code, 'the failure names the deleted-SKU rule').toBe('sku_belongs_to_deleted_product')
+    expect(batchBody?.failed?.length, 'only the row with the unknown unit fails').toBe(1)
+    expect(batchBody?.failed?.[0]?.id).toBe(rowBadUnit)
+    expect(batchBody?.failed?.[0]?.code, 'the failure names the unit gate').toBe('unit_not_in_catalog_dictionary')
 
     const batchRows = await staffRequest(
       'GET',
-      `${LIBRARY_URL}?ids=${encodeURIComponent([rowNew, rowExisting, rowDeleted].join(','))}`,
+      `${LIBRARY_URL}?ids=${encodeURIComponent([rowNew, rowExisting, rowBadUnit].join(','))}`,
     )
     const batchItems = (await readJsonSafe<ListResponse<LibraryItem>>(batchRows))?.items ?? []
     expect(
@@ -984,7 +978,7 @@ test.describe.serial('purchasing — supplier product library', () => {
       'the existing product is reused, not duplicated',
     ).toBe(existingProductId)
     expect(
-      batchItems.find((entry) => entry.id === rowDeleted)?.catalogProductId,
+      batchItems.find((entry) => entry.id === rowBadUnit)?.catalogProductId,
       'the failed row is left untouched',
     ).toBeNull()
     const afterBatch = await productCount()
@@ -992,7 +986,7 @@ test.describe.serial('purchasing — supplier product library', () => {
 
     // Re-running is idempotent for the two that landed, and repeats the same failure.
     const repeat = await staffRequest('POST', `${LIBRARY_URL}/promote-batch`, {
-      ids: [rowNew, rowExisting, rowDeleted],
+      ids: [rowNew, rowExisting, rowBadUnit],
     })
     const repeatBody = await readJsonSafe<BatchResult>(repeat)
     expect(repeat.status()).toBe(200)
@@ -1001,8 +995,8 @@ test.describe.serial('purchasing — supplier product library', () => {
       (repeatBody?.updated ?? 0) + (repeatBody?.skipped ?? 0),
       'both linked rows are already done, reported as skipped or updated',
     ).toBe(2)
-    expect(repeatBody?.failed?.length, 'the deleted-SKU failure repeats').toBe(1)
-    expect(repeatBody?.failed?.[0]?.code).toBe('sku_belongs_to_deleted_product')
+    expect(repeatBody?.failed?.length, 'the unit failure repeats').toBe(1)
+    expect(repeatBody?.failed?.[0]?.code).toBe('unit_not_in_catalog_dictionary')
     expect(await productCount(), 'a repeated batch creates no product').toBe(afterBatch)
 
     // Duplicate ids collapse to their first occurrence: the counts describe distinct rows.

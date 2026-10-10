@@ -20,7 +20,6 @@ import { PRICE_SCALE, toScaledUnits } from '../../trade_docs/lib/money'
 import { PurchasingSupplierProduct } from '../data/entities'
 import { supplierProductCrudEvents, supplierProductCrudIndexer, type PurchasingScope } from '../commands/shared'
 import { storeDimensionsFromRecord, supplierProductToProductFields } from './productMapping'
-import { findDeletedProductIdBySku, loadProductLiveness } from './productsReads'
 import { findLatestQuotedPrice } from './quoteLineReads'
 import { netUnitPrice } from './priceKinds'
 import { findBasePriceOfItem } from './supplierProductPrices'
@@ -37,7 +36,8 @@ import { findBasePriceOfItem } from './supplierProductPrices'
  * 1. **Idempotent** — a row that already carries `catalog_product_id` reports `skipped` and writes
  *    nothing.
  * 2. **Matching is by SKU, not by name** — a fuzzy match would silently merge two supplier items
- *    into one product; a SKU owned by a soft-deleted product is refused explicitly.
+ *    into one product, so the code decides; a SKU another library row already owns is refused
+ *    (`sku_owned_by_another_supplier_product`) instead of overwriting that supplier's data.
  * 3. **Non-destructive** — only non-empty, changed values reach the store's update, and the price
  *    write submits the product's whole three-tier set so the `internal`/`export` tiers survive.
  *
@@ -257,21 +257,11 @@ export async function applySupplierProductToMaster(input: {
   product: PurchasingSupplierProduct
   productId: string
 }): Promise<SupplierProductMasterWriteResult> {
-  const liveness = await loadProductLiveness(input.em, input.scope, input.productId)
-  if (liveness === 'missing') {
-    throw new CrudHttpError(404, {
-      error: `Linked product not found in this organization: ${input.productId}`,
-      code: 'product_not_found',
-    })
-  }
-  if (liveness === 'deleted') {
-    throw new CrudHttpError(422, {
-      error: 'The linked product is deleted; re-link this row (换绑) or clear the link first',
-      code: 'product_deleted',
-    })
-  }
   const existing = await getStoreProduct({ em: input.em, scope: input.scope, id: input.productId })
   if (!existing) {
+    // A stored link whose product no longer exists: catalog's delete removes the row, so this is the
+    // only state a vanished target can be in (see `productsReads.ts`), and the list flags the row as
+    // 已关联的商品已删除.
     throw new CrudHttpError(404, {
       error: `Linked product not found in this organization: ${input.productId}`,
       code: 'product_not_found',
@@ -316,17 +306,6 @@ export async function promoteSupplierProduct(input: {
 
   const fields = supplierProductToProductFields(product)
   const existing = await findStoreProductBySku({ em: input.em, scope, sku: product.supplierSku })
-  if (!existing) {
-    // The store reads live rows only, but `catalog_products.sku` is unique *including* soft-deleted
-    // rows, so a deleted owner has to be named here or the create would fail on the unique index.
-    const deletedId = await findDeletedProductIdBySku(input.em, scope, product.supplierSku)
-    if (deletedId) {
-      throw new CrudHttpError(422, {
-        error: `SKU ${product.supplierSku} belongs to a deleted product; restore it or change the supplier code to promote this item`,
-        code: 'sku_belongs_to_deleted_product',
-      })
-    }
-  }
   if (existing) {
     // One catalog SKU, one supplier row. When another live row already owns this product, writing
     // this row's values onto it would replace that supplier's data (name, spec, packaging) with a

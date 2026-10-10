@@ -230,11 +230,19 @@ const updateProductCommand: CommandHandler<Record<string, unknown>, StoreProduct
     // The schema no longer carries the charset rule (a legacy SKU must stay editable), so it is
     // enforced here — but only for a value that actually changes. An unchanged SKU is not
     // re-validated at all: it is already stored, and refusing it would make the whole row uneditable.
-    if (parsed.sku !== undefined && parsed.sku !== current.sku) {
-      if (!SKU_PATTERN.test(parsed.sku)) {
-        throw badRequest('sku must be letters, digits, dot, dash, slash or underscore')
+    //
+    // The rule has to reach **the catalog write payload** too, and that is why the SKU is dropped
+    // from it below when it did not change: `catalog/data/validators.ts` applies its own charset
+    // regex to the `sku` of both the product and its variants, so sending a legacy SKU that a
+    // migration wrote into `catalog_products.sku` back to the peer command would refuse the whole
+    // update with a 422 (measured 2026-10-10, TEST-PC-007's step 1). An absent key leaves the column
+    // alone — `nativeProductPayload` only emits the fields it receives.
+    const skuChanged = parsed.sku !== undefined && parsed.sku !== current.sku
+    if (skuChanged) {
+      if (!SKU_PATTERN.test(parsed.sku as string)) {
+        throw badRequest('sku must be letters, digits, dot, dash or underscore')
       }
-      const holder = await findStoreProductBySku({ em, scope, sku: parsed.sku })
+      const holder = await findStoreProductBySku({ em, scope, sku: parsed.sku as string })
       if (holder) throw conflict('A product with this SKU already exists in this organization')
     }
 
@@ -243,6 +251,9 @@ const updateProductCommand: CommandHandler<Record<string, unknown>, StoreProduct
       assertVariantPayloadRows(variantRows)
       assertVariantIdsBelongToProduct(variantRows, current)
     }
+
+    const storeInput: Partial<StoreProductInput> = toStoreInput(parsed, current)
+    if (!skuChanged) delete storeInput.sku
 
     await updateStoreProduct({
       em,

@@ -110,7 +110,7 @@ export default function VariantsEditor({ values, setValue, errors }: CrudFormGro
           <p className="max-w-prose text-xs text-muted-foreground">
             {t(
               'products.variants.description',
-              'The sellable units of this product. A code is unique inside the organization (soft-deleted SKUs keep theirs) and the default variant is what a stock receipt books against when nothing more specific is chosen.',
+              'The sellable units of this product. A code is unique inside the organization; deleting the product removes its variants with it. The default variant is what a stock receipt books against when nothing more specific is chosen.',
             )}
           </p>
         </div>

@@ -49,7 +49,7 @@ export const openApi: OpenApiRouteDoc = {
     POST: {
       summary: 'Link a supplier product to an existing catalog product',
       description:
-        'Points the library row at a catalog product that already exists (关联已有商品), re-points it (换绑), or clears the link with `productId: null` (解除关联). Writes only `catalog_product_id`: the catalog product’s fields and prices are never touched. The target’s scope and liveness are re-checked inside the transaction that performs the write, so a product deleted between the picker’s read and the write is refused (422 `product_deleted`) with nothing written; a product outside the caller’s organization is a 404.',
+        'Points the library row at a catalog product that already exists (关联已有商品), re-points it (换绑), or clears the link with `productId: null` (解除关联). Writes only `catalog_product_id`: the catalog product’s fields and prices are never touched. The target’s scope and existence are re-checked inside the transaction that performs the write, so a product deleted between the picker’s read and the write is refused (404 `product_not_found`) with nothing written — catalog’s delete removes the row, so a vanished target and one outside the caller’s organization answer the same way.',
       requestBody: { schema: supplierProductLinkSchema },
       responses: [{ status: 200, description: 'Link written', schema: linkResponseSchema }],
       errors: [...purchasingCommandErrors],

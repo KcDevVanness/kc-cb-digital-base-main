@@ -209,7 +209,7 @@ test.describe.serial('order_hub — company order fields', () => {
       supplierId,
       currencyCode: 'CNY',
       depositAmount: '10.00',
-      lines: [{ productId, quantity: 3, unitPrice: 12, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 3, unitPrice: 12, taxRate: 0, priceIncludesTax: true }],
     })
     expect(purchaseOrder.status(), await purchaseOrder.text()).toBe(201)
     purchaseOrderId = String((await readJsonSafe<IdPayload>(purchaseOrder))?.id ?? '')

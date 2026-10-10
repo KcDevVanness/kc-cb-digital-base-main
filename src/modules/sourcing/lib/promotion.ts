@@ -16,7 +16,6 @@ import {
 } from '../../products/lib/store'
 import { SourcingQuote, SourcingQuoteLine } from '../data/entities'
 import { desiredPriceRow, quoteLineToProductFields } from './productMapping'
-import { findDeletedProductIdBySku } from './productsReads'
 
 /**
  * Promotes quotation lines into the product store.
@@ -104,10 +103,6 @@ export async function promoteQuoteLines(input: {
       let priceId: string | null = null
 
       if (!existing) {
-        const deletedProductId = await findDeletedProductIdBySku(em, input.scope, line.derivedSku)
-        if (deletedProductId) {
-          throw new Error(`SKU ${line.derivedSku} belongs to a deleted product; rename the line's SKU to promote it`)
-        }
         if (!fields.name) throw new Error('Line has no product name')
         const created = await createStoreProduct({
           em,

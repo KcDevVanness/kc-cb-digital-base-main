@@ -10,8 +10,8 @@ import type { PurchasingScope } from '../commands/shared'
  * the database cannot enforce that the target exists, is live, and belongs to the caller's scope.
  * It is enforced here instead, **inside the transaction that performs the write**, and the catalog
  * product row is locked (`for update`) while it happens: whichever statement runs second waits for
- * the other to commit and then reads the committed state, so a product soft-deleted between the
- * picker's read and the write is a refusal with nothing written rather than a dangling link.
+ * the other to commit and then reads the committed state, so a product deleted between the picker's
+ * read and the write is a refusal with nothing written rather than a dangling link.
  *
  * The library row is updated with raw Kysely inside that same transaction because the check and the
  * write have to share a connection; the command emits the row's CRUD side effects afterwards, from
@@ -21,7 +21,6 @@ import type { PurchasingScope } from '../commands/shared'
 type LinkTables = {
   catalog_products: {
     id: string
-    deleted_at: Date | null
     tenant_id: string
     organization_id: string
   }
@@ -51,22 +50,18 @@ export async function writeSupplierProductLink(input: {
     if (productId) {
       const product = await db
         .selectFrom('catalog_products')
-        .select(['id', 'deleted_at'])
+        .select(['id'])
         .where('id', '=', productId)
         .where('tenant_id', '=', scope.tenantId)
         .where('organization_id', '=', scope.organizationId)
         .forUpdate()
         .executeTakeFirst()
       if (!product) {
+        // Missing, in another organization, or already deleted: catalog's delete removes the row,
+        // so there is no "deleted but present" state to report separately.
         throw new CrudHttpError(404, {
           error: `Product not found in this organization: ${productId}`,
           code: 'product_not_found',
-        })
-      }
-      if (product.deleted_at) {
-        throw new CrudHttpError(422, {
-          error: 'The selected product is deleted; restore it or pick another one',
-          code: 'product_deleted',
         })
       }
     }

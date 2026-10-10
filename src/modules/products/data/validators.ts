@@ -79,8 +79,14 @@ const ISO_CODE_PATTERN = /^[A-Za-z]{2,4}$/
  * different shapes: the create schema applies it through zod, while `products.items.update` applies
  * it only to a **changed** SKU — an unchanged legacy code is deliberately not re-validated
  * (see `.ai/specs/2026-09-24-supplier-product-code-rules.md`, REQ-PC-009).
+ *
+ * The charset is catalog's own (`catalog/data/validators.ts`: `^[A-Za-z0-9\-_\.]+$`), and it has to
+ * be: the code is written to `catalog_products.sku` **and** copied onto the product's default
+ * variant, whose schema carries the same rule. A slash was accepted here until 2026-10-10 (the
+ * app-owned table allowed it) and would now fail inside the catalog write with a 422 the operator
+ * cannot act on, so the app no longer offers it.
  */
-export const SKU_PATTERN = /^[A-Za-z0-9._\-/]{1,64}$/
+export const SKU_PATTERN = /^[A-Za-z0-9._\-]{1,64}$/
 
 /**
  * ISO-4217-shaped currency code, **uppercase only**.
@@ -160,7 +166,7 @@ export const productVariantSchema = z.object({
 const productVariantsSchema = z.array(productVariantSchema).max(200)
 
 export const productCreateSchema = z.object({
-  sku: z.string().trim().regex(SKU_PATTERN, 'sku must be letters, digits, dot, dash, slash or underscore').max(64),
+  sku: z.string().trim().regex(SKU_PATTERN, 'sku must be letters, digits, dot, dash or underscore').max(64),
   name: z.string().trim().min(1).max(300),
   nameEn: nullableText(300),
   brand: z.string().trim().max(120).default(''),

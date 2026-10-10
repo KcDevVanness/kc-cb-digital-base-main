@@ -230,7 +230,7 @@ test.describe.serial('cross_border — shipment archival closure', () => {
     const order = await post(api, '/api/purchasing/purchase-orders', staffToken, organizationId, {
       supplierId,
       currencyCode: 'CNY',
-      lines: [{ productId, quantity: 20, unitPrice: 100, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 20, unitPrice: 100, taxRate: 0, priceIncludesTax: true }],
     })
     expect(order.status(), 'POST /api/purchasing/purchase-orders should return 201').toBe(201)
     purchaseOrderId = String((await readJsonSafe<IdPayload>(order))?.id ?? '')

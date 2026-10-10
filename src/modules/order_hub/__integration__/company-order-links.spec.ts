@@ -78,7 +78,7 @@ test.describe.serial('order_hub — company order links', () => {
     const response = await scoped('POST', '/api/purchasing/purchase-orders', {
       supplierId,
       currencyCode: 'CNY',
-      lines: [{ productId, quantity: 3, unitPrice: 12, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 3, unitPrice: 12, taxRate: 0, priceIncludesTax: true }],
     })
     expect(response.status(), await response.text()).toBe(201)
     return String((await readJsonSafe<IdPayload>(response))?.id ?? '')
@@ -150,7 +150,7 @@ test.describe.serial('order_hub — company order links', () => {
     const purchaseOrder = await scoped('POST', '/api/purchasing/purchase-orders', {
       supplierId,
       currencyCode: 'CNY',
-      lines: [{ productId, quantity: 3, unitPrice: 12, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 3, unitPrice: 12, taxRate: 0, priceIncludesTax: true }],
     })
     const purchaseBody = await readJsonSafe<IdPayload>(purchaseOrder)
     purchaseOrderId = String(purchaseBody?.id ?? '')

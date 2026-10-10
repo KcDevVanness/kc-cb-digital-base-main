@@ -365,9 +365,9 @@ function promotionFailure(id: string, error: unknown): SupplierProductPromoteBat
 /**
  * `purchasing.supplier-products.promote-batch` — clear a backlog without clicking row by row.
  *
- * Per-row isolation, exactly like the quotation import: one row whose SKU is owned by a deleted
- * product fails alone and the rest still land. Duplicate ids are collapsed to their first
- * occurrence, so the counts always describe distinct rows.
+ * Per-row isolation, exactly like the quotation import: one row the catalog refuses (an unknown
+ * unit, a SKU another library row owns) fails alone and the rest still land. Duplicate ids are
+ * collapsed to their first occurrence, so the counts always describe distinct rows.
  */
 const promoteSupplierProductsBatchCommand: CommandHandler<Record<string, unknown>, SupplierProductPromoteBatchResult> = {
   id: 'purchasing.supplier-products.promote-batch',

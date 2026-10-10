@@ -103,7 +103,7 @@ test.describe.serial('cross_border — shipments of one sales order', () => {
     const purchaseOrder = await scoped('POST', '/api/purchasing/purchase-orders', {
       supplierId,
       currencyCode: 'CNY',
-      lines: [{ productId, quantity: 20, unitPrice: 100, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 20, unitPrice: 100, taxRate: 0, priceIncludesTax: true }],
     })
     expect(purchaseOrder.status(), await purchaseOrder.text()).toBe(201)
     purchaseOrderId = String((await readJsonSafe<IdPayload>(purchaseOrder))?.id ?? '')

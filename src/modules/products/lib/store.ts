@@ -292,10 +292,58 @@ async function runPeer<TResult = unknown>(
     })
     return outcome.result
   } catch (error) {
-    if (error instanceof CrudHttpError) throw error
+    if (error instanceof CrudHttpError) {
+      // Catalog resolves `default_unit` through its own dictionary and answers a bare
+      // `uom.unit_not_found`; that string is a code, not a sentence, and the operator's repair
+      // ("add the unit under Dictionaries", or pick one the list carries) is not inferable from it.
+      const body = error.body as { error?: unknown } | null | undefined
+      if (body?.error === 'uom.unit_not_found') {
+        const unit = typeof input.defaultUnit === 'string' ? input.defaultUnit : ''
+        throw new CrudHttpError(422, {
+          error: unit
+            ? `The unit "${unit}" is not in this organization's catalog unit list; add it under Dictionaries or pick a listed code`
+            : 'The unit is not in this organization\'s catalog unit list; add it under Dictionaries or pick a listed code',
+          code: 'unit_not_in_catalog_dictionary',
+        })
+      }
+      throw error
+    }
     const message = error instanceof Error ? error.message : String(error)
-    throw new CrudHttpError(422, { error: message, code: 'catalog_write_failed' })
+    throw new CrudHttpError(422, { error: summarizePeerFailure(message), code: 'catalog_write_failed' })
   }
+}
+
+/**
+ * Turns a peer command's zod failure into a sentence an operator can act on.
+ *
+ * A catalog command validates its own input; when it refuses, the bus raises an error whose
+ * `message` is the **stringified issues array** (`[{"expected":"string","path":["barcode"],…}]`), and
+ * forwarding that verbatim puts a JSON blob in the form's error banner. The summary keeps the field
+ * paths and messages, capped so a whole-payload failure cannot fill the screen, and leaves anything
+ * that is not an issues array untouched — a domain error's message is already written for a human.
+ */
+function summarizePeerFailure(message: string): string {
+  const trimmed = message.trim()
+  if (!trimmed.startsWith('[')) return message
+  let issues: unknown
+  try {
+    issues = JSON.parse(trimmed)
+  } catch {
+    return message
+  }
+  if (!Array.isArray(issues) || issues.length === 0) return message
+  const parts = issues
+    .slice(0, 3)
+    .map((issue) => {
+      const record = issue as { path?: unknown; message?: unknown }
+      const path = Array.isArray(record?.path) ? record.path.join('.') : ''
+      const text = typeof record?.message === 'string' ? record.message : ''
+      return path && text ? `${path}: ${text}` : text || path
+    })
+    .filter((part) => part.length > 0)
+  if (parts.length === 0) return message
+  const rest = issues.length > parts.length ? ` (+${issues.length - parts.length} more)` : ''
+  return `catalog rejected the write — ${parts.join('; ')}${rest}`
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -355,7 +403,7 @@ function splitCertifications(value: unknown): string[] | null {
  * platform's custom-field writer stores nulls as removals, so the distinction is what lets an
  * operator blank a note or a barcode again.
  */
-export function customFieldPayload(input: StoreProductInput): Record<string, unknown> {
+export function customFieldPayload(input: Partial<StoreProductInput>): Record<string, unknown> {
   const payload: Record<string, unknown> = {}
   const put = (key: string, value: unknown) => {
     if (value === undefined) return
@@ -393,7 +441,7 @@ export function customFieldPayload(input: StoreProductInput): Record<string, unk
  * column it never mentioned — `undefined` means "leave it alone" here, exactly like the custom-field
  * half.
  */
-export function nativeProductPayload(input: StoreProductInput): Record<string, unknown> {
+export function nativeProductPayload(input: Partial<StoreProductInput>): Record<string, unknown> {
   const payload: Record<string, unknown> = { customFieldsetCode: PRODUCT_ERP_FIELDSET }
   if (input.name !== undefined) payload.title = input.name
   if (input.sku !== undefined) payload.sku = input.sku
@@ -779,8 +827,7 @@ export async function createStoreVariant(input: {
       organizationId: scope.organizationId,
       productId,
       sku: variant.sku,
-      name: variant.name ?? null,
-      barcode: variant.barcode ?? null,
+      ...variantTextPayload(variant),
       isDefault: variant.isDefault ?? false,
       isActive: variant.isActive ?? true,
       customFieldsetCode: PRODUCT_ERP_FIELDSET,
@@ -792,12 +839,38 @@ export async function createStoreVariant(input: {
   return id
 }
 
+/**
+ * The two variant fields catalog accepts as **optional strings only**.
+ *
+ * `catalog/data/validators.ts` declares `name`/`barcode` as `z.string().optional()` on both create and
+ * update, and its GTIN refinement rejects a *present but blank* barcode — so `null` is an
+ * `invalid_type` error and `''` is a validation error. Only the keys with a value are sent: a blank
+ * submission means "leave the stored value alone", which is the only behavior the platform contract
+ * leaves open (measured 2026-10-10: `barcode: null` on a variant create answered
+ * `422 catalog_write_failed` with `path: ['barcode']`, and it broke every product fixture in the
+ * integration suite).
+ */
+function variantTextPayload(variant: StoreVariantInput): Record<string, unknown> {
+  const payload: Record<string, unknown> = {}
+  const name = variant.name?.trim()
+  if (name) payload.name = name
+  const barcode = variant.barcode?.trim()
+  if (barcode) payload.barcode = barcode
+  return payload
+}
+
 export type UpdateStoreProductInput = {
   em: EntityManager
   ctx: CommandRuntimeContext
   scope: StoreScope
   id: string
-  input: StoreProductInput
+  /**
+   * A **partial** product: absent keys are left alone by the catalog write, and that is load-bearing
+   * rather than convenient — `products.items.update` drops `sku` when the operator did not change it,
+   * because catalog's schema re-validates the charset and a legacy SKU (written by a migration, e.g.
+   * one carrying a space) would otherwise refuse the whole update.
+   */
+  input: Partial<StoreProductInput>
   variants?: StoreVariantInput[]
   prices?: StorePriceInput[]
   origin?: string
@@ -843,8 +916,7 @@ export async function updateStoreProduct(args: UpdateStoreProductInput): Promise
             tenantId: scope.tenantId,
             organizationId: scope.organizationId,
             sku: variant.sku,
-            name: variant.name ?? null,
-            barcode: variant.barcode ?? null,
+            ...variantTextPayload(variant),
             isDefault: variant.isDefault ?? false,
             isActive: variant.isActive ?? true,
           },

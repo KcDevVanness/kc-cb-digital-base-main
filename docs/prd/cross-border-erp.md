@@ -86,7 +86,7 @@
 | E-8 | 内部销售单据自建界面 | 报价/订单 的列表·新建·编辑在自建页面完成，行引用 catalog 商品（商品 id 即 catalog 商品 id，无第二身份）；官方新建页隐藏、官方列表与履约链（发货/发票/收款）保留；未授权 403、跨组织不可见 |
 | E-7 | 官方商品后台收敛 | 官方 `catalog` 的 商品/类别/变体 页面不出现在后台导航（模块与 API 是**数据面**，保留）；采购单行引用 `catalog_product_id`；发运/收货要求该商品有启用变体（无变体 422 并提示补变体） |
 | E-6 | 合同 Excel（**已实现**） | 已签发合同可生成 XLSX 落附件并下载（`trade_docs.contracts.generate-document` + `/api/trade_docs/contracts/[id]/document`）；金额列为数字便于求和；栏位以 `lib/contractTemplate.ts` 常量为准 |
-| E-9 | 商品变体（SKU） | 变体 = `catalog_product_variants`（`sku` / `name` / `barcode` / `is_default` / `is_active`）；SKU **手填**（组织内唯一、含软删占位），编码发号机制已停用（旧码只登记别名供搜索）；发运/收货直接用 catalog 变体（原「wms 轮」问题随单一存储关闭） |
+| E-9 | 商品变体（SKU） | 变体 = `catalog_product_variants`（`sku` / `name` / `barcode` / `is_default` / `is_active`）；SKU **手填**（组织内唯一；删除商品即释放编码），编码发号机制已停用（旧码只登记别名供搜索）；发运/收货直接用 catalog 变体（原「wms 轮」问题随单一存储关闭） |
 | E-10 | 自产 / 委托加工商品按普通商品建库（2026-09-23） | 外购、自产、委托加工商品共用同一套 catalog 商品与三档价格；货源只影响品牌 / 型号 / 成本价的填法（`brand` 无默认值、`manufacturer_model` 业务名「型号」、`purchase` 档标签「成本价（采购 / 自产）」）；发运/收货仍要求一张采购单（工厂建成供应商）+ 商品的启用变体；不做 BOM/工单/成本核算（成本只是 `purchase` 档参考价） |
 | E-11 | 订单从报价单载入（引用加载，2026-09-29） | 订单新建页「从报价单载入」或报价列表「按此报价新建订单」：报价的抬头与全部行一次性填入新订单、保存前可改；报价保留、可出多张订单（分批/多柜）；新订单在 `metadata.internalSales.sourceQuote` 记来源并在编辑页可见；「转为订单」就地转换（报价消失）保留不变 |
 

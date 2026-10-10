@@ -36,6 +36,14 @@
 - 写：全部经官方命令（`catalog.products.*` / `catalog.variants.*` / `catalog.prices.*` / `catalog.priceKinds.*`），命令载荷里的 `cf_*` 键带业务字段；事件、审计、索引副作用由官方命令产生。
 - 读：scoped Kysely（catalog 表 + `custom_field_values` + `product_codes_aliases` 别名兜底）。
 - 导出：`listStoreProducts` / `getStoreProduct` / `findStoreProductBySku` / `listStorePrices`、`createStoreProduct` / `updateStoreProduct` / `deleteStoreProduct` / `createStoreVariant` / `replaceStorePrices`；字段映射 `nativeProductPayload` / `customFieldPayload`。
+
+## catalog 写路径的硬契约（2026-10-10 集成跑测后钉住）
+
+- **SKU 字符集 = catalog 的**（`^[A-Za-z0-9._\-]{1,64}$`，无 `/`）：SKU 同时写进 `catalog_products.sku` 与默认变体的 `sku`，两条 catalog 正则在写路径上拒绝斜杠。sourcing 的 Item No. 清洗把 `/` 换成 `-`（`P4117/1` → `P4117-1`），因为删掉斜杠会把两个不同货号并成一个。
+- **变体的 `name` / `barcode` 是「可选字符串」不是「可空字符串」**：catalog 的 schema 只收字符串（`null` → `invalid_type`），GTIN 细则又拒绝出现但为空的 `barcode`（`''`），所以载荷**只有非空才带这两个键**——留空 = 保持原值，清空在本平台契约下无法表达。`lib/store.ts` 的 `variantTextPayload` 是唯一实现。
+- **单位必须存在于 catalog 的 `unit` 字典**（见上节）。
+- **删除商品是硬删**：`catalog.products.delete` 直接移除行（连同变体与价格，`em.remove`），没有软删态——编码随之释放，可被重新建档；单据里的商品快照不受影响，指向它的供应商产品库行按「已关联的商品已删除」显示（`productDeleted`），再存档点「建商品档案」会重新建一个同码商品。要保留档案请用**停用**（`is_active`），那是列表与选择器的常规做法。
+- 同伴命令的 zod 失败会被 `summarizePeerFailure` 收成一句可读消息（`catalog rejected the write — barcode: …`），而不是把 issues 数组原样塞进表单错误条；单位不在名单里则答 422 `unit_not_in_catalog_dictionary`（附可执行的修法）。
 - 其他模块（`trade_docs`、`finance`、`ru_sync`、`purchasing`、`sourcing`）用它的读函数做跨模块投影——不要直接写 catalog 表。
 
 ## 表面

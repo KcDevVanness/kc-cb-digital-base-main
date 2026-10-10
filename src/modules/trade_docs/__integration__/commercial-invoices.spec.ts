@@ -301,7 +301,7 @@ test.describe.serial('trade_docs — commercial invoices', () => {
     const order = await apiCall('POST', '/api/purchasing/purchase-orders', {
       supplierId,
       currencyCode: 'CNY',
-      lines: [{ productId, quantity: 20, unitPrice: 100, taxRate: 0, priceIncludesTax: true }],
+      lines: [{ catalogProductId, quantity: 20, unitPrice: 100, taxRate: 0, priceIncludesTax: true }],
     })
     expect(order.status(), 'POST /api/purchasing/purchase-orders should return 201').toBe(201)
     purchaseOrderId = String((await readJsonSafe<IdPayload>(order))?.id ?? '')

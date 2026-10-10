@@ -27,7 +27,7 @@
 | C-08 | 编码类字段一律**文本**存储（HS code 带前导零与点分组；SKU 不改大小写）；永不 number | `src/modules/purchasing/components/SupplierProductForm.tsx` help text（HS code 行） |
 | C-09 | 金额恒 2 位、单价恒 4 位、HALF_UP；量化走 BigInt 引擎单点，**不用 `toFixed`** | `.ai/specs/2026-09-28-money-scale-2dp-unification.md` |
 | C-10 | 单据引用商品 = **标量 id + 冻结快照**；改名/删除不改历史单据 | `src/modules/products/README.md`「商品被下游引用只存 ID + 快照」 |
-| C-11 | 编码一经发号**永久占用**（含软删行）；旧码只登记别名、永不重编 | `.ai/specs/2026-09-24-supplier-product-code-rules.md`（REQ-PC-009）；`src/modules/purchasing/README.md` 唯一键行 |
+| C-11 | 旧码只登记别名、永不重编；发号机制停用后「一经发号永久占用」只对**仍存在**的行成立（删除即释放） | `.ai/specs/2026-09-24-supplier-product-code-rules.md`（REQ-PC-009，已 superseded）；`src/modules/purchasing/README.md` 唯一键行 |
 | C-12 | 重量/体积只**照录**不推算（供应商印了才填；单件口径），单位固定（kg / cm³） | `src/modules/purchasing/README.md`（单件物理数据行） |
 | C-13 | 「整组替换」语义：价格/变体按整组提交，**载荷里消失的行停用不删**（历史快照仍能自解释） | `src/modules/products/README.md`（价格整组）+ `purchasing_supplier_product_prices` 注释 |
 | C-14 | 跨模块引用只存 ID + 快照；禁止跨模块 ORM 关联 | `AGENTS.md`；`docs/dev/business-architecture.md` 对齐规则第 4 条 |
@@ -68,7 +68,7 @@
 | C-34 | 自产/委外仍走系统原流程：**开一张采购单**（工厂建成供应商），发运/收货按变体入账 | `src/modules/products/README.md` §货源（owner 2026-09-23） |
 | C-35 | 折扣是**产品级**（同供应商不同货号折扣不同），不是供应商级、不是价格行级 | Owner 2026-09-24（`.ai/specs/2026-09-22-supplier-product-library.md` D10） |
 | C-36 | 商品身份、变体、价格、分类以官方 `catalog` 为**唯一存储**；供应商方向的数据住在供应商产品库；两者之间只有一行显式指针 | `.ai/specs/2026-10-10-catalog-single-store.md`（owner 2026-10-10 决策） |
-| C-37 | SKU **手填**（组织内唯一、含软删占码）；旧码可搜（别名表）；自动编码是可选能力，重做前不启用 | `.ai/specs/2026-10-10-catalog-single-store.md` Q5 |
+| C-37 | SKU **手填**（组织内唯一；商品被删除即释放编码——catalog 的删除是硬删，没有软删占码）；旧码可搜（别名表）；自动编码是可选能力，重做前不启用 | `.ai/specs/2026-10-10-catalog-single-store.md` Q5 |
 
 ## 文档与交付纪律
 
