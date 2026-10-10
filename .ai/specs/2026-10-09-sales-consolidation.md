@@ -4,7 +4,7 @@
 **Status**: Draft
 
 > Route: `module-data`（`order_hub` / `internal_sales` 界面层）+ `backend-ui`；交付 `spec-pr`（本文件随实现同 PR，见 `AGENTS.md` Delivery Flow）。
-> Owner 口径来源：2026-10-09 在 `/backend/orders/e9ad342f-…`（公司订单 hub 的「对内销售订单」区块）的设计反馈，以及同日对本调研三条问题的答复（见 Resolved decisions R-001…R-003）。
+> Owner 口径来源：2026-10-09 在 `/backend/orders/e9ad342f-…`（公司订单 hub 的「销售订单」板块；当时为「对内销售订单」区块——#154 已把对内/对外合并为 `#sales` 一个板块）的设计反馈，以及同日对本调研三条问题的答复（见 Resolved decisions R-001…R-003）。
 
 ## TLDR
 
@@ -16,7 +16,7 @@
 
 ## Problem Statement
 
-owner 在 hub 页面上看到「对内销售订单」区块与抬头「协作组织」并存，反馈「协作组织功能可以用成对内销售的功能」；同时认为「公司订单-订单工作台」与「出口销售-销售报价单」两个模块重复，应当合并。代码查证（2026-10-09）：
+owner 在 hub 页面上看到「销售订单」板块（当时为「对内销售订单」区块）与抬头「协作组织」并存，反馈「协作组织功能可以用成对内销售的功能」；同时认为「公司订单-订单工作台」与「出口销售-销售报价单」两个模块重复，应当合并。代码查证（2026-10-09）：
 
 - **同一个「分公司」在三处独立表达、互不联动**：
   | 表达 | 存储 | 作用 |
@@ -45,7 +45,7 @@ owner 在 hub 页面上看到「对内销售订单」区块与抬头「协作组
 - **REQ-003 — 协作读面不变**：列表 scope（显式可见 id 集）、工作台「协作」徽标、hub 协作只读视图、`update` 的 `status`/`notes` 白名单、owner-only 动作 403 —— 语义与代码均不变；hub「协作组织」对话框退化为**只读面板**（列出派生组织 + 来源单据号 + 「为什么在这里」的一句话）。
 - **REQ-004 — 手工维护退役（按 BC 弃用协议保留一版桥）**：hub 的手工写入口（对话框保存）移除；`POST /api/order_hub/orders/collaborators`（`order_hub.orders.collaborators.replace`）**保留一个发布周期**并标记弃用（`openApi` 的 `deprecated: true` + 路由/命令 JSDoc `@deprecated` 指向替代路径「经对内单据派生」与移除版本）；`GET` 保留（只读面板）。既有手工行（无对内链接来源）保留可读，`sync-collaborators --prune` 可清理并在 dry-run 中列出。
 - **REQ-005 — 报价链接词汇**：`COMPANY_ORDER_LINK_KINDS` 追加 `internal_sales_quote` / `external_sales_quote`（additive，`validators.ts` 注释已声明「a fourth kind is additive」）；`GET /api/order_hub/orders/links` 的 `kind` 参数接受逗号分隔列表（additive），供「报价单」区块一次取两类；**报价 kind 必须携带显式 `companyOrderId`——无目标时 `link-child` 422（报价不自动建根，与订单 kind 的既有自动建根行为不同）**；`lib/companyOrder.ts` 的引用解析按 kind 分流（订单类读 `SalesOrder`、报价类读 `SalesQuote`，两套 id 集合不合并），快照冻结的是对端自身的数据。
-- **REQ-006 — hub「报价单」区块**：一个区块展示两类报价（行带对内/对外徽章），锚点 `#quotes`，排在三个订单区块之前；支持「关联…」（复用 `CompanyOrderLinkDialog`，选项源为 `GET /api/sales/quotes`：两类通道 + **`channelIdsEmpty=true` 未标记桶**（照发运分摊 loader 口径，`cross_border/components/shipmentFormOptions.ts:118-136`），未标记报价的归行类型由买方快照推导（`tradeTypeFromSnapshot`），两者皆无的报价不入选）、「新建」（先选对内/对外 → 对应 create 页）、「移除」（成套替换）；报价已被「转为订单」时行内显示「已转为订单 ORDER-…」且不给「打开」。
+- **REQ-006 — hub「报价单」区块**：一个区块展示两类报价（行带对内/对外徽章），锚点 `#quotes`，排在「采购 / 销售订单」板块之前（板块顺序见 #154 后的 `OrderDetail.tsx`）；支持「关联…」（复用 `CompanyOrderLinkDialog`，选项源为 `GET /api/sales/quotes`：两类通道 + **`channelIdsEmpty=true` 未标记桶**（照发运分摊 loader 口径，`cross_border/components/shipmentFormOptions.ts:118-136`），未标记报价的归行类型由买方快照推导（`tradeTypeFromSnapshot`），两者皆无的报价不入选）、「新建」（先选对内/对外 → 对应 create 页）、「移除」（成套替换）；报价已被「转为订单」时行内显示「已转为订单 ORDER-…」且不给「打开」。
 - **REQ-007 — 报价/订单新建预填与回落**：create 页支持 `?companyOrderId=`：对外预填买方 = 根单默认客户（party，已有逻辑）；对内买方候选按该根单协作组织**三态**——**0 个 → 回退为全量关联组织**（现状口径，新根的第一张对内单据仍可建）、恰 1 个 → 预填、≥2 个 → 选择器只列协作组织；保存成功后 `link-child`（kind 按入口/单据通道推导）并回落 hub 对应锚点；关联失败不阻断已创建的单据（warning 闪讯，与订单同口径，`InternalSalesForm.tsx:1220-1232` 既有实现）。
 - **REQ-008 — 报价列表「挂到公司订单」**：`/backend/quotes` 行操作新增「挂到公司订单/新建公司订单并关联」——两入口交互照 hub 的未关联态（`OrderDetail.tsx` 的 `UnlinkedOrderState` + `ExistingCompanyOrderPicker`；`lib/companyOrderResolve.ts` 只做旧 URL→根单 id 反查，不是该 UX 的实现处）；需要一个「选目标根单」对话框——把既有根单选择器（`ExistingCompanyOrderPicker`）抽成共享组件，hub 与报价列表共用（`CompanyOrderLinkDialog` 要求已定 `companyOrderId`+kind，不可直接复用）。
 - **REQ-009 — 转换留痕**：报价列表「转为订单」成功后，app 读回新订单并**合并**写入 `metadata.internalSales.sourceQuote = { id, number }`——引擎的更新是整对象覆盖（安装源 `entity.metadata = input.metadata ?? null`），且 convert 会把报价 `metadata` 克隆进新订单，必须**读-合并-写**、保留其它键；若该报价已挂在某根单上，把新订单 `link-child` 到同一根单（kind 由通道推导）。载入路径已有，不动。
@@ -76,7 +76,7 @@ owner 在 hub 页面上看到「对内销售订单」区块与抬头「协作组
 ### 2) 报价单按需挂进公司订单（Phase 2）
 
 - **词汇**：`internal_sales_quote` / `external_sales_quote` 两个 kind；`links` GET 的 `kind` 支持逗号列表。快照复用现有 `ref_number`/`ref_counterparty`/`ref_snapshot`（关联时冻结），不新增键——类型徽章由 kind 推导。
-- **hub 区块**：`OrderDetail.tsx` 的 `AttachBlock` 描述符扩展为「一组 kind」（`kinds: CompanyOrderLinkKind[]`）；「报价单」区块排三个订单区块之前；「新建」弹窗先选对内/对外（复用报价列表的 create 弹窗）→ `/backend/{internal,external}-sales/quotes/create?companyOrderId=<id>`；「关联…」用同一对话框，选项源 `GET /api/sales/quotes?channelIds=…`（两类通道 + 未标记桶按现有 `loadSalesOrderOptions` 的口径），选项标签带类型词。
+- **hub 板块**：`OrderDetail.tsx` 的板块描述符（`SectionHeader` + `RelatedSection`，`id` 即锚点）扩展为「一组 kind」（`kinds: CompanyOrderLinkKind[]`）；「报价单」区块排「采购 / 销售订单」板块之前；「新建」弹窗先选对内/对外（复用报价列表的 create 弹窗）→ `/backend/{internal,external}-sales/quotes/create?companyOrderId=<id>`；「关联…」用同一对话框，选项源 `GET /api/sales/quotes?channelIds=…`（两类通道 + 未标记桶按现有 `loadSalesOrderOptions` 的口径），选项标签带类型词。
 - **创建与回落**：报价 create 页接 `?companyOrderId=`（两个入口页共用一份 `page.tsx`，只加参数解析）：`CompanyOrderBuyerPrefill` 扩展对内分支（0 个协作组织 → 全量关联组织；恰 1 个 → 预填；≥2 个 → `BuyerPickerField` 候选收敛为协作组织）；保存成功后 `link-child { kind: internal|external_sales_quote }` → 回落 hub `#quotes`。
 - **列表入口**：`/backend/quotes` 行操作「挂到公司订单」→ 对话框选一张根单（搜索 `GET /api/order_hub/orders`）→ `link-child`；没有根单时可「新建公司订单并关联」（两入口交互照 hub 未关联态，共享同一个根单选择器，见 REQ-008）。
 - **转换留痕与去向**：`InternalSalesTable` 的「转为订单」在 `POST /api/sales/quotes/convert` 成功后：① 追加 `sales.orders.update`（携带 `metadata.internalSales.sourceQuote` 与最新版本）——失败只记 warning，不回滚已完成的转换；② 若报价已挂根（`orders/links?refId=` 反查），`link-child` 新订单到同一根。hub 报价行读侧：若能经 `metadata.internalSales.sourceQuote.id` 找到同一根上的订单，渲染「已转为订单 ORDER-…」并去掉「打开」（报价行此时已被引擎硬删）。
@@ -134,7 +134,7 @@ owner 在 hub 页面上看到「对内销售订单」区块与抬头「协作组
 | 报价单据本体（编号/状态/行/有效期/发送接受） | reuse | installed `sales` | `GET/POST/PUT /api/sales/quotes*` | 引擎是唯一真源，不重写 |
 | 报价列表 / 表单 / 买方选择器 / 状态动作 / 通道解析 | reuse（随模块迁入） | `internal_sales` → 并入 `order_hub` | 相对 import 路径更新 | 62 文件整体搬家，行为不变 |
 | 通道解析 API | reuse（URL 钉住） | `order_hub`（路由 `metadata.path`） | `GET /api/internal_sales/trade-type-channels/*` | 外部可解析路径不变 |
-| hub 区块壳 / 只读面板 | reuse | `src/lib/related/RelatedSection.tsx`、`Dialog` | 同 `AttachBlock` 模式 | 与既有区块同款 |
+| hub 板块壳 / 只读面板 | reuse | `src/lib/related/RelatedSection.tsx`、`Dialog` | 同既有板块模式（`SectionHeader` + `RelatedSection`，`id` 即锚点） | 与既有板块同款 |
 | 根单「未关联」两入口模式 | reuse | `order_hub/components/OrderDetail.tsx`（`UnlinkedOrderState` + `ExistingCompanyOrderPicker`） | 报价列表「挂到公司订单」 | 交互口径与销售单一致；选择器抽成共享组件 |
 | installed `attachments` | reuse | installed | 既有 `entityId='order_hub:company_order'` | 本次不新增文件槽位 |
 
@@ -166,7 +166,7 @@ CLI：order_hub sync-collaborators [--apply] [--prune]（历史重建/清手工�
 
 ### Journey J-001 — 总部建一张对内销售单，分公司自动可见
 
-1. 操作员在 hub「对内销售订单」区块点「新建」→ `/backend/internal-sales/orders/create?companyOrderId=<id>`。
+1. 操作员在 hub「销售订单」板块点「新建」→ `/backend/internal-sales/orders/create?companyOrderId=<id>`。
 2. 买方选择器按三态取候选（0 个协作组织 → 全量关联组织；恰 1 个 → 已预填；≥2 个 → 只列协作组织），保存成功 → `link-child`。
 3. 同一事务：链接行 + 协作行写入；分公司账号的工作台出现该根单（「协作」徽标）、hub 只读、文件可下载、可写状态/备注。
 4. 失败：`link-child` 失败不阻断已创建的销售单（warning + 落回根单页）；买方缺失/跨组织 422 行内提示。
@@ -181,7 +181,7 @@ CLI：order_hub sync-collaborators [--apply] [--prune]（历史重建/清手工�
 
 1. `/backend/quotes` 行操作「转为订单」→ 引擎就地转换（报价行被删）。
 2. app 把 `metadata.internalSales.sourceQuote` 写到新订单；若报价已挂根，把新订单挂到同一根。
-3. hub「报价单」区块该行显示「已转为订单 ORDER-…」（无「打开」）；「对内/对外销售订单」区块出现新订单行。
+3. hub「报价单」区块该行显示「已转为订单 ORDER-…」（无「打开」）；「销售订单」板块出现新订单行。
 
 ### Journey J-004 — 分公司（协作）视角
 
@@ -197,18 +197,18 @@ CLI：order_hub sync-collaborators [--apply] [--prune]（历史重建/清手工�
 
 ## UI and Interaction Contracts
 
-参考页（最近既有实现）：hub 三个关联区块与 `CompanyOrderLinkDialog`（`src/modules/order_hub/components/OrderDetail.tsx`、`CompanyOrderLinkDialog.tsx`）、报价列表与新建弹窗（`src/modules/internal_sales/components/InternalSalesTable.tsx`）、报价表单（`InternalSalesForm.tsx`）、侧边栏树（`src/modules/nav_shell/components/SidebarNavTree.tsx`）。规范壳层/组件：`FormHeader`、`RelatedSection`、`DataTable`、`CrudForm`、`Dialog`、`ComboboxInput`、`Button`、`StatusBadge`、`MoneyAmount`、语义 token；不新增自绘控件。文案走 `t()`（键保持 `internal_sales.*` / `order_hub.*`）。
+参考页（最近既有实现）：hub 既有关联板块（`SectionHeader` + `RelatedSection`；#154 后为 采购 / 销售订单 / 合同与单据 / 发运与装箱 / 收汇·退税 / 文件）与 `CompanyOrderLinkDialog`（`src/modules/order_hub/components/OrderDetail.tsx`、`CompanyOrderLinkDialog.tsx`）、报价列表与新建弹窗（`src/modules/internal_sales/components/InternalSalesTable.tsx`）、报价表单（`InternalSalesForm.tsx`）、侧边栏树（`src/modules/nav_shell/components/SidebarNavTree.tsx`）。规范壳层/组件：`FormHeader`、`RelatedSection`、`DataTable`、`CrudForm`、`Dialog`、`ComboboxInput`、`Button`、`StatusBadge`、`MoneyAmount`、语义 token；不新增自绘控件。文案走 `t()`（键保持 `internal_sales.*` / `order_hub.*`）。
 
 | Surface / route | Purpose and primary actions | Data source / mutations | Closest installed reference | Canonical shell / components | Required states | Requirement IDs |
 |---|---|---|---|---|---|---|
-| `/backend/orders/<id>`（hub）「报价单」区块 | 列出/关联/新建/移除报价；显示类型与去向 | `GET /orders/links?kind=internal_sales_quote,external_sales_quote`；`POST /orders/links`；`POST /orders/link-child`；`GET /api/sales/quotes` | 同页既有关联区块（`AttachBlock`） | `RelatedSection`、`CompanyOrderLinkDialog`、`Dialog` | loading/empty/error(+重试)/conflict(409 冲突条)/权限不足 | REQ-005, REQ-006 |
+| `/backend/orders/<id>`（hub）「报价单」区块 | 列出/关联/新建/移除报价；显示类型与去向 | `GET /orders/links?kind=internal_sales_quote,external_sales_quote`；`POST /orders/links`；`POST /orders/link-child`；`GET /api/sales/quotes` | 同页既有关联板块（`RelatedSection`） | `RelatedSection`、`CompanyOrderLinkDialog`、`Dialog` | loading/empty/error(+重试)/conflict(409 冲突条)/权限不足 | REQ-005, REQ-006 |
 | hub「协作组织」只读弹窗 | 展示派生组织与来源 | `GET /orders/collaborators?companyOrderId=` | 本组件旧版（去掉保存） | `Dialog`、只读列表 | loading/empty/error | REQ-003, REQ-004 |
 | `/backend/quotes` 行操作 | 「挂到公司订单」 | `POST /orders/link-child`（+ `GET /orders` 选择器） | 报价列表既有行操作 / `OrderDetail` 未关联态两入口 | `DataTable` 行操作、`Dialog`、`ComboboxInput` | loading/empty/error/conflict | REQ-008 |
 | `/backend/{internal,external}-sales/quotes/create?companyOrderId=` | 预填买方 + 保存后关联回落 | `POST /api/sales/quotes`、`POST /orders/link-child` | 既有报价 create 页 + 订单页的 `?companyOrderId=` | `CrudForm`、`ComboboxInput`、`flash` | 预填失败静默（照旧）、关联失败 warning | REQ-007 |
 | 侧边栏（nav_shell） | 「出口销售」组取消，报价单挂「公司订单」域 | `NAV_TREE` | 既有树/组节点 | `SidebarNavTree` | 空搜索/无权限（既有） | REQ-012 |
 
 ```text
-# hub「报价单」区块（排在三个订单区块之前，锚点 #quotes）
+# hub「报价单」区块（排在「采购 / 销售订单」板块之前，锚点 #quotes）
 ┌──────────────────────────────────────────────────────────────┐
 │ 报价单                                   [新建 ▾(对内/对外)] [关联…] │
 ├──────────────────────────────────────────────────────────────┤
@@ -298,7 +298,7 @@ CLI：order_hub sync-collaborators [--apply] [--prune]（历史重建/清手工�
 
 - **Depends on:** Phase 1（预填用协作组织集合）
 - **Outcome:** 报价可从根单发起、可挂到根单、转换后可在根单上追溯；hub 报价区块可用。
-- **Deliverables:** `data/validators.ts`（两个 kind + `kind` 列表参数）、`lib/companyOrder.ts`（引用解析按 kind 分流读 `SalesQuote`/`SalesOrder`；报价 kind 无目标 → 422）、`components/OrderDetail.tsx`（`AttachBlock` 支持 kind 组 + 报价区块；`ExistingCompanyOrderPicker` 抽成共享组件）、`components/CompanyOrderLinkDialog.tsx`（报价选项源：两类通道 + 未标记桶 + 快照推导类型）、`internal_sales/components/InternalSalesTable.tsx`（挂根行操作 + 转换留痕含 metadata 读-合并-写）、`InternalSalesForm.tsx`（对内预填三态 + 报价页参数）、报价 create 页（`page.tsx`/`page.meta.ts` 参数）、i18n、单测/集成。
+- **Deliverables:** `data/validators.ts`（两个 kind + `kind` 列表参数）、`lib/companyOrder.ts`（引用解析按 kind 分流读 `SalesQuote`/`SalesOrder`；报价 kind 无目标 → 422）、`components/OrderDetail.tsx`（板块描述符支持 kind 组 + 报价区块；`ExistingCompanyOrderPicker` 抽成共享组件）、`components/CompanyOrderLinkDialog.tsx`（报价选项源：两类通道 + 未标记桶 + 快照推导类型）、`internal_sales/components/InternalSalesTable.tsx`（挂根行操作 + 转换留痕含 metadata 读-合并-写）、`InternalSalesForm.tsx`（对内预填三态 + 报价页参数）、报价 create 页（`page.tsx`/`page.meta.ts` 参数）、i18n、单测/集成。
 - **Independent slices / estimated commits:** ①kind 词汇 + links GET 列表参数 + 引用解析分流 + 单测；②hub 区块 + 对话框（含根单选择器抽取）；③列表行操作 + 转换留痕（metadata 合并）；④预填三态与回落链路 + 集成。
 - **Requirements closed:** REQ-005, REQ-006, REQ-007, REQ-008, REQ-009
 - **Tests:** TEST-004, TEST-005, TEST-007（报价部分）, TEST-008
@@ -430,3 +430,4 @@ CLI：order_hub sync-collaborators [--apply] [--prune]（历史重建/清手工�
 |---|---|
 | 2026-10-09 | Initial draft — owner 三条决定落地：协作=对内销售派生、报价按需挂根单、`internal_sales` 并入 `order_hub`；三阶段（派生/报价/合并）。 |
 | 2026-10-09 | Fresh-eyes review 修复轮：派生写入补 CLI（`backfill-company-orders`）与移动语义（A/B 双根 + 缓存失效）；报价 kind 的引用解析按 `SalesQuote`/`SalesOrder` 分流且**无目标 422**（不自动建根）；对内买方预填改「三态」；转换留痕改为 metadata **读-合并-写**；未标记报价按快照归行（`channelIdsEmpty` 桶）；派生的预期跳过 vs 基础设施回滚定稿；CLI 与 `POST /orders/collaborators` 改按 BC 弃用协议保留一版（弃用壳 / `deprecated: true`）并补上用户可见命令文案的替换清单；文档清单补 `architecture/multi-company-org-model/currency-policy`。 |
+| 2026-10-10 | 同步到波次落地后的 `dev`（trunk 重置后 rebase，`8c5b59a` + #148）：hub 板块口径按 #154 对齐——对内/对外销售合并为 `#sales` 一个板块，`AttachBlock` 由 `SectionHeader` + `RelatedSection`（`id` 即锚点）取代，「报价单」区块排「采购 / 销售订单」之前；上文四处 hub 引用与两处实现提示随之改写；正文引用的行号（`companyOrders.ts:906-1004`、`modules.ts:292`、`InternalSalesForm.tsx:996-1037`、`validators.ts:62-67`）复核仍在范围内。Status/verdict 不变。 |
