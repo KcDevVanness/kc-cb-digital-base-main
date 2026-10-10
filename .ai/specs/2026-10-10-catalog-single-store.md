@@ -283,7 +283,7 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 
 - **Depends on:** Phase 1、Phase 2
 - **Outcome:** 模块 README / PRD / 状态板 / lessons 与新逻辑一致；Linear 镜像同步
-- **Deliverables:** D 组文档；superseded 标注；Linear dry-run/apply/audit 记录 + 孤儿清单
+- **Deliverables:** D 组文档；superseded 标注；Linear dry-run/apply/audit 记录 + 孤儿清单（✅ 2026-10-10 执行：104 条 payload → 更新 21 / 跳过 83 / 新建 0 / 失败 0；`--audit` 通过；孤儿 **0** 条——记录见 [`.ai/runs/2026-10-10-catalog-cutover-linear-sync.md`](../runs/2026-10-10-catalog-cutover-linear-sync.md)）
 - **Requirements closed:** REQ-015, REQ-016
 - **Validation:** `node scripts/linear-sync/sync.mjs --docs-root <main>` → `--apply` → `--audit`
 - **Exit gate:** dry-run 数量与状态分布核对；审计父子关系通过；孤儿 issue 清单交 owner
@@ -350,7 +350,7 @@ RU 平台 ── ru_sync sku_map ──→ catalog 商品
 - [ ] **AC-013** — 权限边界不变（商品 ≠ 供应商库）。
 - [ ] **AC-014** — 公司订单链路不变，根单子单引用改指 catalog。
 - [ ] **AC-015** — 基准文档与约定清单落档，被推翻的 spec 标注 superseded。
-- [ ] **AC-016** — Linear 同步 dry-run/apply/audit 通过，孤儿清单交付。
+- [x] **AC-016** — Linear 同步 dry-run/apply/audit 通过（104 条、更新 21、失败 0、审计通过），孤儿清单 0 条（无内容被移除，无需人工处理）——证据 `.ai/runs/2026-10-10-catalog-cutover-linear-sync.md`。
 - [ ] Every listed backend surface matches its recorded reference and uses the canonical shell/components, shared API helpers, semantic tokens, and complete states.
 - [ ] Every affected API and UI path has self-contained integration coverage and the configured validation gate passes.
 
@@ -392,4 +392,5 @@ Verdict: `Ready for implementation`（Phase 1 起）— 依赖 owner 的开工�
 | Date | Change |
 |---|---|
 | 2026-10-10 | Initial spec — owner approved the option set; Phase 0 (baseline docs) in the same PR |
+| 2026-10-10 | Linear 镜像重跑：dry-run 104 条 → apply（更新 21 / 跳过 83 / 失败 0）→ audit 通过 → 孤儿 0（`.ai/runs/2026-10-10-catalog-cutover-linear-sync.md`）。**更正**：同步走 Orca，不需要 Linear API token。 |
 | 2026-10-10 | Phase 0–3 shipped in `feat/catalog-single-store`：表族删除 + `products/lib/store.ts` 单一读写层 + 两页 UI + D 组文档；集成跑测发现的单位闸门按 Q-新7 落地（`products/lib/unitVocabulary.ts`、`products/setup.ts`）；Phase 4（SKU 发号）仍待另立切片 |
