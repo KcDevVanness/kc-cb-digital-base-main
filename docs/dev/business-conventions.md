@@ -88,3 +88,72 @@
 1. 清单里的每条都能在其「来源」列指到的文件里找到对应表述；找不到的条目应删除或补写来源。
 2. `.ai/specs/2026-10-10-catalog-single-store.md` 的实现与验收逐条对照本清单：**冲突即为缺陷**。
 3. 新增约定时：先加一行（含日期与出处），再改代码；不要在代码里留下只在口头存在的规则。
+
+---
+
+## 补充清单（全仓扫描，2026-10-10）
+
+第二批来自 `.ai/specs`、`.ai/runs`、`.ai/lessons`、`docs/dev`、`src/modules/*/README.md` 的逐条扫描（ConventionsScout），每条带出处。
+
+### 交互（补充）
+
+| # | 约定 | 来源 |
+|---|---|---|
+| C-44 | 不可编辑项一律 `disabled` 灰态，**不用 `readOnly`**（`CrudForm` 多数类型不转发 readOnly，number 完全不转发） | `.ai/specs/2026-10-09-company-order-root.md`（REQ-054，2026-10-10） |
+| C-45 | 状态的三种呈现：纯状态 = ⋯ 菜单 `ActionsDropdown` 的禁用项；带动作 = `RowActions`；不在 ⋯ 旁另加按钮 | `.ai/lessons/row-state-needs-a-menu-with-disabled-items.md`；order-root spec REQ-057 |
+| C-46 | 关联状态**先算后显**：已关联可点直达、未关联置灰、读不到（403/失败）不显示该位、不给错误态 | order-root spec（REQ-053） |
+| C-47 | 建档状态筛选走**服务端列条件**（`product_id is null/not null`），不做单页客户端切片，`total`/分页正确 | `.ai/specs/2026-09-22-supplier-product-library.md`（REQ-SPL-018） |
+| C-48 | 行编辑器**只有一个**搜索框覆盖多个来源，不做「改从 X 选择」开关 | `.ai/specs/2026-09-21-purchasing-module.md`（2026-09-23 业主 UI review） |
+| C-49 | 引用一律「显示名 + 选择器」；UUID 只出现在 API 载荷；草稿单据必须可被搜到 | `.ai/specs/2026-09-24-pi-ci-tax-invoice-documents.md`；`src/modules/order_hub/README.md` |
+| C-50 | 日期字段全 app 同一套控件（`CrudForm` `type:'date'` → `DatePicker`），不用原生 `<input type="date">` | `.ai/specs/2026-09-24-supplier-quotation-import.md`（2026-09-24） |
+| C-51 | 行编辑器/价格/分摊类分组进**主列**（column 1）；`column:2` 是 3fr 侧栏，只放窄标量组 | `.ai/lessons/crudform-column-two-is-a-sidebar.md` |
+| C-52 | 堆叠多行的单元格必须 `truncate:false` + 自身 `whitespace-nowrap`（默认 150px 截断、右对齐无 tooltip） | `.ai/lessons/datatable-cell-truncates-at-150px.md` |
+| C-53 | 无状态不渲染徽章（只写「—」的徽章不承载信息） | `src/modules/order_hub/README.md`（owner 复查 2026-10-09） |
+| C-54 | 「所有组织」下维护列表 = **只读总览**（保留组织列，不渲染行动作/新增/行点击） | `.ai/lessons/read-expands-writes-are-selected-org.md` |
+| C-55 | 选项加载器尊重页大小上限（一次 ≤100），分页读全量，别让超限请求被静默吞掉 | `.ai/runs/2026-10-10-company-order-round10.md` |
+| C-56 | 六态齐全（loading/empty/error/conflict/permission/success）+ 键盘提交 + 窄宽无横向溢出 + 亮/暗 + 语义 token | `.ai/specs/2026-09-22-products-and-trade-docs.md`（REQ-011） |
+| C-57 | 一页一事；旧别名页只渲染同一组件并保留原 `requireFeatures`（不构成越权入口）；URL 规范化用挂载后 `replace`（302 会丢 `?flash=`） | `.ai/specs/2026-09-23-product-taxonomy-consolidation.md` |
+
+### 流程（补充）
+
+| # | 约定 | 来源 |
+|---|---|---|
+| C-58 | 一个子单只属于一张公司订单（替换 = **移动**语义）；销售类子单无根时自动建根；关联失败不阻断子单 | `src/modules/order_hub/README.md`；order-root spec |
+| C-59 | 报价是谈判文档：未发出/未确认的报价不得下单，非 `confirmed` 订单不得进发运分摊，`canceled` 即锁 | `.ai/specs/2026-09-30-document-status-lifecycle.md` |
+| C-60 | 报价 → 订单两条路：**转换**（报价即最终版、就地不可逆）与**载入**（报价保留、可出多张） | `src/modules/internal_sales/README.md`（2026-09-29 owner 确认） |
+| C-61 | 合同为主体：发运单/PL/PI/CI 关联合同；合同再以 1:N 关联表挂采购单与销售单 | `.ai/specs/2026-09-29-contract-linked-export-documents.md` |
+| C-62 | 公司订单状态 = 4 个模块常量（不建字典）；工作台状态 = 7 个业务阶段；「是否已收款」三态（缺席 = unpaid、显式 null = 清空、有值 = 写入） | order-root spec；`src/modules/order_hub/README.md` |
+| C-63 | 回填/批量写 CLI **默认 dry-run**，`--apply` 需 owner 批准；分类不做猜测 | `src/modules/internal_sales/README.md` |
+| C-64 | 迁移由 `yarn db:generate` 生成 + 人工审阅 + **提交前问业主**再应用；绝不用迁移当验证 | `.ai/specs/2026-09-24-pi-ci-tax-invoice-documents.md` |
+
+### 金额、编码与快照（补充）
+
+| # | 约定 | 来源 |
+|---|---|---|
+| C-65 | 金额一律**按币种分组**，绝不跨币种加总 | `src/modules/order_hub/README.md` |
+| C-66 | 编号 `<PRE>-<年>-<4位>`，按 `(tenant, organization)` 独立、最大号 +1、四位补零、唯一索引兜底、撞号重试；**草稿不占号、签发才发号** | `.ai/specs/2026-09-24-pi-ci-tax-invoice-documents.md` |
+| C-67 | 供应商编码 `SUP-0001`：扫本组织**含软删行**取最大序号 +1、有界重试（≤5）；新建表单不渲染编码字段 | `src/modules/purchasing/README.md`；`.ai/specs/2026-09-24-supplier-code-issuance.md` |
+| C-68 | 号一经发出**不再回收**（append-only 台账 + 唯一索引才是真保证）——发号器停用期间原则保留，供重做参照 | `src/modules/product_codes/README.md` |
+| C-69 | 关联行冻结快照；对端硬删仍显示冻结值 + 「对端已不存在」 | order-root spec |
+| C-70 | 缺席 = `null` 不是 0（缺失显示「—」；无汇率**不显示换算，绝不编数**） | `.ai/specs/2026-09-22-order-file-and-export-finance.md` |
+| C-71 | 重复生成 = 新附件 + 指针前移、旧文件保留；我方生成件与上传替换件互相独立 | `.ai/specs/2026-09-24-pi-ci-tax-invoice-documents.md` |
+| C-72 | 付款凭证**先建后绑**（先 `record` 拿 id 再上传附件）；上传失败不回滚业务行 | `src/modules/purchasing/README.md` |
+| C-73 | 价格组是「替换」不是「补丁」（缺失行停用；故意不加乐观锁） | `src/modules/purchasing/README.md` |
+| C-74 | 部分更新不得把「字段缺席」读成「字段清空」（值 / 显式 null / 缺席三态） | `.ai/lessons/partial-update-must-not-clear-absent-fields.md` |
+
+### 权限与作用域（补充）
+
+| # | 约定 | 来源 |
+|---|---|---|
+| C-75 | 读展开到后代组织、写只作用于**所选组织**；选项源按所选组织显式收窄 | `.ai/lessons/read-expands-writes-are-selected-org.md`；`docs/dev/multi-company-org-model.md` |
+| C-76 | 协作组织只能写 `status`/`notes`（服务端白名单，其余 422）；owner-only 动作 403 | `src/modules/order_hub/README.md` |
+| C-77 | per-user ACL 是**绝对覆盖**（收窄用户 ACL = 撤销） | `.ai/lessons/per-user-acl-is-an-absolute-override.md` |
+
+### 页面隐藏与导航（补充）
+
+| # | 约定 | 来源 |
+|---|---|---|
+| C-78 | 挂在列表路由下的 create/edit 页在 **installed 覆写**里 `navHidden:true`（否则成为缩进的侧栏子项）；app 自有页面按列表子项嵌套 | `.ai/lessons/create-page-under-list-becomes-sidebar-child.md`；PI/CI spec |
+| C-79 | 按「app 有没有替代面」逐个决定隐藏；无替代面的能力**不隐藏** | `docs/dev/architecture.md`（2026-09-30） |
+| C-80 | 组 key = 用户侧边栏偏好键：**只改 label 不改 key**；一个业务角色 = 一个 `pageGroupKey`；排序只在一处声明 | `.ai/lessons/sidebar-group-is-the-role-boundary.md` |
+

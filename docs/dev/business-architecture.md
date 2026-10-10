@@ -36,6 +36,8 @@
 
 采购单与发运单是**多对多**：一张采购单可拆多次发运，多张小额采购单可合并拼柜发运。
 
+> 上面五条链**挂在公司订单（根单）之下**：工作台建一张公司订单，再把采购/对内/对外三类子单关联进来，下游（合同/单证/发运/收汇·退税）按子单并集只读——入口见下一节。
+
 ## 业务入口总纲（2026-10-10 基准）
 
 **公司订单是唯一的订单入口**（`.ai/specs/2026-10-09-company-order-root.md`，已交付）：
@@ -112,7 +114,7 @@
 | `cross_border` | `wms.inventory.receive` | 命令：收货入账并回写采购单行已收数量 | `cross_border/commands/shipments.ts` |
 | `products`（分发） | `directory:organization` 实体 | 直接 import：写入前校验目标组织 | `products/commands/distribution.ts` |
 | `currency_policy` | `currencies:currency`、`dictionaries:dictionary*`、`directory:organization` | 直接 import 实体 | `currency_policy/lib/apply.ts` |
-| `products`、`purchasing`、`sourcing` | `dictionaries:dictionary*` + `normalizeDictionaryValue` | 币种码校验 | 各模块 `lib/currencyDictionary.ts` |
+| 自绘商品面（自有商品库 / 供应商产品库）、`purchasing`、`sourcing` | `dictionaries:dictionary*` + `normalizeDictionaryValue` | 币种码校验 | 各模块 `lib/currencyDictionary.ts` |
 | `scope_guards` | `auth:*` 实体 + `RbacService` + directory scope 工具 | 拦截越权写入 | `scope_guards/lib/scopeGuard.ts` |
 | `sourcing`、`trade_docs` | `attachments`（服务与实体） | 报价源文件与单证附件 | 各模块命令/路由 |
 | `sourcing`、`trade_docs` | `staff/lib/timesheets-reports/xlsx`（`buildXlsx`） | Excel 模板 / 合同打印件 | `sourcing/api/template/route.ts`、`trade_docs/lib/contractTemplate.ts` |
