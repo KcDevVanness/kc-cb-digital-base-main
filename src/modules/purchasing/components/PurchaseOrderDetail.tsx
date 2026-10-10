@@ -699,20 +699,101 @@ function PurchasePaymentsSection({
   )
 }
 
-/** The editable shape of the 新增/编辑单证 dialog, and the body its command accepts. */
+/**
+ * The purchase order files no documents of its own any more (REQ-055): the 单证 section mirrors the
+ * root order's 「单据与文件」 slots instead, read-only, so the associated documents show here without
+ * leaving the page (owner 2026-10-10 复查·三: 会关联什么单证数据，会联动显示在这里).
+ *
+ * The read is the hub's own summary (`GET /api/order_hub/orders/fields`) — the same projection the
+ * hub's 单据与文件 block and its field drawer render — never its tables, and the slot vocabulary
+ * (labels, sources) stays the hub's, reused through the merged app dictionary exactly as the
+ * trade-docs dialogs reuse `order_hub.detail.documents.*` keys.
+ */
+type RootDocumentFile = {
+  attachmentId: string
+  fileName: string
+  /** ISO-8601 registration timestamp; `''` when the summary carries none. */
+  createdAt: string
+}
 
+/** One child-document signal of a slot (`contract`/`shipment`/`collection`/`purchasing`). */
+type RootDocumentSource = {
+  source: string
+  /** The source artifact's number, or `''` when it carries none. */
+  label: string
+  count: number | null
+}
 
+/** One slot that carries anything at all; empty slots are dropped rather than rendered as noise. */
+type RootDocumentSlot = {
+  slot: string
+  files: RootDocumentFile[]
+  childSources: RootDocumentSource[]
+}
 
+const ROOT_DOCUMENTS_API_PATH = '/api/order_hub/orders/fields'
+/** The root's byte proxy: it resolves a slot attachment through its row to the root's visibility. */
+const ROOT_ATTACHMENT_BYTES_HREF = '/api/order_hub/orders/attachments'
+/** Where each child source's own block sits on the root page, the chip's deep link. */
+const ROOT_SOURCE_ANCHOR: Record<string, string> = {
+  contract: '#contracts',
+  shipment: '#shipments',
+  collection: '#money',
+  purchasing: '#purchasing',
+}
 
-
-
-
+function toRootDocumentSlot(item: Record<string, unknown>): RootDocumentSlot | null {
+  const slot = typeof item.slot === 'string' ? item.slot : ''
+  if (!slot) return null
+  const files: RootDocumentFile[] = []
+  for (const raw of Array.isArray(item.files) ? item.files : []) {
+    const file = (raw ?? {}) as Record<string, unknown>
+    const attachmentId = typeof file.attachmentId === 'string' ? file.attachmentId : ''
+    if (!attachmentId) continue
+    files.push({
+      attachmentId,
+      fileName: typeof file.fileName === 'string' && file.fileName.length > 0 ? file.fileName : attachmentId,
+      createdAt: typeof file.createdAt === 'string' ? file.createdAt : '',
+    })
+  }
+  const childSources: RootDocumentSource[] = []
+  for (const raw of Array.isArray(item.childSources) ? item.childSources : []) {
+    const source = (raw ?? {}) as Record<string, unknown>
+    const kind = typeof source.source === 'string' ? source.source : ''
+    if (!kind) continue
+    childSources.push({
+      source: kind,
+      label: typeof source.label === 'string' ? source.label : '',
+      count: typeof source.count === 'number' && Number.isFinite(source.count) ? source.count : null,
+    })
+  }
+  if (files.length === 0 && childSources.length === 0) return null
+  return { slot, files, childSources }
+}
 
 /**
- * The upload control for a document's file. It talks to the shared attachments endpoint
- * (`POST /api/attachments`, multipart) exactly as the installed attachment surfaces do, and hands
- * the returned id back to the form — the document row stores that id, never a byte of file.
+ * The root order's slots that carry something, or `null` when the page cannot answer: the order is
+ * not linked, the role lacks `order_hub.view` (403), or the read failed — all three leave the
+ * section with its pointer alone, exactly like the link lookup below, and none may disturb the
+ * page's own read.
  */
+async function fetchRootDocumentSlots(companyOrderId: string): Promise<RootDocumentSlot[] | null> {
+  try {
+    const call = await apiCall<{ documents?: { bySlot?: unknown } }>(
+      `${ROOT_DOCUMENTS_API_PATH}?companyOrderId=${encodeURIComponent(companyOrderId)}`,
+      undefined,
+      { fallback: null },
+    )
+    if (!call.ok || !call.result) return null
+    const bySlot = call.result.documents?.bySlot
+    if (!Array.isArray(bySlot)) return null
+    return bySlot
+      .map((item) => toRootDocumentSlot((item ?? {}) as Record<string, unknown>))
+      .filter((slot): slot is RootDocumentSlot => slot !== null)
+  } catch {
+    return null
+  }
+}
 
 
 
@@ -739,6 +820,76 @@ async function fetchCompanyOrderId(purchaseOrderId: string): Promise<string | nu
   }
 }
 
+/**
+ * The read-only mirror of the root's document slots: the root's own files with preview/download,
+ * and each child source as a chip deep-linking to that block on the root page. The loader already
+ * drops slots that carry nothing, so an empty list means the root holds no documents at all.
+ */
+function RootDocumentsMirror({
+  companyOrderId,
+  slots,
+}: {
+  companyOrderId: string
+  slots: RootDocumentSlot[]
+}) {
+  const t = useT()
+  return (
+    <ul className="flex flex-col gap-2">
+      {slots.map((group) => (
+        <li key={group.slot} className="flex flex-col gap-1.5 rounded-md border px-3 py-2">
+          <span className="text-sm font-medium">{t(`order_hub.documents.slots.${group.slot}`)}</span>
+          {group.files.length > 0 ? (
+            <ul className="flex flex-wrap gap-2">
+              {group.files.map((file) => (
+                <li
+                  key={file.attachmentId}
+                  className="flex flex-wrap items-center gap-2 rounded border bg-muted/30 px-2 py-1 text-xs"
+                >
+                  <span className="text-muted-foreground">{t('order_hub.documents.sourceSelf')}</span>
+                  <span className="font-medium break-all">{file.fileName}</span>
+                  {file.createdAt ? (
+                    <span className="text-muted-foreground">{file.createdAt.slice(0, 10)}</span>
+                  ) : null}
+                  <AttachmentPreviewLink
+                    attachmentId={file.attachmentId}
+                    fileName={file.fileName}
+                    fileHref={ROOT_ATTACHMENT_BYTES_HREF}
+                    label={t('order_hub.documents.preview')}
+                  />
+                  <Link
+                    href={`${ROOT_ATTACHMENT_BYTES_HREF}/${encodeURIComponent(file.attachmentId)}?download=1`}
+                    className="text-sm text-primary hover:underline"
+                  >
+                    {t('order_hub.documents.download')}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {group.childSources.length > 0 ? (
+            <ul className="flex flex-wrap items-center gap-2 text-xs">
+              {group.childSources.map((source, index) => (
+                <li key={`${source.source}-${index}`}>
+                  <Link
+                    href={`/backend/orders/${encodeURIComponent(companyOrderId)}${ROOT_SOURCE_ANCHOR[source.source] ?? ''}`}
+                    className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <span>{t(`order_hub.documents.sources.${source.source}`)}</span>
+                    {source.label ? <span className="font-medium text-foreground">{source.label}</span> : null}
+                    {source.count !== null ? (
+                      <span>{t('order_hub.documents.sourceCount', { count: source.count })}</span>
+                    ) : null}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
   const t = useT()
   const locale = useLocale()
@@ -756,6 +907,12 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
    * 「去公司订单修改」 link; a role without `order_hub.view` cannot read the link and gets `null`.
    */
   const [companyOrderId, setCompanyOrderId] = React.useState<string | null>(null)
+  /**
+   * The root order's 「单据与文件」 slots that carry something (REQ-056). `null` = the page cannot
+   * answer (not linked / 403 / read failed) and the section keeps its pointer alone; `[]` = linked,
+   * but the root holds no documents yet.
+   */
+  const [rootDocuments, setRootDocuments] = React.useState<RootDocumentSlot[] | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [notFound, setNotFound] = React.useState(false)
@@ -803,6 +960,8 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
       setPayments((paymentPayload.items ?? []).map(toPaymentRecord))
       setCategoryOptions(options)
       setCompanyOrderId(rootCompanyOrderId)
+      // The mirror needs the link's answer first; a failed read answers `null` and never fails the page.
+      setRootDocuments(rootCompanyOrderId ? await fetchRootDocumentSlots(rootCompanyOrderId) : null)
     } catch {
       setLoadError(t('purchasing.orders.form.loadFailed'))
       return
@@ -1026,12 +1185,19 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
         />
       </div>
 
-      {/* 单证 moved to the company order (owner 2026-10-10): the purchase order keeps a pointer to
-          where paperwork is filed now instead of its own second entry — the root's 单据与文件 slots
-          already aggregate the files filed against this order. */}
+      {/* 单证 lives on the company order (owner 2026-10-10): the purchase order keeps a pointer to
+          where paperwork is filed — and mirrors the root's 「单据与文件」 read-only, so the associated
+          documents show here in sync (复查·三: 会关联什么单证数据，会联动显示在这里). */}
       <section className="space-y-3 rounded-lg border bg-card px-4 py-3">
         <SectionHeader title={t('purchasing.orders.detail.documents')} />
         <p className="text-sm text-muted-foreground">{t('purchasing.orders.documents.rootEntryHint')}</p>
+        {companyOrderId && rootDocuments ? (
+          rootDocuments.length > 0 ? (
+            <RootDocumentsMirror companyOrderId={companyOrderId} slots={rootDocuments} />
+          ) : (
+            <p className="text-xs text-muted-foreground">{t('purchasing.orders.documents.rootEmpty')}</p>
+          )
+        ) : null}
         {companyOrderId ? (
           <Button asChild variant="outline" size="sm">
             <Link href={`/backend/orders/${encodeURIComponent(companyOrderId)}`}>

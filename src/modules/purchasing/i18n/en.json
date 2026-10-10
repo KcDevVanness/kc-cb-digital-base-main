@@ -382,5 +382,6 @@
   "purchasing.orders.detail.openCompanyOrder": "Open company order",
   "purchasing.orders.documents.rootEntryHint": "Documents are filed on the company order now: this page keeps no entry of its own — the root’s document slots are the record.",
   "purchasing.orders.documents.openCompanyOrder": "File documents on the company order",
+  "purchasing.orders.documents.rootEmpty": "The company order holds no documents yet.",
   "purchasing.orders.detail.depositPercent": "Deposit percent"
 }

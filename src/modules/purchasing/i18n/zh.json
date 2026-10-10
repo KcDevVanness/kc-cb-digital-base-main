@@ -382,5 +382,6 @@
   "purchasing.orders.detail.openCompanyOrder": "打开公司订单",
   "purchasing.orders.documents.rootEntryHint": "单证改在公司订单（根订单）统一录入：采购单不再提供录入入口，这里的单证以根订单的「单据与文件」为准。",
   "purchasing.orders.documents.openCompanyOrder": "去公司订单录入单证",
+  "purchasing.orders.documents.rootEmpty": "根订单「单据与文件」暂无可显示的单证。",
   "purchasing.orders.detail.depositPercent": "定金比例"
 }
