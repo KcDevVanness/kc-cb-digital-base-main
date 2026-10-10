@@ -2,7 +2,7 @@ import { describe, expect, it } from '@jest/globals'
 import { TEMPLATE_HEADERS, detectColumnMappings, templateColumnMap } from '../columnMapping'
 import { detectStructure } from '../headerDetection'
 import { buildQuoteLines, resolveLineStatus } from '../quoteLines'
-import { expandMerges, type CellValue } from '../workbook'
+import { expandMerges, type CellValue } from '@/lib/workbook'
 import { normalizeDimensionTriple } from '../valueNormalization'
 
 /** `订单表-2026 EXW.xls` rows 10–12, including the two-row header with the unit line. */

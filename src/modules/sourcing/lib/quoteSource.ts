@@ -3,7 +3,7 @@ import { SourcingImportProfile } from '../data/entities'
 import type { AttachmentService } from '@open-mercato/core/modules/attachments'
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import { SourcingQuote } from '../data/entities'
-import { WorkbookReadError, readWorkbook, type ParsedWorkbook } from './workbook'
+import { WorkbookReadError, readWorkbook, type ParsedWorkbook } from '@/lib/workbook'
 
 /**
  * Loading a quotation and its stored workbook.

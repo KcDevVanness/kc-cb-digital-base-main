@@ -8,7 +8,7 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { createCrud, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { withFlash } from '@open-mercato/ui/backend/utils/flash'
 import { useT, type TranslateFn } from '@open-mercato/shared/lib/i18n/context'
-import { loadCodeListOptions } from '../lib/codeListOptions'
+import { loadCodeListOptions } from '@/lib/dictionaries/codeListOptions'
 import { PRODUCT_BRAND_DICTIONARY_KEY } from '../../product_codes/lib/dictionaryValues'
 // Deliberate cross-module reuse: the bank block is one value object with one editor, and `parties`
 // owns the only implementation (multiple accounts, exactly one default, clear affordances). Copying

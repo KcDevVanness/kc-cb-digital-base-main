@@ -22,7 +22,7 @@ import {
   parseNumberCell,
   type Dimensions,
 } from './valueNormalization'
-import type { CellValue } from './workbook'
+import type { CellValue } from '@/lib/workbook'
 
 /** A supplier sheet is external integration data: a price finer than the caliber is quantized, not rejected. */
 const logger = createLogger('sourcing').child({ component: 'import' })
