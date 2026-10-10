@@ -70,7 +70,7 @@ type LibraryItem = {
   unitVolume: string | null
   innerPacking: Record<string, unknown> | null
   imageAttachmentIds: string[]
-  productId: string | null
+  catalogProductId: string | null
   productSku: string | null
   source: string
   status: string
@@ -302,9 +302,9 @@ test.describe.serial('purchasing — supplier product library', () => {
 
     const promote = await staffRequest('POST', `${LIBRARY_URL}/promote`, { id: libraryItem?.id })
     expect(promote.status(), 'POST /api/purchasing/supplier-products/promote should return 200').toBe(200)
-    const promoted = await readJsonSafe<{ productId?: string; action?: string; priceSkipped?: boolean }>(promote)
+    const promoted = await readJsonSafe<{ catalogProductId?: string; action?: string; priceSkipped?: boolean }>(promote)
     expect(promoted?.action).toBe('created')
-    productId = promoted?.productId ?? null
+    productId = promoted?.catalogProductId ?? null
     expect(productId).toBeTruthy()
     // The quotation line priced this code, so a `purchase` price row was written.
     expect(promoted?.priceSkipped).toBe(false)
@@ -319,7 +319,7 @@ test.describe.serial('purchasing — supplier product library', () => {
     // The library row now carries the link, so the list renders 关联商品 instead of 未同步.
     const after = await staffRequest('GET', `${LIBRARY_URL}?supplierId=${encodeURIComponent(supplierId)}&search=${encodeURIComponent(`${supplierCode}-UVC`)}`)
     const synced = (await readJsonSafe<ListResponse<LibraryItem>>(after))?.items?.[0]
-    expect(synced?.productId).toBe(productId)
+    expect(synced?.catalogProductId).toBe(productId)
     expect(synced?.productSku).toBe(`${supplierCode}-UVC`)
 
     const again = await staffRequest('POST', `${LIBRARY_URL}/promote`, { id: libraryItem?.id })
@@ -368,7 +368,7 @@ test.describe.serial('purchasing — supplier product library', () => {
     const libraryRow = (await readJsonSafe<ListResponse<LibraryItem>>(list))?.items?.[0]
     expect(libraryRow?.supplierSku).toBe(`${supplierCode}-2`)
     expect(libraryRow?.source).toBe('quote')
-    expect(libraryRow?.productId, 'the promotion backfills the master link').toBeTruthy()
+    expect(libraryRow?.catalogProductId, 'the promotion backfills the master link').toBeTruthy()
   })
 
   test('lets an order line reference a library row, and refuses another supplier’s row', async () => {
@@ -406,11 +406,11 @@ test.describe.serial('purchasing — supplier product library', () => {
       `/api/purchasing/purchase-orders/lines?orderId=${encodeURIComponent(purchaseOrderId)}`,
     )
     expect(lines.status()).toBe(200)
-    const line = (await readJsonSafe<ListResponse<{ supplierProductId: string | null; supplierSku: string | null; productId: string | null }>>(lines))?.items?.[0]
+    const line = (await readJsonSafe<ListResponse<{ supplierProductId: string | null; supplierSku: string | null; catalogProductId: string | null }>>(lines))?.items?.[0]
     expect(line?.supplierProductId).toBe(ownId)
-    // The synced row resolved through the product master, and the snapshot keeps the supplier's own
+    // The synced row resolved through the catalog store, and the snapshot keeps the supplier's own
     // item number — what a packing list prints — not the derived master SKU.
-    expect(line?.productId).toBe(productId)
+    expect(line?.catalogProductId).toBe(productId)
     expect(line?.supplierSku).toBe(supplierCode)
   })
 
@@ -541,9 +541,9 @@ test.describe.serial('purchasing — supplier product library', () => {
     // Promote: our names and the library's supplier price reach the product master.
     const promote = await staffRequest('POST', `${LIBRARY_URL}/promote`, { id: rowId })
     expect(promote.status(), `POST …/promote answered ${await promote.text()}`).toBe(200)
-    const promoted = await readJsonSafe<{ productId?: string; action?: string }>(promote)
+    const promoted = await readJsonSafe<{ catalogProductId?: string; action?: string }>(promote)
     expect(promoted?.action).toBe('created')
-    const promotedProductId = promoted?.productId ?? ''
+    const promotedProductId = promoted?.catalogProductId ?? ''
     expect(promotedProductId).toBeTruthy()
 
     const itemRead = await staffRequest('GET', `/api/products/items?ids=${encodeURIComponent(promotedProductId)}`)
@@ -569,10 +569,10 @@ test.describe.serial('purchasing — supplier product library', () => {
 
     const masterPrices = await staffRequest(
       'GET',
-      `/api/products/prices?productId=${encodeURIComponent(promotedProductId)}&isActive=true`,
+      `/api/products/prices?productId=${encodeURIComponent(promotedProductId)}`,
     )
-    const purchase = ((await readJsonSafe<ListResponse<{ priceTier: string; currencyCode: string; unitPrice: string }>>(masterPrices))
-      ?.items ?? []).find((entry) => entry.priceTier === 'purchase')
+    const purchase = ((await readJsonSafe<ListResponse<{ tier: string; currencyCode: string; unitPrice: string }>>(masterPrices))
+      ?.items ?? []).find((entry) => entry.tier === 'purchase')
     expect(purchase?.currencyCode, 'the library price wins over the quotation for the purchase tier').toBe('CNY')
     expect(Number(purchase?.unitPrice)).toBe(12.5)
   })
@@ -683,7 +683,7 @@ test.describe.serial('purchasing — supplier product library', () => {
 
     const linked = await staffRequest('GET', `${LIBRARY_URL}?ids=${encodeURIComponent(rowId)}`)
     const linkedRow = (await readJsonSafe<ListResponse<LibraryItem & { productDeleted?: boolean }>>(linked))?.items?.[0]
-    expect(linkedRow?.productId, 'the row stores the link (关联已有商品)').toBe(firstTargetId)
+    expect(linkedRow?.catalogProductId, 'the row stores the link (关联已有商品)').toBe(firstTargetId)
     expect(linkedRow?.productSku, 'the list resolves the linked product’s SKU').toBe(`${supplierCode}-LINK-A`)
     expect(linkedRow?.productDeleted, 'a live link is not flagged as deleted').toBe(false)
     expect(await productCount(), 'linking writes only the library row, never a product').toBe(beforeLink)
@@ -693,7 +693,7 @@ test.describe.serial('purchasing — supplier product library', () => {
     expect(relink.status(), 're-pointing a link is the same action (换绑)').toBe(200)
     const relinked = await staffRequest('GET', `${LIBRARY_URL}?ids=${encodeURIComponent(rowId)}`)
     const relinkedRow = (await readJsonSafe<ListResponse<LibraryItem>>(relinked))?.items?.[0]
-    expect(relinkedRow?.productId, 'the link moved to the second product').toBe(secondTargetId)
+    expect(relinkedRow?.catalogProductId, 'the link moved to the second product').toBe(secondTargetId)
     expect(relinkedRow?.productSku).toBe(`${supplierCode}-LINK-B`)
 
     // 解除关联: an explicit null clears it.
@@ -703,7 +703,7 @@ test.describe.serial('purchasing — supplier product library', () => {
     expect(clearedBody?.productId, 'productId: null clears the link (解除关联)').toBeNull()
     const afterClear = await staffRequest('GET', `${LIBRARY_URL}?ids=${encodeURIComponent(rowId)}`)
     const clearedRow = (await readJsonSafe<ListResponse<LibraryItem & { productDeleted?: boolean }>>(afterClear))?.items?.[0]
-    expect(clearedRow?.productId, 'the cleared row carries no link').toBeNull()
+    expect(clearedRow?.catalogProductId, 'the cleared row carries no link').toBeNull()
     expect(clearedRow?.supplierSku, 'the row itself is still readable after clearing').toBe(rowSku)
 
     // A product of the child organization is outside the HQ scope the request writes in.
@@ -729,7 +729,7 @@ test.describe.serial('purchasing — supplier product library', () => {
     expect(toDeletedBody?.code).toBe('product_deleted')
     const stillCleared = await staffRequest('GET', `${LIBRARY_URL}?ids=${encodeURIComponent(rowId)}`)
     expect(
-      (await readJsonSafe<ListResponse<LibraryItem>>(stillCleared))?.items?.[0]?.productId,
+      (await readJsonSafe<ListResponse<LibraryItem>>(stillCleared))?.items?.[0]?.catalogProductId,
       'a refused link leaves the row unlinked',
     ).toBeNull()
 
@@ -749,7 +749,7 @@ test.describe.serial('purchasing — supplier product library', () => {
 
     const orphaned = await staffRequest('GET', `${LIBRARY_URL}?ids=${encodeURIComponent(rowId)}`)
     const orphanedRow = (await readJsonSafe<ListResponse<LibraryItem & { productDeleted?: boolean }>>(orphaned))?.items?.[0]
-    expect(orphanedRow?.productId, 'the stored link survives the product’s deletion').toBe(vanishingTargetId)
+    expect(orphanedRow?.catalogProductId, 'the stored link survives the product’s deletion').toBe(vanishingTargetId)
     expect(orphanedRow?.productDeleted, 'the list flags the link whose product is gone').toBe(true)
 
     const linkedFilter = await staffRequest('GET', `${LIBRARY_URL}?linked=linked&search=${encodeURIComponent(rowSku)}`)
@@ -794,9 +794,9 @@ test.describe.serial('purchasing — supplier product library', () => {
     const replaced = await staffRequest('PUT', masterPricesUrl, {
       productId: syncProductId,
       rows: [
-        { priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 1, unitPrice: '10.0000' },
-        { priceTier: 'internal', currencyCode: 'CNY', minQuantity: 1, unitPrice: '20.0000' },
-        { priceTier: 'export', currencyCode: 'CNY', minQuantity: 1, unitPrice: '30.0000' },
+        { tier: 'purchase', currencyCode: 'CNY', minQuantity: 1, unitPrice: '10.0000' },
+        { tier: 'internal', currencyCode: 'CNY', minQuantity: 1, unitPrice: '20.0000' },
+        { tier: 'export', currencyCode: 'CNY', minQuantity: 1, unitPrice: '30.0000' },
       ],
     })
     expect(replaced.status(), `PUT ${masterPricesUrl} answered ${await replaced.text()}`).toBe(200)
@@ -804,17 +804,17 @@ test.describe.serial('purchasing — supplier product library', () => {
     const masterPrices = async () => {
       const listed = await staffRequest(
         'GET',
-        `${masterPricesUrl}?productId=${encodeURIComponent(syncProductId)}&isActive=true`,
+        `${masterPricesUrl}?productId=${encodeURIComponent(syncProductId)}`,
       )
       expect(listed.status(), 'the price list answers').toBe(200)
       return (
-        (await readJsonSafe<ListResponse<{ id: string; priceTier: string; currencyCode: string; unitPrice: string }>>(listed))
+        (await readJsonSafe<ListResponse<{ id: string; tier: string; currencyCode: string; unitPrice: string }>>(listed))
           ?.items ?? []
       )
     }
     const pricesBefore = await masterPrices()
-    const internalBefore = pricesBefore.find((entry) => entry.priceTier === 'internal')
-    const exportBefore = pricesBefore.find((entry) => entry.priceTier === 'export')
+    const internalBefore = pricesBefore.find((entry) => entry.tier === 'internal')
+    const exportBefore = pricesBefore.find((entry) => entry.tier === 'export')
     expect(internalBefore && exportBefore, 'the product starts with all three price tiers').toBeTruthy()
 
     const syncRowSku = `${supplierCode}-SYNC-ROW`
@@ -853,13 +853,13 @@ test.describe.serial('purchasing — supplier product library', () => {
 
     const sync = await staffRequest('POST', `${LIBRARY_URL}/sync-fields`, { id: syncRowId })
     const syncBody = await readJsonSafe<{
-      productId?: string
+      catalogProductId?: string
       fieldsChanged?: string[]
       priceChanged?: boolean
       code?: string
     }>(sync)
     expect(sync.status(), `POST ${LIBRARY_URL}/sync-fields answered ${JSON.stringify(syncBody)}`).toBe(200)
-    expect(syncBody?.productId, 'the sync names the product it wrote').toBe(syncProductId)
+    expect(syncBody?.catalogProductId, 'the sync names the product it wrote').toBe(syncProductId)
     expect(syncBody?.fieldsChanged, 'the report names exactly the fields the sync wrote').toEqual(['name', 'specSummary'])
     expect(syncBody?.priceChanged, 'the row’s supplier cost moved the purchase tier').toBe(true)
 
@@ -872,11 +872,11 @@ test.describe.serial('purchasing — supplier product library', () => {
     expect(item?.specSummary, 'the description becomes the master’s spec summary').toBe('Material: ABS / Capacity: 2.0L')
 
     const pricesAfter = await masterPrices()
-    const purchaseAfter = pricesAfter.find((entry) => entry.priceTier === 'purchase')
+    const purchaseAfter = pricesAfter.find((entry) => entry.tier === 'purchase')
     expect(purchaseAfter?.currencyCode, 'the purchase tier keeps the library row’s currency').toBe('CNY')
     expect(Number(purchaseAfter?.unitPrice), 'the purchase tier follows the library row').toBe(18.5)
-    const internalAfter = pricesAfter.find((entry) => entry.priceTier === 'internal')
-    const exportAfter = pricesAfter.find((entry) => entry.priceTier === 'export')
+    const internalAfter = pricesAfter.find((entry) => entry.tier === 'internal')
+    const exportAfter = pricesAfter.find((entry) => entry.tier === 'export')
     expect(internalAfter?.id, 'the internal tier is the same row it was before the sync').toBe(internalBefore?.id)
     expect(Number(internalAfter?.unitPrice), 'the internal tier is never touched').toBe(20)
     expect(exportAfter?.id, 'the export tier is the same row it was before the sync').toBe(exportBefore?.id)
@@ -976,15 +976,15 @@ test.describe.serial('purchasing — supplier product library', () => {
     )
     const batchItems = (await readJsonSafe<ListResponse<LibraryItem>>(batchRows))?.items ?? []
     expect(
-      batchItems.find((entry) => entry.id === rowNew)?.productId,
+      batchItems.find((entry) => entry.id === rowNew)?.catalogProductId,
       'the created row is linked to its new product',
     ).toBeTruthy()
     expect(
-      batchItems.find((entry) => entry.id === rowExisting)?.productId,
+      batchItems.find((entry) => entry.id === rowExisting)?.catalogProductId,
       'the existing product is reused, not duplicated',
     ).toBe(existingProductId)
     expect(
-      batchItems.find((entry) => entry.id === rowDeleted)?.productId,
+      batchItems.find((entry) => entry.id === rowDeleted)?.catalogProductId,
       'the failed row is left untouched',
     ).toBeNull()
     const afterBatch = await productCount()
@@ -1065,23 +1065,23 @@ test.describe.serial('purchasing — supplier product library', () => {
     expect(discounted?.supplierCostPrice?.netUnitPrice, 'the net amount is derived, not stored').toBe('95.0000')
 
     const promote = await staffRequest('POST', `${LIBRARY_URL}/promote`, { id: rowId })
-    const promoted = await readJsonSafe<{ productId?: string; action?: string }>(promote)
+    const promoted = await readJsonSafe<{ catalogProductId?: string; action?: string }>(promote)
     expect(promote.status(), `POST …/promote answered ${JSON.stringify(promoted)}`).toBe(200)
-    const productId = String(promoted?.productId ?? '')
+    const productId = String(promoted?.catalogProductId ?? '')
     expect(productId, 'the promotion names the product it created').toBeTruthy()
 
     const masterPrices = async () => {
       const listed = await staffRequest(
         'GET',
-        `/api/products/prices?productId=${encodeURIComponent(productId)}&isActive=true`,
+        `/api/products/prices?productId=${encodeURIComponent(productId)}`,
       )
       expect(listed.status(), 'the product price list answers').toBe(200)
       return (
-        (await readJsonSafe<ListResponse<{ priceTier: string; currencyCode: string; unitPrice: string }>>(listed))
+        (await readJsonSafe<ListResponse<{ tier: string; currencyCode: string; unitPrice: string }>>(listed))
           ?.items ?? []
       )
     }
-    const purchase = (await masterPrices()).find((entry) => entry.priceTier === 'purchase')
+    const purchase = (await masterPrices()).find((entry) => entry.tier === 'purchase')
     expect(purchase, 'the promotion wrote a purchase price').toBeTruthy()
     expect(
       Number(purchase?.unitPrice),
@@ -1092,8 +1092,8 @@ test.describe.serial('purchasing — supplier product library', () => {
     const internal = await staffRequest('PUT', '/api/products/prices', {
       productId,
       rows: [
-        { priceTier: 'purchase', currencyCode: 'CNY', minQuantity: 1, unitPrice: '95.0000' },
-        { priceTier: 'internal', currencyCode: 'USD', minQuantity: 1, unitPrice: '21.5000' },
+        { tier: 'purchase', currencyCode: 'CNY', minQuantity: 1, unitPrice: '95.0000' },
+        { tier: 'internal', currencyCode: 'USD', minQuantity: 1, unitPrice: '21.5000' },
       ],
     })
     expect(internal.status(), `PUT /api/products/prices answered ${await internal.text()}`).toBe(200)

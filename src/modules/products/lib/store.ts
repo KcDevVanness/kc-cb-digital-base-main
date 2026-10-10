@@ -385,23 +385,31 @@ export function customFieldPayload(input: StoreProductInput): Record<string, unk
   return payload
 }
 
-/** The catalog-native half of a product write. */
+/**
+ * The catalog-native half of a product write.
+ *
+ * Only the keys the caller actually provided are emitted: a create fills every default in its
+ * validator (unit `PCS`, status `active`, lithium `false`), while a partial update must not reset a
+ * column it never mentioned — `undefined` means "leave it alone" here, exactly like the custom-field
+ * half.
+ */
 export function nativeProductPayload(input: StoreProductInput): Record<string, unknown> {
-  const hasNetWeight = input.netWeight !== null && input.netWeight !== undefined && input.netWeight !== ''
-  return {
-    title: input.name,
-    sku: input.sku,
-    defaultUnit: input.unit ?? 'PCS',
-    isActive: (input.status ?? 'active') === 'active',
-    hsCode: nullableText(input.hsCode),
-    cnCode: nullableText(input.cnCode),
-    countryOfOriginCode: nullableText(input.countryOfOriginCode),
-    weightValue: hasNetWeight ? Number(input.netWeight) : null,
-    weightUnit: hasNetWeight ? 'kg' : null,
-    dimensions: nativeDimensions(input.dimensions ?? null),
-    containsLithiumBattery: input.containsLithiumBattery ?? false,
-    customFieldsetCode: PRODUCT_ERP_FIELDSET,
+  const payload: Record<string, unknown> = { customFieldsetCode: PRODUCT_ERP_FIELDSET }
+  if (input.name !== undefined) payload.title = input.name
+  if (input.sku !== undefined) payload.sku = input.sku
+  if (input.unit !== undefined) payload.defaultUnit = input.unit
+  if (input.status !== undefined) payload.isActive = input.status === 'active'
+  if (input.hsCode !== undefined) payload.hsCode = nullableText(input.hsCode)
+  if (input.cnCode !== undefined) payload.cnCode = nullableText(input.cnCode)
+  if (input.countryOfOriginCode !== undefined) payload.countryOfOriginCode = nullableText(input.countryOfOriginCode)
+  if (input.netWeight !== undefined) {
+    const hasWeight = input.netWeight !== null && input.netWeight !== ''
+    payload.weightValue = hasWeight ? Number(input.netWeight) : null
+    payload.weightUnit = hasWeight ? 'kg' : null
   }
+  if (input.dimensions !== undefined) payload.dimensions = nativeDimensions(input.dimensions ?? null)
+  if (input.containsLithiumBattery !== undefined) payload.containsLithiumBattery = input.containsLithiumBattery
+  return payload
 }
 
 // ---------------------------------------------------------------------------------------------
