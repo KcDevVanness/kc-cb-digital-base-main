@@ -1001,7 +1001,7 @@ export default function PurchaseOrderDetail({ orderId }: { orderId: string }) {
         </SummaryField>
         {/* Every field the edit form can still fill belongs here too (owner 2026-10-10: 可填的内容需要
             在详情页对应完整显示) — the deposit terms and the note were the ones missing. */}
-        <SummaryField label={t('purchasing.orders.form.field.depositPercent')}>
+        <SummaryField label={t('purchasing.orders.detail.depositPercent')}>
           {depositPercentLabel ?? EMPTY_CELL}
         </SummaryField>
         <SummaryField label={t('purchasing.orders.form.field.depositAmount')}>
