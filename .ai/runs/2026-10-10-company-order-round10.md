@@ -115,6 +115,14 @@ owner 2026-10-10 对五个页面的 12 点设计反馈落地；当日问答定�
 - [x] 4.3 文档（spec 第十轮 + 状态/Changelog、`order_hub`/`purchasing`/`sourcing` README、计划行 六·补60、状态板、`business-architecture` 决策行、lesson）
 - [x] 4.4 PR draft → ready（#162，labels: review / feature / priority-high / risk-medium / qa-self-verified）
 
+### Phase 10.E: 第十轮复查·三（列表行菜单 / 详情单证镜像）
+
+- [x] 5.1 行「⋯」菜单：`purchaseOrderRowActions` + `ActionsDropdown` + 单测 TEST-037 — 9e5a2b3
+- [x] 5.2 详情「单证」只读镜像：`rootDocuments` 解析 + `PurchaseOrderDetail` 渲染 + i18n — b96b74d
+- [x] 5.3 解析单测 TEST-038 + 组件改用共享解析 — e439973
+- [x] 5.4 宽门禁（generate/typecheck/lint/check-lessons/ds:check/test/build）+ 浏览器实测（AC-052…AC-053）
+- [x] 5.5 文档：spec 复查·三 + Changelog、本文件、`purchasing`/`order_hub` README、计划行 六·补60、lesson
+
 ## Evidence（实现期实测，2026-10-10）
 
 - **宽门禁**（`yarn generate && yarn typecheck && yarn lint && node scripts/check-lessons.mjs && yarn ds:check && yarn test && yarn build`）：全部通过——typecheck 0 error；lint 0 error（12 条既有 warning）；`ds:check` 1106 files passed；`yarn test` **92 suites · 822 tests passed**；`yarn build` 成功（`yarn generate` 277 API paths）。
@@ -156,3 +164,19 @@ owner 2026-10-10 对五个页面的 12 点设计反馈落地；当日问答定�
 **证据**（浏览器实测，同上）：编辑页 `depositPercent`/`depositAmount`/`supplierId` 控件 `disabled=true`、`businessNumber` 仍可编辑；详情摘要 = 「… 预计交货日期 — 定金比例 — 定金金额 — 备注 额温枪」（owner 自己填的备注照常显示）且无重复「%」；抬头按钮 href = `/backend/orders/e9ad342f…`；「单证」区块 = 提示 + 「去公司订单录入单证」，无「新增单证」；列表 8 行首屏 = `PO-2026-0008` 「打开公司订单」（可点）+ 其余「未关联公司订单」（`disabled`）——无需任何点击；DB `purchasing_purchase_order_documents` 计数 = 0。截图见 PR 评论。
 
 **实现期自修**：`psql` 清表前置的一次核对发现链接表里 `PO-2026-0010` 的根单归属已被移除（owner 浏览时所为），列表据此显示「未关联」——批量反查与库内状态一致。
+
+## 复查·三（owner 2026-10-10 复查 2 点：列表行菜单 / 详情单证镜像）
+
+| 反馈 | 落地 |
+|---|---|
+| 列表里公司订单的动作**放在 ⋯ 外面很丑**，要求放进菜单 | 行操作只剩一个「⋯」菜单（`@open-mercato/ui/backend/forms` 的 `ActionsDropdown`，`triggerClassName` 保持裸行动作图标同形）；项由纯函数 `components/purchaseOrderRowActions.ts` 构建——「打开」常驻；已关联＝「打开公司订单」直达根单；未关联＝「未关联公司订单」置灰（`disabled`、`pointer-events: none`）；读不到（403/失败）＝该项不出现（REQ-057、TEST-037） |
+| 「单证」区块要显示**会关联什么单证数据**、并**联动**显示 | 详情「单证」＝根单「单据与文件」的只读镜像（`GET /api/order_hub/orders/fields` 的 `documents.bySlot`，与 hub 区块/全字段抽屉同一投影，不读它的表）：有内容的槽位一行——本单文件 chips（名称/日期/预览/下载，字节走根单代理 `/api/order_hub/orders/attachments/<id>`）+ 子单来源 chips（份数 + 深链根单 `#contracts`/`#shipments`/`#money`/`#purchasing`）；解析 `components/rootDocuments.ts`（TEST-038）；未关联/403/失败只留提示与入口（REQ-056） |
+
+**证据**（浏览器实测；dev server 本 worktree，port 3000 被主树占用 → 运行时落到 `http://localhost:3001`，以日志为准）：
+
+- 列表：首屏 8 行每行只有一个「⋯」——`PO-2026-0008`（已关联）菜单 = 「打开 / 打开公司订单」；`PO-2026-0007`（未关联）菜单 = 「打开 / 未关联公司订单」（`disabled=true`、计算样式 `pointer-events: none`）；行内不再有第二个按钮。截图 2 张。
+- 详情（`PO-2026-0008`）：区块 = 「商业发票（INV.NO） 本单 20260923164549_67_40.jpg 2026-10-10 预览 下载」+「采购水单及发票 采购 1 份」→ `/backend/orders/e9ad342f…#purchasing` + 「去公司订单录入单证」。截图 1 张。
+- **联动双向**：把 `r10-doc-smoke.txt` 上传到根单「装箱单（PL）」→ 采购单页出现该槽位，其「下载」= 200 + 原字节 + UTF-8 文件名；在根单删除该文件 → 采购单页随之消失。（「采购 1 份」来源由付款凭证附件触发；验后已按 installed `DELETE /api/attachments?id=` 删除该附件并把付款行 `attachment_id` 复位，槽位文件走 hub 删除。）
+- 说明：根单上更早的槽位文件由**别的 dev 树**上传，本树答 404「File not available」——根单页自己的下载链在该服务器上同样如此（附件本地存储按工作树分开），不是本改动的缺陷。
+- 宽门禁：`yarn generate && yarn typecheck && yarn lint && node scripts/check-lessons.mjs && yarn ds:check && yarn test && yarn build` 全绿——typecheck 0 error；lint 0 error（12 条既有 warning）；`ds:check` **1109 files passed**；`yarn test` **94 suites · 832 tests passed**（+2 套件 / +9 用例 = TEST-037/038）；`yarn build` 成功。
+- **实现期自修**：解析从组件内联抽到 `components/rootDocuments.ts` 并补 TEST-038（跨模块 HTTP 载荷的边界值得单独钉住），组件仅消费该函数。

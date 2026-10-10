@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 63 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 64 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -91,3 +91,4 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - [A page opened from another page must carry where it came from, in a parameter that is whitelisted](lessons/opened-page-returns-to-its-origin.md) — area:backend-ui,module-data; module:order_hub,purchasing,internal_sales,trade_docs,cross_border,export_finance; topic:navigation,return-to,back-link,cross-module-jump,open-redirect,hub
 - [In a worktree session, verify which tree an edit landed in — file tools may resolve against the session root](lessons/worktree-tools-may-edit-the-primary-checkout.md) — area:spec-pr; module:platform; topic:worktree,parallel-development,tooling,relative-paths,branch-hygiene
 - [Orca→Linear writes need a read-back; the write response alone is not proof](lessons/orca-linear-writes-need-readback.md) — area:spec-pr,ai-workflow; module:platform; topic:orca-cli,linear,write-verification,idempotency,sync-tooling
+- [A row state belongs in the ⋯ menu, and the installed RowActions cannot render it disabled — ActionsDropdown can](lessons/row-state-needs-a-menu-with-disabled-items.md) — area:backend-ui,framework-context; module:purchasing,platform; topic:row-actions,actions-dropdown,disabled-state,data-table,installed-ui,owner-feedback
