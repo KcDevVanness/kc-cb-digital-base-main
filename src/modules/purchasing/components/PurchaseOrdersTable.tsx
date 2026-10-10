@@ -78,10 +78,38 @@ function buildColumns(t: TranslateFn, locale: string): ColumnDef<PurchaseOrderRe
       ),
     },
     {
+      // 预付款金额: what has actually been registered at the `deposit` stage, not the planned term.
+      accessorKey: 'paidDeposit',
+      header: t('purchasing.orders.list.columns.paidDeposit'),
+      enableSorting: false,
+      meta: { priority: 5, align: 'right' },
+      cell: ({ row }) => (
+        <MoneyAmount
+          currencyCode={row.original.currencyCode}
+          amount={row.original.paidDeposit}
+          className="items-end"
+        />
+      ),
+    },
+    {
+      // 尾款金额: what has actually been registered at the `balance` stage.
+      accessorKey: 'paidBalance',
+      header: t('purchasing.orders.list.columns.paidBalance'),
+      enableSorting: false,
+      meta: { priority: 6, align: 'right' },
+      cell: ({ row }) => (
+        <MoneyAmount
+          currencyCode={row.original.currencyCode}
+          amount={row.original.paidBalance}
+          className="items-end"
+        />
+      ),
+    },
+    {
       accessorKey: 'expectedShipAt',
       header: t('purchasing.orders.list.columns.expectedShipAt'),
       enableSorting: false,
-      meta: { priority: 5 },
+      meta: { priority: 7 },
       cell: ({ row }) => {
         const expected = formatOrderDate(row.original.expectedShipAt, locale)
         return expected ? expected : <EmptyCell />
@@ -160,6 +188,35 @@ export default function PurchaseOrdersTable() {
     [],
   )
 
+  /**
+   * The row's 「打开公司订单」 answer, once the reverse lookup has been attempted: `none` when the
+   * order carries no root link, `failed` when the lookup itself could not be answered (a role
+   * without `order_hub.view` gets a 403 here). Both turn the action into a greyed hint instead of a
+   * jump into a blank page; the lookup never raises a toast and never fails the list.
+   */
+  const [companyOrderUnavailable, setCompanyOrderUnavailable] = React.useState<Record<string, 'none' | 'failed'>>({})
+
+  const openCompanyOrder = React.useCallback(
+    async (row: PurchaseOrderRecord) => {
+      try {
+        const payload = await fetchCrudList<Record<string, unknown>>('order_hub/orders/links', {
+          refId: row.id,
+          kind: 'purchase_order',
+          pageSize: 1,
+        })
+        const companyOrderId = payload.items?.[0]?.companyOrderId
+        if (typeof companyOrderId === 'string' && companyOrderId.length > 0) {
+          router.push(`/backend/orders/${encodeURIComponent(companyOrderId)}`)
+          return
+        }
+        setCompanyOrderUnavailable((previous) => ({ ...previous, [row.id]: 'none' }))
+      } catch {
+        setCompanyOrderUnavailable((previous) => ({ ...previous, [row.id]: 'failed' }))
+      }
+    },
+    [router],
+  )
+
   // The rows themselves carry the frozen source number, so naming the filter costs no extra request.
   const sourceOrderNumber = sourceSalesOrderId
     ? rows.find((row) => row.sourceSalesOrderNumber)?.sourceSalesOrderNumber ?? null
@@ -226,17 +283,49 @@ export default function PurchaseOrdersTable() {
           createLabel={t('purchasing.orders.actions.create')}
         />
       )}
-      rowActions={(row) => (
-        <RowActions
-          items={[
-            {
-              id: 'open',
-              label: t('purchasing.orders.actions.open'),
-              onSelect: () => router.push(detailHref(row)),
-            },
-          ]}
-        />
-      )}
+      rowActions={(row) => {
+        const blocked = companyOrderUnavailable[row.id]
+        if (blocked) {
+          // `RowActions` items have no disabled state, so an unavailable jump is a greyed, inert
+          // button carrying the reason instead of a menu entry that would navigate nowhere. The
+          // 「打开」 entry stays in the menu beside it, so the row keeps its own detail action.
+          const reason = t(blocked === 'none'
+            ? 'purchasing.orders.list.actions.noCompanyOrder'
+            : 'purchasing.orders.list.actions.companyOrderUnavailable')
+          return (
+            <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+              <RowActions
+                items={[
+                  {
+                    id: 'open',
+                    label: t('purchasing.orders.actions.open'),
+                    onSelect: () => router.push(detailHref(row)),
+                  },
+                ]}
+              />
+              <Button type="button" variant="ghost" size="sm" disabled className="text-muted-foreground" title={reason}>
+                {reason}
+              </Button>
+            </div>
+          )
+        }
+        return (
+          <RowActions
+            items={[
+              {
+                id: 'open',
+                label: t('purchasing.orders.actions.open'),
+                onSelect: () => router.push(detailHref(row)),
+              },
+              {
+                id: 'openCompanyOrder',
+                label: t('purchasing.orders.list.actions.openCompanyOrder'),
+                onSelect: () => void openCompanyOrder(row),
+              },
+            ]}
+          />
+        )
+      }}
       pagination={{
         page,
         pageSize: PAGE_SIZE,

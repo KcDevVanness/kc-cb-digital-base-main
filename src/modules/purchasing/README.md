@@ -11,8 +11,8 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 | 实体（`data/entities.ts`） | `PurchasingSupplier` / `PurchasingSupplierProduct` / `PurchasingSupplierProductPrice` / `PurchasingPurchaseOrder` / `PurchasingPurchaseOrderLine` / `PurchasingPurchasePayment` / `PurchasingPurchaseOrderDocument` → 表 `purchasing_suppliers` / `purchasing_supplier_products` / `purchasing_supplier_product_prices` / `purchasing_purchase_orders` / `purchasing_purchase_order_lines` / `purchasing_purchase_payments` / `purchasing_purchase_order_documents` |
 | API | `GET|POST|PUT|DELETE /api/purchasing/suppliers`、`/purchase-orders`、`/purchase-orders/documents`、`/purchase-orders/payments`（`makeCrudRoute`；payments 的 PUT 是绑定付款凭证）；`GET /api/purchasing/purchase-orders/lines`（只读行面，行只经订单命令写入）；`POST /api/purchasing/purchase-orders/transitions`（阶段流转：同路径的 GET 列表只为 CRUD 工厂解析作用域，不是 UI 契约）；供应商产品库：`GET|POST|PUT|DELETE /api/purchasing/supplier-products`、`POST …/import`、`POST …/promote`、`GET|PUT /api/purchasing/supplier-products/prices` |
 | 命令 | `purchasing.suppliers.{create,update,delete}`、`purchasing.supplier-products.{create,update,delete,import-from-quote,promote,replace-prices}`、`purchasing.purchase-orders.{create,update,delete,transition,apply-receipt}`、`purchasing.purchase-payments.{record,attach,delete}`、`purchasing.order-documents.{create,update,delete}` |
-| 后台页面 | `/backend/purchasing/suppliers`（列表/新建/编辑）、`/backend/purchasing/supplier-products`（列表/新建/编辑：字段分组、供货价、商品图片）、`/backend/purchasing/orders`（列表/新建/详情/编辑：行、阶段付款、单证；详情页另有只读的 关联订单/关联合同/关联发运单 三区块） |
-| 事件 | `purchasing.supplier.{created,updated,deleted}`、`purchasing.supplier_product.{created,updated,deleted}`、`purchasing.supplier_product_prices.updated`、`purchasing.purchase_order.{created,updated,placed,shipped,received,closed,cancelled,deleted}`、`purchasing.purchase_payment.{recorded,deleted}`；单证 CRUD 侧效另发 `purchasing.purchase_order_document.{created,updated,deleted}`（`commands/orders.ts` 的 `purchaseOrderDocumentCrudEvents`，实体 `purchase_order_document`；这三个 id 目前未登记在 `events.ts`） |
+| 后台页面 | `/backend/purchasing/suppliers`（列表/新建/编辑）、`/backend/purchasing/supplier-products`（列表/新建/编辑：字段分组、供货价、商品图片）、`/backend/purchasing/orders`（列表/新建/详情/编辑：行、阶段付款、单证）。列表列＝单号 / 供应商 / 状态 / **订单金额** / 预付款金额 / 尾款金额 / **预计交货日期**，行操作＝「打开」（详情）与「打开公司订单」（反查根单后跳 `/backend/orders/<id>`；未关联或读不到（无 `order_hub.view` 的 403）时该项显示为提示、不跳空页也不报错）。详情页只有本单自己的工作面（抬头摘要 + 行 + 单证 + 付款），不再有关联区块 |
+| 事件 | `purchasing.supplier.{created,updated,deleted}`、`purchasing.supplier_product.{created,updated,deleted}`、`purchasing.supplier_product_prices.updated`、`purchasing.purchase_order.{created,updated,placed,shipped,received,closed,cancelled,deleted}`、`purchasing.purchase_payment.{recorded,deleted}`；单证 CRUD 侧效另发 `purchasing.purchase_order_document.{created,updated,deleted}`（`commands/orders.ts` 的 `purchaseOrderDocumentCrudEvents`，实体 `purchase_order_document`；这三个 id 目前未登记在 `events.ts`）；本模块还**订阅** `order_hub.company_order.order_fields_updated`（根单的订单描述/采购负责人镜像到采购单，见「根单持有字段与镜像订阅」） |
 | 权限 | `purchasing.suppliers.view|manage`、`purchasing.supplier-products.view|manage|promote`、`purchasing.orders.view|manage`、`purchasing.payments.manage` |
 | 命令公共件 | `commands/shared.ts`：本模块唯一的 `ensureScope`（可信作用域、缺组织 fail closed）与产品库的实体 id / 资源类型 / 事件与索引桥配置 |
 | 迁移 | `migrations/Migration20260921081717_purchasing.ts`（`purchasing_suppliers`）、`Migration20260921085348_purchasing.ts`（订单 / 行 / 付款三表）、`Migration20260921100702_purchasing.ts`（付款 `attachment_id`）、`Migration20260922073530_purchasing.ts`（行 `product_id` + `catalog_product_id` 放开 NOT NULL）、`Migration20260922082559_purchasing.ts`（`purchasing_purchase_order_documents` 表 + 单头 `business_number`/`product_category`/`owner_*`/`customer_*`）、`Migration20260922103027_purchasing.ts`（行 `supplier_product_id`）、`Migration20260924041621_purchasing.ts`（供应商 `brand_value`）、`Migration20260928073630_purchasing.ts`（订单/行/付款金额列收窄为 `numeric(18,2)`）、`Migration20261008042809_purchasing.ts`（采购单来源销售订单三列 + 索引）、`Migration20260929063626_purchasing.ts`（`purchasing_supplier_bank_accounts` 供应商银行账户表）；产品库的表由 `sourcing` 侧的迁移建出并在 `Migration20260923043000_sourcing.ts` **改名为 `purchasing_*`**（含 `Migration20260923044000_sourcing.ts` 的 pkey 改名），数据原样保留 |
@@ -29,27 +29,27 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 | 解析规则 | 命令内 scoped 只读 `sales_orders`（同租户 + 同组织 + 未软删），经 `sales_channels.code` 判定贸易类型；解析不到 → **422 `source_sales_order_not_found`**（跨组织与不存在返回同一码：不确认他组织记录的存在） |
 | 更新语义 | 不出现即不改；显式 `null` 清空三列；来源是**链接不是商务条款**，因此已下单（非 `draft`）也可改 |
 | 列表 | `GET /api/purchasing/purchase-orders?sourceSalesOrderId=<uuid>` 只回该销售订单的采购单；出参带三个 camelCase 字段 |
-| 新建预填 | `/backend/purchasing/orders/create?orderKind=<kind>&orderId=<uuid>`：来源已填、行按销售订单行复制（**只复制商品引用与数量，不复制销售单价**——那是客户价）；供应商选定后自动带出该供应商供货价（未手填的行） |
-| 页面 | 列表页带可清除的来源筛选横幅；详情页的「关联订单」区块只读显示来源单号并链到订单详情 hub（`/backend/orders/<id>`） |
+| 新建预填 | `/backend/purchasing/orders/create?orderKind=<kind>&orderId=<uuid>`：来源已填、行按销售订单行复制（**只复制商品引用与数量，不复制销售单价**——那是客户价）；供应商选定后自动带出该供应商供货价（未手填的行）。从公司订单的「新建采购单」进入时另带 `?companyOrderId=`（建好后自动挂回根单并跳回），带出根单的默认供应商；表单**没有**订单描述 / 采购负责人两格——两者由根单持有并镜像下来（见下节） |
+| 页面 | 列表页带可清除的来源筛选横幅；详情页的抬头摘要格只读显示来源单号并链到该销售订单（`external_sales_order` → `/backend/external-sales/orders/<id>`，否则 `/backend/internal-sales/orders/<id>`） |
 | 纯函数 | `lib/sourceSalesOrder.ts`（参数解析、行映射、kind 映射，客户端与服务端共用）+ `lib/sourceSalesOrderReads.ts`（scoped 只读与 422 前置） |
 
-## 采购单详情页的关联区块（2026-10-09）
+## 根单持有字段与镜像订阅（2026-10-10）
 
-详情页（`/backend/purchasing/orders/<id>`——工作台采购行的「打开详情」落点）读作 hub：明细行之后是三个
-**只读**关联区块，壳是共享件 `src/lib/related/RelatedSection.tsx`（与订单 hub、合同详情页同一实现），
-每区独立读、独立 loading/empty/error（错误带重试），切换组织时整组重取（`scopeVersion` 进 query key）。
+**订单描述**（字典 `product_category` 的 code）与**采购负责人**（人员账号 + 冻结快照 `owner_snapshot`）只由
+**公司订单根单**持有：采购单上的两列是根单的投影，采购侧一律只读。
 
-| 区块 | 读 | 行 | 空态 |
-|---|---|---|---|
-| 关联订单 | 抬头上的来源锚三列（不额外读） | 单号链 `/backend/orders/<id>`（订单 hub）+ kind 徽章（复用 `trade_docs.contracts.detail.orders.kind.*` 词条） | 「这张采购单没有来源销售订单。」 |
-| 关联合同 | `GET /api/trade_docs/contracts/orders?orderKind=purchase_order&orderId=` → `GET /api/trade_docs/contracts?ids=` | 合同号链 `/backend/trade-docs/contracts/<id>`、金额、状态徽章 | 文案指向合同页的「管理订单关联」——挂单关系写在合同侧，本页没有写入口 |
-| 关联发运单 | `GET /api/cross_border/shipments?purchaseOrderId=<id>`（预览 20 行） | 单号链 `/backend/cross_border/shipments/<id>`、柜号、状态徽章、ETA | 「还没有携带这张采购单货物的发运单。」；超过预览条数时「查看全部」→ `/backend/cross_border/shipments?purchaseOrderId=<id>`（列表页带可清除横幅） |
+| 事项 | 口径 |
+|---|---|
+| 唯一写入口 | 根单（`order_hub`）。两个采购表单（新建/编辑）**没有**这两格，也不把它们放进 payload；`buildPurchaseOrderPayload` 只构建本模块自己拥有的键 |
+| 只读显示 | 详情页抬头摘要格读采购单自身投影（镜像保证与根单一致）；已挂根单时「订单描述」格旁给「去公司订单修改」链接（根单 id 由 `GET /api/order_hub/orders/links?refId=<采购单 id>&kind=purchase_order` 反查，读不到就不显示链接——无 `order_hub.view` 的 403 只是没有入口，不影响页面） |
+| 镜像事件 | `order_hub.company_order.order_fields_updated`（载荷 `{ id, tenantId, organizationId, productCategory, ownerUserId, ownerSnapshot, purchaseOrderIds[] }`），订阅者 `subscribers/mirror-root-order-fields.ts`（`purchasing:mirror-root-order-fields`，`persistent: true`） |
+| 写入语义 | 按 `tenantId` + `organizationId` + `id ∈ purchaseOrderIds` 覆盖写三列（幂等）；载荷**缺席**的字段不写（只有显式值 / 显式 `null` 才落），因此只报一个字段的事件不会清掉另一个。写失败只记日志不抛，一条失败不中断同批其余采购单 |
+| 表单的锁定语义 | 已下单（非 `draft`）订单的可改集合（`POST_PLACEMENT_FIELDS`，镜像 `commands/orders.ts` 的 `POST_PLACEMENT_UPDATE_FIELDS`）不含这三列——锁单保存不会把镜像值改回旧值 |
+| 列表 | 列＝单号 / 供应商 / 状态 / 订单金额 / 预付款金额 / 尾款金额 / 预计交货日期；行操作「打开公司订单」按上面同一条反查跳 `/backend/orders/<id>`，未关联或读不到时该项显示提示（`list.actions.noCompanyOrder` / `.companyOrderUnavailable`），不跳空页、不报错、不影响列表本身 |
+| 预付款/尾款金额 | **实际口径**：该单已登记付款里 `stage='deposit'` / `stage='balance'` 的合计（`lib/orderTotals.ts` 的 `stagePaidTotals`，与 `paidTotal`/`outstanding` 同一批 payment 行在 `afterList` 里算出），不是计划值（计划值仍是 `depositPercent`/`depositAmount`）；`other` 阶段不计入这两列 |
 
-- 来源单号从抬头摘要格**移进**「关联订单」区块：同一事实只留一处，且区块给了它到订单 hub 的入口。
-- 词条在 `purchasing.orders.detail.{related.*, sourceOrder.*, contracts.*, shipments.*}`；状态徽章复用各模块自己的
-  词条（`trade_docs.contracts.status.*`、`cross_border.shipments.status.*`），不复制第二份文案。
-- 服务端读全在数据归属方：合同的关联行由 `trade_docs` 的路由读、发运单过滤由 `cross_border` 的 scoped 只读
-  （`lib/shipmentSalesReads.ts` 的 `loadShipmentIdsForPurchaseOrder`）解析，本模块不碰对方实体。
+- 关联区块（来源订单 / 关联合同 / 关联发运单）**不在采购单详情页**：来源单号回到抬头摘要格，合同与发运单
+  的关联面归各自模块与公司订单。`cross_border` 的 `?purchaseOrderId=` 过滤保留（发运单列表自己的入口）。
 
 ## 商品引用：自建商品主数据优先（REQ-017）
 
@@ -103,6 +103,24 @@ app 自有模块。跨境采购的**唯一采购台账**：供应商主数据 �
 | 报价侧入口 | 报价控制台的「加入产品库」与「提升所选为商品」都调用 `purchasing.supplier-products.import-from-quote`；本模块用只读投影读报价行（`lib/quoteLineReads.ts`），**不引用 `sourcing` 的实体** |
 | 列表价格列的列宽（2026-09-24） | `DataTable` 默认给**每一列**套 `TruncatedCell`，没有 `maxWidth` 时按 **150px** 截断（`getColumnTruncateConfig` 的兜底分支）。本公司报价格子是三行右对齐（金额 / `≈ ¥…` / 图例「取自商品档案（内部结算价）」，`text-xs` 下 **156px**），溢出的是右对齐子元素、截断容器自己不滚，于是 `scrollWidth == clientWidth`：既不出现省略号也不弹 tooltip，图例的开头被**静默**切掉。修法＝该列 `truncate: false` + 单元格 `whitespace-nowrap`，列宽随内容（实测 188px）——只加 `truncate: false` 而不加 nowrap 会更糟：自动布局把列压到 102px，13 个字的图例断成四行。证据与通则见 `.ai/lessons/datatable-cell-truncates-at-150px.md` |
 | 与 Q-P-004 的关系 | 采购单行价仍是**谈判值**，绝不被产品库价格自动带出；产品库只提供"当前价"清单，报价单仍是谈判文档 |
+
+### Excel 导入（供应商产品表，2026-10-10）
+
+产品库列表抬头「Excel 导入」三步：选供应商 + 上传（`.xlsx`/`.xls`/`.csv`）→ 核对列映射 + 预览 → 导入。文件先进
+`attachments`（`entityId = purchasing:purchasing_supplier` + 供应商 id、`partitionCode = privateAttachments`），
+解析路由只读回**本供应商名下**的文件（`readScoped({ expectedOwner })`；读不到或归属不符 → 422
+`attachment_unreadable`，绝不 500）。
+
+| 关注点 | 约定 |
+|---|---|
+| 路由 | `POST /api/purchasing/supplier-products/excel-import/parse`（手写只读路由：不落库、不派命令、不留审计）与 `POST /api/purchasing/supplier-products/excel-import`（CRUD 工厂 + 命令）。两者都按 `purchasing.supplier-products.manage` 收口，路径与既有 `…/import`（报价行导入）不同 |
+| 表头探测 | 前 20 行里**别名命中最多**的一行，并列取靠前者；一个字段只由一列导入（精确标签 > 别名 > 靠左），落败的重复列在映射表里标「与第 N 列同字段，已忽略」；前 20 行一个已知列都没有 → 422 `header_not_found`（宁可失败也不把标题块当数据行），空表 → `empty_sheet`；只读**第一个**工作表（多表选择器待做） |
+| 别名表 | `lib/supplierProductExcelImport/aliases.ts`：字段名就是 `supplierProductCreateSchema` 的 key；`exact` = 本库/标准模板的写法（供应商货号、品名（中文）、单位、每箱数量…），`alias` = 同义写法（货号、SKU、N.W.、装箱数…）。比对前 NFKC 折叠全角、去空白与标点、大小写不敏感；未知表头 = 忽略，不是错误 |
+| 价格列 | 「供货价/单价/Unit Price…」被识别但**本轮不导入**：一条价格行是 `价格类型 × 币种 × 起订量`，单元格只给一个金额无法无歧义地决定另外两维。映射表给这些列标「价格列，本轮不导入」，不静默丢弃。**折扣（%）**列可导入（落在产品库行 `discount_percent`） |
+| 行构建与编号 | `lib/supplierProductExcelImport/rows.ts`（纯函数，浏览器与命令共用）：trim、空行跳过、数字列去千分位/货币/单位后缀（`1,200 PCS` → `1200`；`100-200`、`46.5*46.5*40cm` 判为不可识别并保留原文，让契约拒绝）、上限与 `readWorkbook` 的 caps 对齐（20000 行 / 256 列，超出上报 `truncated`）。**行号 = 表格行号**（首行数据 = `headerRowIndex + 2`），失败列表里的「第 N 行」就是 Excel 左侧行号 |
+| 导入命令 | `purchasing.supplier-products.import-excel`：`{ supplierId, rows }`，逐行复用现有 `purchasing.supplier-products.create` 命令（先 `supplierProductCreateSchema` 校验，再走 `commandBus`），因此查重（含软删行）、品牌解析、事件与索引副作用只有一份实现；逐行隔离：失败只进 `failed[{ row, reason }]`，其余照常落库；供应商不在本组织 → 400（一次，不是每行一次）。代价是每写入一行留一条 create 审计，与逐行手工录入同规模 |
+| 未导入的列 | 单价、`inner_packing`（产品尺寸要三个数）、备注、状态、图片都不在别名表里（未知列 = 忽略）；`unit` 留空取契约默认 `PCS`，`status` 默认 `active` |
+| 前置 | 上传走 `attachments` 的 `POST /api/attachments`（要 `attachments.manage`，与报价导入向导同一前置）；解析与导入要 `purchasing.supplier-products.manage`。不新增 feature，已有租户无需重新 `sync-role-acls` |
 
 ## 供应商银行账户（2026-09-29）
 
@@ -164,6 +182,11 @@ yarn test:integration:ephemeral   # 含 purchasing/__integration__/supplier-prod
 # 已有租户需要：yarn mercato seed:defaults --module purchasing（单位字典）+ yarn mercato seed:defaults --module product_codes（品牌/类别字典 + 默认编码规则）
 #   + yarn mercato auth sync-role-acls（新权限）。漏掉 product_codes 那一步的表现是「默认品牌」下拉为空、字典库里没有 product_brand，
 #   且 product_codes_rules 为空（生成按钮没有规则可解析）——见 `.ai/lessons/module-seeded-dictionaries-need-seed-defaults.md`
+# Excel 导入冒烟（2026-10-10）：产品库列表「Excel 导入」→ 选供应商 → 上传 .xlsx/.xls/.csv → 出现表头探测与列映射建议 →
+#   改一列映射后预览立即重算（不必重新上传）→ 导入 → 结果页给出成功/失败计数与失败行原因；关闭对话框后列表自动刷新
+#   边界：非本供应商的 attachmentId → 422 attachment_unreadable；没有已知表头的表 → 422 header_not_found；
+#   单价列不被导入（映射表标「价格列，本轮不导入」）
+yarn test src/modules/purchasing/lib/supplierProductExcelImport
 ```
 
 ## 回滚

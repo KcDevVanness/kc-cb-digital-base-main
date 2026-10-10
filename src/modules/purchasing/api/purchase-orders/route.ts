@@ -6,7 +6,7 @@ import { createPagedListResponseSchema } from '@open-mercato/shared/lib/openapi/
 import { PurchasingPurchaseOrder } from '../../data/entities'
 import { purchaseOrderCreateSchema, purchaseOrderUpdateSchema, ORDER_STATUSES } from '../../commands/orders'
 import { SOURCE_SALES_ORDER_KINDS } from '../../lib/sourceSalesOrder'
-import { derivePaymentState, type PaymentRow } from '../../lib/orderTotals'
+import { derivePaymentState, stagePaidTotals, type PaymentRow } from '../../lib/orderTotals'
 import { createPurchasingCrudOpenApi, purchasingCreatedSchema, purchasingOkSchema } from '../openapi'
 
 const ENTITY_ID = 'purchasing:purchasing_purchase_order' as const
@@ -35,6 +35,9 @@ const purchaseOrderListItemSchema = z
     /** Derived from the order's payment rows by the `afterList` hook (never stored). */
     paidTotal: z.string().optional(),
     outstanding: z.string().optional(),
+    /** Recorded sums per stage — `deposit` / `balance` payments only (never stored). */
+    paidDeposit: z.string().optional(),
+    paidBalance: z.string().optional(),
     paymentStatus: z.enum(['unpaid', 'deposit_paid', 'partially_paid', 'paid']).optional(),
     depositPercent: z.string().nullable().optional(),
     depositAmount: z.string().nullable().optional(),
@@ -226,10 +229,16 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       }
 
       for (const item of payload.items) {
-        const state = derivePaymentState(String(item.total ?? '0'), byOrder.get(String(item.id)) ?? [])
+        const payments = byOrder.get(String(item.id)) ?? []
+        const state = derivePaymentState(String(item.total ?? '0'), payments)
         item.paidTotal = state.paidTotal
         item.outstanding = state.outstanding
         item.paymentStatus = state.paymentStatus
+        // 预付款/尾款金额 are the **recorded** sums per stage (not the planned terms): the same page
+        // of payment rows is summed by `stagePaidTotals`, so both columns and `paidTotal` agree.
+        const stageTotals = stagePaidTotals(payments)
+        item.paidDeposit = stageTotals.paidDeposit
+        item.paidBalance = stageTotals.paidBalance
       }
     },
   },

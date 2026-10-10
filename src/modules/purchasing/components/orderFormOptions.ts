@@ -9,19 +9,18 @@ import { loadDictionaryEntriesByKey } from '@open-mercato/core/modules/dictionar
  *
  * Each picker is backed by the owning module's own scoped route, so the form can only offer a
  * record the caller may open: the order description comes from the shared dictionary-library
- * `product_category` list (the 字典库「Product categories」 vocabulary `product_codes` seeds), the
- * purchaser from the platform's user list, the customer from the CRM's company list, and an order
- * line's product from either the product master or a supplier's own library. All but the line's
- * product are optional, so a list that cannot be read yields no options rather than failing the
- * form — an order must stay creatable with a blank pick.
+ * `product_category` list (the 字典库「Product categories」 vocabulary `product_codes` seeds) and is
+ * read by the detail page, the customer from the CRM's company list, and an order line's product
+ * from either the product master or a supplier's own library. All are optional, so a list that
+ * cannot be read yields no options rather than failing the form — an order must stay creatable with
+ * a blank pick. 订单描述 and 采购负责人 are root-owned (see `mirror-root-order-fields`), so the forms
+ * carry no picker for either.
  */
 
 export const PRODUCT_CATEGORY_DICTIONARY_KEY = 'product_category'
 
-const USERS_API_PATH = '/api/auth/users'
 const COMPANIES_API_PATH = 'customers/companies'
 const SUPPLIER_PRODUCTS_API_PATH = '/api/purchasing/supplier-products'
-const OWNER_OPTION_PAGE_SIZE = 100
 /**
  * `customers/companies` caps `pageSize` at 100 (a larger value is a 400, not a bigger page), so
  * the picker asks for exactly the cap: one request, no error, and the same 100 candidates the
@@ -112,41 +111,6 @@ export async function loadProductCategoryOptions(errorMessage: string): Promise<
   } catch (error) {
     // The dictionary helper answers a missing or unreadable dictionary with an empty list, so a
     // rejection here is a transport fault rather than a configuration gap.
-    return reportLoadFailure(errorMessage, readErrorStatus(error))
-  }
-}
-
-function optionFromUser(item: Record<string, unknown>): SnapshotOption | null {
-  const value = readText(item, 'id')
-  if (!value) return null
-  const email = readText(item, 'email')
-  const name = readText(item, 'name', 'displayName', 'display_name') || email
-  return { value, label: name || value, snapshot: { name: name || value, email: email || null } }
-}
-
-/**
- * Purchasers, from the platform's user list restricted to the caller's active organization so a
- * suggestion can actually own the resulting order. A role without `auth.users.list` gets a 403
- * here; the pick is optional, so the field simply stays empty.
- */
-export async function loadOwnerOptions(errorMessage: string, search?: string): Promise<CrudFieldOption[]> {
-  const params = new URLSearchParams({
-    scopeToActiveOrganization: '1',
-    page: '1',
-    pageSize: String(OWNER_OPTION_PAGE_SIZE),
-  })
-  const term = typeof search === 'string' ? search.trim() : ''
-  if (term) params.set('search', term)
-  try {
-    const payload = await readApiResultOrThrow<{ items?: Array<Record<string, unknown>> }>(
-      `${USERS_API_PATH}?${params.toString()}`,
-      undefined,
-      { fallback: { items: [] }, errorMessage },
-    )
-    return (payload.items ?? [])
-      .map(optionFromUser)
-      .filter((option): option is SnapshotOption => option !== null)
-  } catch (error) {
     return reportLoadFailure(errorMessage, readErrorStatus(error))
   }
 }

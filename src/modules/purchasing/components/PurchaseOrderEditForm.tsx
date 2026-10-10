@@ -35,8 +35,6 @@ import {
 import {
   findOptionSnapshot,
   loadCustomerOptions,
-  loadOwnerOptions,
-  loadProductCategoryOptions,
 } from './orderFormOptions'
 
 const LINES_PAGE_SIZE = 200
@@ -48,9 +46,6 @@ const LINES_PAGE_SIZE = 200
  */
 const POST_PLACEMENT_FIELDS = [
   'businessNumber',
-  'productCategory',
-  'ownerUserId',
-  'ownerSnapshot',
   'customerId',
   'customerSnapshot',
   'expectedShipAt',
@@ -81,7 +76,7 @@ function toLineValues(item: Record<string, unknown>): PurchaseOrderLineValues {
 
 /**
  * Keeps the last loaded page of picker options, so the submit handler can freeze the picked
- * person's display snapshot the same way the create form does — the write command never reads
+ * company's display snapshot the same way the create form does — the write command never reads
  * another module's tables to resolve a name.
  */
 async function rememberPickerOptions(
@@ -114,12 +109,6 @@ function PurchaseOrderEditFormBody({
 
   const initialValues = React.useMemo<PurchaseOrderFormValues>(() => ({
     businessNumber: order.businessNumber ?? '',
-    productCategory: order.productCategory ?? '',
-    ownerUserId: order.ownerUserId ?? '',
-    // The list projection returns the resolved display name, not the stored snapshot JSON: seed the
-    // snapshot from the name so saving an order whose picker was never touched keeps the name the
-    // page shows instead of blanking the frozen display data.
-    ownerSnapshot: order.ownerSnapshot ?? (order.ownerName ? { name: order.ownerName } : null),
     customerId: order.customerId ?? '',
     customerSnapshot: order.customerSnapshot ?? (order.customerName ? { name: order.customerName } : null),
     supplierId: order.supplierId,
@@ -142,14 +131,6 @@ function PurchaseOrderEditFormBody({
       layout: 'half',
     },
     {
-      id: 'productCategory',
-      label: t('purchasing.orders.form.field.productCategory'),
-      type: 'select',
-      layout: 'half',
-      loadOptions: () => rememberPickerOptions(pickerOptionsRef, 'productCategory', () =>
-        loadProductCategoryOptions(t('purchasing.orders.form.optionsLoadFailed'))),
-    },
-    {
       id: 'supplierId',
       label: t('purchasing.orders.form.field.supplier'),
       type: 'select',
@@ -157,14 +138,6 @@ function PurchaseOrderEditFormBody({
       layout: 'half',
       readOnly: locked,
       loadOptions: (query) => loadSupplierOptions(t('purchasing.orders.form.loadFailed'), query),
-    },
-    {
-      id: 'ownerUserId',
-      label: t('purchasing.orders.form.field.owner'),
-      type: 'select',
-      layout: 'half',
-      loadOptions: (query) => rememberPickerOptions(pickerOptionsRef, 'ownerUserId', () =>
-        loadOwnerOptions(t('purchasing.orders.form.optionsLoadFailed'), query)),
     },
     {
       id: 'customerId',
@@ -217,9 +190,7 @@ function PurchaseOrderEditFormBody({
       column: 1,
       fields: [
         'businessNumber',
-        'productCategory',
         'supplierId',
-        'ownerUserId',
         'customerId',
         'currencyCode',
         'expectedShipAt',
@@ -253,18 +224,15 @@ function PurchaseOrderEditFormBody({
 
   const handleSubmit = React.useCallback(async (values: PurchaseOrderFormValues) => {
     // A picker the operator did not touch keeps the snapshot the order was filed with: the picked
-    // person may not be on the loaded page any more, and the name recorded at filing time is the
+    // company may not be on the loaded page any more, and the name recorded at filing time is the
     // one the order owns. The list projection returns the resolved display name rather than the
     // stored snapshot JSON, so an untouched picker falls back to that name instead of clearing it —
     // a save must never blank the order's frozen display data. A changed picker resolves against
     // the options it was chosen from.
-    const ownerSnapshot = values.ownerUserId === (order.ownerUserId ?? '')
-      ? (order.ownerSnapshot ?? (order.ownerName ? { name: order.ownerName } : null))
-      : findOptionSnapshot(pickerOptionsRef.current.ownerUserId ?? [], values.ownerUserId)
     const customerSnapshot = values.customerId === (order.customerId ?? '')
       ? (order.customerSnapshot ?? (order.customerName ? { name: order.customerName } : null))
       : findOptionSnapshot(pickerOptionsRef.current.customerId ?? [], values.customerId)
-    const full = buildPurchaseOrderPayload({ ...values, ownerSnapshot, customerSnapshot })
+    const full = buildPurchaseOrderPayload({ ...values, customerSnapshot })
     const body = locked
       ? Object.fromEntries(POST_PLACEMENT_FIELDS.map((key) => [key, full[key]]))
       : full
