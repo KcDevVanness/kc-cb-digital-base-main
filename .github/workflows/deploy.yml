@@ -33,7 +33,11 @@ jobs:
     # main cannot spend ten minutes building an image nobody deploys. The deploy
     # job needs this one, so it is skipped along with it.
     if: github.ref == 'refs/heads/production'
-    runs-on: ubuntu-latest
+    # The deployment host is a t4g.micro (aarch64), so the image must be arm64
+    # and this is the native twin of `ubuntu-latest`: emulating arm64 under QEMU
+    # on an amd64 runner costs several times the wall clock on a Next.js tree
+    # this size. Free on a public repository.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     outputs:
       image: ${{ steps.meta.outputs.image }}
@@ -113,6 +117,10 @@ jobs:
           # `runner` is the last stage, but naming it keeps the deploy artifact
           # from silently becoming the `dev` stage if the file is reordered.
           target: runner
+          # The deployment host is aarch64; an amd64 image fails there at
+          # `up -d` with `exec format error`. Keep this in step with the
+          # instance class — see docs/deploy/cicd.md.
+          platforms: linux/arm64
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ github.sha }}
@@ -124,7 +132,9 @@ jobs:
     name: deploy
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A first deploy on the 1 GiB host spends most of this inside the health
+    # wait: the schema initializes through swap before the app answers.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
