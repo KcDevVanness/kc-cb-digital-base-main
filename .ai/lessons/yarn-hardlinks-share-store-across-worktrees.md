@@ -26,8 +26,10 @@ the 1.6 GB store, each later tree costs directory entries only (a throwaway copy
 `du -shc` of two trees = 1.6 GB total, and `next/dist/server/next.js` carried the same inode in both
 trees and in the store). Because a linked file shares its inode with the store, in-place rewrites
 under `node_modules` (patch tools, manual edits, a package script overwriting its own published
-file) write through to every project using it: keep the repo patch-free, and delete
-`~/.yarn/berry/store` — rebuilt from the zip cache on the next install — to reclaim. The mode is
+file) write through to every project using it: keep the repo patch-free, and to reclaim, delete the
+`node_modules` of worktrees you no longer use and then `~/.yarn/berry/store` (the blocks are shared,
+so the space returns only once the last link is gone; the store is rebuilt from the zip cache on the
+next install). The mode is
 repo-wide: the Docker file stages and CI inherit it, and a store and project on different
 filesystems fall back to copying without an error.
 

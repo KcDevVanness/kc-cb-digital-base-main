@@ -29,7 +29,7 @@
 
 每个 agent 一个工作树：各自独立的 `.next/`、`.mercato/generated/`、`.env`（本地副本，见端口一节）；
 `node_modules` 不在此列——Yarn 的 store 按机器共享（`.yarnrc.yml` 的 `nmMode: hardlinks-global`），
-新工作树装依赖只花目录项（约 1 MB）而不是复制约 1.8 GB，见
+新工作树装依赖只花目录项（一次性副本实测 768 KB）而不是复制约 1.8 GB，见
 [setup.md 的「依赖安装与磁盘占用」](./setup.md)。
 
 **Orca（本机已装，`/Applications/Orca.app`）**

@@ -63,7 +63,9 @@ yarn initialize           # 建表 + 种子数据；演示账号邮箱会打印�
 **写穿风险**：硬链接与 store 共享 inode，凡是**原地改写** `node_modules` 内文件的操作（patch 工具、
 手动编辑、个别安装脚本覆盖自己已发布的文件）都会写穿到 store，影响本机所有正在用它的项目。本仓
 没有 `yarn patch` 工作流（无 `.yarn/patches/`、无 `dependenciesMeta` patch 条目），请保持没有。
-要回收 store：删掉 `~/.yarn/berry/store`，下次 `yarn install` 会从 zip 缓存重建。
+要回收空间：先删掉不再使用的工作树的 `node_modules`，再删 `~/.yarn/berry/store`——store 与
+`node_modules` 共享同一份数据块，只有最后一个链接消失后空间才真正释放；下次 `yarn install` 会从
+zip 缓存重建 store。
 
 ## 演示账号
 
