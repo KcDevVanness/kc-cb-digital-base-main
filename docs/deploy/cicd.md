@@ -87,7 +87,11 @@ pull 报 `denied`，故已移除）。若将来把 package 改为私有，主机
 | 部署脚本 | `scripts/deploy/deploy.sh`，由 CI 通过 `ssh ... bash -s` 用 stdin 灌入 |
 
 脚本走 stdin 而不是「先 checkout 再执行」：要部署的版本正是脚本自己 fetch 下来的，
-先 checkout 才能拿到脚本会构成先有鸡还是先有蛋。
+先 checkout 才能拿到脚本会构成先有鸡还是先有蛋。**代价：脚本自身就是 stdin。** 脚本里
+任何读 stdin 的命令都会把剩余脚本吃掉，bash 随即在该命令处遇到 EOF、整段以 0 退出——
+2026-10-10 实测确认：`compose exec -T caddy caddy reload`（默认附加 stdin）就这样静默跳过
+了它后面的全部内容（健康闸门、磁盘回收、`compose ps`），旧主机上的历次部署同样如此。
+修复是给该命令加 `< /dev/null`；往脚本里加新命令时留意同一类陷阱。
 
 `.env` 里**必须**有的项：
 
@@ -300,7 +304,10 @@ git push --force origin <good-sha>:production
   需要时给 `docker/build-push-action` 加 `build-args: INSTALL_CHROMIUM=1`，镜像增大约 400 MB。
 - `NEXT_PUBLIC_DOCUMENTS_COLLAB_URL` 未设置：文档退化为单人编辑，不跑 `documents-collab` sidecar。
 - 内存调优写在 `docker-compose.deploy.yml` 里，当前按 **t4g.micro（2 vCPU / 1 GiB）** 取值：
-  `--max-old-space-size=384`、`DB_POOL_MAX=5`、`shared_buffers=128MB`、redis `maxmemory=128mb`、
+  server 堆 `--max-old-space-size=512`（`NODE_OPTIONS`）；**init 阶段单独一个更大的堆**
+  `INIT_NODE_OPTIONS=--max-old-space-size=2048`——init 一次加载全部模块，实测 384 会在
+  `Bootstrapping application...` 阶段 V8 OOM，所以容器命令按阶段给不同上限；
+  `DB_POOL_MAX=5`、`shared_buffers=128MB`、redis `maxmemory=128mb`、
   Meilisearch `MEILI_MAX_INDEXING_MEMORY=268435456`（256 MiB，compose 给的是字节）。
   **换实例规格必须同步调这些值**：调小了 V8 会在内存还有余量时先撞堆上限，
   调大了则会让 app 和 Postgres 互相抢内存。`.env` 里的同名变量会覆盖 compose 默认值，

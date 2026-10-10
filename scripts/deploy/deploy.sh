@@ -96,8 +96,13 @@ compose up -d --remove-orphans
 # Caddyfile edit on its own would sit unread in the bind mount. A reload is
 # Caddy's own zero-downtime path for config changes, and it fails loudly on a
 # malformed file — which is the point.
+#
+# `< /dev/null` is load-bearing: this script arrives on stdin (`ssh ... bash -s`),
+# and `compose exec` attaches stdin — without the redirect it swallows the rest
+# of the script, bash hits EOF right here, and the deploy "succeeds" without the
+# health gate below ever running.
 if [ -n "$(compose ps -q caddy 2>/dev/null)" ]; then
-  compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+  compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile < /dev/null
 fi
 
 log "wait for ${HEALTH_PATH} on port ${APP_PORT} (timeout ${HEALTH_TIMEOUT}s)"
