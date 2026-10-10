@@ -1,6 +1,5 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
-import { toAmountString } from '../../trade_docs/lib/money'
-import { toScaledUnits } from '../../trade_docs/lib/money'
+import { AMOUNT_SCALE, toAmountString, toScaledUnits } from '../../trade_docs/lib/money'
 import { loadPayables, loadReceivables } from '../../finance/lib/ledger'
 import { loadInventoryValue } from '../../finance/lib/costResolver'
 import { loadRuHealth } from '../../ru_sync/lib/health'
@@ -23,7 +22,17 @@ import { RU_PROVIDER_KEY } from '../../ru_sync/lib/adapter'
  *   `dataMissing` note; that is what makes the stale banner meaningful instead of decorative.
  */
 
-const AMOUNT_SCALE = 4
+/**
+ * Cockpit quantities (shipment `total_qty`, unrecognized-inbound `qty` and weekly site-sales `qty`)
+ * are a caliber **of their own**, not money: money is the system-wide 2 dp of
+ * `trade_docs/lib/money.ts` (`AMOUNT_SCALE`, imported above), while these counts keep 4 dp. The two
+ * used to share one local constant, which is how a quantity scale leaked into the money totals; a
+ * separate, explicitly named constant is what makes that impossible again.
+ */
+export const QUANTITY_SCALE = 4
+
+/** The zero of the quantity caliber — the `dataMissing` fallback for a quantity field. */
+const ZERO_QUANTITY = toAmountString({ units: 0n, scale: QUANTITY_SCALE }, QUANTITY_SCALE)
 
 export type MoneyByCurrency = { currencyCode: string; amount: string }
 
@@ -149,7 +158,12 @@ function decimalOf(payload: Record<string, unknown>, key: string): string | null
   return typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value) ? value : null
 }
 
-function sumByCurrency(entries: Array<{ amount: string; currencyCode: string }>): MoneyByCurrency[] {
+/**
+ * Money totals: exact scaled-integer sums, rendered at the canonical {@link AMOUNT_SCALE} (2 dp)
+ * that the whole system stores, serves and exports. The scale is imported from the money engine
+ * rather than declared here, so the cockpit cannot grow a private money caliber again.
+ */
+export function sumByCurrency(entries: Array<{ amount: string; currencyCode: string }>): MoneyByCurrency[] {
   const totals = new Map<string, bigint>()
   for (const entry of entries) {
     totals.set(entry.currencyCode, (totals.get(entry.currencyCode) ?? 0n) + toScaledUnits(entry.amount, AMOUNT_SCALE))
@@ -160,6 +174,16 @@ function sumByCurrency(entries: Array<{ amount: string; currencyCode: string }>)
       amount: toAmountString({ units, scale: AMOUNT_SCALE }, AMOUNT_SCALE),
     }))
     .sort((left, right) => left.currencyCode.localeCompare(right.currencyCode))
+}
+
+/**
+ * Quantities summed exactly and rendered at {@link QUANTITY_SCALE} (4 dp) — deliberately *not* the
+ * money scale. Kept as its own function so a future edit cannot route a count through the money
+ * caliber by accident.
+ */
+export function sumQuantities(values: string[]): string {
+  const units = values.reduce((total, value) => total + toScaledUnits(value, QUANTITY_SCALE), 0n)
+  return toAmountString({ units, scale: QUANTITY_SCALE }, QUANTITY_SCALE)
 }
 
 /**
@@ -215,10 +239,10 @@ export async function loadCockpitSummary(
     const quantities = inProductionOrTransit
       .map((row) => decimalOf(row, 'total_qty'))
       .filter((value): value is string => value !== null)
-    const quantityUnits = quantities.reduce((total, value) => total + toScaledUnits(value, AMOUNT_SCALE), 0n)
+    const quantity = quantities.length === 0 ? null : sumQuantities(quantities)
     return {
       byCurrency: sumByCurrency(amounts),
-      quantity: quantities.length === 0 ? null : toAmountString({ units: quantityUnits, scale: AMOUNT_SCALE }, AMOUNT_SCALE),
+      quantity,
       inTransitCount: inTransit.length,
     }
   }, { byCurrency: [], quantity: null, inTransitCount: 0 })
@@ -244,9 +268,8 @@ export async function loadCockpitSummary(
     const quantities = rows
       .map((row) => decimalOf(row, 'qty'))
       .filter((value): value is string => value !== null)
-    const units = quantities.reduce((total, value) => total + toScaledUnits(value, AMOUNT_SCALE), 0n)
-    return { rows: rows.length, quantity: toAmountString({ units, scale: AMOUNT_SCALE }, AMOUNT_SCALE) }
-  }, { rows: 0, quantity: '0.0000' })
+    return { rows: rows.length, quantity: sumQuantities(quantities) }
+  }, { rows: 0, quantity: ZERO_QUANTITY })
 
   const overview = groupOrMissing(snapshots.get('ads_overview'), (rows) => {
     const row = rows[0] ?? {}
@@ -277,7 +300,6 @@ export async function loadCockpitSummary(
     const quantities = weekRows
       .map((row) => decimalOf(row, 'qty'))
       .filter((value): value is string => value !== null)
-    const quantityUnits = quantities.reduce((total, value) => total + toScaledUnits(value, AMOUNT_SCALE), 0n)
     const margins = weekRows
       .map((row) => (typeof row.margin_sales_percent === 'number' ? row.margin_sales_percent : null))
       .filter((value): value is number => value !== null)
@@ -285,11 +307,11 @@ export async function loadCockpitSummary(
       periodStart: latest && latest.length > 0 ? latest : null,
       periodEnd: weekRows.find((row) => typeof row.period_end === 'string')?.period_end as string | undefined ?? null,
       sales: sumByCurrency(revenues),
-      quantity: toAmountString({ units: quantityUnits, scale: AMOUNT_SCALE }, AMOUNT_SCALE),
+      quantity: sumQuantities(quantities),
       adSpend: sumByCurrency(adSpends),
       marginPercent: margins.length === 0 ? null : Math.round((margins.reduce((sum, value) => sum + value, 0) / margins.length) * 10) / 10,
     }
-  }, { periodStart: null, periodEnd: null, sales: [], quantity: '0.0000', adSpend: [], marginPercent: null })
+  }, { periodStart: null, periodEnd: null, sales: [], quantity: ZERO_QUANTITY, adSpend: [], marginPercent: null })
 
   const payablesOutstanding = sumByCurrency(
     payables.groups.map((group) => ({ amount: group.outstandingAmount, currencyCode: group.currencyCode })),
